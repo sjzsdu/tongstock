@@ -88,6 +88,10 @@ func AddPrefix(code string) string {
 			code = "sz" + code
 		case code[:1] == "8", code[:2] == "92", code[:2] == "43":
 			code = "bj" + code
+		case code[:2] == "39":
+			code = "sz" + code
+		case code[:1] == "9":
+			code = "sh" + code
 		}
 	}
 	return code

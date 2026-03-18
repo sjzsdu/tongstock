@@ -4,10 +4,15 @@
 
 ## 功能特性
 
-- **实时行情** - 涨跌幅、成交量、成交额等
+- **实时行情** - 五档买卖盘、昨收价、内外盘、成交量/额
 - **K线数据** - 支持 1分钟/5分钟/15分钟/30分钟/60分钟/日/周/月/季/年 K线
-- **分时数据** - 当日分时走势数据
+- **指数K线** - 指数专用K线，包含上涨/下跌家数
+- **分时数据** - 当日及历史分时走势数据
 - **分笔成交** - 当日及历史分笔成交数据
+- **除权除息** - 分红、送股、配股、股本变动等历史记录
+- **财务数据** - 总股本、流通股、净资产、净利润等核心财务指标
+- **公司信息** - F10资料（最新提示、公司概况、财务分析等）
+- **板块分类** - 行业、概念、地域、风格等板块分类数据
 - **股票代码** - 获取沪深北交易所所有股票代码
 - **双模式** - CLI 命令行工具 + HTTP REST API
 
@@ -98,6 +103,47 @@ go build -o tongstock-server ./cmd/server
 ./tongstock-cli trade 000001 --history --date 20240315
 ```
 
+### 查询除权除息
+
+```bash
+./tongstock-cli xdxr 000001
+```
+
+### 查询财务数据
+
+```bash
+./tongstock-cli finance 000001
+```
+
+### 查询指数K线
+
+```bash
+# 上证指数日K
+./tongstock-cli index --code 999999 --type day
+
+# 沪深300 5分钟K
+./tongstock-cli index --code 399300 --type 5m
+```
+
+### 查询公司信息(F10)
+
+```bash
+./tongstock-cli company 000001
+```
+
+### 查询板块分类
+
+```bash
+# 指数板块
+./tongstock-cli block --file block_zs.dat
+
+# 行业板块
+./tongstock-cli block --file block_fg.dat
+
+# 概念板块
+./tongstock-cli block --file block_gn.dat
+```
+
 ## HTTP API 使用方法
 
 ### 启动服务
@@ -118,6 +164,12 @@ go build -o tongstock-server ./cmd/server
 | `/api/codes` | GET | `exchange` | 股票代码 |
 | `/api/minute` | GET | `code` | 当日分时数据 |
 | `/api/trade` | GET | `code`, `start`, `count`, `date`, `history` | 分笔成交数据 |
+| `/api/xdxr` | GET | `code` | 除权除息信息 |
+| `/api/finance` | GET | `code` | 财务数据 |
+| `/api/index` | GET | `code`, `type` | 指数K线 |
+| `/api/company` | GET | `code` | 公司信息目录(F10) |
+| `/api/company/content` | GET | `code`, `filename` | 公司信息内容 |
+| `/api/block` | GET | `file` | 板块分类数据 |
 
 ### 示例
 
@@ -139,6 +191,24 @@ curl "http://localhost:8080/api/trade?code=000001"
 
 # 查询历史分笔成交
 curl "http://localhost:8080/api/trade?code=000001&history=true&date=20240315"
+
+# 查询除权除息
+curl "http://localhost:8080/api/xdxr?code=000001"
+
+# 查询财务数据
+curl "http://localhost:8080/api/finance?code=000001"
+
+# 查询指数K线
+curl "http://localhost:8080/api/index?code=999999&type=day"
+
+# 查询公司信息目录
+curl "http://localhost:8080/api/company?code=000001"
+
+# 查询公司信息内容
+curl "http://localhost:8080/api/company/content?code=000001&filename=000001.txt"
+
+# 查询板块分类
+curl "http://localhost:8080/api/block?file=block_zs.dat"
 ```
 
 ## 配置
@@ -181,12 +251,17 @@ tongstock/
 │   │   ├── pull.go       # 行情拉取
 │   │   ├── workday.go    # 交易日判断
 │   │   ├── bj_codes.go   # 北京交易所代码
-│   │   └── protocol/    # 协议解析
-│   │       ├── quote.go  # 行情解析
-│   │       ├── kline.go  # K线解析
-│   │       ├── minute.go # 分时解析
-│   │       ├── trade.go  # 分笔解析
-│   │       ├── code.go   # 代码解析
+│   │   └── protocol/     # 协议解析
+│   │       ├── quote.go   # 行情解析(含五档盘口)
+│   │       ├── kline.go   # K线解析
+│   │       ├── index.go   # 指数K线解析
+│   │       ├── minute.go  # 分时解析
+│   │       ├── trade.go   # 分笔解析
+│   │       ├── xdxr.go    # 除权除息解析
+│   │       ├── finance.go # 财务数据解析
+│   │       ├── company.go # 公司信息解析
+│   │       ├── block.go   # 板块信息解析
+│   │       ├── code.go    # 代码解析
 │   │       └── ...
 │   └── utils/            # 工具函数
 ├── configs/              # 配置文件 (预留)

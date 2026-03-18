@@ -14,6 +14,12 @@ const (
 	TypeHistoryMinute      = 0x0FB4
 	TypeHistoryMinuteTrade = 0x0FB5
 	TypeKline              = 0x052D
+	TypeXdXr               = 0x000F
+	TypeFinance            = 0x0010
+	TypeBlockInfoMeta      = 0x02C5
+	TypeBlockInfo          = 0x06B9
+	TypeCompanyCategory    = 0x02CF
+	TypeCompanyContent     = 0x02D0
 )
 
 const (

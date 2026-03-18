@@ -471,6 +471,134 @@ func (c *Client) GetHistoryMinuteTrade(date, code string, start, count uint16) (
 	})
 }
 
+func (c *Client) GetXdXrInfo(code string) ([]*protocol.XdXrItem, error) {
+	f, err := protocol.MXdXr.Frame(code)
+	if err != nil {
+		return nil, err
+	}
+	data, err := c.send(f)
+	if err != nil {
+		return nil, err
+	}
+	return protocol.MXdXr.Decode(data)
+}
+
+func (c *Client) GetFinanceInfo(code string) (*protocol.FinanceInfo, error) {
+	f, err := protocol.MFinance.Frame(code)
+	if err != nil {
+		return nil, err
+	}
+	data, err := c.send(f)
+	if err != nil {
+		return nil, err
+	}
+	return protocol.MFinance.Decode(data)
+}
+
+func (c *Client) GetIndexBars(code string, ktype uint8, start, count uint16) ([]*protocol.IndexBar, error) {
+	f, err := protocol.MIndexBar.Frame(ktype, code, start, count)
+	if err != nil {
+		return nil, err
+	}
+	data, err := c.send(f)
+	if err != nil {
+		return nil, err
+	}
+	return protocol.MIndexBar.Decode(data, ktype)
+}
+
+func (c *Client) GetIndexBarsAll(code string, ktype uint8) ([]*protocol.IndexBar, error) {
+	var all []*protocol.IndexBar
+	size := uint16(800)
+	for start := uint16(0); ; start += size {
+		bars, err := c.GetIndexBars(code, ktype, start, size)
+		if err != nil {
+			return nil, err
+		}
+		if len(bars) == 0 {
+			break
+		}
+		all = append(bars, all...)
+		if len(bars) < int(size) {
+			break
+		}
+	}
+	return all, nil
+}
+
+func (c *Client) GetBlockInfoMeta(blockFile string) (*protocol.BlockInfoMeta, error) {
+	f := protocol.MBlockInfoMeta.Frame(blockFile)
+	data, err := c.send(f)
+	if err != nil {
+		return nil, err
+	}
+	return protocol.MBlockInfoMeta.Decode(data)
+}
+
+func (c *Client) GetBlockInfo(blockFile string, start, size uint32) ([]byte, error) {
+	f := protocol.MBlockInfo.Frame(blockFile, start, size)
+	data, err := c.send(f)
+	if err != nil {
+		return nil, err
+	}
+	return protocol.MBlockInfo.Decode(data)
+}
+
+func (c *Client) GetBlockInfoAll(blockFile string) ([]*protocol.BlockItem, error) {
+	meta, err := c.GetBlockInfoMeta(blockFile)
+	if err != nil {
+		return nil, err
+	}
+
+	const chunkSize = 0x7530
+	var content []byte
+	for offset := uint32(0); offset < meta.Size; offset += chunkSize {
+		piece, err := c.GetBlockInfo(blockFile, offset, meta.Size)
+		if err != nil {
+			return nil, err
+		}
+		content = append(content, piece...)
+	}
+	return protocol.ParseBlockData(content)
+}
+
+func (c *Client) GetCompanyInfoCategory(code string) ([]*protocol.CompanyCategoryItem, error) {
+	f, err := protocol.MCompanyCategory.Frame(code)
+	if err != nil {
+		return nil, err
+	}
+	data, err := c.send(f)
+	if err != nil {
+		return nil, err
+	}
+	return protocol.MCompanyCategory.Decode(data)
+}
+
+func (c *Client) GetCompanyInfoContent(code, filename string, start, length uint32) (string, error) {
+	f, err := protocol.MCompanyContent.Frame(code, filename, start, length)
+	if err != nil {
+		return "", err
+	}
+	data, err := c.send(f)
+	if err != nil {
+		return "", err
+	}
+	return protocol.MCompanyContent.Decode(data)
+}
+
+func (c *Client) GetSecurityCount(exchange protocol.Exchange) (int, error) {
+	f := protocol.MCount.Frame()
+	data, err := c.send(f)
+	if err != nil {
+		return 0, err
+	}
+	resp, err := protocol.MCount.Decode(data)
+	if err != nil {
+		return 0, err
+	}
+	return resp.Count, nil
+}
+
 func decodeStockCode(code string) (string, string, error) {
 	code = addPrefix(code)
 	if len(code) != 8 {

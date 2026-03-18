@@ -35,15 +35,26 @@ func (q Quote) Frame(codes ...string) (*Frame, error) {
 	}, nil
 }
 
+type BidAsk struct {
+	BidPrice  float64
+	AskPrice  float64
+	BidVolume int
+	AskVolume int
+}
+
 type QuoteItem struct {
-	Code   string
-	Name   string
-	Open   float64
-	High   float64
-	Low    float64
-	Price  float64
-	Volume float64
-	Amount float64
+	Code      string
+	Name      string
+	Open      float64
+	High      float64
+	Low       float64
+	Price     float64
+	LastClose float64
+	Volume    float64
+	Amount    float64
+	SVol      int // 内盘(主动卖)
+	BVol      int // 外盘(主动买)
+	BidAsk    [5]BidAsk
 }
 
 func (q Quote) Decode(bs []byte) ([]*QuoteItem, error) {
@@ -68,6 +79,7 @@ func (q Quote) Decode(bs []byte) ([]*QuoteItem, error) {
 		bs, k = decodeK(bs[9:])
 
 		item.Price = k.Close
+		item.LastClose = k.Last
 		item.Open = k.Open
 		item.High = k.High
 		item.Low = k.Low
@@ -83,8 +95,12 @@ func (q Quote) Decode(bs []byte) ([]*QuoteItem, error) {
 			item.Amount = volumeEncoded(Uint32LE(bs[:4])) / 10000
 			bs = bs[4:]
 		}
-		bs, _ = varUint(bs)
-		bs, _ = varUint(bs)
+
+		var sVol, bVol int
+		bs, sVol = varUint(bs)
+		bs, bVol = varUint(bs)
+		item.SVol = sVol
+		item.BVol = bVol
 		bs, _ = varUint(bs)
 		bs, _ = varUint(bs)
 
@@ -92,10 +108,18 @@ func (q Quote) Decode(bs []byte) ([]*QuoteItem, error) {
 			if len(bs) < 1 {
 				break
 			}
-			bs, _ = varPrice(bs)
-			bs, _ = varPrice(bs)
-			bs, _ = varUint(bs)
-			bs, _ = varUint(bs)
+			var bidRaw, askRaw int64
+			var bidVol, askVol int
+			bs, bidRaw = varPrice(bs)
+			bs, askRaw = varPrice(bs)
+			bs, bidVol = varUint(bs)
+			bs, askVol = varUint(bs)
+			item.BidAsk[j] = BidAsk{
+				BidPrice:  float64(int64(item.Price*100)+bidRaw) / 100,
+				AskPrice:  float64(int64(item.Price*100)+askRaw) / 100,
+				BidVolume: bidVol,
+				AskVolume: askVol,
+			}
 		}
 
 		if len(bs) >= 2 {

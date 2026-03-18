@@ -51,91 +51,137 @@ echo ""
 
 echo "5. 测试 codes 命令 - 北京市场"
 echo "----------------------------------------"
-$CLI codes --exchange bj | head -20
+$CLI_PATH codes --exchange bj | head -20
 echo "... (仅显示前20条)"
 echo ""
 
 echo "6. 测试 kline 命令 - 日K"
 echo "----------------------------------------"
-$CLI kline --code 000001 --type day | head -10
+$CLI_PATH kline --code 000001 --type day | head -10
 echo "... (仅显示前10条)"
 echo ""
 
 echo "7. 测试 kline 命令 - 周K"
 echo "----------------------------------------"
-$CLI kline --code 000001 --type week | head -10
+$CLI_PATH kline --code 000001 --type week | head -10
 echo "... (仅显示前10条)"
 echo ""
 
 echo "8. 测试 kline 命令 - 月K"
 echo "----------------------------------------"
-$CLI kline --code 000001 --type month | head -10
+$CLI_PATH kline --code 000001 --type month | head -10
 echo "... (仅显示前10条)"
 echo ""
 
 echo "9. 测试 kline 命令 - 1分钟K"
 echo "----------------------------------------"
-$CLI kline --code 000001 --type 1m | head -10
+$CLI_PATH kline --code 000001 --type 1m | head -10
 echo "... (仅显示前10条)"
 echo ""
 
 echo "10. 测试 kline 命令 - 5分钟K"
 echo "----------------------------------------"
-$CLI kline --code 000001 --type 5m | head -10
+$CLI_PATH kline --code 000001 --type 5m | head -10
 echo "... (仅显示前10条)"
 echo ""
 
 echo "11. 测试 kline 命令 - 1分钟K"
 echo "----------------------------------------"
-$CLI kline --code 000001 --type 1m | head -10
+$CLI_PATH kline --code 000001 --type 1m | head -10
 echo "... (仅显示前10条)"
 echo ""
 
 echo "12. 测试 kline 命令 - 5分钟K"
 echo "----------------------------------------"
-$CLI kline --code 000001 --type 5m | head -10
+$CLI_PATH kline --code 000001 --type 5m | head -10
 echo "... (仅显示前10条)"
 echo ""
 
 echo "13. 测试 kline 命令 - 60分钟K"
 echo "----------------------------------------"
-$CLI kline --code 000001 --type 60m | head -10
+$CLI_PATH kline --code 000001 --type 60m | head -10
 echo "... (仅显示前10条)"
 echo ""
 
 echo "14. 测试 kline 命令 - 季K"
 echo "----------------------------------------"
-$CLI kline --code 000001 --type quarter | head -10
+$CLI_PATH kline --code 000001 --type quarter | head -10
 echo "... (仅显示前10条)"
 echo ""
 
 echo "15. 测试 kline 命令 - 年K"
 echo "----------------------------------------"
-$CLI kline --code 000001 --type year | head -10
+$CLI_PATH kline --code 000001 --type year | head -10
 echo "... (仅显示前10条)"
 echo ""
 
 echo "16. 测试 kline 命令 - 全部历史日K"
 echo "----------------------------------------"
-$CLI kline --code 000001 --type day --all | head -10
+$CLI_PATH kline --code 000001 --type day --all | head -10
 echo "... (仅显示前10条)"
 echo ""
 
 echo "17. 测试 minute 命令 - 当日分时"
 echo "----------------------------------------"
-$CLI minute 000001 | head -20
+$CLI_PATH minute 000001 | head -20
 echo "... (仅显示前20条)"
 echo ""
 
 echo "18. 测试 trade 命令 - 当日分笔成交"
 echo "----------------------------------------"
-$CLI trade 000001 | head -20
+$CLI_PATH trade 000001 | head -20
 echo "... (仅显示前20条)"
 echo ""
 
 echo "19. 测试 trade 命令 - 历史分笔成交"
 echo "----------------------------------------"
-$CLI trade 000001 --history --date 20250314 | head -20
+$CLI_PATH trade 000001 --history --date 20250314 | head -20
+echo "... (仅显示前20条)"
+echo ""
+
+echo "20. 测试 xdxr 命令 - 除权除息"
+echo "----------------------------------------"
+$CLI_PATH xdxr 000001 | head -20
+echo "... (仅显示前20条)"
+echo ""
+
+echo "21. 测试 finance 命令 - 财务数据"
+echo "----------------------------------------"
+$CLI_PATH finance 000001
+echo ""
+
+echo "22. 测试 index 命令 - 指数日K"
+echo "----------------------------------------"
+$CLI_PATH index --code 999999 --type day | head -10
+echo "... (仅显示前10条)"
+echo ""
+
+echo "23. 测试 index 命令 - 指数5分钟K"
+echo "----------------------------------------"
+$CLI_PATH index --code 399300 --type 5m | head -10
+echo "... (仅显示前10条)"
+echo ""
+
+echo "24. 测试 company 命令 - 公司信息目录"
+echo "----------------------------------------"
+$CLI_PATH company 000001
+echo ""
+
+echo "25. 测试 block 命令 - 指数板块"
+echo "----------------------------------------"
+$CLI_PATH block --file block_zs.dat | head -20
+echo "... (仅显示前20条)"
+echo ""
+
+echo "26. 测试 block 命令 - 行业板块"
+echo "----------------------------------------"
+$CLI_PATH block --file block_fg.dat | head -20
+echo "... (仅显示前20条)"
+echo ""
+
+echo "27. 测试 block 命令 - 概念板块"
+echo "----------------------------------------"
+$CLI_PATH block --file block_gn.dat | head -20
 echo "... (仅显示前20条)"
 echo ""
 

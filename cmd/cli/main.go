@@ -27,6 +27,11 @@ func init() {
 	rootCmd.AddCommand(klineCmd)
 	rootCmd.AddCommand(minuteCmd)
 	rootCmd.AddCommand(tradeCmd)
+	rootCmd.AddCommand(xdxrCmd)
+	rootCmd.AddCommand(financeCmd)
+	rootCmd.AddCommand(indexCmd)
+	rootCmd.AddCommand(companyCmd)
+	rootCmd.AddCommand(blockCmd)
 }
 
 var quoteCmd = &cobra.Command{
@@ -204,6 +209,181 @@ func init() {
 	tradeCmd.Flags().Uint16VarP(&tradeStart, "start", "s", 0, "起始位置")
 	tradeCmd.Flags().Uint16VarP(&tradeCount, "count", "c", 100, "数量")
 	tradeCmd.Flags().BoolVarP(&tradeHistory, "history", "H", false, "历史分时成交")
+}
+
+var xdxrCmd = &cobra.Command{
+	Use:   "xdxr [code]",
+	Short: "查询除权除息信息",
+	Args:  cobra.MinimumNArgs(1),
+	RunE:  runXdXr,
+}
+
+func runXdXr(cmd *cobra.Command, args []string) error {
+	client, err := tdx.DialHosts(nil)
+	if err != nil {
+		return fmt.Errorf("连接服务器失败: %w", err)
+	}
+	defer client.Close()
+
+	items, err := client.GetXdXrInfo(args[0])
+	if err != nil {
+		return fmt.Errorf("获取除权除息失败: %w", err)
+	}
+
+	fmt.Printf("共获取 %d 条除权除息记录\n", len(items))
+	for _, item := range items {
+		fmt.Printf("%s [%s] ", item.Date.Format("2006-01-02"), item.Category)
+		switch item.Category {
+		case protocol.XdXrChuQuanChuXi:
+			fmt.Printf("分红:%.4f 配股价:%.2f 送转:%.2f 配股:%.2f\n",
+				item.FenHong, item.PeiGuJia, item.SongZhuanGu, item.PeiGu)
+		default:
+			fmt.Printf("流通:%.0f 总股本:%.0f\n", item.PanHouLiuTong, item.HouZongGuBen)
+		}
+	}
+	return nil
+}
+
+var financeCmd = &cobra.Command{
+	Use:   "finance [code]",
+	Short: "查询财务数据",
+	Args:  cobra.MinimumNArgs(1),
+	RunE:  runFinance,
+}
+
+func runFinance(cmd *cobra.Command, args []string) error {
+	client, err := tdx.DialHosts(nil)
+	if err != nil {
+		return fmt.Errorf("连接服务器失败: %w", err)
+	}
+	defer client.Close()
+
+	info, err := client.GetFinanceInfo(args[0])
+	if err != nil {
+		return fmt.Errorf("获取财务数据失败: %w", err)
+	}
+
+	fmt.Printf("总股本: %.2f万  流通股本: %.2f万\n", info.ZongGuBen, info.LiuTongGuBen)
+	fmt.Printf("总资产: %.2f万  净资产: %.2f万\n", info.ZongZiChan, info.JingZiChan)
+	fmt.Printf("主营收入: %.2f万  净利润: %.2f万\n", info.ZhuYingShouRu, info.JingLiRun)
+	fmt.Printf("每股净资产: %.4f  股东人数: %.0f\n", info.MeiGuJingZiChan, info.GuDongRenShu)
+	fmt.Printf("IPO日期: %d  更新日期: %d\n", info.IPODate, info.UpdatedDate)
+	return nil
+}
+
+var (
+	indexCode string
+	indexType string
+)
+
+var indexCmd = &cobra.Command{
+	Use:   "index",
+	Short: "查询指数K线数据",
+	RunE:  runIndex,
+}
+
+func init() {
+	indexCmd.Flags().StringVarP(&indexCode, "code", "c", "", "指数代码")
+	indexCmd.Flags().StringVarP(&indexType, "type", "t", "day", "K线类型: 1m/5m/15m/30m/60m/day/week/month")
+	indexCmd.MarkFlagRequired("code")
+}
+
+func runIndex(cmd *cobra.Command, args []string) error {
+	ktype := uint8(9)
+	switch indexType {
+	case "1m", "minute":
+		ktype = 7
+	case "5m":
+		ktype = 0
+	case "15m":
+		ktype = 1
+	case "30m":
+		ktype = 2
+	case "60m":
+		ktype = 3
+	case "day":
+		ktype = 9
+	case "week":
+		ktype = 5
+	case "month":
+		ktype = 6
+	}
+
+	client, err := tdx.DialHosts(nil)
+	if err != nil {
+		return fmt.Errorf("连接服务器失败: %w", err)
+	}
+	defer client.Close()
+
+	bars, err := client.GetIndexBars(indexCode, ktype, 0, 100)
+	if err != nil {
+		return fmt.Errorf("获取指数K线失败: %w", err)
+	}
+
+	fmt.Printf("共获取 %d 条指数K线数据\n", len(bars))
+	for _, b := range bars {
+		fmt.Printf("%s O:%.2f H:%.2f L:%.2f C:%.2f V:%.2f Up:%d Down:%d\n",
+			b.Time.Format("2006-01-02"), b.Open, b.High, b.Low, b.Close, b.Volume, b.UpCount, b.DownCount)
+	}
+	return nil
+}
+
+var companyCmd = &cobra.Command{
+	Use:   "company [code]",
+	Short: "查询公司信息(F10)",
+	Args:  cobra.MinimumNArgs(1),
+	RunE:  runCompany,
+}
+
+func runCompany(cmd *cobra.Command, args []string) error {
+	client, err := tdx.DialHosts(nil)
+	if err != nil {
+		return fmt.Errorf("连接服务器失败: %w", err)
+	}
+	defer client.Close()
+
+	cats, err := client.GetCompanyInfoCategory(args[0])
+	if err != nil {
+		return fmt.Errorf("获取公司信息目录失败: %w", err)
+	}
+
+	for _, cat := range cats {
+		fmt.Printf("[%s] %s (offset:%d len:%d)\n", cat.Filename, cat.Name, cat.Start, cat.Length)
+	}
+	return nil
+}
+
+var (
+	blockFile string
+)
+
+var blockCmd = &cobra.Command{
+	Use:   "block",
+	Short: "查询板块分类信息",
+	RunE:  runBlock,
+}
+
+func init() {
+	blockCmd.Flags().StringVarP(&blockFile, "file", "f", "block_zs.dat", "板块文件: block.dat/block_zs.dat/block_fg.dat/block_gn.dat")
+}
+
+func runBlock(cmd *cobra.Command, args []string) error {
+	client, err := tdx.DialHosts(nil)
+	if err != nil {
+		return fmt.Errorf("连接服务器失败: %w", err)
+	}
+	defer client.Close()
+
+	items, err := client.GetBlockInfoAll(blockFile)
+	if err != nil {
+		return fmt.Errorf("获取板块信息失败: %w", err)
+	}
+
+	fmt.Printf("共获取 %d 条板块记录\n", len(items))
+	for _, item := range items {
+		fmt.Printf("[%s] %s (type:%d)\n", item.BlockName, item.StockCode, item.BlockType)
+	}
+	return nil
 }
 
 func runTrade(cmd *cobra.Command, args []string) error {
