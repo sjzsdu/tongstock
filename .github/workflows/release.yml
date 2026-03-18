@@ -1,0 +1,106 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+          - os: windows-latest
+            goos: windows
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Get tag
+        id: get_tag
+        shell: bash
+        run: echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build CLI (Unix)
+        if: matrix.goos != 'windows'
+        run: |
+          go build -o tongstock-cli-${{ steps.get_tag.outputs.TAG }}-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/cli
+
+      - name: Build CLI (Windows)
+        if: matrix.goos == 'windows'
+        run: |
+          go build -o tongstock-cli-${{ steps.get_tag.outputs.TAG }}-${{ matrix.goos }}-${{ matrix.goarch }}.exe ./cmd/cli
+
+      - name: Build Server (Unix)
+        if: matrix.goos != 'windows'
+        run: |
+          go build -o tongstock-server-${{ steps.get_tag.outputs.TAG }}-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/server
+
+      - name: Build Server (Windows)
+        if: matrix.goos == 'windows'
+        run: |
+          go build -o tongstock-server-${{ steps.get_tag.outputs.TAG }}-${{ matrix.goos }}-${{ matrix.goarch }}.exe ./cmd/server
+
+      - name: Upload CLI
+        uses: actions/upload-artifact@v4
+        with:
+          name: tongstock-cli-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: tongstock-cli-*
+
+      - name: Upload Server
+        uses: actions/upload-artifact@v4
+        with:
+          name: tongstock-server-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: tongstock-server-*
+
+  release:
+    name: Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: tongstock-*
+          merge-multiple: true
+
+      - name: Prepare files
+        run: |
+          ls -la artifacts/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          draft: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
