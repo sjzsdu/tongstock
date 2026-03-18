@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sjzsdu/tongstock/pkg/config"
 	"github.com/sjzsdu/tongstock/pkg/tdx"
 	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
 )
@@ -13,8 +14,13 @@ import (
 var client *tdx.Client
 
 func main() {
+	if err := config.Init(); err != nil {
+		log.Printf("加载配置失败: %v, 使用默认配置", err)
+	}
+	cfg := config.Get()
+
 	var err error
-	client, err = tdx.DialHosts(nil)
+	client, err = tdx.DialHosts(cfg.TDX.Hosts)
 	if err != nil {
 		log.Printf("连接服务器失败: %v, 将在请求时重连", err)
 	}
@@ -37,8 +43,9 @@ func main() {
 	r.GET("/api/company/content", handleCompanyContent)
 	r.GET("/api/block", handleBlock)
 
-	log.Println("服务启动于 http://localhost:8080")
-	if err := r.Run(":8080"); err != nil {
+	addr := fmt.Sprintf(":%d", cfg.Server.Port)
+	log.Printf("服务启动于 http://localhost:%d", cfg.Server.Port)
+	if err := r.Run(addr); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -47,7 +54,7 @@ func getClient() (*tdx.Client, error) {
 	if client != nil {
 		return client, nil
 	}
-	return tdx.DialHosts(nil)
+	return tdx.DialHosts(config.Get().TDX.Hosts)
 }
 
 func handleQuote(c *gin.Context) {

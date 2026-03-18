@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/sjzsdu/tongstock/pkg/config"
 	"github.com/sjzsdu/tongstock/pkg/tdx"
 	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
 	"github.com/spf13/cobra"
@@ -19,6 +20,13 @@ func main() {
 var rootCmd = &cobra.Command{
 	Use:   "tongstock",
 	Short: "通达信股票数据查询工具",
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		return config.Init()
+	},
+}
+
+func dialClient() (*tdx.Client, error) {
+	return tdx.DialHosts(config.Get().TDX.Hosts)
 }
 
 func init() {
@@ -42,7 +50,7 @@ var quoteCmd = &cobra.Command{
 }
 
 func runQuote(cmd *cobra.Command, args []string) error {
-	client, err := tdx.DialHosts(nil)
+	client, err := dialClient()
 	if err != nil {
 		return fmt.Errorf("连接服务器失败: %w", err)
 	}
@@ -76,7 +84,7 @@ func init() {
 }
 
 func runCodes(cmd *cobra.Command, args []string) error {
-	client, err := tdx.DialHosts(nil)
+	client, err := dialClient()
 	if err != nil {
 		return fmt.Errorf("连接服务器失败: %w", err)
 	}
@@ -139,7 +147,7 @@ func runKline(cmd *cobra.Command, args []string) error {
 		ktype = 11
 	}
 
-	client, err := tdx.DialHosts(nil)
+	client, err := dialClient()
 	if err != nil {
 		return fmt.Errorf("连接服务器失败: %w", err)
 	}
@@ -171,7 +179,7 @@ var minuteCmd = &cobra.Command{
 }
 
 func runMinute(cmd *cobra.Command, args []string) error {
-	client, err := tdx.DialHosts(nil)
+	client, err := dialClient()
 	if err != nil {
 		return fmt.Errorf("连接服务器失败: %w", err)
 	}
@@ -219,7 +227,7 @@ var xdxrCmd = &cobra.Command{
 }
 
 func runXdXr(cmd *cobra.Command, args []string) error {
-	client, err := tdx.DialHosts(nil)
+	client, err := dialClient()
 	if err != nil {
 		return fmt.Errorf("连接服务器失败: %w", err)
 	}
@@ -252,7 +260,7 @@ var financeCmd = &cobra.Command{
 }
 
 func runFinance(cmd *cobra.Command, args []string) error {
-	client, err := tdx.DialHosts(nil)
+	client, err := dialClient()
 	if err != nil {
 		return fmt.Errorf("连接服务器失败: %w", err)
 	}
@@ -309,7 +317,7 @@ func runIndex(cmd *cobra.Command, args []string) error {
 		ktype = 6
 	}
 
-	client, err := tdx.DialHosts(nil)
+	client, err := dialClient()
 	if err != nil {
 		return fmt.Errorf("连接服务器失败: %w", err)
 	}
@@ -336,7 +344,7 @@ var companyCmd = &cobra.Command{
 }
 
 func runCompany(cmd *cobra.Command, args []string) error {
-	client, err := tdx.DialHosts(nil)
+	client, err := dialClient()
 	if err != nil {
 		return fmt.Errorf("连接服务器失败: %w", err)
 	}
@@ -368,7 +376,7 @@ func init() {
 }
 
 func runBlock(cmd *cobra.Command, args []string) error {
-	client, err := tdx.DialHosts(nil)
+	client, err := dialClient()
 	if err != nil {
 		return fmt.Errorf("连接服务器失败: %w", err)
 	}
@@ -387,7 +395,7 @@ func runBlock(cmd *cobra.Command, args []string) error {
 }
 
 func runTrade(cmd *cobra.Command, args []string) error {
-	client, err := tdx.DialHosts(nil)
+	client, err := dialClient()
 	if err != nil {
 		return fmt.Errorf("连接服务器失败: %w", err)
 	}

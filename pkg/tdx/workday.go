@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"sync"
 	"time"
-
-	_ "github.com/mattn/go-sqlite3"
 )
 
 type Workday struct {
@@ -23,12 +21,12 @@ var (
 func GetWorkday(dbPath string) (*Workday, error) {
 	var err error
 	workdayOnce.Do(func() {
-		db, e := sql.Open("sqlite3", dbPath+"?cache=shared")
+		database, e := openDatabase(dbPath)
 		if e != nil {
 			err = e
 			return
 		}
-		workday = &Workday{db: db, loc: time.Local}
+		workday = &Workday{db: database, loc: time.Local}
 		err = workday.init()
 	})
 	return workday, err

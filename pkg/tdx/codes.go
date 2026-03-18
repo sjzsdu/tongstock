@@ -1,19 +1,21 @@
 package tdx
 
 import (
-	"database/sql"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/sjzsdu/tongstock/pkg/cache"
+	"github.com/sjzsdu/tongstock/pkg/config"
 	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
 )
 
 type CodeStore struct {
-	db   *sql.DB
-	mu   sync.RWMutex
-	date time.Time
+	cache  cache.Cache
+	dateMu sync.RWMutex
+	date   time.Time
+	ttl    time.Duration
 }
 
 var (
@@ -21,124 +23,95 @@ var (
 	storeOnce sync.Once
 )
 
-func GetCodeStore(dbPath string) (*CodeStore, error) {
+func GetCodeStore(cachePath string) (*CodeStore, error) {
 	var err error
 	storeOnce.Do(func() {
-		db, e := sql.Open("sqlite3", dbPath+"?cache=shared")
-		if e != nil {
-			err = e
+		var c cache.Cache
+		cfg := config.Get()
+		if cfg.Cache.Backend == "file" {
+			c, err = cache.NewFileCache(cfg.Cache.Dir)
+		} else {
+			if cachePath == "" {
+				cachePath = config.DBPath()
+			}
+			c, err = cache.NewSQLiteCache(cachePath)
+		}
+		if err != nil {
 			return
 		}
-		store = &CodeStore{db: db, date: time.Now()}
-		err = store.init()
+		store = &CodeStore{cache: c, ttl: 24 * time.Hour}
 	})
 	return store, err
 }
 
-func (s *CodeStore) init() error {
-	_, err := s.db.Exec(`
-		CREATE TABLE IF NOT EXISTS codes (
-			code TEXT PRIMARY KEY,
-			name TEXT,
-			exchange TEXT,
-			updated_at INTEGER
-		);
-		CREATE INDEX IF NOT EXISTS idx_exchange ON codes(exchange);
-	`)
-	return err
-}
-
 func (s *CodeStore) SaveCodes(codes []*protocol.CodeItem, exchange protocol.Exchange) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	tx, err := s.db.Begin()
+	data, err := json.Marshal(codes)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
-
-	stmt, err := tx.Prepare(`
-		INSERT OR REPLACE INTO codes (code, name, exchange, updated_at)
-		VALUES (?, ?, ?, ?)
-	`)
-	if err != nil {
+	key := exchange.String()
+	if err := s.cache.Set("codes", key, data, cache.WithTTL(s.ttl)); err != nil {
 		return err
 	}
-	defer stmt.Close()
-
-	now := time.Now().Unix()
-	for _, c := range codes {
-		_, err := stmt.Exec(c.Code, c.Name, exchange.String(), now)
-		if err != nil {
-			return err
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return err
-	}
+	s.dateMu.Lock()
 	s.date = time.Now()
+	s.dateMu.Unlock()
 	return nil
 }
 
 func (s *CodeStore) GetCodes(exchange protocol.Exchange) ([]*protocol.CodeItem, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	rows, err := s.db.Query(`
-		SELECT code, name FROM codes
-		WHERE exchange = ?
-		ORDER BY code
-	`, exchange.String())
+	key := exchange.String()
+	data, err := s.cache.Get("codes", key)
 	if err != nil {
+		if err == cache.ErrNotFound || err == cache.ErrExpired {
+			return nil, nil
+		}
 		return nil, err
 	}
-	defer rows.Close()
 
 	var items []*protocol.CodeItem
-	for rows.Next() {
-		var c protocol.CodeItem
-		if err := rows.Scan(&c.Code, &c.Name); err != nil {
-			return nil, err
-		}
-		items = append(items, &c)
+	if err := json.Unmarshal(data, &items); err != nil {
+		return nil, err
 	}
 	return items, nil
 }
 
 func (s *CodeStore) GetCode(code string) (*protocol.CodeItem, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	var c protocol.CodeItem
-	err := s.db.QueryRow(`
-		SELECT code, name FROM codes
-		WHERE code = ?
-	`, code).Scan(&c.Code, &c.Name)
-	if err != nil {
-		return nil, err
+	exchanges := []protocol.Exchange{protocol.ExchangeSZ, protocol.ExchangeSH, protocol.ExchangeBJ}
+	for _, ex := range exchanges {
+		items, err := s.GetCodes(ex)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range items {
+			if c.Code == code {
+				return c, nil
+			}
+		}
 	}
-	return &c, nil
+	return nil, fmt.Errorf("code not found")
 }
 
 func (s *CodeStore) NeedUpdate(exchange protocol.Exchange, maxAge time.Duration) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.dateMu.RLock()
+	defer s.dateMu.RUnlock()
+
+	if s.date.IsZero() {
+		return true
+	}
 	return time.Since(s.date) > maxAge
 }
 
 func (s *CodeStore) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.db != nil {
-		return s.db.Close()
+	if s.cache != nil {
+		return s.cache.Close()
 	}
 	return nil
 }
 
 func (s *CodeStore) String() string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.dateMu.RLock()
+	defer s.dateMu.RUnlock()
+
 	return fmt.Sprintf("CodeStore{date: %s}", s.date.Format("2006-01-02"))
 }

@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
 )
 
@@ -24,12 +23,12 @@ var (
 func GetKlineStore(dbPath string) (*KlineStore, error) {
 	var err error
 	klineStoreOnce.Do(func() {
-		db, e := sql.Open("sqlite3", dbPath+"?cache=shared")
+		database, e := openDatabase(dbPath)
 		if e != nil {
 			err = e
 			return
 		}
-		klineStore = &KlineStore{db: db, loc: time.Local}
+		klineStore = &KlineStore{db: database, loc: time.Local}
 		err = klineStore.init()
 	})
 	return klineStore, err
