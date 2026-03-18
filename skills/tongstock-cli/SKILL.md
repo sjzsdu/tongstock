@@ -1,6 +1,6 @@
 ---
 name: tongstock-cli
-description: "TDX (通达信) stock market data CLI and HTTP API reference. Use when querying Chinese A-share market data: real-time quotes with 5-level bid/ask, K-line (candlestick) data, intraday minute data, tick-by-tick trades, ex-rights/dividend history, financial statements, index bars, sector/industry classification, and company F10 info. Triggers on: stock quote, K-line, candlestick, A-share, 通达信, TDX, market data, 行情, K线, 除权除息, 财务数据, 板块."
+description: "TDX (通达信) CLI/HTTP API for Chinese A-share market data (Shanghai, Shenzhen, Beijing exchanges only). Supports: real-time 5-level bid/ask quotes, K-line (candlestick), intraday minute data, tick-by-tick trades, ex-rights/dividend history, financial statements, index bars, sector/industry classification, and company F10 info. Triggers on: stock quote, K-line, candlestick, A-share, 通达信, TDX, market data, 行情, K线, 除权除息, 财务数据, 板块."
 license: MIT
 allowed-tools: Bash
 ---

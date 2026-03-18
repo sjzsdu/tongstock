@@ -1,6 +1,6 @@
 ---
 name: tongstock-workflow
-description: "Chinese A-share stock analysis workflows using TongStock CLI. Use when user asks to analyze a stock, screen stocks by fundamentals, check dividend history, compare sector performance, or build a stock research report. Triggers on: analyze stock, stock screening, 股票分析, 基本面, 选股, research report, sector analysis, dividend analysis."
+description: "Chinese A-share stock analysis workflows using TongStock CLI (Shanghai, Shenzhen, Beijing exchanges only). Use when user asks to analyze a stock, screen stocks by fundamentals, check dividend history, compare sector performance, or build a stock research report. Triggers on: analyze stock, stock screening, 股票分析, 基本面, 选股, research report, sector analysis, dividend analysis."
 license: MIT
 allowed-tools: Bash
 ---
