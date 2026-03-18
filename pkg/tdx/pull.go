@@ -120,6 +120,19 @@ func (s *KlineStore) GetKline(code string, ktype uint8, startDate, endDate strin
 	return klines, nil
 }
 
+// GetLatestDate returns the latest date string for a given code and ktype.
+// Returns empty string and sql.ErrNoRows if no data exists.
+func (s *KlineStore) GetLatestDate(code string, ktype uint8) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var date string
+	err := s.db.QueryRow(
+		`SELECT date FROM kline WHERE code = ? AND ktype = ? ORDER BY date DESC LIMIT 1`,
+		code, ktype,
+	).Scan(&date)
+	return date, err
+}
+
 type PullKlineOption struct {
 	PoolSize   int
 	BatchSize  int

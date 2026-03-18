@@ -11,7 +11,7 @@ import (
 	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
 )
 
-var client *tdx.Client
+var svc *tdx.Service
 
 func main() {
 	if err := config.Init(); err != nil {
@@ -19,10 +19,14 @@ func main() {
 	}
 	cfg := config.Get()
 
-	var err error
-	client, err = tdx.DialHosts(cfg.TDX.Hosts)
+	client, err := tdx.DialHosts(cfg.TDX.Hosts)
 	if err != nil {
 		log.Printf("连接服务器失败: %v, 将在请求时重连", err)
+	} else {
+		svc, err = tdx.NewService(client)
+		if err != nil {
+			log.Printf("初始化服务失败: %v", err)
+		}
 	}
 
 	r := gin.Default()
@@ -50,11 +54,21 @@ func main() {
 	}
 }
 
-func getClient() (*tdx.Client, error) {
-	if client != nil {
-		return client, nil
+func getService() (*tdx.Service, error) {
+	if svc != nil {
+		return svc, nil
 	}
-	return tdx.DialHosts(config.Get().TDX.Hosts)
+	client, err := tdx.DialHosts(config.Get().TDX.Hosts)
+	if err != nil {
+		return nil, err
+	}
+	var s *tdx.Service
+	s, err = tdx.NewService(client)
+	if err != nil {
+		return nil, err
+	}
+	svc = s
+	return svc, nil
 }
 
 func handleQuote(c *gin.Context) {
@@ -64,13 +78,13 @@ func handleQuote(c *gin.Context) {
 		return
 	}
 
-	cli, err := getClient()
+	svc, err := getService()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("连接失败: %v", err)})
 		return
 	}
 
-	quotes, err := cli.GetQuote(code)
+	quotes, err := svc.Client.GetQuote(code)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取行情失败: %v", err)})
 		return
@@ -93,37 +107,15 @@ func handleKline(c *gin.Context) {
 		return
 	}
 
-	klineType := uint8(9)
-	switch ktype {
-	case "1m", "minute":
-		klineType = 7
-	case "5m":
-		klineType = 0
-	case "15m":
-		klineType = 1
-	case "30m":
-		klineType = 2
-	case "60m":
-		klineType = 3
-	case "day":
-		klineType = 9
-	case "week":
-		klineType = 5
-	case "month":
-		klineType = 6
-	case "quarter":
-		klineType = 10
-	case "year":
-		klineType = 11
-	}
+	klineType := tdx.ParseKlineType(ktype)
 
-	cli, err := getClient()
+	svc, err := getService()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("连接失败: %v", err)})
 		return
 	}
 
-	klines, err := cli.GetKline(code, klineType, 0, 100)
+	klines, err := svc.FetchKline(code, klineType, 0, 100)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取K线失败: %v", err)})
 		return
@@ -136,13 +128,13 @@ func handleCodes(c *gin.Context) {
 	exchangeStr := c.DefaultQuery("exchange", "sz")
 	exchange := protocol.ParseExchange(exchangeStr)
 
-	cli, err := getClient()
+	svc, err := getService()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("连接失败: %v", err)})
 		return
 	}
 
-	codes, err := cli.GetCode(exchange)
+	codes, err := svc.FetchCodes(exchange)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取代码失败: %v", err)})
 		return
@@ -158,13 +150,13 @@ func handleMinute(c *gin.Context) {
 		return
 	}
 
-	cli, err := getClient()
+	svc, err := getService()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("连接失败: %v", err)})
 		return
 	}
 
-	resp, err := cli.GetMinute(code)
+	resp, err := svc.Client.GetMinute(code)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取分时数据失败: %v", err)})
 		return
@@ -180,13 +172,13 @@ func handleXdXr(c *gin.Context) {
 		return
 	}
 
-	cli, err := getClient()
+	svc, err := getService()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("连接失败: %v", err)})
 		return
 	}
 
-	items, err := cli.GetXdXrInfo(code)
+	items, err := svc.Client.GetXdXrInfo(code)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取除权除息失败: %v", err)})
 		return
@@ -202,13 +194,13 @@ func handleFinance(c *gin.Context) {
 		return
 	}
 
-	cli, err := getClient()
+	svc, err := getService()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("连接失败: %v", err)})
 		return
 	}
 
-	info, err := cli.GetFinanceInfo(code)
+	info, err := svc.Client.GetFinanceInfo(code)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取财务数据失败: %v", err)})
 		return
@@ -226,37 +218,15 @@ func handleIndex(c *gin.Context) {
 		return
 	}
 
-	klineType := uint8(9)
-	switch ktype {
-	case "1m", "minute":
-		klineType = 7
-	case "5m":
-		klineType = 0
-	case "15m":
-		klineType = 1
-	case "30m":
-		klineType = 2
-	case "60m":
-		klineType = 3
-	case "day":
-		klineType = 9
-	case "week":
-		klineType = 5
-	case "month":
-		klineType = 6
-	case "quarter":
-		klineType = 10
-	case "year":
-		klineType = 11
-	}
+	klineType := tdx.ParseKlineType(ktype)
 
-	cli, err := getClient()
+	svc, err := getService()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("连接失败: %v", err)})
 		return
 	}
 
-	bars, err := cli.GetIndexBars(code, klineType, 0, 100)
+	bars, err := svc.Client.GetIndexBars(code, klineType, 0, 100)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取指数K线失败: %v", err)})
 		return
@@ -272,13 +242,13 @@ func handleCompany(c *gin.Context) {
 		return
 	}
 
-	cli, err := getClient()
+	svc, err := getService()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("连接失败: %v", err)})
 		return
 	}
 
-	cats, err := cli.GetCompanyInfoCategory(code)
+	cats, err := svc.Client.GetCompanyInfoCategory(code)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取公司信息失败: %v", err)})
 		return
@@ -298,13 +268,13 @@ func handleCompanyContent(c *gin.Context) {
 	start := uint32(0)
 	length := uint32(10000)
 
-	cli, err := getClient()
+	svc, err := getService()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("连接失败: %v", err)})
 		return
 	}
 
-	content, err := cli.GetCompanyInfoContent(code, filename, start, length)
+	content, err := svc.Client.GetCompanyInfoContent(code, filename, start, length)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取公司信息内容失败: %v", err)})
 		return
@@ -316,13 +286,13 @@ func handleCompanyContent(c *gin.Context) {
 func handleBlock(c *gin.Context) {
 	blockFile := c.DefaultQuery("file", "block_zs.dat")
 
-	cli, err := getClient()
+	svc, err := getService()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("连接失败: %v", err)})
 		return
 	}
 
-	items, err := cli.GetBlockInfoAll(blockFile)
+	items, err := svc.Client.GetBlockInfoAll(blockFile)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取板块信息失败: %v", err)})
 		return
@@ -338,12 +308,11 @@ func handleTrade(c *gin.Context) {
 		return
 	}
 
-	cli, err := getClient()
+	svc, err := getService()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("连接失败: %v", err)})
 		return
 	}
-
 	start := uint16(0)
 	count := uint16(100)
 	date := c.Query("date")
@@ -351,9 +320,9 @@ func handleTrade(c *gin.Context) {
 
 	var resp *protocol.TradeResp
 	if history && date != "" {
-		resp, err = cli.GetHistoryMinuteTrade(date, code, start, count)
+		resp, err = svc.Client.GetHistoryMinuteTrade(date, code, start, count)
 	} else {
-		resp, err = cli.GetMinuteTrade(code, start, count)
+		resp, err = svc.Client.GetMinuteTrade(code, start, count)
 	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取分笔数据失败: %v", err)})

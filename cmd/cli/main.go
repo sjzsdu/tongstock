@@ -25,6 +25,16 @@ var rootCmd = &cobra.Command{
 	},
 }
 
+// dialService creates a connected Service wrapper around a Client.
+func dialService() (*tdx.Service, error) {
+	client, err := tdx.DialHosts(config.Get().TDX.Hosts)
+	if err != nil {
+		return nil, err
+	}
+	return tdx.NewService(client)
+}
+
+// dialClient keeps backward compatibility for commands that use the raw Client.
 func dialClient() (*tdx.Client, error) {
 	return tdx.DialHosts(config.Get().TDX.Hosts)
 }
@@ -84,14 +94,13 @@ func init() {
 }
 
 func runCodes(cmd *cobra.Command, args []string) error {
-	client, err := dialClient()
+	svc, err := dialService()
 	if err != nil {
 		return fmt.Errorf("连接服务器失败: %w", err)
 	}
-	defer client.Close()
-
+	defer svc.Close()
 	exchange := protocol.ParseExchange(codesExchange)
-	codes, err := client.GetCode(exchange)
+	codes, err := svc.FetchCodes(exchange)
 	if err != nil {
 		return fmt.Errorf("获取代码失败: %w", err)
 	}
@@ -123,41 +132,20 @@ func init() {
 }
 
 func runKline(cmd *cobra.Command, args []string) error {
-	ktype := uint8(9)
-	switch klineType {
-	case "1m", "minute":
-		ktype = 7
-	case "5m":
-		ktype = 0
-	case "15m":
-		ktype = 1
-	case "30m":
-		ktype = 2
-	case "60m":
-		ktype = 3
-	case "day":
-		ktype = 9
-	case "week":
-		ktype = 5
-	case "month":
-		ktype = 6
-	case "quarter":
-		ktype = 10
-	case "year":
-		ktype = 11
-	}
+	// Parse kline type using shared helper
+	ktype := tdx.ParseKlineType(klineType)
 
-	client, err := dialClient()
+	svc, err := dialService()
 	if err != nil {
 		return fmt.Errorf("连接服务器失败: %w", err)
 	}
-	defer client.Close()
+	defer svc.Close()
 
 	var klines []*protocol.Kline
 	if klineAll {
-		klines, err = client.GetKlineAll(klineCode, ktype)
+		klines, err = svc.FetchKlineAll(klineCode, ktype)
 	} else {
-		klines, err = client.GetKline(klineCode, ktype, 0, 100)
+		klines, err = svc.FetchKline(klineCode, ktype, 0, 100)
 	}
 	if err != nil {
 		return fmt.Errorf("获取K线失败: %w", err)
@@ -297,25 +285,7 @@ func init() {
 }
 
 func runIndex(cmd *cobra.Command, args []string) error {
-	ktype := uint8(9)
-	switch indexType {
-	case "1m", "minute":
-		ktype = 7
-	case "5m":
-		ktype = 0
-	case "15m":
-		ktype = 1
-	case "30m":
-		ktype = 2
-	case "60m":
-		ktype = 3
-	case "day":
-		ktype = 9
-	case "week":
-		ktype = 5
-	case "month":
-		ktype = 6
-	}
+	ktype := tdx.ParseKlineType(indexType)
 
 	client, err := dialClient()
 	if err != nil {
