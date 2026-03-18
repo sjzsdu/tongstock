@@ -4,8 +4,10 @@
 
 ## 功能特性
 
-- **实时行情** - 五档买卖盘、涨跌幅、成交量等
-- **K线数据** - 支持 1分钟/5分钟/15分钟/30分钟/60分钟/日/周/月 K线
+- **实时行情** - 涨跌幅、成交量、成交额等
+- **K线数据** - 支持 1分钟/5分钟/15分钟/30分钟/60分钟/日/周/月/季/年 K线
+- **分时数据** - 当日分时走势数据
+- **分笔成交** - 当日及历史分笔成交数据
 - **股票代码** - 获取沪深北交易所所有股票代码
 - **双模式** - CLI 命令行工具 + HTTP REST API
 
@@ -13,8 +15,8 @@
 
 ```bash
 # 克隆项目
-git clone https://github.com/your-repo/TongStock.git
-cd TongStock
+git clone https://github.com/sjzsdu/tongstock.git
+cd tongstock
 
 # 编译
 go build -o tongstock-cli ./cmd/cli
@@ -41,11 +43,14 @@ go build -o tongstock-server ./cmd/server
 ### 获取股票代码列表
 
 ```bash
-# 深圳市场
+# 深圳市场 (默认)
 ./tongstock-cli codes
 
 # 上海市场
 ./tongstock-cli codes --exchange sh
+
+# 北京市场
+./tongstock-cli codes --exchange bj
 ```
 
 ### 查询K线数据
@@ -62,6 +67,35 @@ go build -o tongstock-server ./cmd/server
 
 # 1分钟K
 ./tongstock-cli kline --code 000001 --type 1m
+
+# 5分钟K
+./tongstock-cli kline --code 000001 --type 5m
+
+# 季K
+./tongstock-cli kline --code 000001 --type quarter
+
+# 年K
+./tongstock-cli kline --code 000001 --type year
+
+# 获取全部历史K线
+./tongstock-cli kline --code 000001 --type day --all
+```
+
+### 查询分时数据
+
+```bash
+# 查询当日分时数据
+./tongstock-cli minute 000001
+```
+
+### 查询分笔成交
+
+```bash
+# 查询当日分笔成交
+./tongstock-cli trade 000001
+
+# 查询历史分笔成交 (需要指定日期)
+./tongstock-cli trade 000001 --history --date 20240315
 ```
 
 ## HTTP API 使用方法
@@ -80,8 +114,10 @@ go build -o tongstock-server ./cmd/server
 |------|------|------|------|
 | `/health` | GET | - | 健康检查 |
 | `/api/quote` | GET | `code` | 实时行情 |
-| `/api/kline` | GET | `code`, `type` | K线数据 |
+| `/api/kline` | GET | `code`, `type`, `start`, `count` | K线数据 |
 | `/api/codes` | GET | `exchange` | 股票代码 |
+| `/api/minute` | GET | `code` | 当日分时数据 |
+| `/api/trade` | GET | `code`, `start`, `count`, `date`, `history` | 分笔成交数据 |
 
 ### 示例
 
@@ -94,13 +130,24 @@ curl "http://localhost:8080/api/kline?code=000001&type=day"
 
 # 获取股票列表
 curl "http://localhost:8080/api/codes?exchange=sz"
+
+# 查询分时数据
+curl "http://localhost:8080/api/minute?code=000001"
+
+# 查询分笔成交
+curl "http://localhost:8080/api/trade?code=000001"
+
+# 查询历史分笔成交
+curl "http://localhost:8080/api/trade?code=000001&history=true&date=20240315"
 ```
 
 ## 配置
 
 暂无配置文件，服务器地址使用内置默认值（通达信公网服务器）。
 
-如需自定义服务器，可在代码中修改 `pkg/tdx/client.go` 中的 `DefaultHosts` 变量。
+如需自定义服务器，可在代码中修改 `pkg/tdx/hosts.go` 中的 `SHHosts`、`BJHosts`、`GZHosts`、`WHHosts` 变量。
+
+`configs/` 目录预留用于后续配置支持。
 
 ## K线类型参数说明
 
@@ -114,27 +161,42 @@ curl "http://localhost:8080/api/codes?exchange=sz"
 | `day` | 日K |
 | `week` | 周K |
 | `month` | 月K |
+| `quarter` | 季K |
+| `year` | 年K |
 
 ## 项目结构
 
 ```
-TongStock/
+tongstock/
 ├── cmd/
-│   ├── cli/           # CLI 工具
-│   └── server/        # HTTP API 服务
+│   ├── cli/              # CLI 工具
+│   │   └── main.go       # 命令行入口
+│   └── server/           # HTTP API 服务
+│       └── main.go       # 服务入口
 ├── pkg/
-│   ├── tdx/           # TDX 协议实现
-│   │   ├── client.go  # 客户端
-│   │   └── protocol/  # 协议解析
-│   └── utils/         # 工具函数
-├── configs/           # 配置文件
+│   ├── tdx/              # TDX 协议实现
+│   │   ├── client.go     # 客户端
+│   │   ├── hosts.go      # 服务器地址
+│   │   ├── codes.go      # 股票代码
+│   │   ├── pull.go       # 行情拉取
+│   │   ├── workday.go    # 交易日判断
+│   │   ├── bj_codes.go   # 北京交易所代码
+│   │   └── protocol/    # 协议解析
+│   │       ├── quote.go  # 行情解析
+│   │       ├── kline.go  # K线解析
+│   │       ├── minute.go # 分时解析
+│   │       ├── trade.go  # 分笔解析
+│   │       ├── code.go   # 代码解析
+│   │       └── ...
+│   └── utils/            # 工具函数
+├── configs/              # 配置文件 (预留)
 └── README.md
 ```
 
 ## 技术栈
 
-- **Go 1.25** - 开发语言
-- **urfave/cli** - CLI 框架
+- **Go 1.22+** - 开发语言
+- **spf13/cobra** - CLI 框架
 - **Gin** - HTTP 框架
 - **TDX 协议** - 通达信私有二进制协议
 
