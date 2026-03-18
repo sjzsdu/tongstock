@@ -128,7 +128,17 @@ go build -o tongstock-server ./cmd/server
 ### 查询公司信息(F10)
 
 ```bash
+# 查询公司信息目录
 ./tongstock-cli company 000001
+
+# 查询公司信息具体内容
+./tongstock-cli company-content 000001
+
+# 通过块名称查询特定内容
+./tongstock-cli company-content 000001 --block "公司概况"
+
+# 指定起始位置和长度
+./tongstock-cli company-content 000001 --start 30744 --length 9560
 ```
 
 ### 查询板块分类

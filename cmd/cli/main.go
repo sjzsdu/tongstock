@@ -49,6 +49,7 @@ func init() {
 	rootCmd.AddCommand(financeCmd)
 	rootCmd.AddCommand(indexCmd)
 	rootCmd.AddCommand(companyCmd)
+	rootCmd.AddCommand(companyContentCmd)
 	rootCmd.AddCommand(blockCmd)
 }
 
@@ -91,6 +92,9 @@ var codesCmd = &cobra.Command{
 
 func init() {
 	codesCmd.Flags().StringVarP(&codesExchange, "exchange", "e", "sz", "交易所: sz/sh/bj")
+	companyContentCmd.Flags().Uint32VarP(&companyContentStart, "start", "s", 0, "起始位置")
+	companyContentCmd.Flags().Uint32VarP(&companyContentLength, "length", "l", 10000, "内容长度")
+	companyContentCmd.Flags().StringVarP(&companyContentBlock, "block", "b", "", "块名称（如：公司概况）")
 }
 
 func runCodes(cmd *cobra.Command, args []string) error {
@@ -215,13 +219,13 @@ var xdxrCmd = &cobra.Command{
 }
 
 func runXdXr(cmd *cobra.Command, args []string) error {
-	client, err := dialClient()
+	svc, err := dialService()
 	if err != nil {
 		return fmt.Errorf("连接服务器失败: %w", err)
 	}
-	defer client.Close()
+	defer svc.Close()
 
-	items, err := client.GetXdXrInfo(args[0])
+	items, err := svc.FetchXdXr(args[0])
 	if err != nil {
 		return fmt.Errorf("获取除权除息失败: %w", err)
 	}
@@ -248,13 +252,13 @@ var financeCmd = &cobra.Command{
 }
 
 func runFinance(cmd *cobra.Command, args []string) error {
-	client, err := dialClient()
+	svc, err := dialService()
 	if err != nil {
 		return fmt.Errorf("连接服务器失败: %w", err)
 	}
-	defer client.Close()
+	defer svc.Close()
 
-	info, err := client.GetFinanceInfo(args[0])
+	info, err := svc.FetchFinance(args[0])
 	if err != nil {
 		return fmt.Errorf("获取财务数据失败: %w", err)
 	}
@@ -308,19 +312,19 @@ func runIndex(cmd *cobra.Command, args []string) error {
 
 var companyCmd = &cobra.Command{
 	Use:   "company [code]",
-	Short: "查询公司信息(F10)",
+	Short: "查询公司信息(F10)目录",
 	Args:  cobra.MinimumNArgs(1),
 	RunE:  runCompany,
 }
 
 func runCompany(cmd *cobra.Command, args []string) error {
-	client, err := dialClient()
+	svc, err := dialService()
 	if err != nil {
 		return fmt.Errorf("连接服务器失败: %w", err)
 	}
-	defer client.Close()
+	defer svc.Close()
 
-	cats, err := client.GetCompanyInfoCategory(args[0])
+	cats, err := svc.FetchCompanyCategory(args[0])
 	if err != nil {
 		return fmt.Errorf("获取公司信息目录失败: %w", err)
 	}
@@ -328,6 +332,67 @@ func runCompany(cmd *cobra.Command, args []string) error {
 	for _, cat := range cats {
 		fmt.Printf("[%s] %s (offset:%d len:%d)\n", cat.Filename, cat.Name, cat.Start, cat.Length)
 	}
+	return nil
+}
+
+var (
+	companyContentStart  uint32
+	companyContentLength uint32
+	companyContentBlock  string
+)
+
+var companyContentCmd = &cobra.Command{
+	Use:   "company-content [code] [filename]",
+	Short: "查询公司信息(F10)具体内容",
+	Args:  cobra.MinimumNArgs(1),
+	RunE:  runCompanyContent,
+}
+
+func runCompanyContent(cmd *cobra.Command, args []string) error {
+	svc, err := dialService()
+	if err != nil {
+		return fmt.Errorf("连接服务器失败: %w", err)
+	}
+	defer svc.Close()
+
+	code := args[0]
+	var filename string
+	if len(args) > 1 {
+		filename = args[1]
+	} else {
+		// 自动推断 filename
+		filename = code + ".txt"
+	}
+
+	start := companyContentStart
+	length := companyContentLength
+
+	// 如果指定了块名称，查找对应的 start 和 length
+	if companyContentBlock != "" {
+		cats, err := svc.FetchCompanyCategory(code)
+		if err != nil {
+			return fmt.Errorf("获取公司信息目录失败: %w", err)
+		}
+		found := false
+		for _, cat := range cats {
+			if cat.Name == companyContentBlock {
+				start = cat.Start
+				length = cat.Length
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("未找到块名称: %s", companyContentBlock)
+		}
+	}
+
+	content, err := svc.FetchCompanyContent(code, filename, start, length)
+	if err != nil {
+		return fmt.Errorf("获取公司信息内容失败: %w", err)
+	}
+
+	fmt.Println(content)
 	return nil
 }
 
@@ -346,13 +411,13 @@ func init() {
 }
 
 func runBlock(cmd *cobra.Command, args []string) error {
-	client, err := dialClient()
+	svc, err := dialService()
 	if err != nil {
 		return fmt.Errorf("连接服务器失败: %w", err)
 	}
-	defer client.Close()
+	defer svc.Close()
 
-	items, err := client.GetBlockInfoAll(blockFile)
+	items, err := svc.FetchBlock(blockFile)
 	if err != nil {
 		return fmt.Errorf("获取板块信息失败: %w", err)
 	}

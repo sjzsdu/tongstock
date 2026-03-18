@@ -178,7 +178,7 @@ func handleXdXr(c *gin.Context) {
 		return
 	}
 
-	items, err := svc.Client.GetXdXrInfo(code)
+	items, err := svc.FetchXdXr(code)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取除权除息失败: %v", err)})
 		return
@@ -200,7 +200,7 @@ func handleFinance(c *gin.Context) {
 		return
 	}
 
-	info, err := svc.Client.GetFinanceInfo(code)
+	info, err := svc.FetchFinance(code)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取财务数据失败: %v", err)})
 		return
@@ -248,7 +248,7 @@ func handleCompany(c *gin.Context) {
 		return
 	}
 
-	cats, err := svc.Client.GetCompanyInfoCategory(code)
+	cats, err := svc.FetchCompanyCategory(code)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取公司信息失败: %v", err)})
 		return
@@ -274,7 +274,7 @@ func handleCompanyContent(c *gin.Context) {
 		return
 	}
 
-	content, err := svc.Client.GetCompanyInfoContent(code, filename, start, length)
+	content, err := svc.FetchCompanyContent(code, filename, start, length)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取公司信息内容失败: %v", err)})
 		return
@@ -292,7 +292,7 @@ func handleBlock(c *gin.Context) {
 		return
 	}
 
-	items, err := svc.Client.GetBlockInfoAll(blockFile)
+	items, err := svc.FetchBlock(blockFile)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取板块信息失败: %v", err)})
 		return

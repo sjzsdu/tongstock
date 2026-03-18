@@ -15,6 +15,10 @@ type Service struct {
 	codes    *CodeStore
 	klines   *KlineStore
 	workdays *Workday
+	xdxr     *XdXrStore
+	finance  *FinanceStore
+	company  *CompanyStore
+	block    *BlockStore
 }
 
 // NewService creates a new Service instance wrapping an already-connected Client.
@@ -48,6 +52,11 @@ func NewService(client *Client) (*Service, error) {
 		return nil, err
 	}
 	svc.workdays = w
+	// Cache-backed stores that reuse CodeStore's cache backend
+	svc.xdxr = &XdXrStore{cache: codes.cache, ttl: xdxrTTL}
+	svc.finance = &FinanceStore{cache: codes.cache, ttl: financeTTL}
+	svc.company = &CompanyStore{cache: codes.cache, ttl: companyTTL}
+	svc.block = &BlockStore{cache: codes.cache, ttl: blockTTL}
 	return svc, nil
 }
 
@@ -66,6 +75,26 @@ func (s *Service) Close() error {
 	}
 	if s.workdays != nil {
 		if err := s.workdays.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if s.xdxr != nil {
+		if err := s.xdxr.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if s.finance != nil {
+		if err := s.finance.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if s.company != nil {
+		if err := s.company.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if s.block != nil {
+		if err := s.block.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -95,6 +124,87 @@ func (s *Service) FetchCodes(exchange protocol.Exchange) ([]*protocol.CodeItem, 
 	}
 	if s.codes != nil {
 		_ = s.codes.SaveCodes(items, exchange)
+	}
+	return items, nil
+}
+
+// FetchXdXr caches or fetches XdXr data
+func (s *Service) FetchXdXr(code string) ([]*protocol.XdXrItem, error) {
+	if s.xdxr != nil {
+		if items, err := s.xdxr.Get(code); err == nil && items != nil {
+			return items, nil
+		}
+	}
+	items, err := s.Client.GetXdXrInfo(code)
+	if err != nil {
+		return nil, err
+	}
+	if s.xdxr != nil {
+		_ = s.xdxr.Save(code, items)
+	}
+	return items, nil
+}
+
+func (s *Service) FetchFinance(code string) (*protocol.FinanceInfo, error) {
+	if s.finance != nil {
+		if info, err := s.finance.Get(code); err == nil && info != nil {
+			return info, nil
+		}
+	}
+	info, err := s.Client.GetFinanceInfo(code)
+	if err != nil {
+		return nil, err
+	}
+	if s.finance != nil {
+		_ = s.finance.Save(code, info)
+	}
+	return info, nil
+}
+
+func (s *Service) FetchCompanyCategory(code string) ([]*protocol.CompanyCategoryItem, error) {
+	if s.company != nil {
+		if items, err := s.company.GetCategory(code); err == nil && items != nil {
+			return items, nil
+		}
+	}
+	items, err := s.Client.GetCompanyInfoCategory(code)
+	if err != nil {
+		return nil, err
+	}
+	if s.company != nil {
+		_ = s.company.SaveCategory(code, items)
+	}
+	return items, nil
+}
+
+func (s *Service) FetchCompanyContent(code, filename string, start, length uint32) (string, error) {
+	if s.company != nil {
+		if content, err := s.company.GetContent(code, filename); err == nil && content != "" {
+			return content, nil
+		}
+	}
+	content, err := s.Client.GetCompanyInfoContent(code, filename, start, length)
+	if err != nil {
+		return "", err
+	}
+	if s.company != nil {
+		_ = s.company.SaveContent(code, filename, content)
+	}
+	return content, nil
+}
+
+func (s *Service) FetchBlock(blockFile string) ([]*protocol.BlockItem, error) {
+	if s.block != nil {
+		if items, err := s.block.Get(blockFile); err == nil && items != nil {
+			return items, nil
+		}
+	}
+	items, err := s.Client.GetBlockInfoAll(blockFile)
+	if err != nil {
+		return nil, err
+	}
+	if s.block != nil {
+		_ = s.block.Save(blockFile, items)
 	}
 	return items, nil
 }

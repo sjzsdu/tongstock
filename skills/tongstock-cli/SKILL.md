@@ -173,6 +173,48 @@ Lists available F10 document categories (latest tips, company profile, financial
 tongstock-cli company 000001
 ```
 
+### company-content — Company Info Content / F10 (公司信息内容)
+
+```bash
+tongstock-cli company-content <code> [filename] [--block <name>] [--start <offset>] [--length <length>]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--block`, `-b` | - | Block name (e.g., "公司概况") |
+| `--start`, `-s` | `0` | Start offset |
+| `--length`, `-l` | `10000` | Content length |
+
+**Available F10 blocks:**
+
+| Block Name | Description |
+|------------|-------------|
+| 最新提示 | 公司最新动态、公告、报道等 |
+| 公司概况 | 公司基本信息、主营业务等 |
+| 财务分析 | 财务指标、报表分析等 |
+| 股本结构 | 股本构成、股东持股情况等 |
+| 股东研究 | 主要股东、股东变化等 |
+| 机构持股 | 机构投资者持股情况 |
+| 分红融资 | 分红历史、融资情况等 |
+| 高管治理 | 公司管理层信息 |
+| 资金动向 | 资金流入流出情况 |
+| 资本运作 | 并购、重组等资本活动 |
+| 热点题材 | 公司涉及的热点概念 |
+| 公司公告 | 公司发布的正式公告 |
+| 公司报道 | 媒体对公司的报道 |
+| 经营分析 | 业务经营情况分析 |
+| 行业分析 | 所属行业情况分析 |
+| 研报评级 | 分析师研究报告和评级 |
+
+```bash
+tongstock-cli company-content 000001                          # Basic usage (auto-detect filename)
+tongstock-cli company-content 000001 --block "公司概况"       # By block name
+tongstock-cli company-content 000001 --block "财务分析"       # Financial analysis
+tongstock-cli company-content 000001 --block "股东研究"       # Shareholder research
+tongstock-cli company-content 000001 --start 30744 --length 9560  # By range
+tongstock-cli company-content 000001 000001.txt               # Specify filename
+```
+
 ### block — Sector Classification (板块分类)
 
 ```bash

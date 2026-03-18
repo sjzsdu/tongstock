@@ -185,6 +185,24 @@ $CLI_PATH block --file block_gn.dat | head -20
 echo "... (仅显示前20条)"
 echo ""
 
+echo "28. 测试 company-content 命令 - 基本用法"
+echo "----------------------------------------"
+$CLI_PATH company-content 000001 | head -50
+echo "... (仅显示前50条)"
+echo ""
+
+echo "29. 测试 company-content 命令 - 通过块名称查询"
+echo "----------------------------------------"
+$CLI_PATH company-content 000001 --block "公司概况" | head -50
+echo "... (仅显示前50条)"
+echo ""
+
+echo "30. 测试 company-content 命令 - 指定范围"
+echo "----------------------------------------"
+$CLI_PATH company-content 000001 --start 30744 --length 1000 | head -50
+echo "... (仅显示前50条)"
+echo ""
+
 echo "========================================"
 echo "测试完成"
 echo "========================================"

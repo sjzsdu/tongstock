@@ -28,6 +28,11 @@ tongstock-cli kline -c <code> -t day
 
 # Step 5: Company F10 info categories
 tongstock-cli company <code>
+
+# Step 6: Get specific F10 content
+tongstock-cli company-content <code> --block "公司概况"  # Company profile
+tongstock-cli company-content <code> --block "财务分析"  # Financial analysis
+tongstock-cli company-content <code> --block "股东研究"  # Shareholder research
 ```
 
 **Analysis checklist:**
