@@ -55,7 +55,9 @@ func (w *Workday) UpdateFromKline(client *Client, indexCode string) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() {
+		_ = tx.Rollback()
+	}()
 
 	stmt, err := tx.Prepare(`
 		INSERT OR IGNORE INTO workday (unix, date) VALUES (?, ?)
@@ -177,6 +179,6 @@ func (w *Workday) String() string {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	count := 0
-	w.db.QueryRow(`SELECT COUNT(*) FROM workday`).Scan(&count)
+	_ = w.db.QueryRow(`SELECT COUNT(*) FROM workday`).Scan(&count)
 	return fmt.Sprintf("Workday{count: %d}", count)
 }

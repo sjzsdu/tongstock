@@ -62,7 +62,9 @@ func (s *KlineStore) SaveKline(code string, ktype uint8, klines []*protocol.Klin
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() {
+		_ = tx.Rollback()
+	}()
 
 	stmt, err := tx.Prepare(`
 		INSERT OR REPLACE INTO kline (code, ktype, date, open, high, low, close, volume, amount)
@@ -212,6 +214,6 @@ func (s *KlineStore) String() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	count := 0
-	s.db.QueryRow(`SELECT COUNT(*) FROM kline`).Scan(&count)
+	_ = s.db.QueryRow(`SELECT COUNT(*) FROM kline`).Scan(&count)
 	return fmt.Sprintf("KlineStore{count: %d}", count)
 }

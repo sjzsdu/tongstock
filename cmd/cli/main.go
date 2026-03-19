@@ -132,7 +132,7 @@ func init() {
 	klineCmd.Flags().StringVarP(&klineCode, "code", "c", "", "股票代码")
 	klineCmd.Flags().StringVarP(&klineType, "type", "t", "day", "K线类型: 1m/5m/15m/30m/60m/day/week/month/quarter/year")
 	klineCmd.Flags().BoolVarP(&klineAll, "all", "a", false, "获取全部历史K线")
-	klineCmd.MarkFlagRequired("code")
+	_ = klineCmd.MarkFlagRequired("code")
 }
 
 func runKline(cmd *cobra.Command, args []string) error {
@@ -190,7 +190,6 @@ func runMinute(cmd *cobra.Command, args []string) error {
 }
 
 var (
-	tradeCode    string
 	tradeDate    string
 	tradeStart   uint16
 	tradeCount   uint16
@@ -285,7 +284,7 @@ var indexCmd = &cobra.Command{
 func init() {
 	indexCmd.Flags().StringVarP(&indexCode, "code", "c", "", "指数代码")
 	indexCmd.Flags().StringVarP(&indexType, "type", "t", "day", "K线类型: 1m/5m/15m/30m/60m/day/week/month")
-	indexCmd.MarkFlagRequired("code")
+	_ = indexCmd.MarkFlagRequired("code")
 }
 
 func runIndex(cmd *cobra.Command, args []string) error {

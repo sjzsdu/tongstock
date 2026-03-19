@@ -110,7 +110,7 @@ func (m historyMinuteStruct) Decode(bs []byte) (*MinuteResp, error) {
 		bs, _ = varPrice(bs)
 		lastPrice += float64(price) / 1000
 		var number int
-		bs, number = varUint(bs)
+		_, number = varUint(bs)
 
 		if i == 120 {
 			t = t.Add(time.Minute * 90)
@@ -152,28 +152,6 @@ func decodeCode(code string) (byte, string, error) {
 		return market, code, nil
 	}
 	return 0, "", errors.New("invalid code format")
-}
-
-func parseInts(s string, fn func([]int)) ([]byte, error) {
-	var vals []int
-	var cur int
-	var hasDigit bool
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c >= '0' && c <= '9' {
-			cur = cur*10 + int(c-'0')
-			hasDigit = true
-		} else if hasDigit {
-			vals = append(vals, cur)
-			cur = 0
-			hasDigit = false
-		}
-	}
-	if hasDigit {
-		vals = append(vals, cur)
-	}
-	fn(vals)
-	return nil, nil
 }
 
 func parseDateStr(s string) (int, int, int, error) {

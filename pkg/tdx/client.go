@@ -87,8 +87,12 @@ func DialHosts(hosts []string, opts ...Option) (*Client, error) {
 func (c *Client) connect() error {
 	time.Sleep(100 * time.Millisecond)
 
-	c.conn.SetDeadline(time.Now().Add(10 * time.Second))
-	defer c.conn.SetDeadline(time.Time{})
+	if err := c.conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		return err
+	}
+	defer func() {
+		_ = c.conn.SetDeadline(time.Time{})
+	}()
 
 	f := protocol.MConnect.Frame()
 	if _, err := c.conn.Write(f.Bytes()); err != nil {
@@ -143,8 +147,12 @@ func (c *Client) send(frame *protocol.Frame) ([]byte, error) {
 	c.msgID++
 	frame.MsgID = c.msgID
 
-	c.conn.SetDeadline(time.Now().Add(10 * time.Second))
-	defer c.conn.SetDeadline(time.Time{})
+	if err := c.conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = c.conn.SetDeadline(time.Time{})
+	}()
 
 	_, err := c.conn.Write(frame.Bytes())
 	if err != nil {
@@ -197,7 +205,9 @@ func (c *Client) reconnectAndRetry(frame *protocol.Frame) error {
 		c.msgID++
 		frame.MsgID = c.msgID
 
-		c.conn.SetDeadline(time.Now().Add(10 * time.Second))
+		if err := c.conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+			return err
+		}
 		_, err = c.conn.Write(frame.Bytes())
 		if err != nil {
 			return err
@@ -597,28 +607,4 @@ func (c *Client) GetSecurityCount(exchange protocol.Exchange) (int, error) {
 		return 0, err
 	}
 	return resp.Count, nil
-}
-
-func decodeStockCode(code string) (string, string, error) {
-	code = addPrefix(code)
-	if len(code) != 8 {
-		return "", "", fmt.Errorf("股票代码长度错误")
-	}
-	return code[:2], code[2:], nil
-}
-
-func addPrefix(code string) string {
-	if len(code) == 6 {
-		switch {
-		case code[:1] == "6":
-			code = "sh" + code
-		case code[:1] == "0":
-			code = "sz" + code
-		case code[:2] == "30":
-			code = "sz" + code
-		case code[:1] == "8", code[:2] == "92", code[:2] == "43":
-			code = "bj" + code
-		}
-	}
-	return code
 }
