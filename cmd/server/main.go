@@ -47,6 +47,8 @@ func main() {
 	r.GET("/api/company/content", handleCompanyContent)
 	r.GET("/api/block", handleBlock)
 
+	r.GET("/api/count", handleCount)
+
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	log.Printf("服务启动于 http://localhost:%d", cfg.Server.Port)
 	if err := r.Run(addr); err != nil {
@@ -155,14 +157,41 @@ func handleMinute(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("连接失败: %v", err)})
 		return
 	}
+	date := c.Query("date")
+	history := c.Query("history") == "true"
 
-	resp, err := svc.Client.GetMinute(code)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取分时数据失败: %v", err)})
+	var resp *protocol.MinuteResp
+	var err2 error
+	if history && date != "" {
+		resp, err2 = svc.Client.GetHistoryMinute(date, code)
+	} else {
+		resp, err2 = svc.Client.GetMinute(code)
+	}
+	if err2 != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取分时数据失败: %v", err2)})
 		return
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+func handleCount(c *gin.Context) {
+	exchangeStr := c.DefaultQuery("exchange", "sz")
+	exchange := protocol.ParseExchange(exchangeStr)
+
+	svc, err := getService()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("连接失败: %v", err)})
+		return
+	}
+
+	count, err := svc.Client.GetSecurityCount(exchange)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取证券数量失败: %v", err)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"exchange": exchangeStr, "count": count})
 }
 
 func handleXdXr(c *gin.Context) {

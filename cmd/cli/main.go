@@ -51,6 +51,7 @@ func init() {
 	rootCmd.AddCommand(companyCmd)
 	rootCmd.AddCommand(companyContentCmd)
 	rootCmd.AddCommand(blockCmd)
+	rootCmd.AddCommand(countCmd)
 }
 
 var quoteCmd = &cobra.Command{
@@ -163,11 +164,21 @@ func runKline(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+var (
+	minuteHistory bool
+	minuteDate    string
+)
+
 var minuteCmd = &cobra.Command{
 	Use:   "minute [code]",
-	Short: "查询当日分时数据",
+	Short: "查询分时数据（支持当日和历史）",
 	Args:  cobra.MinimumNArgs(1),
 	RunE:  runMinute,
+}
+
+func init() {
+	minuteCmd.Flags().BoolVarP(&minuteHistory, "history", "H", false, "查询历史分时数据")
+	minuteCmd.Flags().StringVarP(&minuteDate, "date", "d", "", "日期 (YYYYMMDD)")
 }
 
 func runMinute(cmd *cobra.Command, args []string) error {
@@ -177,7 +188,12 @@ func runMinute(cmd *cobra.Command, args []string) error {
 	}
 	defer client.Close()
 
-	resp, err := client.GetMinute(args[0])
+	var resp *protocol.MinuteResp
+	if minuteHistory && minuteDate != "" {
+		resp, err = client.GetHistoryMinute(minuteDate, args[0])
+	} else {
+		resp, err = client.GetMinute(args[0])
+	}
 	if err != nil {
 		return fmt.Errorf("获取分时数据失败: %w", err)
 	}
@@ -450,5 +466,34 @@ func runTrade(cmd *cobra.Command, args []string) error {
 		fmt.Printf("%s 价格: %.3f 成交量: %d 状态: %d\n",
 			t.Time.Format("15:04"), t.Price, t.Volume, t.Status)
 	}
+	return nil
+}
+
+var countExchange string
+
+var countCmd = &cobra.Command{
+	Use:   "count",
+	Short: "查询证券数量",
+	RunE:  runCount,
+}
+
+func init() {
+	countCmd.Flags().StringVarP(&countExchange, "exchange", "e", "sz", "交易所: sz/sh/bj")
+}
+
+func runCount(cmd *cobra.Command, args []string) error {
+	client, err := dialClient()
+	if err != nil {
+		return fmt.Errorf("连接服务器失败: %w", err)
+	}
+	defer client.Close()
+
+	exchange := protocol.ParseExchange(countExchange)
+	count, err := client.GetSecurityCount(exchange)
+	if err != nil {
+		return fmt.Errorf("获取证券数量失败: %w", err)
+	}
+
+	fmt.Printf("%s 交易所证券数量: %d\n", countExchange, count)
 	return nil
 }
