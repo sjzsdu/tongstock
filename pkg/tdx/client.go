@@ -596,6 +596,18 @@ func (c *Client) GetCompanyInfoContent(code, filename string, start, length uint
 	return protocol.MCompanyContent.Decode(data)
 }
 
+func (c *Client) GetCallAuction(code string) (*protocol.CallAuctionResp, error) {
+	f, err := protocol.MCallAuction.Frame(code)
+	if err != nil {
+		return nil, err
+	}
+	data, err := c.send(f)
+	if err != nil {
+		return nil, err
+	}
+	return protocol.MCallAuction.Decode(data)
+}
+
 func (c *Client) GetSecurityCount(exchange protocol.Exchange) (int, error) {
 	f := protocol.MCount.Frame(exchange)
 	data, err := c.send(f)

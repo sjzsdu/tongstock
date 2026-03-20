@@ -18,6 +18,7 @@ const (
 	TypeFinance            = 0x0010
 	TypeBlockInfoMeta      = 0x02C5
 	TypeBlockInfo          = 0x06B9
+	TypeCallAuction        = 0x056A
 	TypeCompanyCategory    = 0x02CF
 	TypeCompanyContent     = 0x02D0
 )

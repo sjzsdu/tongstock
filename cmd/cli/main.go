@@ -52,6 +52,7 @@ func init() {
 	rootCmd.AddCommand(companyContentCmd)
 	rootCmd.AddCommand(blockCmd)
 	rootCmd.AddCommand(countCmd)
+	rootCmd.AddCommand(auctionCmd)
 }
 
 var quoteCmd = &cobra.Command{
@@ -495,5 +496,36 @@ func runCount(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("%s 交易所证券数量: %d\n", countExchange, count)
+	return nil
+}
+
+var auctionCmd = &cobra.Command{
+	Use:   "auction [code]",
+	Short: "查询集合竞价数据",
+	Args:  cobra.MinimumNArgs(1),
+	RunE:  runAuction,
+}
+
+func runAuction(cmd *cobra.Command, args []string) error {
+	client, err := dialClient()
+	if err != nil {
+		return fmt.Errorf("连接服务器失败: %w", err)
+	}
+	defer client.Close()
+
+	resp, err := client.GetCallAuction(args[0])
+	if err != nil {
+		return fmt.Errorf("获取集合竞价数据失败: %w", err)
+	}
+
+	fmt.Printf("共获取 %d 条集合竞价数据\n", resp.Count)
+	for _, a := range resp.List {
+		dir := "买"
+		if a.Flag < 0 {
+			dir = "卖"
+		}
+		fmt.Printf("%s 价格: %.3f 匹配量: %d 未匹配量: %d (%s)\n",
+			a.Time.Format("15:04:05"), a.Price, a.Match, a.Unmatched, dir)
+	}
 	return nil
 }

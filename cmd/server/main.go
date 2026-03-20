@@ -48,6 +48,7 @@ func main() {
 	r.GET("/api/block", handleBlock)
 
 	r.GET("/api/count", handleCount)
+	r.GET("/api/auction", handleAuction)
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	log.Printf("服务启动于 http://localhost:%d", cfg.Server.Port)
@@ -192,6 +193,28 @@ func handleCount(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"exchange": exchangeStr, "count": count})
+}
+
+func handleAuction(c *gin.Context) {
+	code := c.Query("code")
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 code 参数"})
+		return
+	}
+
+	svc, err := getService()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("连接失败: %v", err)})
+		return
+	}
+
+	resp, err := svc.Client.GetCallAuction(code)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取集合竞价数据失败: %v", err)})
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
 
 func handleXdXr(c *gin.Context) {
