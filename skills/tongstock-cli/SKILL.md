@@ -221,6 +221,19 @@ tongstock-cli company-content 000001 --start 30744 --length 9560  # By range
 tongstock-cli company-content 000001 000001.txt               # Specify filename
 ```
 
+### auction — Call Auction Data (集合竞价)
+
+```bash
+tongstock-cli auction <code>
+```
+
+Returns pre-market call auction data: price, matched volume, unmatched volume, direction (buy/sell).
+
+```bash
+tongstock-cli auction 000001              # 平安银行
+tongstock-cli auction 600519              # 贵州茅台
+```
+
 ### count — Security Count (证券数量)
 
 ```bash
@@ -275,6 +288,7 @@ Start server: `tongstock-server` (listens on `:8080`)
 | `GET /api/index` | `code`, `type` | Index K-line |
 | `GET /api/minute` | `code`, `date`, `history` | Minute data (current/historical) |
 | `GET /api/count` | `exchange` | Security count per exchange |
+| `GET /api/auction` | `code` | Call auction data |
 | `GET /api/trade` | `code`, `start`, `count`, `date`, `history` | Tick trades |
 | `GET /api/xdxr` | `code` | Ex-rights/dividends |
 | `GET /api/finance` | `code` | Financial data |
@@ -293,6 +307,7 @@ curl "http://localhost:8080/api/company/content?code=000001&filename=000001.txt"
 curl "http://localhost:8080/api/block?file=block_fg.dat"
 curl "http://localhost:8080/api/minute?code=000001&history=true&date=20250314"
 curl "http://localhost:8080/api/count?exchange=sh"
+curl "http://localhost:8080/api/auction?code=000001"
 ```
 
 ## Stock Code Conventions

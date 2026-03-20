@@ -58,6 +58,7 @@ test_api "minute:history" "$URL/api/minute?code=000001&history=true&date=2025031
 test_api "count:sz" "$URL/api/count?exchange=sz"
 test_api "count:sh" "$URL/api/count?exchange=sh"
 test_api "count:bj" "$URL/api/count?exchange=bj"
+test_api "auction" "$URL/api/auction?code=000001"
 test_api "trade" "$URL/api/trade?code=000001"
 test_api "trade:history" "$URL/api/trade?code=000001&history=true&date=20250314"
 test_api "xdxr" "$URL/api/xdxr?code=000001"

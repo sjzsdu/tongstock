@@ -13,6 +13,7 @@
 - **财务数据** - 总股本、流通股、净资产、净利润等核心财务指标
 - **公司信息** - F10资料（最新提示、公司概况、财务分析等）
 - **板块分类** - 行业、概念、地域、风格等板块分类数据
+- **集合竞价** - 开盘前竞价阶段的匹配量、未匹配量等数据
 - **证券数量** - 查询各交易所证券总数
 - **股票代码** - 获取沪深北交易所所有股票代码
 - **双模式** - CLI 命令行工具 + HTTP REST API
@@ -110,6 +111,13 @@ go build -o tongstock-server ./cmd/server
 ./tongstock-cli count --exchange bj
 ```
 
+### 查询集合竞价
+
+```bash
+# 查询集合竞价数据
+./tongstock-cli auction 000001
+```
+
 ### 查询分笔成交
 
 ```bash
@@ -191,6 +199,7 @@ go build -o tongstock-server ./cmd/server
 | `/api/codes` | GET | `exchange` | 股票代码 |
 | `/api/minute` | GET | `code`, `date`, `history` | 分时数据（当日/历史） |
 | `/api/count` | GET | `exchange` | 证券数量 |
+| `/api/auction` | GET | `code` | 集合竞价数据 |
 | `/api/trade` | GET | `code`, `start`, `count`, `date`, `history` | 分笔成交数据 |
 | `/api/xdxr` | GET | `code` | 除权除息信息 |
 | `/api/finance` | GET | `code` | 财务数据 |
@@ -219,6 +228,9 @@ curl "http://localhost:8080/api/minute?code=000001&history=true&date=20250314"
 
 # 查询证券数量
 curl "http://localhost:8080/api/count?exchange=sh"
+
+# 查询集合竞价
+curl "http://localhost:8080/api/auction?code=000001"
 
 # 查询分笔成交
 curl "http://localhost:8080/api/trade?code=000001"
