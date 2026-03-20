@@ -13,6 +13,7 @@
 - **财务数据** - 总股本、流通股、净资产、净利润等核心财务指标
 - **公司信息** - F10资料（最新提示、公司概况、财务分析等）
 - **板块分类** - 行业、概念、地域、风格等板块分类数据
+- **证券数量** - 查询各交易所证券总数
 - **股票代码** - 获取沪深北交易所所有股票代码
 - **双模式** - CLI 命令行工具 + HTTP REST API
 
@@ -91,6 +92,22 @@ go build -o tongstock-server ./cmd/server
 ```bash
 # 查询当日分时数据
 ./tongstock-cli minute 000001
+
+# 查询历史分时数据 (需要指定日期)
+./tongstock-cli minute 000001 --history --date 20250314
+```
+
+### 查询证券数量
+
+```bash
+# 深圳市场 (默认)
+./tongstock-cli count
+
+# 上海市场
+./tongstock-cli count --exchange sh
+
+# 北京市场
+./tongstock-cli count --exchange bj
 ```
 
 ### 查询分笔成交
@@ -172,7 +189,8 @@ go build -o tongstock-server ./cmd/server
 | `/api/quote` | GET | `code` | 实时行情 |
 | `/api/kline` | GET | `code`, `type`, `start`, `count` | K线数据 |
 | `/api/codes` | GET | `exchange` | 股票代码 |
-| `/api/minute` | GET | `code` | 当日分时数据 |
+| `/api/minute` | GET | `code`, `date`, `history` | 分时数据（当日/历史） |
+| `/api/count` | GET | `exchange` | 证券数量 |
 | `/api/trade` | GET | `code`, `start`, `count`, `date`, `history` | 分笔成交数据 |
 | `/api/xdxr` | GET | `code` | 除权除息信息 |
 | `/api/finance` | GET | `code` | 财务数据 |
@@ -193,8 +211,14 @@ curl "http://localhost:8080/api/kline?code=000001&type=day"
 # 获取股票列表
 curl "http://localhost:8080/api/codes?exchange=sz"
 
-# 查询分时数据
+# 查询当日分时数据
 curl "http://localhost:8080/api/minute?code=000001"
+
+# 查询历史分时数据
+curl "http://localhost:8080/api/minute?code=000001&history=true&date=20250314"
+
+# 查询证券数量
+curl "http://localhost:8080/api/count?exchange=sh"
 
 # 查询分笔成交
 curl "http://localhost:8080/api/trade?code=000001"

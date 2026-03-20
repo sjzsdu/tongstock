@@ -127,77 +127,98 @@ $CLI_PATH minute 000001 | head -20
 echo "... (仅显示前20条)"
 echo ""
 
-echo "18. 测试 trade 命令 - 当日分笔成交"
+echo "18. 测试 minute 命令 - 历史分时"
+echo "----------------------------------------"
+$CLI_PATH minute 000001 --history --date 20250314 | head -20
+echo "... (仅显示前20条)"
+echo ""
+
+echo "19. 测试 count 命令 - 深圳市场证券数量"
+echo "----------------------------------------"
+$CLI_PATH count
+echo ""
+
+echo "20. 测试 count 命令 - 上海市场证券数量"
+echo "----------------------------------------"
+$CLI_PATH count -e sh
+echo ""
+
+echo "21. 测试 count 命令 - 北京市场证券数量"
+echo "----------------------------------------"
+$CLI_PATH count -e bj
+echo ""
+
+echo "22. 测试 trade 命令 - 当日分笔成交"
 echo "----------------------------------------"
 $CLI_PATH trade 000001 | head -20
 echo "... (仅显示前20条)"
 echo ""
 
-echo "19. 测试 trade 命令 - 历史分笔成交"
+echo "23. 测试 trade 命令 - 历史分笔成交"
 echo "----------------------------------------"
 $CLI_PATH trade 000001 --history --date 20250314 | head -20
 echo "... (仅显示前20条)"
 echo ""
 
-echo "20. 测试 xdxr 命令 - 除权除息"
+echo "24. 测试 xdxr 命令 - 除权除息"
 echo "----------------------------------------"
 $CLI_PATH xdxr 000001 | head -20
 echo "... (仅显示前20条)"
 echo ""
 
-echo "21. 测试 finance 命令 - 财务数据"
+echo "25. 测试 finance 命令 - 财务数据"
 echo "----------------------------------------"
 $CLI_PATH finance 000001
 echo ""
 
-echo "22. 测试 index 命令 - 指数日K"
+echo "26. 测试 index 命令 - 指数日K"
 echo "----------------------------------------"
 $CLI_PATH index --code 999999 --type day | head -10
 echo "... (仅显示前10条)"
 echo ""
 
-echo "23. 测试 index 命令 - 指数5分钟K"
+echo "27. 测试 index 命令 - 指数5分钟K"
 echo "----------------------------------------"
 $CLI_PATH index --code 399300 --type 5m | head -10
 echo "... (仅显示前10条)"
 echo ""
 
-echo "24. 测试 company 命令 - 公司信息目录"
+echo "28. 测试 company 命令 - 公司信息目录"
 echo "----------------------------------------"
 $CLI_PATH company 000001
 echo ""
 
-echo "25. 测试 block 命令 - 指数板块"
+echo "29. 测试 block 命令 - 指数板块"
 echo "----------------------------------------"
 $CLI_PATH block --file block_zs.dat | head -20
 echo "... (仅显示前20条)"
 echo ""
 
-echo "26. 测试 block 命令 - 行业板块"
+echo "30. 测试 block 命令 - 行业板块"
 echo "----------------------------------------"
 $CLI_PATH block --file block_fg.dat | head -20
 echo "... (仅显示前20条)"
 echo ""
 
-echo "27. 测试 block 命令 - 概念板块"
+echo "31. 测试 block 命令 - 概念板块"
 echo "----------------------------------------"
 $CLI_PATH block --file block_gn.dat | head -20
 echo "... (仅显示前20条)"
 echo ""
 
-echo "28. 测试 company-content 命令 - 基本用法"
+echo "32. 测试 company-content 命令 - 基本用法"
 echo "----------------------------------------"
 $CLI_PATH company-content 000001 | head -50
 echo "... (仅显示前50条)"
 echo ""
 
-echo "29. 测试 company-content 命令 - 通过块名称查询"
+echo "33. 测试 company-content 命令 - 通过块名称查询"
 echo "----------------------------------------"
 $CLI_PATH company-content 000001 --block "公司概况" | head -50
 echo "... (仅显示前50条)"
 echo ""
 
-echo "30. 测试 company-content 命令 - 指定范围"
+echo "34. 测试 company-content 命令 - 指定范围"
 echo "----------------------------------------"
 $CLI_PATH company-content 000001 --start 30744 --length 1000 | head -50
 echo "... (仅显示前50条)"

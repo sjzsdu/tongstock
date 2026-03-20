@@ -107,14 +107,20 @@ tongstock-cli index -c 999999 -t day     # 上证指数 daily
 tongstock-cli index -c 399300 -t 5m      # 沪深300 5-minute
 ```
 
-### minute — Intraday Minute Data (分时数据)
+### minute — Minute Data (分时数据)
 
 ```bash
-tongstock-cli minute <code>
+tongstock-cli minute <code> [--history] [--date <YYYYMMDD>]
 ```
 
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--history`, `-H` | `false` | Query historical minute data |
+| `--date`, `-d` | - | Date for history mode (YYYYMMDD) |
+
 ```bash
-tongstock-cli minute 000001
+tongstock-cli minute 000001                              # Today
+tongstock-cli minute 000001 --history --date 20250314    # Historical
 ```
 
 ### trade — Tick-by-tick Trades (分笔成交)
@@ -215,6 +221,22 @@ tongstock-cli company-content 000001 --start 30744 --length 9560  # By range
 tongstock-cli company-content 000001 000001.txt               # Specify filename
 ```
 
+### count — Security Count (证券数量)
+
+```bash
+tongstock-cli count [--exchange <sz|sh|bj>]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--exchange`, `-e` | `sz` | Exchange: `sz` (Shenzhen), `sh` (Shanghai), `bj` (Beijing) |
+
+```bash
+tongstock-cli count                     # Shenzhen (default)
+tongstock-cli count -e sh               # Shanghai
+tongstock-cli count -e bj               # Beijing
+```
+
 ### block — Sector Classification (板块分类)
 
 ```bash
@@ -251,7 +273,8 @@ Start server: `tongstock-server` (listens on `:8080`)
 | `GET /api/codes` | `exchange` | Stock code list |
 | `GET /api/kline` | `code`, `type` | K-line data |
 | `GET /api/index` | `code`, `type` | Index K-line |
-| `GET /api/minute` | `code` | Intraday minute |
+| `GET /api/minute` | `code`, `date`, `history` | Minute data (current/historical) |
+| `GET /api/count` | `exchange` | Security count per exchange |
 | `GET /api/trade` | `code`, `start`, `count`, `date`, `history` | Tick trades |
 | `GET /api/xdxr` | `code` | Ex-rights/dividends |
 | `GET /api/finance` | `code` | Financial data |
@@ -268,6 +291,8 @@ curl "http://localhost:8080/api/index?code=999999&type=day"
 curl "http://localhost:8080/api/company?code=000001"
 curl "http://localhost:8080/api/company/content?code=000001&filename=000001.txt"
 curl "http://localhost:8080/api/block?file=block_fg.dat"
+curl "http://localhost:8080/api/minute?code=000001&history=true&date=20250314"
+curl "http://localhost:8080/api/count?exchange=sh"
 ```
 
 ## Stock Code Conventions
