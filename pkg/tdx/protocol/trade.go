@@ -98,7 +98,8 @@ func (m historyTradeStruct) Frame(date, code string, start, count uint16) (*Fram
 	if err != nil {
 		return nil, err
 	}
-	dataBs := []byte{byte(year >> 8), byte(year), byte(month), byte(day)}
+	dateNum := uint32(year*10000 + month*100 + day)
+	dataBs := []byte{byte(dateNum), byte(dateNum >> 8), byte(dateNum >> 16), byte(dateNum >> 24)}
 	dataBs = append(dataBs, exchange, 0x0)
 	dataBs = append(dataBs, []byte(number)...)
 	dataBs = append(dataBs, byte(start), byte(start>>8))

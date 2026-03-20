@@ -41,11 +41,11 @@ func (h Heart) Frame() *Frame {
 
 type Count struct{}
 
-func (c Count) Frame() *Frame {
+func (c Count) Frame(exchange Exchange) *Frame {
 	return &Frame{
 		Control: Control01,
 		Type:    TypeCount,
-		Data:    []byte{0x01},
+		Data:    []byte{exchange.Uint8(), 0x00, 0x75, 0xc7, 0x33, 0x01},
 	}
 }
 
@@ -54,10 +54,10 @@ type CountResp struct {
 }
 
 func (c Count) Decode(bs []byte) (*CountResp, error) {
-	if len(bs) < 4 {
+	if len(bs) < 2 {
 		return nil, ErrDataLength
 	}
-	return &CountResp{Count: int(Uint16LE(bs[2:4]))}, nil
+	return &CountResp{Count: int(Uint16LE(bs[:2]))}, nil
 }
 
 var ErrDataLength = Err("数据长度不足")

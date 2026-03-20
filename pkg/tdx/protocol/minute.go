@@ -81,8 +81,8 @@ func (m historyMinuteStruct) Frame(date, code string) (*Frame, error) {
 	if err != nil {
 		return nil, err
 	}
-	dateBs := []byte{byte(year >> 8), byte(year), byte(month), byte(day)}
-	dataBs := dateBs
+	dateNum := uint32(year*10000 + month*100 + day)
+	dataBs := []byte{byte(dateNum), byte(dateNum >> 8), byte(dateNum >> 16), byte(dateNum >> 24)}
 	dataBs = append(dataBs, exchange)
 	dataBs = append(dataBs, []byte(number)...)
 	return &Frame{
@@ -106,11 +106,12 @@ func (m historyMinuteStruct) Decode(bs []byte) (*MinuteResp, error) {
 	lastPrice := float64(0)
 	t := time.Date(0, 0, 0, 9, 30, 0, 0, time.Local)
 	for i := uint16(0); i < resp.Count; i++ {
-		bs, price := varPrice(bs)
+		var price int64
+		bs, price = varPrice(bs)
 		bs, _ = varPrice(bs)
-		lastPrice += float64(price) / 1000
+		lastPrice += float64(price) / 100
 		var number int
-		_, number = varUint(bs)
+		bs, number = varUint(bs)
 
 		if i == 120 {
 			t = t.Add(time.Minute * 90)

@@ -597,7 +597,7 @@ func (c *Client) GetCompanyInfoContent(code, filename string, start, length uint
 }
 
 func (c *Client) GetSecurityCount(exchange protocol.Exchange) (int, error) {
-	f := protocol.MCount.Frame()
+	f := protocol.MCount.Frame(exchange)
 	data, err := c.send(f)
 	if err != nil {
 		return 0, err
