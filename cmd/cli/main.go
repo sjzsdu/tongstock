@@ -576,8 +576,8 @@ func runFinance(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("总股本: %.2f万股  流通股本: %.2f万股\n", info.ZongGuBen/10000, info.LiuTongGuBen/10000)
-	fmt.Printf("总资产: %.2f亿元  净资产: %.2f亿元\n", info.ZongZiChan/100000000, info.JingZiChan/100000000)
-	fmt.Printf("主营收入: %.2f亿元  净利润: %.2f亿元\n", info.ZhuYingShouRu/100000000, info.JingLiRun/100000000)
+	fmt.Printf("总资产: %.2f亿元  净资产: %.2f亿元\n", info.ZongZiChan/1000000000, info.JingZiChan/1000000000)
+	fmt.Printf("主营收入: %.2f亿元  净利润: %.2f亿元\n", info.ZhuYingShouRu/1000000000, info.JingLiRun/1000000000)
 	fmt.Printf("每股净资产: %.4f元  股东人数: %.0f\n", info.MeiGuJingZiChan, info.GuDongRenShu)
 	fmt.Printf("IPO日期: %d  更新日期: %d\n", info.IPODate, info.UpdatedDate)
 	return nil
