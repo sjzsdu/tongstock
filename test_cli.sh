@@ -230,6 +230,38 @@ $CLI_PATH company-content 000001 --start 30744 --length 1000 | head -50
 echo "... (仅显示前50条)"
 echo ""
 
+echo "36. 测试 indicator 命令 - 技术指标分析"
+echo "----------------------------------------"
+$CLI_PATH indicator --code 000001 --type day
+echo ""
+
+echo "37. 测试 indicator 命令 - 全部历史K线"
+echo "----------------------------------------"
+$CLI_PATH indicator --code 000001 --type day --all | head -30
+echo "... (仅显示前30条)"
+echo ""
+
+echo "38. 测试 indicator 命令 - 60分钟K线"
+echo "----------------------------------------"
+$CLI_PATH indicator --code 000001 --type 60m | head -30
+echo "... (仅显示前30条)"
+echo ""
+
+echo "39. 测试 screen 命令 - 批量筛选"
+echo "----------------------------------------"
+$CLI_PATH screen --codes "000001,600519,000858" --type day
+echo ""
+
+echo "40. 测试 screen 命令 - 筛选金叉信号"
+echo "----------------------------------------"
+$CLI_PATH screen --codes "000001,600519,000858" --type day --signal golden_cross
+echo ""
+
+echo "41. 测试 screen 命令 - 筛选超卖信号"
+echo "----------------------------------------"
+$CLI_PATH screen --codes "000001,600519,000858" --type day --signal oversold
+echo ""
+
 echo "========================================"
 echo "测试完成"
 echo "========================================"

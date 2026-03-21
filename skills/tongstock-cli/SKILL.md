@@ -1,6 +1,6 @@
 ---
 name: tongstock-cli
-description: "TDX (通达信) CLI/HTTP API for Chinese A-share market data (Shanghai, Shenzhen, Beijing exchanges only). Supports: real-time 5-level bid/ask quotes, K-line (candlestick), intraday minute data, tick-by-tick trades, ex-rights/dividend history, financial statements, index bars, sector/industry classification, and company F10 info. Triggers on: stock quote, K-line, candlestick, A-share, 通达信, TDX, market data, 行情, K线, 除权除息, 财务数据, 板块."
+description: "TDX (通达信) CLI/HTTP API for Chinese A-share market data (Shanghai, Shenzhen, Beijing exchanges only). Supports: real-time 5-level bid/ask quotes, K-line (candlestick), intraday minute data, tick-by-tick trades, ex-rights/dividend history, financial statements, index bars, sector/industry classification, company F10 info, technical indicators (MACD/KDJ/MA/BOLL/RSI), signal detection (金叉/死叉/超买/超卖), batch signal screening. Triggers on: stock quote, K-line, candlestick, A-share, 通达信, TDX, market data, 行情, K线, 除权除息, 财务数据, 板块, indicator, MACD, KDJ, BOLL, RSI, signal, screen, 技术指标, 信号筛选."
 license: MIT
 allowed-tools: Bash
 ---
@@ -273,6 +273,85 @@ Available block files:
 tongstock-cli block -f block_zs.dat     # Index sectors
 tongstock-cli block -f block_fg.dat     # Industry sectors
 tongstock-cli block -f block_gn.dat     # Concept sectors
+```
+
+### indicator — Technical Indicators (技术指标)
+
+```bash
+tongstock-cli indicator --code <code> [--type <type>] [--all] [--count <n>] [--config <path>]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--code`, `-c` | required | Stock code |
+| `--type`, `-t` | `day` | K-line type |
+| `--all`, `-a` | `false` | Use ALL historical K-lines |
+| `--count`, `-n` | `250` | Number of K-lines (when not --all) |
+| `--config` | - | Custom parameter config YAML file |
+
+**Indicators computed:**
+- MA(5, 10, 20, 60) — Moving Averages
+- MACD(12, 26, 9) — DIF, DEA, Histogram
+- KDJ(9, 3, 3) — K, D, J values
+- BOLL(20, 2.0) — Upper, Middle, Lower bands
+- RSI(6, 14) — Relative Strength Index
+
+**Output:**
+- Last 20 days table: Date, Close, MA5/10/20, DIF/DEA/HIST, K/D/J, UPPER/MID/LOWER
+- Latest signals: 金叉, 死叉, 超买, 超卖, 多头排列, 空头排列, 突破上轨, 跌破下轨
+
+```bash
+tongstock-cli indicator -c 000001 -t day
+tongstock-cli indicator -c 600519 -t week
+tongstock-cli indicator -c 000001 -t day --all
+tongstock-cli indicator -c 000001 -t day --config configs/params.yaml
+```
+
+**Parameter resolution (three-tier):**
+1. Per-stock override (from YAML `overrides`)
+2. Category override (from YAML `categories`, auto-detected by code prefix: 600xxx=large_cap, 002xxx=small_cap)
+3. Default (from YAML `defaults`)
+
+**Config file location:** `~/.tongstock/indicator.yaml` (auto-created on first run, users can edit directly)
+
+### screen — Batch Signal Screening (批量信号筛选)
+
+```bash
+tongstock-cli screen [--codes <list>] [--file <path>] [--signal <type>] [--type <ktype>] [--pool <n>]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--codes`, `-c` | - | Comma-separated stock codes |
+| `--file`, `-f` | - | File with one code per line |
+| `--signal`, `-s` | - | Signal filter (see below) |
+| `--type`, `-t` | `day` | K-line type |
+| `--pool`, `-p` | `10` | Concurrency pool size |
+
+**Available signal filters (`-s`):**
+
+| Filter | Description |
+|--------|-------------|
+| `golden_cross` | MACD or KDJ golden cross (金叉) |
+| `death_cross` | MACD or KDJ death cross (死叉) |
+| `overbought` | J>100 (KDJ) or RSI>80 (超买) |
+| `oversold` | J<0 (KDJ) or RSI<20 (超卖) |
+
+```bash
+tongstock-cli screen -c "000001,600519,000858" -t day
+tongstock-cli screen -c "000001,600519,000858" -s golden_cross
+tongstock-cli screen -f codes.txt -s oversold -p 5
+tongstock-cli screen -c "000001,600519" -s death_cross -t 60m
+```
+
+**Output columns:** Code, Date, Close, MA5/10/20, DIF, K, J, Signals
+
+**Combination with sector analysis:**
+```bash
+# Step 1: Get banking sector stocks
+tongstock-cli block -f block_fg.dat | grep "银行" > banking.txt
+# Step 2: Screen for signals
+tongstock-cli screen -f banking.txt -t day -s golden_cross
 ```
 
 ## HTTP API

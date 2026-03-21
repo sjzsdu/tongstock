@@ -16,6 +16,9 @@
 - **集合竞价** - 开盘前竞价阶段的匹配量、未匹配量等数据
 - **证券数量** - 查询各交易所证券总数
 - **股票代码** - 获取沪深北交易所所有股票代码
+- **技术指标** - MACD/KDJ/MA/BOLL/RSI，支持参数化计算
+- **信号检测** - 金叉/死叉/超买/超卖/突破，自动检测并标记
+- **批量筛选** - 按板块或代码列表批量筛选信号，支持并发
 - **双模式** - CLI 命令行工具 + HTTP REST API
 
 ## 安装
@@ -179,6 +182,41 @@ go build -o tongstock-server ./cmd/server
 ./tongstock-cli block --file block_gn.dat
 ```
 
+### 技术指标分析
+
+```bash
+# 单股指标分析（默认参数）
+./tongstock-cli indicator --code 000001 --type day
+
+# 获取全部历史K线计算指标
+./tongstock-cli indicator --code 000001 --type day --all
+
+# 指定K线数量
+./tongstock-cli indicator --code 000001 --type day --count 500
+
+# 使用自定义参数配置文件
+./tongstock-cli indicator --code 000001 --type day --config configs/params.yaml
+```
+
+输出包含：
+- 最近 20 天 K 线 + MA(5/10/20) + MACD(DIF/DEA/HIST) + KDJ(K/D/J) + BOLL(UPPER/MID/LOWER)
+- 最新信号（金叉/死叉/超买/超卖/多头排列/空头排列等）
+
+### 批量信号筛选
+
+```bash
+# 指定股票列表筛选
+./tongstock-cli screen --codes "000001,600519,000858" --type day --signal golden_cross
+
+# 从文件读取股票代码（每行一个）
+./tongstock-cli screen --file codes.txt --type day --signal oversold
+
+# 设置并发池大小（默认10）
+./tongstock-cli screen --codes "000001,600519" --pool 5
+
+# 可用信号类型: golden_cross, death_cross, overbought, oversold
+```
+
 ## HTTP API 使用方法
 
 ### 启动服务
@@ -259,11 +297,75 @@ curl "http://localhost:8080/api/block?file=block_zs.dat"
 
 ## 配置
 
-暂无配置文件，服务器地址使用内置默认值（通达信公网服务器）。
+### 应用主配置
 
-如需自定义服务器，可在代码中修改 `pkg/tdx/hosts.go` 中的 `SHHosts`、`BJHosts`、`GZHosts`、`WHHosts` 变量。
+`~/.tongstock/config.yaml` — 首次运行自动生成，可自行编辑：
 
-`configs/` 目录预留用于后续配置支持。
+```yaml
+server:
+  port: 8080
+
+tdx:
+  # hosts:
+  #   - "124.71.187.122:7709"
+
+cache:
+  backend: sqlite
+  dir: ~/.tongstock/cache
+
+database:
+  driver: sqlite3
+  dsn: ~/.tongstock/cache/tongstock.db
+```
+
+### 指标参数配置
+
+`~/.tongstock/indicator.yaml` — 首次运行 indicator/screen 命令时自动生成，可自行编辑：
+
+```yaml
+defaults:
+  ma: [5, 10, 20, 60]
+  macd:
+    fast: 12
+    slow: 26
+    signal: 9
+  kdj:
+    n: 9
+    m1: 3
+    m2: 3
+  boll:
+    n: 20
+    k: 2.0
+  rsi: [6, 14]
+
+categories:
+  large_cap:
+    ma: [5, 10, 20, 60, 120]
+  small_cap:
+    ma: [5, 10, 20]
+    macd:
+      fast: 8
+      slow: 17
+
+overrides:
+  "000001":
+    kdj:
+      n: 5
+```
+
+**参数覆盖优先级**：per-stock override > category override > defaults
+
+### 用户目录结构
+
+```
+~/.tongstock/
+├── config.yaml          # 应用主配置
+├── indicator.yaml       # 指标参数配置
+├── cache/
+│   └── tongstock.db     # SQLite 缓存数据库
+```
+
+如需自定义服务器地址，可在 `config.yaml` 中设置 `tdx.hosts`。如需自定义指标参数，编辑 `indicator.yaml`。如需临时指定配置文件，可使用 `--config` 参数覆盖。
 
 ## K线类型参数说明
 
@@ -294,7 +396,8 @@ tongstock/
 │   │   ├── client.go     # 客户端
 │   │   ├── hosts.go      # 服务器地址
 │   │   ├── codes.go      # 股票代码
-│   │   ├── pull.go       # 行情拉取
+│   │   ├── pull.go       # 行情拉取 + KlineStore
+│   │   ├── service.go    # 业务逻辑层
 │   │   ├── workday.go    # 交易日判断
 │   │   ├── bj_codes.go   # 北京交易所代码
 │   │   └── protocol/     # 协议解析
@@ -309,17 +412,40 @@ tongstock/
 │   │       ├── block.go   # 板块信息解析
 │   │       ├── code.go    # 代码解析
 │   │       └── ...
+│   ├── ta/               # 技术指标计算（无状态）
+│   │   ├── types.go      # 核心类型（KlineInput, IndicatorResult）
+│   │   ├── ma.go         # SMA, EMA
+│   │   ├── macd.go       # MACD
+│   │   ├── kdj.go        # KDJ
+│   │   ├── boll.go       # BOLL
+│   │   ├── rsi.go        # RSI
+│   │   └── indicator.go  # 统一计算入口（并发）
+│   ├── signal/           # 信号检测
+│   │   ├── signal.go     # Signal 类型定义
+│   │   ├── detector.go   # 统一检测入口（并发）
+│   │   ├── cross.go      # 金叉/死叉检测
+│   │   ├── macd.go       # MACD 信号
+│   │   ├── kdj.go        # KDJ 信号
+│   │   ├── boll.go       # BOLL 信号
+│   │   ├── ma.go         # MA 信号
+│   │   └── rsi.go        # RSI 信号
+│   ├── param/            # 参数管理
+│   │   ├── types.go      # CategoryParams, ParamConfig
+│   │   ├── params.go     # Init, Resolve（三层参数覆盖）
+│   │   └── category.go   # 按代码判断市值分类
 │   └── utils/            # 工具函数
-├── configs/              # 配置文件 (预留)
+├── configs/
+│   └── params.yaml       # 指标参数配置（含大盘/小盘分类）
 └── README.md
 ```
 
 ## 技术栈
 
-- **Go 1.22+** - 开发语言
+- **Go 1.24+** - 开发语言
 - **spf13/cobra** - CLI 框架
 - **Gin** - HTTP 框架
 - **TDX 协议** - 通达信私有二进制协议
+- **gopkg.in/yaml.v3** - 参数配置解析
 
 ## 数据来源
 

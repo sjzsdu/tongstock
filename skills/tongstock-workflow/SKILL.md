@@ -1,6 +1,6 @@
 ---
 name: tongstock-workflow
-description: "Chinese A-share stock analysis workflows using TongStock CLI (Shanghai, Shenzhen, Beijing exchanges only). Use when user asks to analyze a stock, screen stocks by fundamentals, check dividend history, compare sector performance, or build a stock research report. Triggers on: analyze stock, stock screening, 股票分析, 基本面, 选股, research report, sector analysis, dividend analysis."
+description: "Chinese A-share stock analysis workflows using TongStock CLI (Shanghai, Shenzhen, Beijing exchanges only). Use when user asks to analyze a stock, screen stocks by fundamentals, check dividend history, compare sector performance, build a stock research report, analyze technical indicators, or screen stocks by signals. Triggers on: analyze stock, stock screening, 股票分析, 基本面, 选股, research report, sector analysis, dividend analysis, 技术指标, MACD, KDJ, BOLL, RSI, 信号筛选, 指标分析, indicator, screen, signal, golden cross, death cross, overbought, oversold."
 license: MIT
 allowed-tools: Bash
 ---
@@ -192,3 +192,65 @@ done
 | 2-10 | Share capital changes |
 | 11-12 | Share consolidation |
 | 13-14 | Warrant issuance |
+
+## Workflow 8: Technical Indicator Analysis (技术指标分析)
+
+Compute and display technical indicators for a single stock.
+
+```bash
+# Single stock with default parameters
+tongstock-cli indicator -c <code> -t day
+
+# All historical data
+tongstock-cli indicator -c <code> -t day --all
+
+# Custom parameter config file
+tongstock-cli indicator -c <code> -t day --config configs/params.yaml
+
+# Different timeframes
+tongstock-cli indicator -c <code> -t 60m    # 60-minute
+tongstock-cli indicator -c <code> -t week   # Weekly
+```
+
+**Output includes:**
+- Last 20 days: Date, Close, MA5/10/20, DIF/DEA/HIST, K/D/J, UPPER/MID/LOWER
+- Latest signals: 金叉 (golden cross), 死叉 (death cross), 超买 (overbought), 超卖 (oversold), 多头排列 (bull alignment), 空头排列 (bear alignment), 突破上轨 (break upper band), 跌破下轨 (break lower band)
+
+**Parameter resolution:**
+- Per-stock override > Category override (large_cap/small_cap) > Default
+- Categories auto-detected by code prefix (600xxx = large_cap, 002xxx = small_cap)
+
+## Workflow 9: Batch Signal Screening (批量信号筛选)
+
+Screen a list of stocks for specific signals using parallel computation.
+
+```bash
+# Screen specific stocks for golden cross
+tongstock-cli screen -c "000001,600519,000858,601318" -t day -s golden_cross
+
+# Screen from file (one code per line)
+tongstock-cli screen -f codes.txt -t day -s oversold
+
+# Screen with concurrency control
+tongstock-cli screen -c "000001,600519" -p 5 -s death_cross
+```
+
+**Available signal filters (-s):**
+| Signal | Description |
+|--------|-------------|
+| `golden_cross` | DIF crosses above DEA (MACD), or K crosses above D (KDJ) |
+| `death_cross` | DIF crosses below DEA (MACD), or K crosses below D (KDJ) |
+| `overbought` | J > 100 (KDJ) or RSI > 80 |
+| `oversold` | J < 0 (KDJ) or RSI < 20 |
+
+**Combination with sector analysis:**
+```bash
+# Step 1: Get sector stocks
+tongstock-cli block -f block_fg.dat | grep "银行" > banking.txt
+
+# Step 2: Screen for signals
+tongstock-cli screen -f banking.txt -t day -s golden_cross -p 8
+```
+
+**Output table columns:**
+- Code, Date, Close, MA5/10/20, DIF, K, J, Latest Signals
