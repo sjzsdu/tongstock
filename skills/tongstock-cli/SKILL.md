@@ -374,6 +374,8 @@ Start server: `tongstock-server` (listens on `:8080`)
 | `GET /api/company` | `code` | F10 category list |
 | `GET /api/company/content` | `code`, `filename` | F10 content |
 | `GET /api/block` | `file` | Sector classification |
+| `GET /api/indicator` | `code`, `type` | Technical indicators + signals |
+| `GET /api/screen` | `codes`, `type`, `signal` | Batch signal screening |
 
 ```bash
 curl "http://localhost:8080/api/quote?code=000001"

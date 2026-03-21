@@ -4,9 +4,14 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sjzsdu/tongstock/pkg/config"
+	"github.com/sjzsdu/tongstock/pkg/param"
+	"github.com/sjzsdu/tongstock/pkg/signal"
+	"github.com/sjzsdu/tongstock/pkg/ta"
 	"github.com/sjzsdu/tongstock/pkg/tdx"
 	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
 )
@@ -49,6 +54,9 @@ func main() {
 
 	r.GET("/api/count", handleCount)
 	r.GET("/api/auction", handleAuction)
+
+	r.GET("/api/indicator", handleIndicator)
+	r.GET("/api/screen", handleScreen)
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	log.Printf("服务启动于 http://localhost:%d", cfg.Server.Port)
@@ -382,4 +390,164 @@ func handleTrade(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+func toKlineInputs(klines []*protocol.Kline) []ta.KlineInput {
+	inputs := make([]ta.KlineInput, len(klines))
+	for i, k := range klines {
+		inputs[i] = ta.KlineInput{
+			Time: k.Time, Open: k.Open, High: k.High,
+			Low: k.Low, Close: k.Close, Volume: k.Volume, Amount: k.Amount,
+		}
+	}
+	return inputs
+}
+
+func handleIndicator(c *gin.Context) {
+	code := c.Query("code")
+	ktype := c.DefaultQuery("type", "day")
+
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 code 参数"})
+		return
+	}
+
+	svc, err := getService()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("连接失败: %v", err)})
+		return
+	}
+
+	klines, err := svc.FetchKline(code, tdx.ParseKlineType(ktype), 0, 250)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取K线失败: %v", err)})
+		return
+	}
+
+	inputs := toKlineInputs(klines)
+	_ = param.AutoInit()
+	category := param.DetectCategory(code)
+	cfg := param.Resolve(code, category)
+	result := ta.Calculate(inputs, cfg)
+	signals := signal.Detect(code, inputs, result, nil)
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":     code,
+		"type":     ktype,
+		"category": string(category),
+		"count":    len(inputs),
+		"last":     inputs[len(inputs)-1],
+		"ma":       result.MA,
+		"macd":     result.MACD,
+		"kdj":      result.KDJ,
+		"boll":     result.BOLL,
+		"rsi":      result.RSI,
+		"signals":  signals,
+	})
+}
+
+func handleScreen(c *gin.Context) {
+	codesStr := c.Query("codes")
+	ktype := c.DefaultQuery("type", "day")
+	signalType := c.Query("signal")
+
+	if codesStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 codes 参数"})
+		return
+	}
+
+	codeList := strings.Split(codesStr, ",")
+	for i := range codeList {
+		codeList[i] = strings.TrimSpace(codeList[i])
+	}
+
+	svc, err := getService()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("连接失败: %v", err)})
+		return
+	}
+
+	_ = param.AutoInit()
+
+	type result struct {
+		Code    string               `json:"code"`
+		Last    ta.KlineInput        `json:"last"`
+		MA      map[string][]float64 `json:"ma"`
+		MACD    *ta.MACDResult       `json:"macd,omitempty"`
+		KDJ     *ta.KDJResult        `json:"kdj,omitempty"`
+		Signals []signal.Signal      `json:"signals"`
+	}
+
+	results := make([]result, len(codeList))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 10)
+	var mu sync.Mutex
+
+	for i, code := range codeList {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(idx int, c string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			klines, err := svc.FetchKline(c, tdx.ParseKlineType(ktype), 0, 250)
+			if err != nil {
+				return
+			}
+			if len(klines) == 0 {
+				return
+			}
+
+			inputs := toKlineInputs(klines)
+			cat := param.DetectCategory(c)
+			cfg := param.Resolve(c, cat)
+			ind := ta.Calculate(inputs, cfg)
+			sigs := signal.Detect(c, inputs, ind, nil)
+
+			n := len(inputs)
+			r := result{
+				Code:    c,
+				Last:    inputs[n-1],
+				MA:      ind.MA,
+				MACD:    ind.MACD,
+				KDJ:     ind.KDJ,
+				Signals: sigs,
+			}
+
+			mu.Lock()
+			results[idx] = r
+			mu.Unlock()
+		}(i, code)
+	}
+	wg.Wait()
+
+	if signalType != "" {
+		var filtered []result
+		for _, r := range results {
+			if r.Code == "" {
+				continue
+			}
+			for _, s := range r.Signals {
+				match := false
+				switch signalType {
+				case "golden_cross":
+					match = s.Type == signal.SignalGoldenCross
+				case "death_cross":
+					match = s.Type == signal.SignalDeathCross
+				case "overbought":
+					match = s.Type == signal.SignalOverbought
+				case "oversold":
+					match = s.Type == signal.SignalOversold
+				}
+				if match {
+					filtered = append(filtered, r)
+					break
+				}
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"results": filtered, "total": len(codeList), "matched": len(filtered)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"results": results, "total": len(codeList)})
 }

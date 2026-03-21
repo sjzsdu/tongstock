@@ -71,5 +71,9 @@ test_api "block:zs" "$URL/api/block?file=block_zs.dat"
 test_api "block:fg" "$URL/api/block?file=block_fg.dat"
 test_api "block:gn" "$URL/api/block?file=block_gn.dat"
 
+test_api "indicator" "$URL/api/indicator?code=000001&type=day"
+test_api "screen" "$URL/api/screen?codes=000001,600519&type=day"
+test_api "screen:signal" "$URL/api/screen?codes=000001,600519&type=day&signal=golden_cross"
+
 echo ""
 echo "测试完成"

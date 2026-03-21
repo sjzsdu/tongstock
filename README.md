@@ -245,6 +245,8 @@ go build -o tongstock-server ./cmd/server
 | `/api/company` | GET | `code` | 公司信息目录(F10) |
 | `/api/company/content` | GET | `code`, `filename` | 公司信息内容 |
 | `/api/block` | GET | `file` | 板块分类数据 |
+| `/api/indicator` | GET | `code`, `type` | 技术指标（MACD/KDJ/MA/BOLL/RSI + 信号） |
+| `/api/screen` | GET | `codes`, `type`, `signal` | 批量信号筛选 |
 
 ### 示例
 
