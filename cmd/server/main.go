@@ -140,15 +140,17 @@ func resetService() {
 
 func withRetry[T any](fn func() (T, error)) (T, error) {
 	tdxMu.Lock()
-	defer tdxMu.Unlock()
-
 	result, err := fn()
+	tdxMu.Unlock()
+
 	if err != nil {
 		log.Printf("[tdx] 请求失败, 尝试重连: %v", err)
 		resetService()
+		tdxMu.Lock()
+		defer tdxMu.Unlock()
 		return fn()
 	}
-	return result, err
+	return result, nil
 }
 
 func handleQuote(c *gin.Context) {
