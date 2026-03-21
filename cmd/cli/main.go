@@ -3,8 +3,13 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
+	"sync"
 
 	"github.com/sjzsdu/tongstock/pkg/config"
+	"github.com/sjzsdu/tongstock/pkg/param"
+	"github.com/sjzsdu/tongstock/pkg/signal"
+	"github.com/sjzsdu/tongstock/pkg/ta"
 	"github.com/sjzsdu/tongstock/pkg/tdx"
 	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
 	"github.com/spf13/cobra"
@@ -53,6 +58,297 @@ func init() {
 	rootCmd.AddCommand(blockCmd)
 	rootCmd.AddCommand(countCmd)
 	rootCmd.AddCommand(auctionCmd)
+	rootCmd.AddCommand(indicatorCmd)
+	rootCmd.AddCommand(screenCmd)
+}
+
+// Indicator command and screen command
+var (
+	indicatorCode   string
+	indicatorType   string
+	indicatorAll    bool
+	indicatorCount  int
+	indicatorConfig string
+)
+
+var indicatorCmd = &cobra.Command{
+	Use:   "indicator",
+	Short: "查询技术指标",
+	RunE:  runIndicator,
+}
+
+func init() {
+	indicatorCmd.Flags().StringVarP(&indicatorCode, "code", "c", "", "股票代码")
+	indicatorCmd.Flags().StringVarP(&indicatorType, "type", "t", "day", "K线类型")
+	indicatorCmd.Flags().BoolVarP(&indicatorAll, "all", "a", false, "获取全部历史K线")
+	indicatorCmd.Flags().IntVarP(&indicatorCount, "count", "n", 250, "K线数量")
+	indicatorCmd.Flags().StringVarP(&indicatorConfig, "config", "", "", "参数配置文件路径")
+	_ = indicatorCmd.MarkFlagRequired("code")
+}
+
+func runIndicator(cmd *cobra.Command, args []string) error {
+	ktype := tdx.ParseKlineType(indicatorType)
+
+	svc, err := dialService()
+	if err != nil {
+		return fmt.Errorf("连接服务器失败: %w", err)
+	}
+	defer svc.Close()
+
+	var klines []*protocol.Kline
+	if indicatorAll {
+		klines, err = svc.FetchKlineAll(indicatorCode, ktype)
+	} else {
+		klines, err = svc.FetchKline(indicatorCode, ktype, 0, uint16(indicatorCount))
+	}
+	if err != nil {
+		return fmt.Errorf("获取K线失败: %w", err)
+	}
+
+	inputs := make([]ta.KlineInput, len(klines))
+	for i, k := range klines {
+		inputs[i] = ta.KlineInput{Time: k.Time, Open: k.Open, High: k.High, Low: k.Low, Close: k.Close, Volume: k.Volume, Amount: k.Amount}
+	}
+
+	if indicatorConfig != "" {
+		_ = param.Init(indicatorConfig)
+	} else {
+		_ = param.AutoInit()
+	}
+	category := param.DetectCategory(indicatorCode)
+	cfg := param.Resolve(indicatorCode, category)
+
+	result := ta.Calculate(inputs, cfg)
+	signals := signal.Detect(indicatorCode, inputs, result, nil)
+
+	// Table header
+	fmt.Printf("\n%s 技术指标 (分类: %s)\n", indicatorCode, category)
+	fmt.Println(strings.Repeat("=", 80))
+	header := fmt.Sprintf("%-12s %-8s %-8s %-8s %-8s", "日期", "收盘", "MA5", "MA10", "MA20")
+	if result.MACD != nil {
+		header += fmt.Sprintf(" %-8s %-8s %-8s", "DIF", "DEA", "HIST")
+	}
+	if result.KDJ != nil {
+		header += fmt.Sprintf(" %-8s %-8s %-8s", "K", "D", "J")
+	}
+	if result.BOLL != nil {
+		header += fmt.Sprintf(" %-8s %-8s %-8s", "UPPER", "MID", "LOWER")
+	}
+	fmt.Println(header)
+	fmt.Println(strings.Repeat("-", len(header)))
+
+	// Show last 20 rows (most recent)
+	start := 0
+	if len(inputs) > 20 {
+		start = len(inputs) - 20
+	}
+	for i := start; i < len(inputs); i++ {
+		row := fmt.Sprintf("%-12s %-8.2f %-8.2f %-8.2f %-8.2f",
+			inputs[i].Time.Format("2006-01-02"), inputs[i].Close,
+			result.MA["5"][i], result.MA["10"][i], result.MA["20"][i])
+		if result.MACD != nil {
+			row += fmt.Sprintf(" %-8.2f %-8.2f %-8.2f", result.MACD.DIF[i], result.MACD.DEA[i], result.MACD.Hist[i])
+		}
+		if result.KDJ != nil {
+			row += fmt.Sprintf(" %-8.2f %-8.2f %-8.2f", result.KDJ.K[i], result.KDJ.D[i], result.KDJ.J[i])
+		}
+		if result.BOLL != nil {
+			row += fmt.Sprintf(" %-8.2f %-8.2f %-8.2f", result.BOLL.Upper[i], result.BOLL.Middle[i], result.BOLL.Lower[i])
+		}
+		fmt.Println(row)
+	}
+
+	// Signals summary
+	if len(signals) > 0 {
+		fmt.Printf("\n最新信号:\n")
+		fmt.Println(strings.Repeat("-", 60))
+		recentSignals := signals
+		if len(signals) > 10 {
+			recentSignals = signals[len(signals)-10:]
+		}
+		for _, s := range recentSignals {
+			fmt.Printf("  [%s] %s %s (%s) 强度: %.2f\n",
+				s.Date.Format("2006-01-02"), s.Indicator, s.Type, s.Details, s.Strength)
+		}
+	}
+
+	return nil
+}
+
+var (
+	screenType   string
+	screenCodes  string
+	screenFile   string
+	screenSignal string
+	screenPool   int
+)
+
+var screenCmd = &cobra.Command{
+	Use:   "screen",
+	Short: "批量筛选股票信号",
+	RunE:  runScreen,
+}
+
+func init() {
+	screenCmd.Flags().StringVarP(&screenType, "type", "t", "day", "K线类型")
+	screenCmd.Flags().StringVarP(&screenCodes, "codes", "c", "", "逗号分隔的股票代码列表")
+	screenCmd.Flags().StringVarP(&screenFile, "file", "f", "", "股票代码文件路径（每行一个代码）")
+	screenCmd.Flags().StringVarP(&screenSignal, "signal", "s", "", "筛选信号类型: golden_cross/death_cross/overbought/oversold")
+	screenCmd.Flags().IntVarP(&screenPool, "pool", "p", 10, "并发池大小")
+}
+
+func runScreen(cmd *cobra.Command, args []string) error {
+	ktype := tdx.ParseKlineType(screenType)
+
+	// Parse code list
+	var codeList []string
+	if screenCodes != "" {
+		for _, c := range strings.Split(screenCodes, ",") {
+			c = strings.TrimSpace(c)
+			if c != "" {
+				codeList = append(codeList, c)
+			}
+		}
+	} else if screenFile != "" {
+		data, err := os.ReadFile(screenFile)
+		if err != nil {
+			return fmt.Errorf("读取文件失败: %w", err)
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" && !strings.HasPrefix(line, "#") {
+				codeList = append(codeList, line)
+			}
+		}
+	} else {
+		return fmt.Errorf("请指定 --codes 或 --file 参数")
+	}
+
+	if len(codeList) == 0 {
+		return fmt.Errorf("没有有效的股票代码")
+	}
+
+	svc, err := dialService()
+	if err != nil {
+		return fmt.Errorf("连接服务器失败: %w", err)
+	}
+	defer svc.Close()
+
+	_ = param.AutoInit()
+
+	type screenResult struct {
+		Code    string
+		Klines  []ta.KlineInput
+		Ind     *ta.IndicatorResult
+		Signals []signal.Signal
+		Err     error
+	}
+
+	results := make([]screenResult, len(codeList))
+	sem := make(chan struct{}, screenPool)
+	var wg sync.WaitGroup
+
+	for i, code := range codeList {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(idx int, c string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			klines, err := svc.FetchKline(c, ktype, 0, 250)
+			if err != nil {
+				results[idx] = screenResult{Code: c, Err: err}
+				return
+			}
+
+			inputs := make([]ta.KlineInput, len(klines))
+			for j, k := range klines {
+				inputs[j] = ta.KlineInput{Time: k.Time, Open: k.Open, High: k.High, Low: k.Low, Close: k.Close, Volume: k.Volume, Amount: k.Amount}
+			}
+
+			category := param.DetectCategory(c)
+			cfg := param.Resolve(c, category)
+			ind := ta.Calculate(inputs, cfg)
+			sigs := signal.Detect(c, inputs, ind, nil)
+
+			results[idx] = screenResult{Code: c, Klines: inputs, Ind: ind, Signals: sigs}
+		}(i, code)
+	}
+	wg.Wait()
+
+	// Filter by signal type if specified
+	var filtered []screenResult
+	for _, r := range results {
+		if r.Err != nil {
+			continue
+		}
+		if screenSignal == "" {
+			filtered = append(filtered, r)
+			continue
+		}
+		for _, s := range r.Signals {
+			match := false
+			switch screenSignal {
+			case "golden_cross":
+				match = s.Type == signal.SignalGoldenCross
+			case "death_cross":
+				match = s.Type == signal.SignalDeathCross
+			case "overbought":
+				match = s.Type == signal.SignalOverbought
+			case "oversold":
+				match = s.Type == signal.SignalOversold
+			}
+			if match {
+				filtered = append(filtered, r)
+				break
+			}
+		}
+	}
+
+	// Output results
+	fmt.Printf("\n筛选结果 (%d/%d 只股票)\n", len(filtered), len(codeList))
+	fmt.Println(strings.Repeat("=", 100))
+	header := fmt.Sprintf("%-8s %-10s %-8s %-8s %-8s %-8s %-8s %-8s %-8s 信号",
+		"代码", "日期", "收盘", "MA5", "MA10", "MA20", "DIF", "K", "J")
+	fmt.Println(header)
+	fmt.Println(strings.Repeat("-", len(header)+20))
+
+	for _, r := range filtered {
+		n := len(r.Klines)
+		if n == 0 {
+			continue
+		}
+		last := r.Klines[n-1]
+		ma5 := r.Ind.MA["5"][n-1]
+		ma10 := r.Ind.MA["10"][n-1]
+		ma20 := r.Ind.MA["20"][n-1]
+		dif := 0.0
+		kVal := 0.0
+		jVal := 0.0
+		if r.Ind.MACD != nil {
+			dif = r.Ind.MACD.DIF[n-1]
+		}
+		if r.Ind.KDJ != nil {
+			kVal = r.Ind.KDJ.K[n-1]
+			jVal = r.Ind.KDJ.J[n-1]
+		}
+
+		var sigStrs []string
+		for _, s := range r.Signals {
+			if n > 0 && s.Date.Equal(r.Klines[n-1].Time) {
+				sigStrs = append(sigStrs, fmt.Sprintf("%s%s", s.Indicator, s.Type))
+			}
+		}
+		sigStr := strings.Join(sigStrs, ", ")
+		if sigStr == "" {
+			sigStr = "-"
+		}
+
+		fmt.Printf("%-8s %-10s %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %s\n",
+			r.Code, last.Time.Format("2006-01-02"), last.Close, ma5, ma10, ma20, dif, kVal, jVal, sigStr)
+	}
+
+	return nil
 }
 
 var quoteCmd = &cobra.Command{

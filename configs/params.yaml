@@ -1,0 +1,39 @@
+defaults:
+  ma: [5, 10, 20, 60]
+  macd:
+    fast: 12
+    slow: 26
+    signal: 9
+  kdj:
+    n: 9
+    m1: 3
+    m2: 3
+  boll:
+    n: 20
+    k: 2.0
+  rsi: [6, 14]
+
+categories:
+  large_cap:
+    ma: [5, 10, 20, 60, 120]
+    macd:
+      fast: 12
+      slow: 26
+      signal: 9
+  small_cap:
+    ma: [5, 10, 20]
+    macd:
+      fast: 8
+      slow: 17
+      signal: 9
+    kdj:
+      n: 7
+      m1: 3
+      m2: 3
+
+overrides:
+  "000001":
+    kdj:
+      n: 5
+      m1: 3
+      m2: 3

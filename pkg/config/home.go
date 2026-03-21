@@ -24,6 +24,11 @@ func ConfigPath() string {
 	return filepath.Join(HomeDir(), "config.yaml")
 }
 
+// IndicatorConfigPath 返回 ~/.tongstock/indicator.yaml 路径
+func IndicatorConfigPath() string {
+	return filepath.Join(HomeDir(), "indicator.yaml")
+}
+
 // DBPath 返回默认的 SQLite 数据库路径: ~/.tongstock/cache/tongstock.db
 func DBPath() string {
 	return filepath.Join(CacheDir(), "tongstock.db")
