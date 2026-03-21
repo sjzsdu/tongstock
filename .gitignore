@@ -1,2 +1,8 @@
 .opencode
 .hive/events.json
+
+# Build outputs
+tongstock-cli
+tongstock-server
+server
+web/dist
