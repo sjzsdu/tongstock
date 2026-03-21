@@ -108,11 +108,11 @@ export interface TradeItem {
 }
 
 export interface AuctionItem {
-  Time: string;
-  Price: number;
-  Match: number;
-  Unmatched: number;
-  Flag: number;
+  time: string;
+  price: number;
+  match: number;
+  unmatched: number;
+  flag: number;
 }
 
 export interface BlockItem {

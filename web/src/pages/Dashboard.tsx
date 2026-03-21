@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { TrendingUp, TrendingDown, BarChart3 } from 'lucide-react';
 import { api } from '../api/client';
 
@@ -73,21 +73,24 @@ export default function Dashboard() {
 
 function QuickSearch() {
   const [code, setCode] = useState('');
+  const navigate = useNavigate();
+  const go = () => { if (code) navigate(`/stock/${code}`); };
   return (
     <div className="flex gap-3">
       <input
         type="text"
         value={code}
         onChange={e => setCode(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') go(); }}
         placeholder="输入股票代码，如 000001"
         className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white flex-1 focus:outline-none focus:border-blue-500"
       />
-      <Link
-        to={`/stock/${code}`}
+      <button
+        onClick={go}
         className={`bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded-lg text-white font-medium ${!code && 'opacity-50 pointer-events-none'}`}
       >
         分析
-      </Link>
+      </button>
     </div>
   );
 }

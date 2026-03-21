@@ -91,8 +91,8 @@ function NavLink({ to, children, icon: Icon }: { to: string; children: React.Rea
 
 function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen">
-      <nav className="w-56 bg-slate-900 border-r border-slate-800 p-4 flex flex-col gap-1">
+    <div className="flex h-screen overflow-hidden">
+      <nav className="w-56 bg-slate-900 border-r border-slate-800 p-4 flex flex-col gap-1 shrink-0">
         <Link to="/" className="flex items-center gap-2 px-2 mb-6">
           <TrendingUp className="text-blue-500" size={24} />
           <span className="text-lg font-bold text-white">TongStock</span>
