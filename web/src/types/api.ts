@@ -1,4 +1,4 @@
-export interface KlineInput {
+export interface KlineItem {
   Time: string;
   Open: number;
   High: number;
@@ -6,6 +6,20 @@ export interface KlineInput {
   Close: number;
   Volume: number;
   Amount: number;
+}
+
+export interface Quote {
+  Code: string;
+  Name: string;
+  Price: number;
+  Open: number;
+  High: number;
+  Low: number;
+  LastClose: number;
+  Volume: number;
+  Amount: number;
+  SVol: number;
+  BVol: number;
 }
 
 export interface MACDResult {
@@ -31,7 +45,7 @@ export interface IndicatorData {
   type: string;
   category: string;
   count: number;
-  last: KlineInput;
+  last: KlineItem;
   ma: Record<string, number[]>;
   macd: MACDResult | null;
   kdj: KDJResult | null;
@@ -49,9 +63,77 @@ export interface Signal {
   Strength: number;
 }
 
+export interface Finance {
+  ZongGuBen: number;
+  LiuTongGuBen: number;
+  ZongZiChan: number;
+  JingZiChan: number;
+  ZhuYingShouRu: number;
+  JingLiRun: number;
+  MeiGuJingZiChan: number;
+  GuDongRenShu: number;
+  IPODate: number;
+  UpdatedDate: number;
+}
+
+export interface XdXrItem {
+  Date: string;
+  Category: string;
+  FenHong: number;
+  PeiGuJia: number;
+  SongZhuanGu: number;
+  PeiGu: number;
+  PanHouLiuTong: number;
+  HouZongGuBen: number;
+}
+
+export interface CompanyCategory {
+  Filename: string;
+  Name: string;
+  Start: number;
+  Length: number;
+}
+
+export interface MinuteItem {
+  Time: string;
+  Price: number;
+  Number: number;
+}
+
+export interface TradeItem {
+  Time: string;
+  Price: number;
+  Volume: number;
+  Status: number;
+}
+
+export interface AuctionItem {
+  Time: string;
+  Price: number;
+  Match: number;
+  Unmatched: number;
+  Flag: number;
+}
+
+export interface BlockItem {
+  BlockName: string;
+  StockCode: string;
+  BlockType: number;
+}
+
+export interface CodeItem {
+  Code: string;
+  Name: string;
+}
+
+export interface IndexBar extends KlineItem {
+  UpCount: number;
+  DownCount: number;
+}
+
 export interface ScreenResult {
   code: string;
-  last: KlineInput;
+  last: KlineItem;
   ma: Record<string, number[]>;
   macd: MACDResult | null;
   kdj: KDJResult | null;

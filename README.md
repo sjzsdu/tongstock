@@ -28,9 +28,33 @@
 git clone https://github.com/sjzsdu/tongstock.git
 cd tongstock
 
-# 编译
-go build -o tongstock-cli ./cmd/cli
-go build -o tongstock-server ./cmd/server
+# 一键安装（需要 Go 1.24+ 和 pnpm）
+bash setup.sh
+
+# 或手动构建
+pnpm install
+make server
+make cli
+```
+
+## Web UI
+
+启动 server 后访问 `http://localhost:8080` 即可使用 Web 界面。
+
+### 功能页面
+
+| 页面 | 路径 | 功能 |
+|------|------|------|
+| 市场总览 | `/` | 主要指数行情 + 快速分析入口 |
+| 指标分析 | `/stock` | 单股 MACD/KDJ/MA/BOLL 图表 + 信号标记 |
+| 信号筛选 | `/screen` | 批量筛选金叉/死叉/超买/超卖 |
+
+### 开发模式
+
+```bash
+cd web
+npm install
+npm run dev        # 启动开发服务器，默认代理到 localhost:8080
 ```
 
 ## CLI 使用方法
@@ -392,7 +416,15 @@ tongstock/
 │   ├── cli/              # CLI 工具
 │   │   └── main.go       # 命令行入口
 │   └── server/           # HTTP API 服务
-│       └── main.go       # 服务入口
+│       └── main.go       # 服务入口（嵌入 Web UI）
+├── web/                  # React + TypeScript Web UI
+│   ├── src/
+│   │   ├── api/          # API 客户端
+│   │   ├── components/   # 组件（图表等）
+│   │   ├── pages/        # 页面（Dashboard/Stock/Screen）
+│   │   └── types/        # TypeScript 类型
+│   ├── package.json
+│   └── vite.config.ts
 ├── pkg/
 │   ├── tdx/              # TDX 协议实现
 │   │   ├── client.go     # 客户端
@@ -438,16 +470,22 @@ tongstock/
 │   └── utils/            # 工具函数
 ├── configs/
 │   └── params.yaml       # 指标参数配置（含大盘/小盘分类）
+├── Makefile              # 构建脚本
 └── README.md
 ```
 
 ## 技术栈
 
-- **Go 1.24+** - 开发语言
+- **Go 1.24+** - 后端开发语言
 - **spf13/cobra** - CLI 框架
 - **Gin** - HTTP 框架
 - **TDX 协议** - 通达信私有二进制协议
 - **gopkg.in/yaml.v3** - 参数配置解析
+- **React 19** - Web UI 前端框架
+- **TypeScript** - 前端类型安全
+- **Vite** - 前端构建工具
+- **Tailwind CSS** - 样式框架
+- **Recharts** - 图表组件库
 
 ## 数据来源
 

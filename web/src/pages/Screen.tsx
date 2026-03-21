@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { getScreen } from '../api/client';
-import type { ScreenResult } from '../types/api';
 import { Search, AlertCircle } from 'lucide-react';
+import { api } from '../api/client';
+import type { ScreenResult } from '../types/api';
 
 const signalOptions = [
   { value: '', label: '全部' },
@@ -25,7 +25,7 @@ export default function Screen() {
     setLoading(true);
     setError('');
     try {
-      const res = await getScreen(codes, 'day', signal || undefined);
+      const res = await api.screen(codes, 'day', signal || undefined);
       setResults(res.results);
       setTotal(res.total);
       setMatched(res.matched ?? res.results.length);

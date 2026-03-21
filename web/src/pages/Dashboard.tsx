@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getIndex } from '../api/client';
 import { TrendingUp, TrendingDown, BarChart3 } from 'lucide-react';
+import { api } from '../api/client';
 
 const INDICES = [
   { code: '999999', name: '上证指数' },
@@ -19,7 +19,7 @@ export default function Dashboard() {
       const results = [];
       for (const idx of INDICES) {
         try {
-          const bars = await getIndex(idx.code, 'day');
+          const bars = await api.index(idx.code, 'day');
           const last = bars?.[bars.length - 1];
           const prev = bars?.[bars.length - 2];
           const change = last && prev ? ((last.Close - prev.Close) / prev.Close * 100) : 0;

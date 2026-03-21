@@ -5,4 +5,8 @@
 tongstock-cli
 tongstock-server
 server
-web/dist
+pkg/web/dist
+
+# Web dependencies
+web/node_modules
+web/.vite
