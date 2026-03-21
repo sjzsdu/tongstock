@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+#tv-attr-logo {
+  display: none;
+}
+
 :root {
   --color-primary: #0f172a;
   --color-accent: #3b82f6;
