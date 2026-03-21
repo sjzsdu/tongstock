@@ -55,8 +55,8 @@ export const api = {
   company: (code: string) =>
     fetchJSON<CompanyCategory[]>(`/api/company?code=${code}`),
 
-  companyContent: (code: string, filename: string) =>
-    fetchJSON<{ content: string }>(`/api/company/content?code=${code}&filename=${filename}`),
+  companyContent: (code: string, block: string) =>
+    fetchJSON<{ content: string }>(`/api/company/content?code=${code}&block=${encodeURIComponent(block)}`),
 
   block: (file = 'block_zs.dat') =>
     fetchJSON<BlockItem[]>(`/api/block?file=${file}`),

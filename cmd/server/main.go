@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -386,21 +387,88 @@ func handleCompany(c *gin.Context) {
 
 func handleCompanyContent(c *gin.Context) {
 	code := c.Query("code")
-	filename := c.Query("filename")
-	if code == "" || filename == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 code 或 filename 参数"})
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 code 参数"})
 		return
 	}
 
+	block := c.Query("block")
+	filename := c.Query("filename")
+
 	start := uint32(0)
 	length := uint32(10000)
+
+	if block != "" {
+		cats, err := withRetry(func() ([]struct {
+			Filename string
+			Name     string
+			Start    uint32
+			Length   uint32
+		}, error) {
+			s, e := getService()
+			if e != nil {
+				return nil, e
+			}
+			raw, e2 := s.FetchCompanyCategory(code)
+			if e2 != nil {
+				return nil, e2
+			}
+			var result []struct {
+				Filename string
+				Name     string
+				Start    uint32
+				Length   uint32
+			}
+			for _, cat := range raw {
+				result = append(result, struct {
+					Filename string
+					Name     string
+					Start    uint32
+					Length   uint32
+				}{cat.Filename, cat.Name, cat.Start, cat.Length})
+			}
+			return result, nil
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取公司信息目录失败: %v", err)})
+			return
+		}
+		found := false
+		for _, cat := range cats {
+			if cat.Name == block {
+				filename = cat.Filename
+				start = cat.Start
+				length = cat.Length
+				found = true
+				break
+			}
+		}
+		if !found {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("未找到块: %s", block)})
+			return
+		}
+	} else if filename == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 block 或 filename 参数"})
+		return
+	} else {
+		if s := c.Query("start"); s != "" {
+			if v, err := strconv.ParseUint(s, 10, 32); err == nil {
+				start = uint32(v)
+			}
+		}
+		if l := c.Query("length"); l != "" {
+			if v, err := strconv.ParseUint(l, 10, 32); err == nil {
+				length = uint32(v)
+			}
+		}
+	}
 
 	content, err := withRetry(func() (string, error) {
 		s, e := getService()
 		if e != nil {
 			return "", e
 		}
-		return s.FetchCompanyContent(code, filename, start, length)
+		return s.Client.GetCompanyInfoContent(code, filename, start, length)
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取公司信息内容失败: %v", err)})

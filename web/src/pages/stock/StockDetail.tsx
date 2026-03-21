@@ -62,7 +62,10 @@ export default function StockDetail() {
   useEffect(() => {
     if (!code) return;
     if (tab === 'finance') api.finance(code).then(setFinance).catch(() => {});
-    if (tab === 'company') api.company(code).then(setCompanyCats).catch(() => {});
+    if (tab === 'company') api.company(code).then(cats => {
+      setCompanyCats(cats);
+      if (cats.length > 0 && !selectedCat) loadCompanyContent(cats[0].Name);
+    }).catch(() => {});
     if (tab === 'dividend') api.xdxr(code).then(d => setDividends([...d].reverse())).catch(() => {});
     if (tab === 'intraday') {
       api.minute(code).then(r => setMinuteData([...(r.List || [])].reverse())).catch(() => {});
@@ -73,10 +76,8 @@ export default function StockDetail() {
 
   const loadCompanyContent = async (catName: string) => {
     setSelectedCat(catName);
-    const cat = companyCats.find(c => c.Name === catName);
-    if (!cat) return;
     try {
-      const r = await api.companyContent(code, cat.Filename);
+      const r = await api.companyContent(code, catName);
       setCompanyContent((r.content || '').replace(/\r/g, ''));
     } catch { setCompanyContent('加载失败'); }
   };
@@ -85,7 +86,7 @@ export default function StockDetail() {
   const up = pct >= 0;
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="flex flex-col h-full min-h-0 gap-4">
       <div className="flex items-center gap-4">
         <input
           type="text" value={code}
@@ -174,7 +175,7 @@ export default function StockDetail() {
                 <button
                   key={cat.Name}
                   onClick={() => loadCompanyContent(cat.Name)}
-                  className={`text-left px-3 py-2 rounded text-sm ${
+                  className={`text-left px-3 py-2 rounded text-sm cursor-pointer ${
                     selectedCat === cat.Name ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'
                   }`}
                 >
@@ -183,7 +184,7 @@ export default function StockDetail() {
               ))}
             </div>
             <div className="flex-1 bg-slate-900 rounded-lg border border-slate-800 p-4 overflow-auto">
-              <pre className="text-slate-300 text-xs whitespace-pre font-mono leading-relaxed">{companyContent || '点击左侧目录查看内容'}</pre>
+              <pre className="text-slate-300 text-xs whitespace-pre leading-relaxed" style={{ fontFamily: '"Sarasa Mono SC", "Noto Sans Mono CJK SC", "WenQuanYi Micro Hei Mono", "Microsoft YaHei", Menlo, Consolas, monospace' }}>{companyContent || '点击左侧目录查看内容'}</pre>
             </div>
           </div>
         </TabContent>
