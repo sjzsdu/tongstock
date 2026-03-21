@@ -4,6 +4,7 @@ import { BarChart3, DollarSign, Building2, Gift, Clock } from 'lucide-react';
 import { api } from '../../api/client';
 import type { TradeItem, AuctionItem } from '../../types/api';
 import CandlestickChart from '../../components/charts/CandlestickChart';
+import TabContent from '../../components/TabContent';
 
 function fmtTime(t: string): string {
   if (!t) return '';
@@ -166,28 +167,31 @@ export default function StockDetail() {
       )}
 
       {tab === 'company' && (
-        <div className="flex gap-4 flex-1 min-h-0 overflow-hidden">
-          <div className="w-48 bg-slate-900 rounded-lg border border-slate-800 p-2 flex flex-col gap-1 overflow-auto">
-            {companyCats.map(cat => (
-              <button
-                key={cat.Name}
-                onClick={() => loadCompanyContent(cat.Name)}
-                className={`text-left px-3 py-2 rounded text-sm ${
-                  selectedCat === cat.Name ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'
-                }`}
-              >
-                {cat.Name}
-              </button>
-            ))}
+        <TabContent>
+          <div className="flex gap-4 h-full">
+            <div className="w-48 bg-slate-900 rounded-lg border border-slate-800 p-2 flex flex-col gap-1 overflow-auto">
+              {companyCats.map(cat => (
+                <button
+                  key={cat.Name}
+                  onClick={() => loadCompanyContent(cat.Name)}
+                  className={`text-left px-3 py-2 rounded text-sm ${
+                    selectedCat === cat.Name ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  {cat.Name}
+                </button>
+              ))}
+            </div>
+            <div className="flex-1 bg-slate-900 rounded-lg border border-slate-800 p-4 overflow-auto">
+              <pre className="text-slate-300 text-xs whitespace-pre font-mono leading-relaxed">{companyContent || '点击左侧目录查看内容'}</pre>
+            </div>
           </div>
-          <div className="flex-1 bg-slate-900 rounded-lg border border-slate-800 p-4 overflow-auto">
-            <pre className="text-slate-300 text-xs whitespace-pre font-mono leading-relaxed">{companyContent || '点击左侧目录查看内容'}</pre>
-          </div>
-        </div>
+        </TabContent>
       )}
 
       {tab === 'dividend' && dividends.length > 0 && (
-        <div className="bg-slate-900 rounded-lg border border-slate-800 overflow-hidden flex-1 min-h-0 flex flex-col">
+        <TabContent>
+          <div className="bg-slate-900 rounded-lg border border-slate-800 overflow-hidden h-full flex flex-col">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-slate-900 z-10"><tr className="border-b border-slate-800 text-slate-400">
               <th className="text-left p-3">日期</th>
@@ -216,11 +220,13 @@ export default function StockDetail() {
               </tbody>
             </table>
           </div>
-        </div>
+          </div>
+        </TabContent>
       )}
 
       {tab === 'intraday' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0 overflow-auto">
+        <TabContent>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full overflow-auto">
           {minuteData.length > 0 && (
             <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
               <h3 className="text-white font-medium mb-3">分时走势</h3>
@@ -313,6 +319,7 @@ export default function StockDetail() {
             </div>
           )}
         </div>
+        </TabContent>
       )}
     </div>
   );
