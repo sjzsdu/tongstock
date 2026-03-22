@@ -46,6 +46,7 @@ export interface IndicatorData {
   category: string;
   count: number;
   last: KlineItem;
+  klines: KlineItem[];
   ma: Record<string, number[]>;
   macd: MACDResult | null;
   kdj: KDJResult | null;
@@ -144,4 +145,44 @@ export interface ScreenResponse {
   results: ScreenResult[];
   total: number;
   matched?: number;
+}
+
+export interface SignalOutcome {
+  date: string;
+  type: string;
+  indicator: string;
+  details: string;
+  price: number;
+  chg1: number | null;
+  chg5: number | null;
+  chg10: number | null;
+  chg20: number | null;
+  action: string;
+}
+
+export interface SignalSummary {
+  type: string;
+  action: string;
+  count: number;
+  valid1: number;
+  valid5: number;
+  valid10: number;
+  valid20: number;
+  win1: number;
+  win5: number;
+  win10: number;
+  win20: number;
+  avg1: number;
+  avg5: number;
+  avg10: number;
+  avg20: number;
+}
+
+export interface SignalAnalysis {
+  code: string;
+  type: string;
+  count: number;
+  signals: number;
+  outcomes: SignalOutcome[];
+  summary: SignalSummary[];
 }

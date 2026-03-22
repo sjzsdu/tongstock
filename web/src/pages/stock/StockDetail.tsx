@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { BarChart3, DollarSign, Building2, Gift, Clock } from 'lucide-react';
 import { api } from '../../api/client';
-import type { TradeItem, AuctionItem } from '../../types/api';
+import type { TradeItem, AuctionItem, SignalAnalysis as SignalAnalysisType } from '../../types/api';
 import CandlestickChart from '../../components/charts/CandlestickChart';
+import ChartToolbar from '../../components/charts/ChartToolbar';
+import MinuteChart from '../../components/charts/MinuteChart';
 import TabContent from '../../components/TabContent';
 import { parseTdxText, renderTdxHtml } from '../../lib/tdx-parser';
 
@@ -27,10 +29,14 @@ export default function StockDetail() {
   const { code: paramCode, tab: paramTab } = useParams();
   const navigate = useNavigate();
   const [code, setCode] = useState(paramCode || '000001');
+  const [inputCode, setInputCode] = useState(paramCode || '000001');
   const [tab, setTab] = useState<Tab>((paramTab as Tab) || 'chart');
   const [quote, setQuote] = useState<any>(null);
   const [klines, setKlines] = useState<any[]>([]);
   const [indicator, setIndicator] = useState<any>(null);
+  const [ktype, setKtype] = useState('day');
+  const [mainOverlay, setMainOverlay] = useState('MA');
+  const [subPanel, setSubPanel] = useState('MACD');
   const [finance, setFinance] = useState<any>(null);
   const [companyCats, setCompanyCats] = useState<any[]>([]);
   const [companyContent, setCompanyContent] = useState('');
@@ -39,10 +45,16 @@ export default function StockDetail() {
   const [minuteData, setMinuteData] = useState<any[]>([]);
   const [trades, setTrades] = useState<TradeItem[]>([]);
   const [auctions, setAuctions] = useState<AuctionItem[]>([]);
+  const [analysis, setAnalysis] = useState<SignalAnalysisType | null>(null);
+  const [highlightedIdx, setHighlightedIdx] = useState(-1);
+  const tradeRowRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (paramCode) setCode(paramCode);
+    if (paramCode) {
+      setCode(paramCode);
+      setInputCode(paramCode);
+    }
     if (paramTab) setTab(paramTab as Tab);
   }, [paramCode, paramTab]);
 
@@ -55,10 +67,13 @@ export default function StockDetail() {
     if (!code) return;
     setLoading(true);
     api.quote(code).then(setQuote).catch(() => {});
-    api.kline(code, 'day').then(setKlines).catch(() => {});
-    api.indicator(code, 'day').then(setIndicator).catch(() => {});
+    api.indicator(code, ktype).then(data => {
+      setIndicator(data);
+      setKlines(data?.klines || []);
+    }).catch(() => {});
+    api.signalAnalysis(code, ktype).then(setAnalysis).catch(() => {});
     setLoading(false);
-  }, [code]);
+  }, [code, ktype]);
 
   useEffect(() => {
     if (!code) return;
@@ -90,9 +105,9 @@ export default function StockDetail() {
     <div className="flex flex-col h-full min-h-0 gap-4">
       <div className="flex items-center gap-4">
         <input
-          type="text" value={code}
-          onChange={e => setCode(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') navigate(`/stock/${code}`); }}
+          type="text" value={inputCode}
+          onChange={e => setInputCode(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && inputCode.length === 6) navigate(`/stock/${inputCode}`); }}
           className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white w-32 font-mono focus:outline-none focus:border-blue-500"
           placeholder="股票代码"
         />
@@ -127,18 +142,109 @@ export default function StockDetail() {
 
       {tab === 'chart' && klines.length > 0 && (
         <div className="space-y-4">
-          <CandlestickChart klines={klines} indicator={indicator} height={500} />
-          {indicator?.signals?.length > 0 && (
+          <ChartToolbar
+            ktype={ktype}
+            onKtypeChange={setKtype}
+            mainOverlay={mainOverlay}
+            onMainOverlayChange={setMainOverlay}
+            subPanel={subPanel}
+            onSubPanelChange={setSubPanel}
+          />
+          <CandlestickChart
+            klines={klines}
+            indicator={indicator}
+            mainOverlay={mainOverlay}
+            subPanel={subPanel}
+          />
+          {analysis && analysis.summary.length > 0 && (
             <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
-              <h3 className="text-white font-medium mb-2">最新信号</h3>
-              <div className="flex flex-wrap gap-2">
-                {indicator.signals.slice(-8).reverse().map((s: any, i: number) => (
-                  <span key={i} className={`px-2 py-1 rounded text-xs ${
-                    s.Type === '金叉' ? 'bg-red-600' : s.Type === '死叉' ? 'bg-green-600' : 'bg-slate-700'
-                  }`}>
-                    {s.Date?.slice(5, 10)} {s.Indicator} {s.Type}
-                  </span>
-                ))}
+              <h3 className="text-white font-medium mb-1">信号回测</h3>
+              <p className="text-slate-500 text-xs mb-3">基于历史 {analysis.count} 根K线中的 {analysis.signals} 个信号，统计信号发出后 N 个交易日的上涨概率和平均涨幅</p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead><tr className="border-b border-slate-800 text-slate-400">
+                    <th className="text-left p-2">信号</th>
+                    <th className="text-left p-2">操作建议</th>
+                    <th className="text-right p-2">触发次数</th>
+                    <th className="text-right p-2">次日上涨率</th>
+                    <th className="text-right p-2">5日上涨率</th>
+                    <th className="text-right p-2">10日上涨率</th>
+                    <th className="text-right p-2">20日上涨率</th>
+                    <th className="text-right p-2">次日均涨幅</th>
+                    <th className="text-right p-2">5日均涨幅</th>
+                  </tr></thead>
+                  <tbody>
+                    {analysis.summary.map((s, i) => (
+                      <tr key={i} className="border-b border-slate-800/50 hover:bg-slate-800/50">
+                        <td className="p-2 font-medium text-white">{s.type}</td>
+                        <td className={`p-2 ${s.action === '买入参考' ? 'text-red-400' : 'text-green-400'}`}>{s.action}</td>
+                        <td className="p-2 text-right">{s.count}</td>
+                        <td className={`p-2 text-right ${s.valid1 > 0 && s.win1 >= 50 ? 'text-red-400' : s.valid1 > 0 ? 'text-green-400' : 'text-slate-600'}`}>
+                          {s.valid1 > 0 ? `${s.win1.toFixed(0)}% (${s.valid1})` : '-'}
+                        </td>
+                        <td className={`p-2 text-right ${s.valid5 > 0 && s.win5 >= 50 ? 'text-red-400' : s.valid5 > 0 ? 'text-green-400' : 'text-slate-600'}`}>
+                          {s.valid5 > 0 ? `${s.win5.toFixed(0)}% (${s.valid5})` : '-'}
+                        </td>
+                        <td className={`p-2 text-right ${s.valid10 > 0 && s.win10 >= 50 ? 'text-red-400' : s.valid10 > 0 ? 'text-green-400' : 'text-slate-600'}`}>
+                          {s.valid10 > 0 ? `${s.win10.toFixed(0)}% (${s.valid10})` : '-'}
+                        </td>
+                        <td className={`p-2 text-right ${s.valid20 > 0 && s.win20 >= 50 ? 'text-red-400' : s.valid20 > 0 ? 'text-green-400' : 'text-slate-600'}`}>
+                          {s.valid20 > 0 ? `${s.win20.toFixed(0)}% (${s.valid20})` : '-'}
+                        </td>
+                        <td className={`p-2 text-right ${s.valid1 > 0 && s.avg1 >= 0 ? 'text-red-400' : s.valid1 > 0 ? 'text-green-400' : 'text-slate-600'}`}>
+                          {s.valid1 > 0 ? `${s.avg1 > 0 ? '+' : ''}${s.avg1.toFixed(2)}%` : '-'}
+                        </td>
+                        <td className={`p-2 text-right ${s.valid5 > 0 && s.avg5 >= 0 ? 'text-red-400' : s.valid5 > 0 ? 'text-green-400' : 'text-slate-600'}`}>
+                          {s.valid5 > 0 ? `${s.avg5 > 0 ? '+' : ''}${s.avg5.toFixed(2)}%` : '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {analysis && analysis.outcomes.length > 0 && (
+            <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
+              <h3 className="text-white font-medium mb-1">信号明细</h3>
+              <p className="text-slate-500 text-xs mb-3">每次信号触发时的价格及后续涨跌，"-" 表示数据不足尚无结果</p>
+              <div className="overflow-x-auto max-h-64 overflow-auto">
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-slate-900"><tr className="border-b border-slate-800 text-slate-400">
+                    <th className="text-left p-2">日期</th>
+                    <th className="text-left p-2">指标</th>
+                    <th className="text-left p-2">信号</th>
+                    <th className="text-left p-2">建议</th>
+                    <th className="text-right p-2">触发价</th>
+                    <th className="text-right p-2">次日涨跌</th>
+                    <th className="text-right p-2">5日涨跌</th>
+                    <th className="text-right p-2">10日涨跌</th>
+                    <th className="text-right p-2">20日涨跌</th>
+                  </tr></thead>
+                  <tbody>
+                    {analysis.outcomes.slice().reverse().map((o, i) => {
+                      const fmtChg = (v: number | null) => {
+                        if (v === null || v === undefined) return <span className="text-slate-600">-</span>;
+                        const cls = v >= 0 ? 'text-red-400' : 'text-green-400';
+                        return <span className={cls}>{v > 0 ? '+' : ''}{v.toFixed(2)}%</span>;
+                      };
+                      return (
+                        <tr key={i} className="border-b border-slate-800/50 hover:bg-slate-800/50">
+                          <td className="p-2 text-slate-400">{o.date}</td>
+                          <td className="p-2">{o.indicator}</td>
+                          <td className="p-2 font-medium text-white">{o.type}</td>
+                          <td className={`p-2 ${o.action === '买入参考' ? 'text-red-400' : 'text-green-400'}`}>{o.action}</td>
+                          <td className="p-2 text-right">{o.price.toFixed(2)}</td>
+                          <td className="p-2 text-right">{fmtChg(o.chg1)}</td>
+                          <td className="p-2 text-right">{fmtChg(o.chg5)}</td>
+                          <td className="p-2 text-right">{fmtChg(o.chg10)}</td>
+                          <td className="p-2 text-right">{fmtChg(o.chg20)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
@@ -234,99 +340,89 @@ export default function StockDetail() {
 
       {tab === 'intraday' && (
         <TabContent>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full overflow-auto">
-          {minuteData.length > 0 && (
-            <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
-              <h3 className="text-white font-medium mb-3">分时走势</h3>
-              <div className="space-y-px max-h-80 overflow-auto">
-                <div className="grid grid-cols-4 gap-2 text-xs text-slate-500 px-1 mb-1 sticky top-0 bg-slate-900">
-                  <span>时间</span><span className="text-right">价格</span><span className="text-right">均价</span><span className="text-right">成交量</span>
-                </div>
-                {minuteData.map((m, i) => {
-                  const prev = i > 0 ? minuteData[i - 1].Price : (quote?.LastClose || m.Price);
-                  const up = m.Price >= prev;
-                  return (
-                    <div key={i} className="grid grid-cols-4 gap-2 text-xs px-1 py-0.5 hover:bg-slate-800 rounded">
-                      <span className="text-slate-400">{m.Time}</span>
-                      <span className={`text-right ${up ? 'text-red-400' : 'text-green-400'}`}>{m.Price?.toFixed(2)}</span>
-                      <span className="text-right text-yellow-500">{m.Price?.toFixed(2)}</span>
-                      <span className="text-right text-slate-300">{m.Number}</span>
+          <div className="h-full flex flex-col gap-4">
+            {minuteData.length > 0 && (
+              <MinuteChart
+                data={minuteData}
+                lastClose={quote?.LastClose || 0}
+                onIndexClick={(idx) => {
+                  setHighlightedIdx(idx);
+                  const el = tradeRowRefs.current[idx];
+                  if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }
+                }}
+              />
+            )}
+
+            <div className="flex gap-4 flex-1 min-h-0">
+              {trades.length > 0 && (
+                <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 flex-1 overflow-hidden flex flex-col">
+                  <h3 className="text-white font-medium mb-2">分笔成交</h3>
+                  <div className="overflow-auto flex-1">
+                    <div className="space-y-px">
+                      {trades.map((t, i) => {
+                        const tTime = fmtTime(t.Time);
+                        const isHighlighted = i === highlightedIdx;
+                        return (
+                          <div
+                            key={i}
+                            ref={el => { tradeRowRefs.current[i] = el; }}
+                            className={`grid grid-cols-4 gap-2 text-xs px-2 py-1 rounded transition-colors ${
+                              isHighlighted ? 'bg-blue-600/30 ring-1 ring-blue-500' : 'hover:bg-slate-800'
+                            }`}
+                          >
+                            <span className={isHighlighted ? 'text-white font-medium' : 'text-slate-400'}>{tTime}</span>
+                            <span className="text-right text-white">{t.Price?.toFixed(2)}</span>
+                            <span className="text-right text-slate-300">{t.Volume}</span>
+                            <span className={`text-right ${t.Status === 0 ? 'text-red-400' : 'text-green-400'}`}>
+                              {t.Status === 0 ? '买' : '卖'}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+                  </div>
+                </div>
+              )}
 
-          {trades.length > 0 && (
-            <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
-              <h3 className="text-white font-medium mb-3">分笔成交</h3>
-              <div className="space-y-px max-h-80 overflow-auto">
-                <div className="grid grid-cols-4 gap-2 text-xs text-slate-500 px-1 mb-1 sticky top-0 bg-slate-900">
-                  <span>时间</span><span className="text-right">价格</span><span className="text-right">成交量</span><span className="text-right">方向</span>
-                </div>
-                {trades.map((t, i) => (
-                  <div key={i} className="grid grid-cols-4 gap-2 text-xs px-1 py-0.5 hover:bg-slate-800 rounded">
-                    <span className="text-slate-400">{fmtTime(t.Time)}</span>
-                    <span className="text-right text-white">{t.Price?.toFixed(2)}</span>
-                    <span className="text-right text-slate-300">{t.Volume}</span>
-                    <span className={`text-right ${t.Status === 0 ? 'text-red-400' : 'text-green-400'}`}>
-                      {t.Status === 0 ? '买' : '卖'}
-                    </span>
+              <div className="flex flex-col gap-4 w-64">
+                {auctions.length > 0 && (
+                  <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
+                    <h3 className="text-white font-medium mb-2">集合竞价</h3>
+                    <div className="space-y-px max-h-48 overflow-auto">
+                      {auctions.slice(0, 10).map((a, i) => (
+                        <div key={i} className="grid grid-cols-3 gap-1 text-xs px-1 py-0.5 hover:bg-slate-800 rounded">
+                          <span className="text-slate-400">{fmtTime(a.time)}</span>
+                          <span className="text-right text-white">{a.price?.toFixed(2)}</span>
+                          <span className={`text-right ${a.flag >= 0 ? 'text-red-400' : 'text-green-400'}`}>
+                            {a.flag >= 0 ? '买' : '卖'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
+                )}
 
-          {auctions.length > 0 && (
-            <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
-              <h3 className="text-white font-medium mb-3">集合竞价</h3>
-              <div className="space-y-px max-h-80 overflow-auto">
-                <div className="grid grid-cols-5 gap-2 text-xs text-slate-500 px-1 mb-1 sticky top-0 bg-slate-900">
-                  <span>时间</span><span className="text-right">价格</span><span className="text-right">匹配量</span><span className="text-right">未匹配</span><span className="text-right">方向</span>
-                </div>
-                {auctions.map((a, i) => (
-                  <div key={i} className="grid grid-cols-5 gap-2 text-xs px-1 py-0.5 hover:bg-slate-800 rounded">
-                    <span className="text-slate-400">{fmtTime(a.time)}</span>
-                    <span className="text-right text-white">{a.price?.toFixed(2)}</span>
-                    <span className="text-right text-slate-300">{a.match}</span>
-                    <span className="text-right text-slate-400">{a.unmatched}</span>
-                    <span className={`text-right ${a.flag >= 0 ? 'text-red-400' : 'text-green-400'}`}>
-                      {a.flag >= 0 ? '买' : '卖'}
-                    </span>
+                {quote && (
+                  <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
+                    <h3 className="text-white font-medium mb-2">盘口</h3>
+                    <div className="space-y-1 text-sm">
+                      <div className="flex justify-between"><span className="text-slate-500">开盘</span><span className="text-white">{quote.Open?.toFixed(2)}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">最高</span><span className="text-red-400">{quote.High?.toFixed(2)}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">最低</span><span className="text-green-400">{quote.Low?.toFixed(2)}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">昨收</span><span className="text-white">{quote.LastClose?.toFixed(2)}</span></div>
+                      <div className="border-t border-slate-800 my-1" />
+                      <div className="flex justify-between"><span className="text-slate-500">成交量</span><span className="text-white">{quote.Volume?.toLocaleString()}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">成交额</span><span className="text-white">{quote.Amount?.toLocaleString()}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">内盘</span><span className="text-green-400">{quote.SVol?.toLocaleString()}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">外盘</span><span className="text-red-400">{quote.BVol?.toLocaleString()}</span></div>
+                    </div>
                   </div>
-                ))}
+                )}
               </div>
             </div>
-          )}
-
-          {quote && (
-            <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
-              <h3 className="text-white font-medium mb-3">盘口信息</h3>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <div className="text-slate-400 mb-2">基本信息</div>
-                  <div className="space-y-1">
-                    <div className="flex justify-between"><span className="text-slate-500">开盘</span><span className="text-white">{quote.Open?.toFixed(2)}</span></div>
-                    <div className="flex justify-between"><span className="text-slate-500">最高</span><span className="text-red-400">{quote.High?.toFixed(2)}</span></div>
-                    <div className="flex justify-between"><span className="text-slate-500">最低</span><span className="text-green-400">{quote.Low?.toFixed(2)}</span></div>
-                    <div className="flex justify-between"><span className="text-slate-500">昨收</span><span className="text-white">{quote.LastClose?.toFixed(2)}</span></div>
-                  </div>
-                </div>
-                <div>
-                  <div className="text-slate-400 mb-2">成交信息</div>
-                  <div className="space-y-1">
-                    <div className="flex justify-between"><span className="text-slate-500">成交量</span><span className="text-white">{quote.Volume?.toLocaleString()}</span></div>
-                    <div className="flex justify-between"><span className="text-slate-500">成交额</span><span className="text-white">{quote.Amount?.toLocaleString()}</span></div>
-                    <div className="flex justify-between"><span className="text-slate-500">内盘</span><span className="text-green-400">{quote.SVol?.toLocaleString()}</span></div>
-                    <div className="flex justify-between"><span className="text-slate-500">外盘</span><span className="text-red-400">{quote.BVol?.toLocaleString()}</span></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+          </div>
         </TabContent>
       )}
     </div>

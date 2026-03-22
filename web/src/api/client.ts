@@ -1,7 +1,7 @@
 import type {
   Quote, KlineItem, IndicatorData, Finance, XdXrItem,
   CompanyCategory, MinuteItem, TradeItem, AuctionItem,
-  BlockItem, CodeItem, IndexBar, ScreenResponse,
+  BlockItem, CodeItem, IndexBar, ScreenResponse, SignalAnalysis,
 } from '../types/api';
 
 const BASE = '';
@@ -66,4 +66,7 @@ export const api = {
     if (signal) p.set('signal', signal);
     return fetchJSON<ScreenResponse>(`/api/screen?${p}`);
   },
+
+  signalAnalysis: (code: string, type = 'day') =>
+    fetchJSON<SignalAnalysis>(`/api/signal-analysis?code=${code}&type=${type}`),
 };

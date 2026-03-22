@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sjzsdu/tongstock/pkg/config"
@@ -89,6 +90,7 @@ func main() {
 
 	r.GET("/api/indicator", handleIndicator)
 	r.GET("/api/screen", handleScreen)
+	r.GET("/api/signal-analysis", handleSignalAnalysis)
 
 	dist := webstatic.DistFileServer()
 	r.NoRoute(func(c *gin.Context) {
@@ -197,7 +199,7 @@ func handleKline(c *gin.Context) {
 		if e != nil {
 			return nil, e
 		}
-		return s.FetchKline(code, klineType, 0, 100)
+		return s.FetchKline(code, klineType, 0, 250)
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取K线失败: %v", err)})
@@ -550,7 +552,7 @@ func handleIndicator(c *gin.Context) {
 		if e != nil {
 			return nil, e
 		}
-		return s.FetchKline(code, tdx.ParseKlineType(ktype), 0, 250)
+		return s.FetchKlineAll(code, tdx.ParseKlineType(ktype))
 	})
 	if err != nil {
 		log.Printf("[indicator] FetchKline %s failed: %v", code, err)
@@ -589,6 +591,7 @@ func handleIndicator(c *gin.Context) {
 		"category": string(category),
 		"count":    len(inputs),
 		"last":     inputs[len(inputs)-1],
+		"klines":   inputs,
 		"ma":       result.MA,
 		"macd":     result.MACD,
 		"kdj":      result.KDJ,
@@ -702,4 +705,198 @@ func handleScreen(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"results": results, "total": len(codeList)})
+}
+
+func handleSignalAnalysis(c *gin.Context) {
+	code := c.Query("code")
+	ktype := c.DefaultQuery("type", "day")
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 code 参数"})
+		return
+	}
+
+	klines, err := withRetry(func() ([]*protocol.Kline, error) {
+		s, e := getService()
+		if e != nil {
+			return nil, e
+		}
+		return s.FetchKline(code, tdx.ParseKlineType(ktype), 0, 500)
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取K线失败: %v", err)})
+		return
+	}
+	if len(klines) < 30 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "K线数据不足"})
+		return
+	}
+
+	inputs := toKlineInputs(klines)
+	_ = param.AutoInit()
+	category := param.DetectCategory(code)
+	cfg := param.Resolve(code, category)
+	result := ta.Calculate(inputs, cfg)
+	signals := signal.Detect(code, inputs, result, nil)
+
+	lastState := map[string]string{}
+	var dedupedSignals []signal.Signal
+	for _, s := range signals {
+		dateStr := s.Date.Format("2006-01-02")
+		stateTypes := map[signal.SignalType]bool{
+			"多头排列": true, "空头排列": true, "超买": true, "超卖": true,
+		}
+		if stateTypes[s.Type] {
+			key := s.Indicator + string(s.Type)
+			if lastState[key] == dateStr || lastState[key] == prevDate(dateStr) {
+				lastState[key] = dateStr
+				continue
+			}
+			lastState[key] = dateStr
+		}
+		dedupedSignals = append(dedupedSignals, s)
+	}
+
+	type signalOutcome struct {
+		Date      string   `json:"date"`
+		Type      string   `json:"type"`
+		Indicator string   `json:"indicator"`
+		Details   string   `json:"details"`
+		Price     float64  `json:"price"`
+		Chg1      *float64 `json:"chg1"`
+		Chg5      *float64 `json:"chg5"`
+		Chg10     *float64 `json:"chg10"`
+		Chg20     *float64 `json:"chg20"`
+		Action    string   `json:"action"`
+	}
+
+	buySignals := map[string]bool{
+		"金叉": true, "超卖": true, "跌破下轨": true, "多头排列": true,
+	}
+
+	var outcomes []signalOutcome
+	for _, s := range dedupedSignals {
+		idx := -1
+		dateStr := s.Date.Format("2006-01-02")
+		for j, k := range klines {
+			if k.Time.Format("2006-01-02") == dateStr {
+				idx = j
+				break
+			}
+		}
+		if idx < 0 {
+			continue
+		}
+
+		action := "卖出参考"
+		if buySignals[string(s.Type)] {
+			action = "买入参考"
+		}
+
+		o := signalOutcome{
+			Date:      dateStr,
+			Type:      string(s.Type),
+			Indicator: s.Indicator,
+			Details:   s.Details,
+			Price:     klines[idx].Close,
+			Action:    action,
+		}
+		for _, d := range []struct {
+			days  int
+			field **float64
+		}{
+			{1, &o.Chg1}, {5, &o.Chg5}, {10, &o.Chg10}, {20, &o.Chg20},
+		} {
+			target := idx + d.days
+			if target < len(klines) && klines[idx].Close > 0 {
+				v := (klines[target].Close - klines[idx].Close) / klines[idx].Close * 100
+				*d.field = &v
+			}
+		}
+		outcomes = append(outcomes, o)
+	}
+
+	type summary struct {
+		Type    string  `json:"type"`
+		Action  string  `json:"action"`
+		Count   int     `json:"count"`
+		Valid1  int     `json:"valid1"`
+		Valid5  int     `json:"valid5"`
+		Valid10 int     `json:"valid10"`
+		Valid20 int     `json:"valid20"`
+		Win1    float64 `json:"win1"`
+		Win5    float64 `json:"win5"`
+		Win10   float64 `json:"win10"`
+		Win20   float64 `json:"win20"`
+		Avg1    float64 `json:"avg1"`
+		Avg5    float64 `json:"avg5"`
+		Avg10   float64 `json:"avg10"`
+		Avg20   float64 `json:"avg20"`
+	}
+
+	summaries := map[string]*summary{}
+	for _, o := range outcomes {
+		s, ok := summaries[o.Type]
+		if !ok {
+			s = &summary{Type: o.Type, Action: o.Action}
+			summaries[o.Type] = s
+		}
+		s.Count++
+		for _, d := range []struct {
+			chg   *float64
+			valid *int
+			win   *float64
+			avg   *float64
+		}{
+			{o.Chg1, &s.Valid1, &s.Win1, &s.Avg1},
+			{o.Chg5, &s.Valid5, &s.Win5, &s.Avg5},
+			{o.Chg10, &s.Valid10, &s.Win10, &s.Avg10},
+			{o.Chg20, &s.Valid20, &s.Win20, &s.Avg20},
+		} {
+			if d.chg != nil {
+				*d.valid++
+				if *d.chg > 0 {
+					*d.win++
+				}
+				*d.avg += *d.chg
+			}
+		}
+	}
+
+	var sumList []summary
+	for _, s := range summaries {
+		if s.Valid1 > 0 {
+			s.Win1 = s.Win1 / float64(s.Valid1) * 100
+			s.Avg1 /= float64(s.Valid1)
+		}
+		if s.Valid5 > 0 {
+			s.Win5 = s.Win5 / float64(s.Valid5) * 100
+			s.Avg5 /= float64(s.Valid5)
+		}
+		if s.Valid10 > 0 {
+			s.Win10 = s.Win10 / float64(s.Valid10) * 100
+			s.Avg10 /= float64(s.Valid10)
+		}
+		if s.Valid20 > 0 {
+			s.Win20 = s.Win20 / float64(s.Valid20) * 100
+			s.Avg20 /= float64(s.Valid20)
+		}
+		sumList = append(sumList, *s)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":     code,
+		"type":     ktype,
+		"count":    len(klines),
+		"signals":  len(outcomes),
+		"outcomes": outcomes,
+		"summary":  sumList,
+	})
+}
+
+func prevDate(dateStr string) string {
+	t, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		return ""
+	}
+	return t.AddDate(0, 0, -1).Format("2006-01-02")
 }
