@@ -5,6 +5,7 @@ import { api } from '../../api/client';
 import type { TradeItem, AuctionItem } from '../../types/api';
 import CandlestickChart from '../../components/charts/CandlestickChart';
 import TabContent from '../../components/TabContent';
+import { parseTdxText, renderTdxHtml } from '../../lib/tdx-parser';
 
 function fmtTime(t: string): string {
   if (!t) return '';
@@ -184,7 +185,13 @@ export default function StockDetail() {
               ))}
             </div>
             <div className="flex-1 bg-slate-900 rounded-lg border border-slate-800 p-4 overflow-auto">
-              <pre className="text-slate-300 text-xs whitespace-pre leading-relaxed" style={{ fontFamily: '"Sarasa Mono SC", "Noto Sans Mono CJK SC", "WenQuanYi Micro Hei Mono", "Microsoft YaHei", Menlo, Consolas, monospace' }}>{companyContent || '点击左侧目录查看内容'}</pre>
+              {companyContent ? (
+                <div className="tdx-content text-sm text-slate-300" dangerouslySetInnerHTML={{
+                  __html: renderTdxHtml(parseTdxText(companyContent))
+                }} />
+              ) : (
+                <div className="text-slate-500 text-center py-8">点击左侧目录查看内容</div>
+              )}
             </div>
           </div>
         </TabContent>

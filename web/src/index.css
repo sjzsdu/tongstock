@@ -22,3 +22,65 @@ body {
 #root {
   min-height: 100vh;
 }
+
+.tdx-header {
+  color: #f59e0b;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 1rem 0 0.5rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid #334155;
+}
+
+.tdx-header:first-child {
+  margin-top: 0;
+}
+
+.tdx-table-wrap {
+  overflow-x: auto;
+  margin: 0.5rem 0;
+}
+
+.tdx-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+
+.tdx-th {
+  text-align: left;
+  padding: 0.35rem 0.5rem;
+  background: #1e293b;
+  color: #94a3b8;
+  font-weight: 500;
+  white-space: nowrap;
+  border-bottom: 1px solid #334155;
+}
+
+.tdx-td {
+  padding: 0.35rem 0.5rem;
+  white-space: nowrap;
+  border-bottom: 1px solid #1e293b;
+}
+
+.tdx-para {
+  margin: 0.5rem 0;
+  line-height: 1.7;
+  color: #cbd5e1;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+}
+
+.tdx-link {
+  color: #3b82f6;
+  font-size: 0.75rem;
+  word-break: break-all;
+  text-decoration: underline;
+}
+
+.tdx-divider {
+  border: none;
+  border-top: 1px solid #334155;
+  margin: 0.75rem 0;
+}
