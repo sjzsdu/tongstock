@@ -6,6 +6,7 @@ tongstock-cli
 tongstock-server
 server
 pkg/web/dist
+tmp
 
 # Web dependencies
 web/node_modules
