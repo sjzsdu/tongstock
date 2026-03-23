@@ -54,6 +54,12 @@ export default function MinuteChart({ data, lastClose, onClickIndex }: Props) {
         vertLine: { color: '#3b82f6', width: 1, style: 2, labelBackgroundColor: '#3b82f6' },
         horzLine: { color: '#3b82f6', width: 1, style: 2, labelBackgroundColor: '#3b82f6' },
       },
+      localization: {
+        timeFormatter: (time: number) => {
+          const d = new Date(time * 1000);
+          return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+        },
+      },
       rightPriceScale: { borderColor: '#334155', scaleMargins: { top: 0.08, bottom: 0.18 } },
       timeScale: {
         borderColor: '#334155',

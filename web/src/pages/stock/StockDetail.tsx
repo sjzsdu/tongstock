@@ -106,46 +106,57 @@ export default function StockDetail() {
   const up = pct >= 0;
 
   return (
-    <div className={`flex flex-col min-h-0 gap-4 ${fullscreen ? 'fixed inset-0 z-50 bg-slate-950 p-6 overflow-auto' : 'h-full'}`}>
-      <div className="flex items-center gap-4">
-        <input
-          type="text" value={inputCode}
-          onChange={e => setInputCode(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && inputCode.length === 6) navigate(`/stock/${inputCode}`); }}
-          className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white w-32 font-mono focus:outline-none focus:border-blue-500"
-          placeholder="股票代码"
-        />
-        {quote && (
-          <div className="flex items-center gap-4">
-            <span className="text-white font-bold text-lg">{quote.Name}</span>
-            <span className={`text-2xl font-bold ${up ? 'text-red-400' : 'text-green-400'}`}>
-              {quote.Price?.toFixed(2)}
-            </span>
-            <span className={`text-sm ${up ? 'text-red-400' : 'text-green-400'}`}>
-              {up ? '+' : ''}{pct.toFixed(2)}%
-            </span>
+    <div className={`flex flex-col min-h-0 gap-4 ${fullscreen ? 'fixed inset-0 z-50 bg-slate-950 p-4 overflow-auto' : 'h-full'}`}>
+      {!fullscreen && (
+        <div className="flex items-center gap-4">
+          <input
+            type="text" value={inputCode}
+            onChange={e => setInputCode(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && inputCode.length === 6) navigate(`/stock/${inputCode}`); }}
+            className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white w-32 font-mono focus:outline-none focus:border-blue-500"
+            placeholder="股票代码"
+          />
+          {quote && (
+            <div className="flex items-center gap-4">
+              <span className="text-white font-bold text-lg">{quote.Name}</span>
+              <span className={`text-2xl font-bold ${up ? 'text-red-400' : 'text-green-400'}`}>
+                {quote.Price?.toFixed(2)}
+              </span>
+              <span className={`text-sm ${up ? 'text-red-400' : 'text-green-400'}`}>
+                {up ? '+' : ''}{pct.toFixed(2)}%
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className={`flex items-center ${fullscreen ? '' : 'border-b border-slate-800'}`}>
+        {!fullscreen && (
+          <div className="flex gap-1 flex-1">
+          {TABS.map(t => (
+            <button
+              key={t.key}
+              onClick={() => switchTab(t.key)}
+              className={`flex items-center gap-2 px-4 py-2 text-sm rounded-t-lg transition-colors ${
+                tab === t.key ? 'bg-slate-800 text-white border-b-2 border-blue-500' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <t.icon size={16} /> {t.label}
+            </button>
+          ))}
           </div>
         )}
-      </div>
-
-      <div className="flex items-center border-b border-slate-800">
-        <div className="flex gap-1 flex-1">
-        {TABS.map(t => (
-          <button
-            key={t.key}
-            onClick={() => switchTab(t.key)}
-            className={`flex items-center gap-2 px-4 py-2 text-sm rounded-t-lg transition-colors ${
-              tab === t.key ? 'bg-slate-800 text-white border-b-2 border-blue-500' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <t.icon size={16} /> {t.label}
-          </button>
-        ))}
-        </div>
+        {fullscreen && (
+          <div className="flex items-center gap-3 flex-1">
+            {quote && <span className="text-white font-bold">{quote.Name}</span>}
+            {quote && <span className={`font-bold ${up ? 'text-red-400' : 'text-green-400'}`}>{quote.Price?.toFixed(2)}</span>}
+            {quote && <span className={`text-sm ${up ? 'text-red-400' : 'text-green-400'}`}>{up ? '+' : ''}{pct.toFixed(2)}%</span>}
+          </div>
+        )}
         <button
           onClick={() => setFullscreen(!fullscreen)}
           className="px-2 py-2 text-slate-400 hover:text-white transition-colors"
-          title={fullscreen ? '退出全屏' : '全屏'}
+          title={fullscreen ? '退出全屏 (Esc)' : '全屏'}
         >
           {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
         </button>
