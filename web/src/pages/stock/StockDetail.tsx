@@ -1,19 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { BarChart3, DollarSign, Building2, Gift, Clock } from 'lucide-react';
+import { BarChart3, DollarSign, Building2, Gift, Clock, Maximize2, Minimize2 } from 'lucide-react';
 import { api } from '../../api/client';
-import type { TradeItem, AuctionItem, SignalAnalysis as SignalAnalysisType } from '../../types/api';
+import type { SignalAnalysis as SignalAnalysisType } from '../../types/api';
 import CandlestickChart from '../../components/charts/CandlestickChart';
 import ChartToolbar from '../../components/charts/ChartToolbar';
 import MinuteChart from '../../components/charts/MinuteChart';
 import TabContent from '../../components/TabContent';
 import { parseTdxText, renderTdxHtml } from '../../lib/tdx-parser';
-
-function fmtTime(t: string): string {
-  if (!t) return '';
-  const m = t.match(/T(\d{2}:\d{2})/);
-  return m ? m[1] : t;
-}
 
 type Tab = 'chart' | 'finance' | 'company' | 'dividend' | 'intraday';
 
@@ -43,10 +37,9 @@ export default function StockDetail() {
   const [selectedCat, setSelectedCat] = useState('');
   const [dividends, setDividends] = useState<any[]>([]);
   const [minuteData, setMinuteData] = useState<any[]>([]);
-  const [trades, setTrades] = useState<TradeItem[]>([]);
-  const [auctions, setAuctions] = useState<AuctionItem[]>([]);
   const [analysis, setAnalysis] = useState<SignalAnalysisType | null>(null);
   const [highlightedIdx, setHighlightedIdx] = useState(-1);
+  const [fullscreen, setFullscreen] = useState(false);
   const tradeRowRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const [loading, setLoading] = useState(false);
 
@@ -57,6 +50,12 @@ export default function StockDetail() {
     }
     if (paramTab) setTab(paramTab as Tab);
   }, [paramCode, paramTab]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   const switchTab = (t: Tab) => {
     setTab(t);
@@ -84,9 +83,13 @@ export default function StockDetail() {
     }).catch(() => {});
     if (tab === 'dividend') api.xdxr(code).then(d => setDividends([...d].reverse())).catch(() => {});
     if (tab === 'intraday') {
-      api.minute(code).then(r => setMinuteData([...(r.List || [])].reverse())).catch(() => {});
-      api.trade(code).then(r => setTrades([...(r.List || [])].reverse())).catch(() => {});
-      api.auction(code).then(r => setAuctions([...(r.List || [])].reverse())).catch(() => {});
+      const fetchMinute = () => {
+        api.minute(code).then(r => setMinuteData(r.List || [])).catch(() => {});
+        api.quote(code).then(setQuote).catch(() => {});
+      };
+      fetchMinute();
+      const timer = setInterval(fetchMinute, 30000);
+      return () => clearInterval(timer);
     }
   }, [code, tab]);
 
@@ -102,7 +105,7 @@ export default function StockDetail() {
   const up = pct >= 0;
 
   return (
-    <div className="flex flex-col h-full min-h-0 gap-4">
+    <div className={`flex flex-col min-h-0 gap-4 ${fullscreen ? 'fixed inset-0 z-50 bg-slate-950 p-6 overflow-auto' : 'h-full'}`}>
       <div className="flex items-center gap-4">
         <input
           type="text" value={inputCode}
@@ -124,7 +127,8 @@ export default function StockDetail() {
         )}
       </div>
 
-      <div className="flex gap-1 border-b border-slate-800">
+      <div className="flex items-center border-b border-slate-800">
+        <div className="flex gap-1 flex-1">
         {TABS.map(t => (
           <button
             key={t.key}
@@ -136,6 +140,14 @@ export default function StockDetail() {
             <t.icon size={16} /> {t.label}
           </button>
         ))}
+        </div>
+        <button
+          onClick={() => setFullscreen(!fullscreen)}
+          className="px-2 py-2 text-slate-400 hover:text-white transition-colors"
+          title={fullscreen ? '退出全屏' : '全屏'}
+        >
+          {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+        </button>
       </div>
 
       {loading && <div className="text-slate-500 text-center py-8">加载中...</div>}
@@ -338,93 +350,122 @@ export default function StockDetail() {
         </TabContent>
       )}
 
-      {tab === 'intraday' && (
-        <TabContent>
-          <div className="h-full flex flex-col gap-4">
-            {minuteData.length > 0 && (
-              <MinuteChart
-                data={minuteData}
-                lastClose={quote?.LastClose || 0}
-                onIndexClick={(idx) => {
-                  setHighlightedIdx(idx);
-                  const el = tradeRowRefs.current[idx];
-                  if (el) {
-                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  }
-                }}
-              />
-            )}
+      {tab === 'intraday' && minuteData.length > 0 && (() => {
+        const lastClose = quote?.LastClose || 0;
+        
+        let totalAmount = 0;
+        let totalVolume = 0;
+        minuteData.forEach(m => {
+          const vol = Math.abs(m.Number);
+          totalAmount += m.Price * vol;
+          totalVolume += vol;
+        });
+        const vwap = totalVolume > 0 ? totalAmount / totalVolume : lastClose;
 
-            <div className="flex gap-4 flex-1 min-h-0">
-              {trades.length > 0 && (
-                <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 flex-1 overflow-hidden flex flex-col">
-                  <h3 className="text-white font-medium mb-2">分笔成交</h3>
-                  <div className="overflow-auto flex-1">
-                    <div className="space-y-px">
-                      {trades.map((t, i) => {
-                        const tTime = fmtTime(t.Time);
-                        const isHighlighted = i === highlightedIdx;
-                        return (
-                          <div
-                            key={i}
-                            ref={el => { tradeRowRefs.current[i] = el; }}
-                            className={`grid grid-cols-4 gap-2 text-xs px-2 py-1 rounded transition-colors ${
-                              isHighlighted ? 'bg-blue-600/30 ring-1 ring-blue-500' : 'hover:bg-slate-800'
-                            }`}
-                          >
-                            <span className={isHighlighted ? 'text-white font-medium' : 'text-slate-400'}>{tTime}</span>
-                            <span className="text-right text-white">{t.Price?.toFixed(2)}</span>
-                            <span className="text-right text-slate-300">{t.Volume}</span>
-                            <span className={`text-right ${t.Status === 0 ? 'text-red-400' : 'text-green-400'}`}>
-                              {t.Status === 0 ? '买' : '卖'}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
+        const selectedData = highlightedIdx >= 0 && highlightedIdx < minuteData.length 
+          ? minuteData[highlightedIdx] 
+          : null;
+
+        return (
+          <div className="flex flex-col gap-3 h-full min-h-0">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm bg-slate-900/50 rounded-lg px-4 py-2">
+              <span className="text-slate-400">
+                {new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' })}
+              </span>
+              <span className="text-slate-400">昨收 <span className="text-white font-medium">{lastClose.toFixed(2)}</span></span>
+              {quote && (
+                <>
+                  <span>开 <span className="text-white">{quote.Open?.toFixed(2)}</span></span>
+                  <span>高 <span className="text-red-400">{quote.High?.toFixed(2)}</span></span>
+                  <span>低 <span className="text-green-400">{quote.Low?.toFixed(2)}</span></span>
+                  <span>量 <span className="text-white">{(quote.Volume / 10000).toFixed(0)}万</span></span>
+                  <span>额 <span className="text-white">{(quote.Amount / 10000).toFixed(0)}万</span></span>
+                  <span>均 <span className={vwap >= lastClose ? 'text-red-400' : 'text-green-400'}>{vwap.toFixed(2)}</span></span>
+                </>
               )}
+            </div>
 
-              <div className="flex flex-col gap-4 w-64">
-                {auctions.length > 0 && (
-                  <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
-                    <h3 className="text-white font-medium mb-2">集合竞价</h3>
-                    <div className="space-y-px max-h-48 overflow-auto">
-                      {auctions.slice(0, 10).map((a, i) => (
-                        <div key={i} className="grid grid-cols-3 gap-1 text-xs px-1 py-0.5 hover:bg-slate-800 rounded">
-                          <span className="text-slate-400">{fmtTime(a.time)}</span>
-                          <span className="text-right text-white">{a.price?.toFixed(2)}</span>
-                          <span className={`text-right ${a.flag >= 0 ? 'text-red-400' : 'text-green-400'}`}>
-                            {a.flag >= 0 ? '买' : '卖'}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {quote && (
-                  <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
-                    <h3 className="text-white font-medium mb-2">盘口</h3>
-                    <div className="space-y-1 text-sm">
-                      <div className="flex justify-between"><span className="text-slate-500">开盘</span><span className="text-white">{quote.Open?.toFixed(2)}</span></div>
-                      <div className="flex justify-between"><span className="text-slate-500">最高</span><span className="text-red-400">{quote.High?.toFixed(2)}</span></div>
-                      <div className="flex justify-between"><span className="text-slate-500">最低</span><span className="text-green-400">{quote.Low?.toFixed(2)}</span></div>
-                      <div className="flex justify-between"><span className="text-slate-500">昨收</span><span className="text-white">{quote.LastClose?.toFixed(2)}</span></div>
-                      <div className="border-t border-slate-800 my-1" />
-                      <div className="flex justify-between"><span className="text-slate-500">成交量</span><span className="text-white">{quote.Volume?.toLocaleString()}</span></div>
-                      <div className="flex justify-between"><span className="text-slate-500">成交额</span><span className="text-white">{quote.Amount?.toLocaleString()}</span></div>
-                      <div className="flex justify-between"><span className="text-slate-500">内盘</span><span className="text-green-400">{quote.SVol?.toLocaleString()}</span></div>
-                      <div className="flex justify-between"><span className="text-slate-500">外盘</span><span className="text-red-400">{quote.BVol?.toLocaleString()}</span></div>
-                    </div>
+            <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-3 min-h-0">
+              <div className="lg:col-span-2 flex flex-col min-h-0">
+                <MinuteChart 
+                  data={minuteData} 
+                  lastClose={lastClose} 
+                  onClickIndex={(idx) => {
+                    setHighlightedIdx(idx);
+                    const tableIdx = minuteData.length - 1 - idx;
+                    const el = tradeRowRefs.current[tableIdx];
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }} 
+                />
+                {selectedData && (
+                  <div className="mt-2 flex items-center gap-4 text-xs bg-slate-900/80 rounded px-3 py-2">
+                    <span className="text-slate-400">选中: <span className="text-white font-medium">{selectedData.Time}</span></span>
+                    <span>价格: <span className="text-white font-medium">{selectedData.Price.toFixed(2)}</span></span>
+                    <span className={selectedData.Price >= lastClose ? 'text-red-400' : 'text-green-400'}>
+                      {selectedData.Price > lastClose ? '+' : ''}{(selectedData.Price - lastClose).toFixed(2)} ({lastClose > 0 ? ((selectedData.Price - lastClose) / lastClose * 100).toFixed(2) : 0}%)
+                    </span>
+                    <span>成交量: <span className="text-white">{Math.abs(selectedData.Number).toLocaleString()}手</span></span>
+                    <button 
+                      onClick={() => setHighlightedIdx(-1)}
+                      className="ml-auto text-slate-500 hover:text-white"
+                    >
+                      清除选择
+                    </button>
                   </div>
                 )}
               </div>
+
+              <div className="bg-slate-900 rounded-lg border border-slate-800 flex flex-col min-h-0 overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2 border-b border-slate-800">
+                  <span className="text-sm text-slate-400">成交明细</span>
+                  <button 
+                    onClick={() => {
+                      const el = tradeRowRefs.current[0];
+                      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }}
+                    className="text-xs text-blue-400 hover:text-blue-300"
+                  >
+                    最新 ↓
+                  </button>
+                </div>
+                <div className="grid grid-cols-5 gap-1 text-xs text-slate-500 px-3 py-1.5 border-b border-slate-800">
+                  <span>时间</span><span className="text-right">价格</span><span className="text-right">涨跌</span><span className="text-right">涨幅</span><span className="text-right">成交量</span>
+                </div>
+                <div className="overflow-auto flex-1">
+                  <div className="space-y-px px-1">
+                    {[...minuteData].reverse().map((m, i) => {
+                      const chg = m.Price - lastClose;
+                      const chgPct = lastClose > 0 ? (chg / lastClose * 100) : 0;
+                      const origIdx = minuteData.length - 1 - i;
+                      const isHighlighted = origIdx === highlightedIdx;
+                      return (
+                        <div
+                          key={i}
+                          ref={el => { tradeRowRefs.current[i] = el; }}
+                          onClick={() => setHighlightedIdx(origIdx)}
+                          className={`grid grid-cols-5 gap-1 text-xs px-2 py-1 rounded cursor-pointer transition-colors ${
+                            isHighlighted ? 'bg-blue-600/30 ring-1 ring-blue-500' : 'hover:bg-slate-800'
+                          }`}
+                        >
+                          <span className={isHighlighted ? 'text-white font-medium' : 'text-slate-400'}>{m.Time}</span>
+                          <span className={`text-right ${m.Price >= lastClose ? 'text-red-400' : 'text-green-400'}`}>{m.Price.toFixed(2)}</span>
+                          <span className={`text-right ${chg >= 0 ? 'text-red-400' : 'text-green-400'}`}>
+                            {chg > 0 ? '+' : ''}{chg.toFixed(2)}
+                          </span>
+                          <span className={`text-right ${chgPct >= 0 ? 'text-red-400' : 'text-green-400'}`}>
+                            {chgPct > 0 ? '+' : ''}{chgPct.toFixed(2)}%
+                          </span>
+                          <span className="text-right text-slate-300">{Math.abs(m.Number).toLocaleString()}手</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-        </TabContent>
-      )}
+        );
+      })()}
     </div>
   );
 }

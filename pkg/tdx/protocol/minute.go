@@ -36,36 +36,7 @@ func (m minuteStruct) Frame(code string) (*Frame, error) {
 }
 
 func (m minuteStruct) Decode(bs []byte) (*MinuteResp, error) {
-	if len(bs) < 6 {
-		return nil, errors.New("数据长度不足")
-	}
-
-	resp := &MinuteResp{
-		Count: Uint16LE(bs[:2]),
-	}
-
-	bs = bs[6:]
-	price := float64(0)
-
-	t := time.Date(0, 0, 0, 9, 0, 0, 0, time.Local)
-	for i := uint16(0); i < resp.Count; i++ {
-		var priceRaw int64
-		bs, priceRaw = varPrice(bs)
-		bs, _ = varUint(bs)
-		price = float64(priceRaw) / 1000
-		var number int
-		bs, number = varUint(bs)
-		if i == 120 {
-			t = t.Add(time.Hour * 2)
-		}
-		resp.List = append(resp.List, PriceNumber{
-			Time:   t.Add(time.Minute * time.Duration(i)).Format("15:04"),
-			Price:  price,
-			Number: number,
-		})
-	}
-
-	return resp, nil
+	return MHistoryMinute.Decode(bs)
 }
 
 type historyMinuteStruct struct{}
@@ -101,24 +72,33 @@ func (m historyMinuteStruct) Decode(bs []byte) (*MinuteResp, error) {
 		Count: Uint16LE(bs[:2]),
 	}
 
+	// bs[5] > 0x40 表示价格单位为分(除以100)，否则为厘(除以1000)
+	bType := bs[5]
+	var divisor float64 = 1000
+	if bType > 0x40 {
+		divisor = 100
+	}
+
 	bs = bs[6:]
 
-	lastPrice := float64(0)
+	var lastPrice int64
+
 	t := time.Date(0, 0, 0, 9, 30, 0, 0, time.Local)
 	for i := uint16(0); i < resp.Count; i++ {
-		var price int64
-		bs, price = varPrice(bs)
+		var priceRaw int64
+		bs, priceRaw = varPrice(bs)
 		bs, _ = varPrice(bs)
-		lastPrice += float64(price) / 100
-		var number int
-		bs, number = varUint(bs)
-
+		var volRaw int64
+		bs, volRaw = varPrice(bs)
+		lastPrice += priceRaw
+		price := float64(lastPrice) / divisor
+		number := int(volRaw)
 		if i == 120 {
 			t = t.Add(time.Minute * 90)
 		}
 		resp.List = append(resp.List, PriceNumber{
 			Time:   t.Add(time.Minute * time.Duration(i+1)).Format("15:04"),
-			Price:  lastPrice,
+			Price:  price,
 			Number: number,
 		})
 	}

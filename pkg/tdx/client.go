@@ -411,15 +411,8 @@ func (c *Client) GetKlineYearAll(code string) ([]*protocol.Kline, error) {
 }
 
 func (c *Client) GetMinute(code string) (*protocol.MinuteResp, error) {
-	f, err := protocol.MMinute.Frame(code)
-	if err != nil {
-		return nil, err
-	}
-	data, err := c.send(f)
-	if err != nil {
-		return nil, err
-	}
-	return protocol.MMinute.Decode(data)
+	today := time.Now().Format("20060102")
+	return c.GetHistoryMinute(today, code)
 }
 
 func (c *Client) GetHistoryMinute(date, code string) (*protocol.MinuteResp, error) {

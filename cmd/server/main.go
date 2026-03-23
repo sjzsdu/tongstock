@@ -236,7 +236,6 @@ func handleMinute(c *gin.Context) {
 	}
 
 	date := c.Query("date")
-	history := c.Query("history") == "true"
 
 	var resp *protocol.MinuteResp
 	resp, err := withRetry(func() (*protocol.MinuteResp, error) {
@@ -244,7 +243,7 @@ func handleMinute(c *gin.Context) {
 		if e != nil {
 			return nil, e
 		}
-		if history && date != "" {
+		if date != "" {
 			return s.Client.GetHistoryMinute(date, code)
 		}
 		return s.Client.GetMinute(code)

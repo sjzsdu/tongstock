@@ -462,8 +462,7 @@ func runKline(cmd *cobra.Command, args []string) error {
 }
 
 var (
-	minuteHistory bool
-	minuteDate    string
+	minuteDate string
 )
 
 var minuteCmd = &cobra.Command{
@@ -474,8 +473,7 @@ var minuteCmd = &cobra.Command{
 }
 
 func init() {
-	minuteCmd.Flags().BoolVarP(&minuteHistory, "history", "H", false, "查询历史分时数据")
-	minuteCmd.Flags().StringVarP(&minuteDate, "date", "d", "", "日期 (YYYYMMDD)")
+	minuteCmd.Flags().StringVarP(&minuteDate, "date", "d", "", "日期 (YYYYMMDD)，不指定则查询当日")
 }
 
 func runMinute(cmd *cobra.Command, args []string) error {
@@ -486,7 +484,7 @@ func runMinute(cmd *cobra.Command, args []string) error {
 	defer client.Close()
 
 	var resp *protocol.MinuteResp
-	if minuteHistory && minuteDate != "" {
+	if minuteDate != "" {
 		resp, err = client.GetHistoryMinute(minuteDate, args[0])
 	} else {
 		resp, err = client.GetMinute(args[0])
