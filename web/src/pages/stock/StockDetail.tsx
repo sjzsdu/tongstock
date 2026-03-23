@@ -88,6 +88,7 @@ export default function StockDetail() {
         api.quote(code).then(setQuote).catch(() => {});
       };
       fetchMinute();
+      api.finance(code).then(setFinance).catch(() => {});
       const timer = setInterval(fetchMinute, 30000);
       return () => clearInterval(timer);
     }
@@ -362,6 +363,17 @@ export default function StockDetail() {
         });
         const vwap = totalVolume > 0 ? totalAmount / totalVolume : lastClose;
 
+        const sVol = quote?.SVol || 0;
+        const bVol = quote?.BVol || 0;
+        const innerVol = Math.abs(sVol);
+        const outerVol = Math.abs(bVol);
+        const totalVol = innerVol + outerVol;
+        const innerPct = totalVol > 0 ? (innerVol / totalVol * 100) : 50;
+        const outerPct = totalVol > 0 ? (outerVol / totalVol * 100) : 50;
+        
+        const liutong = finance?.LiuTongGuBen || 0;
+        const turnover = liutong > 0 ? (quote?.Volume || 0) / liutong * 100 : 0;
+
         const selectedData = highlightedIdx >= 0 && highlightedIdx < minuteData.length 
           ? minuteData[highlightedIdx] 
           : null;
@@ -381,6 +393,9 @@ export default function StockDetail() {
                   <span>量 <span className="text-white">{(quote.Volume / 10000).toFixed(0)}万</span></span>
                   <span>额 <span className="text-white">{(quote.Amount / 10000).toFixed(0)}万</span></span>
                   <span>均 <span className={vwap >= lastClose ? 'text-red-400' : 'text-green-400'}>{vwap.toFixed(2)}</span></span>
+                  <span className="text-slate-400">内盘 <span className="text-green-400">{(innerVol / 10000).toFixed(0)}万</span> <span className="text-slate-600">({innerPct.toFixed(1)}%)</span></span>
+                  <span className="text-slate-400">外盘 <span className="text-red-400">{(outerVol / 10000).toFixed(0)}万</span> <span className="text-slate-600">({outerPct.toFixed(1)}%)</span></span>
+                  {turnover > 0 && <span className="text-slate-400">换手 <span className="text-white">{turnover.toFixed(2)}%</span></span>}
                 </>
               )}
             </div>
