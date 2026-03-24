@@ -14,7 +14,18 @@ cleanup() {
 
 trap cleanup SIGINT SIGTERM
 
-# Check if air is installed for Go hot reload
+kill_port() {
+    local pids
+    pids=$(lsof -ti:"$1" 2>/dev/null)
+    if [ -n "$pids" ]; then
+        echo "Port $1 occupied (PID: $pids), killing..."
+        echo "$pids" | xargs kill -9 2>/dev/null || true
+        sleep 0.5
+    fi
+}
+
+kill_port 8080
+kill_port 5173
 if ! command -v air &> /dev/null; then
     echo "Installing air for Go hot reload..."
     go install github.com/air-verse/air@latest

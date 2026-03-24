@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, TrendingDown, BarChart3 } from 'lucide-react';
+import { TrendingUp, TrendingDown, BarChart3, Clock } from 'lucide-react';
 import { api } from '../api/client';
+import type { HistoryStock, Quote, CodeItem } from '../types/api';
 
 const INDICES = [
   { code: '999999', name: '上证指数' },
@@ -11,7 +12,11 @@ const INDICES = [
 ];
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [indices, setIndices] = useState<any[]>([]);
+  const [history, setHistory] = useState<HistoryStock[]>([]);
+  const [historyQuotes, setHistoryQuotes] = useState<Record<string, Quote>>({});
+  const [stockNames, setStockNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -31,6 +36,26 @@ export default function Dashboard() {
       setIndices(results);
       setLoading(false);
     })();
+
+    api.history().then(h => {
+      setHistory(h);
+      const codes = h.map(s => s.code);
+      const sz = codes.filter(c => c.startsWith('0') || c.startsWith('3'));
+      const sh = codes.filter(c => c.startsWith('6'));
+      Promise.all([
+        sz.length > 0 ? api.codes('sz') : Promise.resolve([]),
+        sh.length > 0 ? api.codes('sh') : Promise.resolve([]),
+      ]).then(([szCodes, shCodes]) => {
+        const names: Record<string, string> = {};
+        [...szCodes, ...shCodes].forEach((c: CodeItem) => { names[c.Code] = c.Name; });
+        setStockNames(names);
+      });
+      h.forEach(stock => {
+        api.quote(stock.code).then(q => {
+          setHistoryQuotes(prev => ({ ...prev, [stock.code]: q }));
+        }).catch(() => {});
+      });
+    }).catch(() => {});
   }, []);
 
   return (
@@ -41,16 +66,16 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {indices.map((idx) => (
-          <div key={idx.code} className="bg-slate-900 rounded-xl border border-slate-800 p-5">
-            <div className="text-slate-400 text-sm mb-1">{idx.name}</div>
-            {loading ? (
+          <div key={idx.code} className="bg-slate-900 rounded-xl border border-slate-800 p-5 h-28 flex flex-col justify-between">
+            <div className="text-slate-400 text-sm">{idx.name}</div>
+            {loading && !idx.last ? (
               <div className="h-8 bg-slate-800 rounded animate-pulse" />
             ) : idx.last ? (
               <>
                 <div className={`text-2xl font-bold ${idx.up ? 'text-red-400' : 'text-green-400'}`}>
                   {idx.last.Close?.toFixed(2)}
                 </div>
-                <div className={`flex items-center gap-1 text-sm mt-1 ${idx.up ? 'text-red-400' : 'text-green-400'}`}>
+                <div className={`flex items-center gap-1 text-sm ${idx.up ? 'text-red-400' : 'text-green-400'}`}>
                   {idx.up ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
                   {idx.change > 0 ? '+' : ''}{idx.change.toFixed(2)}%
                 </div>
@@ -61,6 +86,38 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+
+      {history.length > 0 && (
+        <div className="bg-slate-900 rounded-xl border border-slate-800 p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Clock size={18} className="text-slate-400" />
+            <h2 className="text-lg font-bold text-white">历史个股</h2>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+            {history.map(stock => {
+              const q = historyQuotes[stock.code];
+              const change = q ? ((q.Price - q.LastClose) / q.LastClose * 100) : 0;
+              return (
+                <div key={stock.code} className="flex items-center justify-between bg-slate-800 rounded-lg px-3 py-2">
+                  <button
+                    onClick={() => navigate(`/stock/${stock.code}`)}
+                    className="flex flex-col text-left hover:text-blue-400 transition-colors"
+                  >
+                    <span className="text-white font-medium text-sm">{stockNames[stock.code] || q?.Name || stock.code}</span>
+                    <span className="text-slate-500 text-xs">{stock.code}</span>
+                  </button>
+                  <div className="flex flex-col items-end">
+                    <span className="text-white text-sm">{q?.Price?.toFixed(2)}</span>
+                    <span className={`text-xs ${change >= 0 ? 'text-red-400' : 'text-green-400'}`}>
+                      {change > 0 ? '+' : ''}{change?.toFixed(2)}%
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="bg-slate-900 rounded-xl border border-slate-800 p-6">
         <h2 className="text-lg font-bold text-white mb-4">快速分析</h2>

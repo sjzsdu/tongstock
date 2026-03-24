@@ -134,6 +134,7 @@ export interface IndexBar extends KlineItem {
 
 export interface ScreenResult {
   code: string;
+  name: string;
   last: KlineItem;
   ma: Record<string, number[]>;
   macd: MACDResult | null;
@@ -185,4 +186,9 @@ export interface SignalAnalysis {
   signals: number;
   outcomes: SignalOutcome[];
   summary: SignalSummary[];
+}
+
+export interface HistoryStock {
+  code: string;
+  analyzed_at: string;
 }

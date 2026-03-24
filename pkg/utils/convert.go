@@ -173,7 +173,21 @@ func GetVolume(val uint32) float64 {
 
 func IsStock(code string) bool {
 	code = strings.ToLower(AddPrefix(code))
-	return strings.HasPrefix(code, "sh") || strings.HasPrefix(code, "sz") || strings.HasPrefix(code, "bj")
+	if !(strings.HasPrefix(code, "sh") || strings.HasPrefix(code, "sz") || strings.HasPrefix(code, "bj")) {
+		return false
+	}
+	if strings.HasPrefix(code, "sh000") || strings.HasPrefix(code, "sz399") ||
+		strings.HasPrefix(code, "sh999") || strings.HasPrefix(code, "sh888") {
+		return false
+	}
+	if IsETF(code) {
+		return false
+	}
+	if strings.HasPrefix(code, "sh01") || strings.HasPrefix(code, "sh02") ||
+		strings.HasPrefix(code, "sz10") || strings.HasPrefix(code, "sh11") {
+		return false
+	}
+	return true
 }
 
 func IsETF(code string) bool {

@@ -13,16 +13,19 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sjzsdu/tongstock/pkg/config"
+	"github.com/sjzsdu/tongstock/pkg/history"
 	"github.com/sjzsdu/tongstock/pkg/param"
 	"github.com/sjzsdu/tongstock/pkg/signal"
 	"github.com/sjzsdu/tongstock/pkg/ta"
 	"github.com/sjzsdu/tongstock/pkg/tdx"
 	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
+	"github.com/sjzsdu/tongstock/pkg/utils"
 	webstatic "github.com/sjzsdu/tongstock/pkg/web"
 )
 
 var svc *tdx.Service
 var tdxMu sync.Mutex
+var db *history.DB
 
 func main() {
 	port := flag.Int("port", 0, "服务端口 (默认从配置文件读取)")
@@ -52,6 +55,16 @@ func main() {
 		log.Printf("加载配置失败: %v, 使用默认配置", err)
 	}
 	cfg := config.Get()
+
+	var err error
+	db, err = history.Open(config.DBPath())
+	if err != nil {
+		log.Printf("打开数据库失败: %v", err)
+	} else {
+		if err := history.InitTable(db); err != nil {
+			log.Printf("初始化历史表失败: %v", err)
+		}
+	}
 
 	if *port > 0 {
 		cfg.Server.Port = *port
@@ -91,6 +104,10 @@ func main() {
 	r.GET("/api/indicator", handleIndicator)
 	r.GET("/api/screen", handleScreen)
 	r.GET("/api/signal-analysis", handleSignalAnalysis)
+
+	r.GET("/api/history", handleHistoryGet)
+	r.POST("/api/history", handleHistoryPost)
+	r.DELETE("/api/history/:code", handleHistoryDelete)
 
 	dist := webstatic.DistFileServer()
 	r.NoRoute(func(c *gin.Context) {
@@ -223,6 +240,17 @@ func handleCodes(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取代码失败: %v", err)})
 		return
+	}
+
+	stocksOnly := c.DefaultQuery("stocks_only", "false") == "true"
+	if stocksOnly {
+		filtered := make([]*protocol.CodeItem, 0, len(codes))
+		for _, item := range codes {
+			if utils.IsStock(item.Code) {
+				filtered = append(filtered, item)
+			}
+		}
+		codes = filtered
 	}
 
 	c.JSON(http.StatusOK, codes)
@@ -481,6 +509,7 @@ func handleCompanyContent(c *gin.Context) {
 
 func handleBlock(c *gin.Context) {
 	blockFile := c.DefaultQuery("file", "block_zs.dat")
+	stocksOnly := c.DefaultQuery("stocks_only", "false") == "true"
 
 	items, err := withRetry(func() ([]*protocol.BlockItem, error) {
 		s, e := getService()
@@ -493,6 +522,17 @@ func handleBlock(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取板块信息失败: %v", err)})
 		return
 	}
+
+	if stocksOnly {
+		filtered := make([]*protocol.BlockItem, 0, len(items))
+		for _, item := range items {
+			if utils.IsStock(item.StockCode) {
+				filtered = append(filtered, item)
+			}
+		}
+		items = filtered
+	}
+
 	c.JSON(http.StatusOK, items)
 }
 
@@ -619,6 +659,7 @@ func handleScreen(c *gin.Context) {
 
 	type result struct {
 		Code    string               `json:"code"`
+		Name    string               `json:"name"`
 		Last    ta.KlineInput        `json:"last"`
 		MA      map[string][]float64 `json:"ma"`
 		MACD    *ta.MACDResult       `json:"macd,omitempty"`
@@ -641,8 +682,14 @@ func handleScreen(c *gin.Context) {
 			tdxMu.Lock()
 			s, e := getService()
 			var klines []*protocol.Kline
+			var stockName string
 			if e == nil {
 				klines, e = s.FetchKline(c, tdx.ParseKlineType(ktype), 0, 250)
+				if e == nil {
+					if quotes, qErr := s.Client.GetQuote(c); qErr == nil && len(quotes) > 0 {
+						stockName = quotes[0].Name
+					}
+				}
 			}
 			tdxMu.Unlock()
 			if e != nil {
@@ -661,6 +708,7 @@ func handleScreen(c *gin.Context) {
 			n := len(inputs)
 			r := result{
 				Code:    c,
+				Name:    stockName,
 				Last:    inputs[n-1],
 				MA:      ind.MA,
 				MACD:    ind.MACD,
@@ -898,4 +946,51 @@ func prevDate(dateStr string) string {
 		return ""
 	}
 	return t.AddDate(0, 0, -1).Format("2006-01-02")
+}
+
+func handleHistoryGet(c *gin.Context) {
+	if db == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库未初始化"})
+		return
+	}
+	stocks, err := history.GetAll(db)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": stocks})
+}
+
+func handleHistoryPost(c *gin.Context) {
+	if db == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库未初始化"})
+		return
+	}
+	var stock history.HistoryStock
+	if err := c.ShouldBindJSON(&stock); err != nil {
+		log.Printf("history bind error: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	log.Printf("history add: %+v", stock)
+	stock.AnalyzedAt = time.Now()
+	if err := history.Upsert(db, stock); err != nil {
+		log.Printf("history upsert error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "ok"})
+}
+
+func handleHistoryDelete(c *gin.Context) {
+	if db == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库未初始化"})
+		return
+	}
+	code := c.Param("code")
+	if err := history.Delete(db, code); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "ok"})
 }

@@ -561,6 +561,12 @@ func (c *Client) GetBlockInfoAll(blockFile string) ([]*protocol.BlockItem, error
 			return nil, err
 		}
 		content = append(content, piece...)
+		if uint32(len(content)) >= meta.Size {
+			break
+		}
+	}
+	if uint32(len(content)) > meta.Size {
+		content = content[:meta.Size]
 	}
 	return protocol.ParseBlockData(content)
 }

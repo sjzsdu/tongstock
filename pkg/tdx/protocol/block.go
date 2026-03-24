@@ -65,21 +65,48 @@ type BlockItem struct {
 }
 
 func ParseBlockData(bs []byte) ([]*BlockItem, error) {
-	if len(bs) < 4 {
+	const fileHeader = 384
+	const recordSize = 2813
+	const nameOffset = 2
+	const nameSize = 9
+	const countOffset = 11
+	const typeOffset = 13
+	const codeOffset = 15
+	const codeSize = 7
+	const maxCodes = (recordSize - codeOffset) / codeSize
+
+	if len(bs) < fileHeader+recordSize {
 		return nil, ErrDataLength
 	}
 
-	items := make([]*BlockItem, 0)
-	pos := 0
-	for pos+64 <= len(bs) {
-		blockName := trimNull(bs[pos : pos+9])
-		blockType := Uint16LE(bs[pos+9 : pos+11])
-		stockCount := Uint16LE(bs[pos+11 : pos+13])
-		pos += 13
+	numRecords := (len(bs) - fileHeader) / recordSize
+	items := make([]*BlockItem, 0, numRecords*50)
 
-		for i := uint16(0); i < stockCount && pos+7 <= len(bs); i++ {
-			code := trimNull(bs[pos : pos+7])
-			pos += 7
+	for i := 0; i < numRecords; i++ {
+		base := fileHeader + i*recordSize
+		if base+codeOffset > len(bs) {
+			break
+		}
+
+		blockName := trimNull(bs[base+nameOffset : base+nameOffset+nameSize])
+		if blockName == "" {
+			continue
+		}
+		blockType := Uint16LE(bs[base+typeOffset : base+typeOffset+2])
+		stockCount := int(Uint16LE(bs[base+countOffset : base+countOffset+2]))
+		if stockCount > maxCodes {
+			stockCount = maxCodes
+		}
+
+		for j := 0; j < stockCount; j++ {
+			off := base + codeOffset + j*codeSize
+			if off+codeSize > len(bs) {
+				break
+			}
+			code := trimNull(bs[off : off+codeSize])
+			if code == "" {
+				break
+			}
 			items = append(items, &BlockItem{
 				BlockName: blockName,
 				BlockType: blockType,

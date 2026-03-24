@@ -65,7 +65,14 @@ export default function StockDetail() {
   useEffect(() => {
     if (!code) return;
     setLoading(true);
-    api.quote(code).then(setQuote).catch(() => {});
+    if (tab === 'chart') {
+      api.quote(code).then(q => {
+        setQuote(q);
+        api.historyAdd(code).catch(() => {});
+      }).catch(() => {});
+    } else {
+      api.quote(code).then(setQuote).catch(() => {});
+    }
     api.indicator(code, ktype).then(data => {
       setIndicator(data);
       setKlines(data?.klines || []);
