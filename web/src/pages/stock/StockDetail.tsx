@@ -160,7 +160,7 @@ export default function StockDetail() {
   return (
     <div className={`flex flex-col min-h-0 gap-4 ${fullscreen ? 'fixed inset-0 z-50 bg-slate-950 p-4 overflow-auto' : 'h-full'}`}>
       {!fullscreen && (
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 flex-wrap">
           <input
             type="text" value={inputCode}
             onChange={e => setInputCode(e.target.value)}
@@ -169,7 +169,7 @@ export default function StockDetail() {
             placeholder="股票代码"
           />
           {quote && (
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 flex-wrap">
               <span className="text-white font-bold text-lg">{quote.Name}</span>
               <span className={`text-2xl font-bold ${up ? 'text-red-400' : 'text-green-400'}`}>
                 {quote.Price?.toFixed(2)}
@@ -177,6 +177,12 @@ export default function StockDetail() {
               <span className={`text-sm ${up ? 'text-red-400' : 'text-green-400'}`}>
                 {up ? '+' : ''}{pct.toFixed(2)}%
               </span>
+              <span className="text-slate-400 text-sm">昨收 {quote.LastClose?.toFixed(2)}</span>
+              <span className="text-slate-400 text-sm">开 {quote.Open?.toFixed(2)}</span>
+              <span className="text-red-400 text-sm">高 {quote.High?.toFixed(2)}</span>
+              <span className="text-green-400 text-sm">低 {quote.Low?.toFixed(2)}</span>
+              <span className="text-slate-400 text-sm">量 {(quote.Volume / 10000).toFixed(0)}万</span>
+              <span className="text-slate-400 text-sm">额 {(quote.Amount / 10000).toFixed(0)}万</span>
             </div>
           )}
         </div>
@@ -199,10 +205,16 @@ export default function StockDetail() {
           </div>
         )}
         {fullscreen && (
-          <div className="flex items-center gap-3 flex-1">
+          <div className="flex items-center gap-3 flex-1 flex-wrap">
             {quote && <span className="text-white font-bold">{quote.Name}</span>}
             {quote && <span className={`font-bold ${up ? 'text-red-400' : 'text-green-400'}`}>{quote.Price?.toFixed(2)}</span>}
             {quote && <span className={`text-sm ${up ? 'text-red-400' : 'text-green-400'}`}>{up ? '+' : ''}{pct.toFixed(2)}%</span>}
+            {quote && <span className="text-slate-400 text-sm">昨收 {quote.LastClose?.toFixed(2)}</span>}
+            {quote && <span className="text-slate-400 text-sm">开 {quote.Open?.toFixed(2)}</span>}
+            {quote && <span className="text-red-400 text-sm">高 {quote.High?.toFixed(2)}</span>}
+            {quote && <span className="text-green-400 text-sm">低 {quote.Low?.toFixed(2)}</span>}
+            {quote && <span className="text-slate-400 text-sm">量 {(quote.Volume / 10000).toFixed(0)}万</span>}
+            {quote && <span className="text-slate-400 text-sm">额 {(quote.Amount / 10000).toFixed(0)}万</span>}
           </div>
         )}
         <button

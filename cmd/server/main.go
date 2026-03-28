@@ -933,20 +933,51 @@ func handleScreen(c *gin.Context) {
 	}
 
 	codeList := strings.Split(codesStr, ",")
-	for i := range codeList {
-		codeList[i] = strings.TrimSpace(codeList[i])
+	var filteredCodes []string
+	for _, c := range codeList {
+		c = strings.TrimSpace(c)
+		if c != "" {
+			filteredCodes = append(filteredCodes, c)
+		}	}
+	codeList = filteredCodes
+
+	if len(codeList) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的股票代码"})
+		return
 	}
 
 	_ = param.AutoInit()
 
+	// 预先加载股票代码到名称的映射
+	// 注意：先加载SH，再加载SZ和BJ，让股票交易所的名称覆盖指数交易所（避免000001被SH的上证指数覆盖）
+	codeNameMap := make(map[string]string)
+	if s, err := getService(); err == nil {
+		if codes, err := s.FetchCodes(protocol.ExchangeSH); err == nil {
+			for _, c := range codes {
+				codeNameMap[c.Code] = c.Name
+			}
+		}
+		if codes, err := s.FetchCodes(protocol.ExchangeBJ); err == nil {
+			for _, c := range codes {
+				codeNameMap[c.Code] = c.Name
+			}
+		}
+		if codes, err := s.FetchCodes(protocol.ExchangeSZ); err == nil {
+			for _, c := range codes {
+				codeNameMap[c.Code] = c.Name
+			}
+		}
+	}
+
 	type result struct {
-		Code    string               `json:"code"`
-		Name    string               `json:"name"`
-		Last    ta.KlineInput        `json:"last"`
-		MA      map[string][]float64 `json:"ma"`
-		MACD    *ta.MACDResult       `json:"macd,omitempty"`
-		KDJ     *ta.KDJResult        `json:"kdj,omitempty"`
-		Signals []signal.Signal      `json:"signals"`
+		Code     string               `json:"code"`
+		Name     string               `json:"name"`
+		Last     ta.KlineInput        `json:"last"`
+		MA       map[string][]float64 `json:"ma"`
+		MACD     *ta.MACDResult       `json:"macd,omitempty"`
+		KDJ      *ta.KDJResult        `json:"kdj,omitempty"`
+		Signals  []signal.Signal      `json:"signals"`
+		Cycles   []signal.TradeCycle  `json:"cycles"` // 完整的交易周期
 	}
 
 	results := make([]result, len(codeList))
@@ -961,17 +992,15 @@ func handleScreen(c *gin.Context) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
+			// 从预加载的映射中获取股票名称
+			stockName := codeNameMap[c]
+
 			tdxMu.Lock()
 			s, e := getService()
 			var klines []*protocol.Kline
-			var stockName string
 			if e == nil {
-				klines, e = s.FetchKline(c, tdx.ParseKlineType(ktype), 0, 250)
-				if e == nil {
-					if quotes, qErr := s.Client.GetQuote(c); qErr == nil && len(quotes) > 0 {
-						stockName = quotes[0].Name
-					}
-				}
+				// 使用全量历史数据来检测完整的交易周期
+				klines, e = s.FetchKlineAll(c, tdx.ParseKlineType(ktype))
 			}
 			tdxMu.Unlock()
 			if e != nil {
@@ -987,6 +1016,9 @@ func handleScreen(c *gin.Context) {
 			ind := ta.Calculate(inputs, cfg)
 			sigs := signal.Detect(c, inputs, ind, nil)
 
+			// 使用全量历史数据计算完整的交易周期
+			cycles := signal.DetectAllCycles(c, inputs, ind)
+
 			n := len(inputs)
 			r := result{
 				Code:    c,
@@ -996,6 +1028,7 @@ func handleScreen(c *gin.Context) {
 				MACD:    ind.MACD,
 				KDJ:     ind.KDJ,
 				Signals: sigs,
+				Cycles:  cycles,
 			}
 
 			mu.Lock()
@@ -1005,9 +1038,40 @@ func handleScreen(c *gin.Context) {
 	}
 	wg.Wait()
 
+	// 过滤掉没有有效数据的股票（没有代码或没有名称）
+	var validResults []result
+	for _, r := range results {
+		if r.Code != "" && r.Name != "" {
+			validResults = append(validResults, r)
+		}
+	}
+
+	// 买入信号类型
+	buySignalTypes := map[signal.SignalType]bool{
+		signal.SignalGoldenCross: true,  // 金叉
+		signal.SignalOversold:    true,  // 超卖
+		signal.SignalBreakLower:  true,  // 跌破下轨
+		signal.SignalBullAlign:   true,  // 多头排列
+	}
+
+	// 只返回当前处于买入信号状态的个股
+	var buySignalResults []result
+	for _, r := range validResults {
+		// 检查最近的信号是否是买入信号
+		if len(r.Signals) > 0 {
+			// 获取最新的信号
+			latestSignal := r.Signals[len(r.Signals)-1]
+			if buySignalTypes[latestSignal.Type] {
+				// 只保留最新的买入信号
+				r.Signals = []signal.Signal{latestSignal}
+				buySignalResults = append(buySignalResults, r)
+			}
+		}
+	}
+
 	if signalType != "" {
 		var filtered []result
-		for _, r := range results {
+		for _, r := range validResults {
 			if r.Code == "" {
 				continue
 			}
@@ -1033,7 +1097,7 @@ func handleScreen(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"results": results, "total": len(codeList)})
+	c.JSON(http.StatusOK, gin.H{"results": buySignalResults, "total": len(codeList), "matched": len(buySignalResults)})
 }
 
 func handleSignalAnalysis(c *gin.Context) {

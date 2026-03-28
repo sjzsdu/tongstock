@@ -11,6 +11,12 @@ func Detect(code string, klines []ta.KlineInput, result *ta.IndicatorResult, opt
 		opt = DefaultDetectOptions()
 	}
 
+	// 首先判断当前趋势方向
+	trend := TrendUnknown
+	if result.MA != nil {
+		trend = detectTrend(klines, result.MA)
+	}
+
 	var signals []Signal
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -20,6 +26,8 @@ func Detect(code string, klines []ta.KlineInput, result *ta.IndicatorResult, opt
 		go func() {
 			defer wg.Done()
 			s := detectMACDSignals(code, klines, result.MACD)
+			// 应用趋势过滤
+			s = filterSignalsByTrend(s, trend)
 			mu.Lock()
 			signals = append(signals, s...)
 			mu.Unlock()
@@ -31,6 +39,8 @@ func Detect(code string, klines []ta.KlineInput, result *ta.IndicatorResult, opt
 		go func() {
 			defer wg.Done()
 			s := detectKDJSignals(code, klines, result.KDJ)
+			// 应用趋势过滤
+			s = filterSignalsByTrend(s, trend)
 			mu.Lock()
 			signals = append(signals, s...)
 			mu.Unlock()
@@ -53,6 +63,8 @@ func Detect(code string, klines []ta.KlineInput, result *ta.IndicatorResult, opt
 		go func() {
 			defer wg.Done()
 			s := detectMASignals(code, klines, result.MA)
+			// 应用趋势过滤
+			s = filterSignalsByTrend(s, trend)
 			mu.Lock()
 			signals = append(signals, s...)
 			mu.Unlock()

@@ -189,6 +189,11 @@ export default function Screen() {
   const navigate = useNavigate();
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
+  // 从 URL 读取筛选参数
+  const searchParams = new URLSearchParams(window.location.search);
+  const urlKtype = searchParams.get('ktype') || 'day';
+  const urlSignals = searchParams.get('signals')?.split(',').filter(Boolean) || [];
+
   const STORAGE_KEY = 'tongstock_stocklist';
 
   // 从 localStorage 加载股票列表
@@ -238,9 +243,10 @@ export default function Screen() {
   }, [stockList, saveStockListToStorage]);
   const [inputCode, setInputCode] = useState('');
   const [inputLoading, setInputLoading] = useState(false);
-  const [ktype, setKtype] = useState('day');
-  const [selectedSignals, setSelectedSignals] = useState<string[]>([]);
+  const [ktype, setKtype] = useState(urlKtype);
+  const [selectedSignals, setSelectedSignals] = useState<string[]>(urlSignals);
   const [results, setResults] = useState<ScreenResult[]>([]);
+  const [hasScreenLoaded, setHasScreenLoaded] = useState(false);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -332,6 +338,17 @@ export default function Screen() {
 
   // ── Screen ──
 
+  // 更新 URL 参数（不触发页面刷新）
+  const updateUrlParams = useCallback(() => {
+    const params = new URLSearchParams();
+    params.set('ktype', ktype);
+    if (selectedSignals.length > 0) {
+      params.set('signals', selectedSignals.join(','));
+    }
+    const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname;
+    window.history.replaceState({}, '', newUrl);
+  }, [ktype, selectedSignals]);
+
   const doScreen = async () => {
     const c = resolvedCodes.trim();
     if (!c) return;
@@ -342,12 +359,21 @@ export default function Screen() {
       const valid = res.results.filter(r => r.code);
       setResults(valid);
       setTotal(res.total);
+      setHasScreenLoaded(true);
     } catch (e: any) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
   };
+
+  // 页面加载时如果有 URL 参数则自动执行筛选
+  useEffect(() => {
+    const c = resolvedCodes.trim();
+    if (c && !hasScreenLoaded && !loading) {
+      doScreen();
+    }
+  }, [resolvedCodes, hasScreenLoaded, loading]);
 
   // ── Client-side signal filter ──
 
@@ -387,10 +413,16 @@ export default function Screen() {
   // ── Signal toggle ──
 
   const toggleSignal = (s: string) => {
-    setSelectedSignals(prev =>
-      prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]
-    );
+    setSelectedSignals(prev => {
+      const next = prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s];
+      return next;
+    });
   };
+
+  // 监听筛选参数变化自动更新 URL
+  useEffect(() => {
+    updateUrlParams();
+  }, [ktype, selectedSignals, updateUrlParams]);
 
   // ── Sort header helper ──
 
