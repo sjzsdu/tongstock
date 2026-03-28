@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.2",
+    "tailwindcss": "^4.2.2",
     "@tanstack/react-virtual": "^3.13.23",
     "lightweight-charts": "^5.1.0",
     "lucide-react": "^0.577.0",
