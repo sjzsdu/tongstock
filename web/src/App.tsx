@@ -3,6 +3,7 @@ import { TrendingUp, LayoutDashboard, Search, Settings, BarChart3 } from 'lucide
 import { useState, useEffect, useRef } from 'react';
 import Dashboard from './pages/Dashboard';
 import StockDetail from './pages/stock/StockDetail';
+import StockChoose from './pages/stock/StockChoose';
 import Screen from './pages/Screen';
 import SettingsPage from './pages/settings/SettingsPage';
 import { api } from './api/client';
@@ -98,7 +99,7 @@ function Layout({ children }: { children: React.ReactNode }) {
           <span className="text-lg font-bold text-white">TongStock</span>
         </Link>
         <NavLink to="/" icon={LayoutDashboard}>市场总览</NavLink>
-        <NavLink to="/stock" icon={BarChart3}>个股分析</NavLink>
+        <NavLink to="/stock/choose" icon={BarChart3}>个股分析</NavLink>
         <NavLink to="/screen" icon={Search}>信号筛选</NavLink>
         <NavLink to="/settings" icon={Settings}>配置</NavLink>
         <div className="mt-auto pt-4 border-t border-slate-800">
@@ -116,7 +117,7 @@ export default function App() {
       <Layout>
         <Routes>
           <Route path="/" element={<Dashboard />} />
-          <Route path="/stock" element={<StockDetail />} />
+          <Route path="/stock/choose" element={<StockChoose />} />
           <Route path="/stock/:code" element={<StockDetail />} />
           <Route path="/stock/:code/:tab" element={<StockDetail />} />
           <Route path="/screen" element={<Screen />} />

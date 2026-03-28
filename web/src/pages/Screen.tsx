@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, X, Trash2, ChevronDown, ChevronUp, Bookmark, FolderOpen, ArrowUpDown } from 'lucide-react';
+import { Search, X, ChevronDown, ChevronUp, ArrowUpDown, ExternalLink } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { api } from '../api/client';
-import type { ScreenResult, BlockItem } from '../types/api';
+import type { ScreenResult } from '../types/api';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -26,44 +26,35 @@ const SIGNAL_OPTIONS: { value: string; label: string; buy: boolean }[] = [
   { value: '空头排列', label: '空头排列', buy: false },
 ];
 
-const BLOCK_FILES = [
-  { file: 'block_fg.dat', label: '行业' },
-  { file: 'block_gn.dat', label: '概念' },
+// 板块文件列表
+const ALL_BLOCK_FILES = [
+  { file: 'block_zs.dat', label: '指数', type: '2' },
+  { file: 'block_fg.dat', label: '行业', type: '2' },
+  { file: 'block_gn.dat', label: '概念', type: '2' },
+  { file: 'block.dat', label: '综合', type: '' },
 ];
-
-const PRESET_KEY = 'tongstock_screen_presets';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-interface Preset {
-  name: string;
-  codes: string;
-}
-
-type SourceTab = 'manual' | 'block' | 'preset';
+type SourceTab = 'watchlist' | 'block';
 type SortKey = 'code' | 'name' | 'close' | 'change' | 'dif' | 'k' | 'j';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function loadPresets(): Preset[] {
-  try {
-    return JSON.parse(localStorage.getItem(PRESET_KEY) || '[]');
-  } catch { return []; }
+// 手动输入的股票项
+interface StockItem {
+  code: string;
+  name?: string;
 }
 
-function savePresets(presets: Preset[]) {
-  localStorage.setItem(PRESET_KEY, JSON.stringify(presets));
-}
-
-function groupBlocks(items: BlockItem[]): Map<string, string[]> {
-  const map = new Map<string, string[]>();
-  for (const item of items) {
-    if (!item.StockCode || !item.BlockName) continue;
-    const codes = map.get(item.BlockName) || [];
-    codes.push(item.StockCode);
-    map.set(item.BlockName, codes);
-  }
-  return map;
+// 使用 blockList API 返回的板块维度数据
+interface BlockInfo {
+  name: string;
+  type: number;
+  count: number;
+  stocks?: string[];
+  /** 板块接口已带名称，弹窗直接使用，避免依赖异步 codes 缓存闭包 */
+  stocksWithNames?: { code: string; name: string }[];
 }
 
 function getLastValue(arr: number[] | undefined): number {
@@ -73,6 +64,31 @@ function getLastValue(arr: number[] | undefined): number {
 
 function isBuySignal(type: string): boolean {
   return SIGNAL_OPTIONS.find(s => s.value === type)?.buy ?? false;
+}
+
+type CodesCacheEntry = { list: { Code?: string; Name?: string }[]; timestamp: number };
+
+/** 用已合并的代码表缓存解析股票名称（不依赖 React state 闭包） */
+function stockNamesFromCodesCache(codes: string[], codesCache: Record<string, CodesCacheEntry>): { code: string; name: string }[] {
+  const grouped: Record<string, string[]> = { sz: [], sh: [], bj: [] };
+  for (const code of codes) {
+    if (code.startsWith('6')) grouped.sh.push(code);
+    else if (code.startsWith('8') || code.startsWith('9')) grouped.bj.push(code);
+    else grouped.sz.push(code);
+  }
+  const results: { code: string; name: string }[] = [];
+  for (const [exchange, codeList] of Object.entries(grouped)) {
+    if (codeList.length === 0) continue;
+    const cached = codesCache[exchange];
+    if (!cached) continue;
+    for (const code of codeList) {
+      const stockInfo = cached.list.find(c => c.Code === code);
+      if (stockInfo?.Name) {
+        results.push({ code, name: stockInfo.Name });
+      }
+    }
+  }
+  return results;
 }
 
 // ── Virtual Result Table ───────────────────────────────────────────────────────
@@ -173,8 +189,55 @@ export default function Screen() {
   const navigate = useNavigate();
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
-  const [sourceTab, setSourceTab] = useState<SourceTab>('manual');
-  const [codes, setCodes] = useState('000001,600519,000858,601318,000568');
+  const STORAGE_KEY = 'tongstock_stocklist';
+
+  // 从 localStorage 加载股票列表
+  const loadStockListFromStorage = useCallback((): StockItem[] => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      return stored ? JSON.parse(stored) : [];
+    } catch { return []; }
+  }, []);
+
+  // 保存股票列表到 localStorage
+  const saveStockListToStorage = useCallback((list: StockItem[]) => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    } catch { /* 忽略存储错误 */ }
+  }, []);
+
+  // 股票代码缓存 - 按交易所存储
+  const [codesCache, setCodesCache] = useState<Record<string, CodesCacheEntry>>({});
+  const CACHE_EXPIRY = 5 * 60 * 1000; // 缓存5分钟
+
+  /** 拉取各所代码表并返回合并后的缓存（调用方立即用于解析，避免 setState 异步导致闭包仍为空） */
+  const preloadCodesCache = useCallback(async (): Promise<Record<string, CodesCacheEntry>> => {
+    const exchanges = ['sz', 'sh', 'bj'] as const;
+    const merged: Record<string, CodesCacheEntry> = { ...codesCache };
+    await Promise.all(
+      exchanges.map(async (exchange) => {
+        if (!merged[exchange] || Date.now() - merged[exchange].timestamp >= CACHE_EXPIRY) {
+          try {
+            const codesList = await api.codes(exchange);
+            merged[exchange] = { list: codesList, timestamp: Date.now() };
+          } catch { /* 忽略错误 */ }
+        }
+      })
+    );
+    setCodesCache(merged);
+    return merged;
+  }, [codesCache]);
+
+  const [sourceTab, setSourceTab] = useState<SourceTab>('watchlist');
+  // 使用懒加载初始化，从 localStorage 读取
+  const [stockList, setStockList] = useState<StockItem[]>(() => loadStockListFromStorage());
+
+  // 保存到 localStorage
+  useEffect(() => {
+    saveStockListToStorage(stockList);
+  }, [stockList, saveStockListToStorage]);
+  const [inputCode, setInputCode] = useState('');
+  const [inputLoading, setInputLoading] = useState(false);
   const [ktype, setKtype] = useState('day');
   const [selectedSignals, setSelectedSignals] = useState<string[]>([]);
   const [results, setResults] = useState<ScreenResult[]>([]);
@@ -184,27 +247,74 @@ export default function Screen() {
   const [sortKey, setSortKey] = useState<SortKey>('code');
   const [sortAsc, setSortAsc] = useState(true);
 
-  const [blockFile, setBlockFile] = useState(BLOCK_FILES[0].file);
-  const [blockData, setBlockData] = useState<Map<string, string[]>>(new Map());
-  const [selectedBlock, setSelectedBlock] = useState('');
+  const [blockFile, setBlockFile] = useState('block_zs.dat');
+  const [blockData, setBlockData] = useState<BlockInfo[]>([]);
+  const [selectedBlock, setSelectedBlock] = useState<BlockInfo | null>(null);
   const [blockLoading, setBlockLoading] = useState(false);
+  const [blockStocksLoading, setBlockStocksLoading] = useState(false);
   const [blockSearch, setBlockSearch] = useState('');
 
-  const [presets, setPresets] = useState<Preset[]>(loadPresets);
-  const [newPresetName, setNewPresetName] = useState('');
-  const [showSavePreset, setShowSavePreset] = useState(false);
+  // Toast 提示
+  const [toast, setToast] = useState<{ message: string; type: 'error' | 'success' } | null>(null);
+
+  // 成分股弹窗
+  const [showBlockModal, setShowBlockModal] = useState(false);
+  const [blockStocksWithNames, setBlockStocksWithNames] = useState<{ code: string; name: string }[]>([]);
+  const [blockStocksLoadingNames, setBlockStocksLoadingNames] = useState(false);
+
+  // 显示 Toast
+  const showToast = useCallback((message: string, type: 'error' | 'success' = 'error') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
 
   // ── Block loading ──
 
-  const loadBlocks = useCallback(async (file: string) => {
+  const loadBlocks = useCallback(async (file: string, typeFilter?: string) => {
     setBlockLoading(true);
     try {
-      const items = await api.block(file);
-      setBlockData(groupBlocks(items));
-      setSelectedBlock('');
-    } catch { setBlockData(new Map()); }
+      // 使用新的 blockList API，返回板块维度的数据
+      const res = await api.blockList(file, typeFilter || undefined, true);
+      setBlockData(res.blocks || []);
+      setSelectedBlock(null);
+    } catch { setBlockData([]); }
     finally { setBlockLoading(false); }
   }, []);
+
+  // 加载板块成分股
+  const loadBlockStocks = useCallback(async (block: BlockInfo) => {
+    setBlockStocksLoading(true);
+    try {
+      // 调用 blockShow API 获取成分股列表
+      const res = await api.blockShow(block.name, undefined, blockFile);
+      if (res.stocks && res.stocks.length > 0) {
+        const stocksWithNames = res.stocks.map(s => ({
+          code: s.code,
+          name: (s.name && s.name.trim()) ? s.name : s.code,
+        }));
+        const codes = res.stocks.map(s => s.code);
+        setSelectedBlock({ ...block, stocks: codes, stocksWithNames });
+      } else {
+        setSelectedBlock(block);
+      }
+    } catch {
+      // 如果获取失败，仍然保留板块信息
+      setSelectedBlock(block);
+    } finally {
+      setBlockStocksLoading(false);
+    }
+  }, [blockFile]);
+
+  // 选择板块时加载成分股
+  const handleSelectBlock = useCallback((block: BlockInfo) => {
+    if (selectedBlock?.name === block.name) {
+      // 取消选择
+      setSelectedBlock(null);
+    } else {
+      // 选择新板块，加载成分股
+      loadBlockStocks(block);
+    }
+  }, [selectedBlock, loadBlockStocks]);
 
   useEffect(() => {
     if (sourceTab === 'block') loadBlocks(blockFile);
@@ -213,11 +323,12 @@ export default function Screen() {
   // ── Resolve codes from source ──
 
   const resolvedCodes = useMemo(() => {
-    if (sourceTab === 'block' && selectedBlock) {
-      return (blockData.get(selectedBlock) || []).join(',');
+    if (sourceTab === 'block' && selectedBlock && selectedBlock.stocks) {
+      return selectedBlock.stocks.join(',');
     }
-    return codes;
-  }, [sourceTab, codes, selectedBlock, blockData]);
+    // 使用 stockList 的代码
+    return stockList.map(s => s.code).join(',');
+  }, [sourceTab, stockList, selectedBlock, blockData]);
 
   // ── Screen ──
 
@@ -281,29 +392,6 @@ export default function Screen() {
     );
   };
 
-  // ── Presets ──
-
-  const saveCurrentPreset = () => {
-    const name = newPresetName.trim();
-    if (!name || !resolvedCodes) return;
-    const next = [...presets.filter(p => p.name !== name), { name, codes: resolvedCodes }];
-    setPresets(next);
-    savePresets(next);
-    setNewPresetName('');
-    setShowSavePreset(false);
-  };
-
-  const deletePreset = (name: string) => {
-    const next = presets.filter(p => p.name !== name);
-    setPresets(next);
-    savePresets(next);
-  };
-
-  const loadPreset = (p: Preset) => {
-    setCodes(p.codes);
-    setSourceTab('manual');
-  };
-
   // ── Sort header helper ──
 
   const SortHeader = ({ k, children, className = '' }: { k: SortKey; children: React.ReactNode; className?: string }) => (
@@ -333,16 +421,26 @@ export default function Screen() {
   // ── Filtered blocks for search ──
 
   const filteredBlocks = useMemo(() => {
-    const names = Array.from(blockData.keys()).sort();
-    if (!blockSearch) return names;
+    if (!blockSearch) return blockData.sort((a, b) => b.count - a.count);
     const q = blockSearch.toLowerCase();
-    return names.filter(n => n.toLowerCase().includes(q));
+    return blockData
+      .filter(b => b.name.toLowerCase().includes(q))
+      .sort((a, b) => b.count - a.count);
   }, [blockData, blockSearch]);
 
   // ── Render ──
 
   return (
-    <div className="flex gap-4 h-full min-h-0">
+    <>
+      {/* Toast 提示 */}
+      {toast && (
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg text-sm z-50 animate-fade-in ${
+          toast.type === 'error' ? 'bg-red-600/90 text-white' : 'bg-green-600/90 text-white'
+        }}`}>
+          {toast.message}
+        </div>
+      )}
+      <div className="flex gap-4 h-full min-h-0">
 
       <div className="w-64 shrink-0 flex flex-col gap-3 min-h-0">
         <h1 className="text-xl font-bold text-white flex items-center gap-2">
@@ -350,7 +448,7 @@ export default function Screen() {
         </h1>
 
         <div className="flex gap-1 text-xs">
-          {([['manual', '手动'], ['block', '板块'], ['preset', '自选']] as [SourceTab, string][]).map(([k, label]) => (
+          {([['watchlist', '自选'], ['block', '板块']] as [SourceTab, string][]).map(([k, label]) => (
             <button
               key={k}
               onClick={() => setSourceTab(k)}
@@ -361,28 +459,116 @@ export default function Screen() {
           ))}
         </div>
 
-        {sourceTab === 'manual' && (
+        {sourceTab === 'watchlist' && (
           <div className="flex flex-col gap-2 flex-1 min-h-0">
-            <textarea
-              value={codes}
-              onChange={e => setCodes(e.target.value)}
-              placeholder="股票代码，逗号或换行分隔&#10;000001&#10;600519"
-              className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-blue-500 resize-none min-h-[120px]"
-            />
+            {/* 股票列表 */}
+            <div className="flex-1 overflow-auto space-y-1 min-h-0">
+              {stockList.length === 0 ? (
+                <div className="text-slate-500 text-xs text-center py-4">
+                  输入股票代码，按回车添加
+                </div>
+              ) : (
+                stockList.map((stock, idx) => (
+                  <div
+                    key={stock.code}
+                    onClick={() => navigate(`/stock/${stock.code}/chart`)}
+                    className="flex items-center justify-between px-2 py-1.5 bg-slate-800/50 rounded text-sm group hover:bg-slate-800 cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-blue-400 font-mono text-xs">{stock.code}</span>
+                      <span className="text-white truncate">{stock.name || '-'}</span>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setStockList(prev => prev.filter((_s, i) => i !== idx)); }}
+                      className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 transition-all shrink-0"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+            {/* 输入框 */}
+            <div className="relative">
+              <input
+                type="text"
+                value={inputCode}
+                onChange={e => setInputCode(e.target.value)}
+                onKeyDown={async e => {
+                  if (e.key === 'Enter' && inputCode.trim()) {
+                    // 支持逗号/空格/换行分隔的多个股票代码，如 "000001,600519,000858" 或 "000001 600519 000858"
+                    const codes = inputCode.split(/[, \n]+/).map(c => c.trim().toUpperCase()).filter(c => c);
+                    
+                    if (codes.length === 0) return;
+                    
+                    // 验证所有股票代码格式（6位数字）
+                    const invalidCodes = codes.filter(c => !/^\d{6}$/.test(c));
+                    if (invalidCodes.length > 0) {
+                      showToast(`无效的股票代码: ${invalidCodes.join(', ')}`);
+                      return;
+                    }
+                    
+                    // 检查是否已存在
+                    const existingCodes = codes.filter(c => stockList.some(s => s.code === c));
+                    if (existingCodes.length > 0) {
+                      showToast(`股票已存在: ${existingCodes.join(', ')}`);
+                    }
+                    
+                    // 过滤掉已存在的代码
+                    const newCodes = codes.filter(c => !stockList.some(s => s.code === c));
+                    
+                    if (newCodes.length === 0) {
+                      setInputCode('');
+                      return;
+                    }
+                    
+                    setInputLoading(true);
+                    try {
+                      const cache = await preloadCodesCache();
+                      const results = stockNamesFromCodesCache(newCodes, cache);
+                      
+                      if (results.length === 0) {
+                        showToast('股票代码不存在');
+                      } else {
+                        setStockList(prev => [...prev, ...results]);
+                        if (results.length === 1) {
+                          showToast(`已添加 ${results[0].name}`, 'success');
+                        } else {
+                          showToast(`已添加 ${results.length} 只股票`, 'success');
+                        }
+                      }
+                    } catch {
+                      showToast('获取股票信息失败');
+                    } finally {
+                      setInputLoading(false);
+                      setInputCode('');
+                    }
+                  }
+                }}
+                placeholder="输入股票代码（如 002223,002202），回车添加..."
+                disabled={inputLoading}
+                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-blue-500 pr-8"
+              />
+              {inputLoading && (
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                  <span className="animate-spin">⟳</span>
+                </span>
+              )}
+            </div>
             <div className="text-xs text-slate-500">
-              {codes.split(/[,\s\n]+/).filter(c => c.trim()).length} 只股票
+              {stockList.length} 只股票
             </div>
           </div>
         )}
 
         {sourceTab === 'block' && (
           <div className="flex flex-col gap-2 flex-1 min-h-0">
-            <div className="flex gap-1">
-              {BLOCK_FILES.map(b => (
+            <div className="flex gap-1 flex-wrap">
+              {ALL_BLOCK_FILES.map(b => (
                 <button
                   key={b.file}
-                  onClick={() => setBlockFile(b.file)}
-                  className={`flex-1 py-1 text-xs rounded transition-colors ${blockFile === b.file ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
+                  onClick={() => { setBlockFile(b.file); loadBlocks(b.file, b.type); }}
+                  className={`flex-1 py-1 text-xs rounded transition-colors min-w-[60px] ${blockFile === b.file ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
                 >
                   {b.label}
                 </button>
@@ -399,89 +585,68 @@ export default function Screen() {
               <div className="text-slate-500 text-xs text-center py-4">加载板块...</div>
             ) : (
               <div className="flex-1 overflow-auto space-y-px">
-                {filteredBlocks.map(name => {
-                  const count = blockData.get(name)?.length || 0;
-                  return (
-                    <button
-                      key={name}
-                      onClick={() => setSelectedBlock(name === selectedBlock ? '' : name)}
-                      className={`w-full text-left px-2 py-1.5 text-sm rounded transition-colors flex items-center justify-between ${
-                        name === selectedBlock ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300 hover:bg-slate-800'
-                      }`}
-                    >
-                      <span className="truncate">{name}</span>
-                      <span className="text-xs text-slate-600 shrink-0 ml-2">{count}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            {selectedBlock && (
-              <div className="text-xs text-slate-400 border-t border-slate-800 pt-2">
-                已选 <span className="text-blue-400 font-medium">{selectedBlock}</span> · {blockData.get(selectedBlock)?.length || 0} 只
-              </div>
-            )}
-          </div>
-        )}
-
-        {sourceTab === 'preset' && (
-          <div className="flex flex-col gap-2 flex-1 min-h-0">
-            {presets.length === 0 ? (
-              <div className="text-slate-500 text-xs text-center py-8">
-                <Bookmark size={24} className="mx-auto mb-2 opacity-30" />
-                <p>暂无自选组合</p>
-                <p className="mt-1">筛选后点击「保存」</p>
-              </div>
-            ) : (
-              <div className="flex-1 overflow-auto space-y-1">
-                {presets.map(p => (
-                  <div
-                    key={p.name}
-                    className="flex items-center gap-2 px-2 py-2 rounded hover:bg-slate-800 group cursor-pointer"
-                    onClick={() => loadPreset(p)}
+                {filteredBlocks.map(block => (
+                  <button
+                    key={block.name}
+                    onClick={() => handleSelectBlock(block)}
+                    className={`w-full text-left px-2 py-1.5 text-sm rounded transition-colors flex items-center justify-between ${
+                      selectedBlock?.name === block.name ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300 hover:bg-slate-800'
+                    }`}
                   >
-                    <FolderOpen size={14} className="text-slate-500 shrink-0" />
-                    <span className="text-sm text-slate-300 flex-1 truncate">{p.name}</span>
-                    <span className="text-xs text-slate-600">{p.codes.split(',').length}只</span>
-                    <button
-                      onClick={e => { e.stopPropagation(); deletePreset(p.name); }}
-                      className="text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
+                    <span className="truncate">{block.name}</span>
+                    <span className="text-xs text-slate-600 shrink-0 ml-2">{block.count}只</span>
+                  </button>
                 ))}
               </div>
             )}
-          </div>
-        )}
-
-        {resolvedCodes && (
-          <div className="border-t border-slate-800 pt-2">
-            {showSavePreset ? (
-              <div className="flex items-center gap-1">
-                <input
-                  type="text"
-                  value={newPresetName}
-                  onChange={e => setNewPresetName(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && saveCurrentPreset()}
-                  placeholder="组合名称"
-                  autoFocus
-                  className="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-blue-500"
-                />
-                <button onClick={saveCurrentPreset} className="text-xs text-blue-400 hover:text-blue-300 px-1">保存</button>
-                <button onClick={() => setShowSavePreset(false)} className="text-xs text-slate-500 hover:text-slate-300 px-1">取消</button>
+            {selectedBlock && (
+              <div className="text-xs text-slate-400 border-t border-slate-800 pt-2 flex items-center gap-2">
+                {blockStocksLoading ? (
+                  <span className="flex items-center gap-1 text-blue-400">
+                    <span className="animate-spin">⟳</span> 加载成分股...
+                  </span>
+                ) : (
+                  <>
+                    已选 <span className="text-blue-400 font-medium">{selectedBlock.name}</span> · {selectedBlock.stocks?.length || selectedBlock.count} 只
+                    <button
+                      onClick={() => {
+                        if (!selectedBlock.stocks?.length) return;
+                        setShowBlockModal(true);
+                        const fromApi = selectedBlock.stocksWithNames;
+                        if (fromApi?.length) {
+                          setBlockStocksWithNames(fromApi);
+                          return;
+                        }
+                        setBlockStocksLoadingNames(true);
+                        void (async () => {
+                          try {
+                            const cache = await preloadCodesCache();
+                            const rows = stockNamesFromCodesCache(selectedBlock.stocks!, cache);
+                            const byCode = new Map(rows.map(r => [r.code, r.name]));
+                            const filled = selectedBlock.stocks!.map(c => ({
+                              code: c,
+                              name: byCode.get(c) ?? c,
+                            }));
+                            setBlockStocksWithNames(filled);
+                          } finally {
+                            setBlockStocksLoadingNames(false);
+                          }
+                        })();
+                      }}
+                      className="ml-2 text-blue-400 hover:text-blue-300"
+                    >
+                      <ExternalLink size={12} className="inline" /> 查看
+                    </button>
+                  </>
+                )}
               </div>
-            ) : (
-              <button
-                onClick={() => setShowSavePreset(true)}
-                className="w-full text-xs text-slate-400 hover:text-blue-400 py-1 transition-colors"
-              >
-                <Bookmark size={12} className="inline mr-1" />保存为自选组合
-              </button>
             )}
           </div>
         )}
+
+        
+
+        
       </div>
 
       <div className="flex-1 min-w-0 flex flex-col gap-3 min-h-0">
@@ -565,6 +730,100 @@ export default function Screen() {
           </div>
         )}
       </div>
+
+      {/* 成分股弹窗 */}
+      {showBlockModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setShowBlockModal(false)}>
+          <div className="bg-slate-900 rounded-lg border border-slate-700 w-[600px] max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+              <div>
+                <h2 className="text-white font-medium">{selectedBlock?.name}</h2>
+                <p className="text-xs text-slate-500">
+                  {(blockStocksLoadingNames ? selectedBlock?.stocks?.length : blockStocksWithNames.length) ?? 0} 只成分股
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    // 批量添加不在自选中的股票
+                    const newStocks = blockStocksWithNames
+                      .filter(s => !stockList.some(w => w.code === s.code))
+                      .map(s => ({ code: s.code, name: s.name }));
+                    if (newStocks.length === 0) {
+                      showToast('所有股票已存在', 'error');
+                      return;
+                    }
+                    setStockList(prev => [...prev, ...newStocks]);
+                    showToast(`已添加 ${newStocks.length} 只股票`, 'success');
+                  }}
+                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors"
+                >
+                  全部加入自选
+                </button>
+                <button onClick={() => setShowBlockModal(false)} className="text-slate-400 hover:text-white">
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto p-2">
+              {blockStocksLoadingNames ? (
+                <div className="text-center text-slate-500 py-8">
+                  <span className="animate-spin inline-block mr-2">⟳</span> 加载股票名称...
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-1">
+                  {blockStocksWithNames.map(stock => {
+                    const isInWatchlist = stockList.some(s => s.code === stock.code);
+                    return (
+                      <div
+                        key={stock.code}
+                        onClick={() => { setShowBlockModal(false); navigate(`/stock/${stock.code}/chart`); }}
+                        className="flex items-center justify-between px-3 py-2 bg-slate-800/50 rounded hover:bg-slate-800 transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-blue-400 font-mono text-xs shrink-0">{stock.code}</span>
+                          <span className="text-white text-sm truncate">{stock.name}</span>
+                        </div>
+                        <button
+                          onClick={() => {
+                            if (isInWatchlist) {
+                              setStockList(prev => prev.filter(s => s.code !== stock.code));
+                              showToast(`已移除 ${stock.name}`, 'success');
+                            } else {
+                              setStockList(prev => [...prev, { code: stock.code, name: stock.name }]);
+                              showToast(`已添加 ${stock.name}`, 'success');
+                            }
+                          }}
+                          disabled={blockStocksLoadingNames}
+                          className={`shrink-0 px-2 py-1 text-xs rounded transition-colors ${
+                            isInWatchlist
+                              ? 'bg-slate-700 text-slate-400 hover:text-white'
+                              : 'bg-blue-600 text-white hover:bg-blue-700'
+                          }`}
+                        >
+                          {isInWatchlist ? '移除' : '加入自选'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="px-4 py-3 border-t border-slate-800 flex justify-between items-center">
+              <span className="text-xs text-slate-500">
+                自选已有 {stockList.length} 只股票
+              </span>
+              <button
+                onClick={() => setShowBlockModal(false)}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-white text-sm rounded transition-colors"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+    </>
   );
 }

@@ -1,6 +1,6 @@
 ---
 name: tongstock-cli
-description: "TDX (通达信) CLI/HTTP API for Chinese A-share market data (Shanghai, Shenzhen, Beijing exchanges only). Supports: real-time 5-level bid/ask quotes, K-line (candlestick), intraday minute data, tick-by-tick trades, ex-rights/dividend history, financial statements, index bars, sector/industry classification, company F10 info, technical indicators (MACD/KDJ/MA/BOLL/RSI), signal detection (金叉/死叉/超买/超卖), batch signal screening. Triggers on: stock quote, K-line, candlestick, A-share, 通达信, TDX, market data, 行情, K线, 除权除息, 财务数据, 板块, indicator, MACD, KDJ, BOLL, RSI, signal, screen, 技术指标, 信号筛选."
+description: "TDX (通达信) CLI/HTTP API for Chinese A-share market data (Shanghai, Shenzhen, Beijing exchanges only). Supports: real-time 5-level bid/ask quotes, K-line (candlestick), intraday minute data, tick-by-tick trades, ex-rights/dividend history, financial statements, index bars, sector/industry classification, and company F10 info. Triggers on: stock quote, K-line, candlestick, A-share, 通达信, TDX, market data, 行情, K线, 除权除息, 财务数据, 板块."
 license: MIT
 allowed-tools: Bash
 ---
@@ -38,20 +38,65 @@ tongstock-cli quote 000001 600000       # Multiple stocks
 tongstock-cli quote 600519              # 贵州茅台
 ```
 
-### codes — Stock Code List
+### codes — Stock Code List (股票代码)
 
 ```bash
-tongstock-cli codes [--exchange <sz|sh|bj>]
+tongstock-cli codes <subcommand> [flags]
 ```
+
+#### Subcommands
+
+| Subcommand | Description |
+|------------|-------------|
+| `list` | 列出证券代码 (默认) |
+| `stats` | 显示各分类统计信息 |
+
+#### Flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--exchange`, `-e` | `sz` | Exchange: `sz` (Shenzhen), `sh` (Shanghai), `bj` (Beijing) |
+| `--exchange`, `-e` | `sz` | Exchange: `sz`, `sh`, `bj` |
+| `--category`, `-c` | `all` | Filter by category |
+| `--sort`, `-s` | `false` | Sort by count |
+
+#### Categories
+
+| Category | Description |
+|----------|-------------|
+| `all` | 全部 (默认) |
+| `stock` | 股票 |
+| `gem` | 创业板 |
+| `fund` | 基金 |
+| `etf` | ETF |
+| `bond` | 债券 |
+| `index` | 指数 |
+
+#### Examples
 
 ```bash
-tongstock-cli codes                     # Shenzhen (default)
-tongstock-cli codes -e sh               # Shanghai
-tongstock-cli codes -e bj               # Beijing
+# 默认列出深圳市场所有证券
+tongstock-cli codes list
+
+# 上海市场
+tongstock-cli codes list -e sh
+
+# 北京市场
+tongstock-cli codes list -e bj
+
+# 按分类过滤 - 只显示股票
+tongstock-cli codes list -e sz -c stock
+
+# 按分类过滤 - 只显示ETF
+tongstock-cli codes list -e sz -c etf
+
+# 查看统计信息
+tongstock-cli codes stats
+
+# 查看所有交易所统计
+tongstock-cli codes stats --all
+
+# 按交易所过滤
+tongstock-cli codes stats -e sh
 ```
 
 ### kline — K-line (Candlestick) Data
@@ -107,20 +152,14 @@ tongstock-cli index -c 999999 -t day     # 上证指数 daily
 tongstock-cli index -c 399300 -t 5m      # 沪深300 5-minute
 ```
 
-### minute — Minute Data (分时数据)
+### minute — Intraday Minute Data (分时数据)
 
 ```bash
-tongstock-cli minute <code> [--history] [--date <YYYYMMDD>]
+tongstock-cli minute <code>
 ```
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--history`, `-H` | `false` | Query historical minute data |
-| `--date`, `-d` | - | Date for history mode (YYYYMMDD) |
-
 ```bash
-tongstock-cli minute 000001                              # Today
-tongstock-cli minute 000001 --history --date 20250314    # Historical
+tongstock-cli minute 000001
 ```
 
 ### trade — Tick-by-tick Trades (分笔成交)
@@ -213,183 +252,204 @@ tongstock-cli company-content <code> [filename] [--block <name>] [--start <offse
 | 研报评级 | 分析师研究报告和评级 |
 
 ```bash
-tongstock-cli company-content 000001                          # Basic usage (auto-detect filename)
+tongstock-cli company-content 000001                          # Basic usage
 tongstock-cli company-content 000001 --block "公司概况"       # By block name
 tongstock-cli company-content 000001 --block "财务分析"       # Financial analysis
-tongstock-cli company-content 000001 --block "股东研究"       # Shareholder research
 tongstock-cli company-content 000001 --start 30744 --length 9560  # By range
-tongstock-cli company-content 000001 000001.txt               # Specify filename
-```
-
-### auction — Call Auction Data (集合竞价)
-
-```bash
-tongstock-cli auction <code>
-```
-
-Returns pre-market call auction data: price, matched volume, unmatched volume, direction (buy/sell).
-
-```bash
-tongstock-cli auction 000001              # 平安银行
-tongstock-cli auction 600519              # 贵州茅台
-```
-
-### count — Security Count (证券数量)
-
-```bash
-tongstock-cli count [--exchange <sz|sh|bj>]
-```
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--exchange`, `-e` | `sz` | Exchange: `sz` (Shenzhen), `sh` (Shanghai), `bj` (Beijing) |
-
-```bash
-tongstock-cli count                     # Shenzhen (default)
-tongstock-cli count -e sh               # Shanghai
-tongstock-cli count -e bj               # Beijing
 ```
 
 ### block — Sector Classification (板块分类)
 
 ```bash
-tongstock-cli block [--file <filename>]
+tongstock-cli block <subcommand> [flags]
 ```
+
+#### Subcommands
+
+| Subcommand | Description |
+|------------|-------------|
+| `files` | 列出所有可用的板块文件 |
+| `list` | 列出所有板块 [type, 编码, 名称, 成分股数] |
+| `show` | 显示指定板块的成分股 |
+
+#### Flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--file`, `-f` | `block_zs.dat` | Block file |
+| `--type`, `-t` | - | Filter by type (e.g., 2) |
+| `--sort`, `-s` | `false` | Sort by stock count |
+| `--code`, `-c` | - | Query blocks containing this stock |
 
-Available block files:
+#### Available Block Files
 
-| File | Description |
-|------|-------------|
-| `block_zs.dat` | Index sectors (指数板块) |
-| `block_fg.dat` | Industry sectors (行业板块) |
-| `block_gn.dat` | Concept sectors (概念板块) |
-| `block.dat` | General classification |
+| File | Name | Description |
+|------|------|-------------|
+| `block.dat` | 综合板块 | 综合分类 |
+| `block_zs.dat` | 指数板块 | 主要指数成分股 |
+| `block_fg.dat` | 行业板块 | 行业分类 |
+| `block_gn.dat` | 概念板块 | 概念主题 |
+
+#### Examples
 
 ```bash
-tongstock-cli block -f block_zs.dat     # Index sectors
-tongstock-cli block -f block_fg.dat     # Industry sectors
-tongstock-cli block -f block_gn.dat     # Concept sectors
+# 列出所有板块文件
+tongstock-cli block files
+
+# 列出指数板块（默认）
+tongstock-cli block list -f block_zs.dat
+
+# 按Type过滤（2=标准板块）
+tongstock-cli block list -f block.dat -t 2
+
+# 按成分股数量排序
+tongstock-cli block list -f block_fg.dat -s
+
+# 显示板块成分股
+tongstock-cli block show "沪深300" -f block_zs.dat
+
+# 模糊搜索板块
+tongstock-cli block show "银行" -f block_fg.dat
+
+# 按股票代码查询所属板块
+tongstock-cli block show --code 600519
 ```
 
 ### indicator — Technical Indicators (技术指标)
 
 ```bash
-tongstock-cli indicator --code <code> [--type <type>] [--all] [--count <n>] [--config <path>]
+tongstock-cli indicator --code <code> --type <type> [--all] [--count <n>]
 ```
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--code`, `-c` | required | Stock code |
-| `--type`, `-t` | `day` | K-line type |
-| `--all`, `-a` | `false` | Use ALL historical K-lines |
-| `--count`, `-n` | `250` | Number of K-lines (when not --all) |
-| `--config` | - | Custom parameter config YAML file |
-
-**Indicators computed:**
-- MA(5, 10, 20, 60) — Moving Averages
-- MACD(12, 26, 9) — DIF, DEA, Histogram
-- KDJ(9, 3, 3) — K, D, J values
-- BOLL(20, 2.0) — Upper, Middle, Lower bands
-- RSI(6, 14) — Relative Strength Index
-
-**Output:**
-- Last 20 days table: Date, Close, MA5/10/20, DIF/DEA/HIST, K/D/J, UPPER/MID/LOWER
-- Latest signals: 金叉, 死叉, 超买, 超卖, 多头排列, 空头排列, 突破上轨, 跌破下轨
+Computes MACD, KDJ, MA, BOLL, RSI indicators with signal detection.
 
 ```bash
 tongstock-cli indicator -c 000001 -t day
-tongstock-cli indicator -c 600519 -t week
 tongstock-cli indicator -c 000001 -t day --all
-tongstock-cli indicator -c 000001 -t day --config configs/params.yaml
+tongstock-cli indicator -c 000001 -t day --count 500
 ```
 
-**Parameter resolution (three-tier):**
-1. Per-stock override (from YAML `overrides`)
-2. Category override (from YAML `categories`, auto-detected by code prefix: 600xxx=large_cap, 002xxx=small_cap)
-3. Default (from YAML `defaults`)
-
-**Config file location:** `~/.tongstock/indicator.yaml` (auto-created on first run, users can edit directly)
-
-### screen — Batch Signal Screening (批量信号筛选)
+### screen — Signal Screening (信号筛选)
 
 ```bash
-tongstock-cli screen [--codes <list>] [--file <path>] [--signal <type>] [--type <ktype>] [--pool <n>]
+tongstock-cli screen --codes <codes> --type <type> --signal <signal>
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--codes`, `-c` | - | Comma-separated stock codes |
 | `--file`, `-f` | - | File with one code per line |
-| `--signal`, `-s` | - | Signal filter (see below) |
 | `--type`, `-t` | `day` | K-line type |
+| `--signal`, `-s` | required | Signal type |
 | `--pool`, `-p` | `10` | Concurrency pool size |
 
-**Available signal filters (`-s`):**
-
-| Filter | Description |
-|--------|-------------|
-| `golden_cross` | MACD or KDJ golden cross (金叉) |
-| `death_cross` | MACD or KDJ death cross (死叉) |
-| `overbought` | J>100 (KDJ) or RSI>80 (超买) |
-| `oversold` | J<0 (KDJ) or RSI<20 (超卖) |
+**Available Signals:**
+- `golden_cross` - 金叉 (DIF crosses above DEA, or K crosses above D)
+- `death_cross` - 死叉 (DIF crosses below DEA, or K crosses below D)
+- `overbought` - 超买 (J > 100 or RSI > 80)
+- `oversold` - 超卖 (J < 0 or RSI < 20)
 
 ```bash
-tongstock-cli screen -c "000001,600519,000858" -t day
-tongstock-cli screen -c "000001,600519,000858" -s golden_cross
-tongstock-cli screen -f codes.txt -s oversold -p 5
-tongstock-cli screen -c "000001,600519" -s death_cross -t 60m
+tongstock-cli screen -c "000001,600519" -t day -s golden_cross
+tongstock-cli screen -f codes.txt -t day -s oversold
 ```
 
-**Output columns:** Code, Date, Close, MA5/10/20, DIF, K, J, Signals
+### count — Securities Count (证券数量)
 
-**Combination with sector analysis:**
 ```bash
-# Step 1: Get banking sector stocks
-tongstock-cli block -f block_fg.dat | grep "银行" > banking.txt
-# Step 2: Screen for signals
-tongstock-cli screen -f banking.txt -t day -s golden_cross
+tongstock-cli count [--exchange <sz|sh|bj>]
+```
+
+```bash
+tongstock-cli count
+tongstock-cli count -e sh
+tongstock-cli count -e bj
+```
+
+### auction — Call Auction (集合竞价)
+
+```bash
+tongstock-cli auction <code>
+```
+
+```bash
+tongstock-cli auction 000001
 ```
 
 ## HTTP API
 
 Start server: `tongstock-server` (listens on `:8080`)
 
+### Core APIs
+
 | Endpoint | Params | Description |
 |----------|--------|-------------|
 | `GET /health` | - | Health check |
 | `GET /api/quote` | `code` | Real-time quote |
-| `GET /api/codes` | `exchange` | Stock code list |
-| `GET /api/kline` | `code`, `type` | K-line data |
+| `GET /api/codes` | `exchange` | Stock code list (legacy) |
+| `GET /api/codes/list` | `exchange`, `category` | Stock code list with filter |
+| `GET /api/codes/stats` | `exchange`, `all` | Code statistics |
+| `GET /api/kline` | `code`, `type`, `start`, `count` | K-line data |
 | `GET /api/index` | `code`, `type` | Index K-line |
-| `GET /api/minute` | `code`, `date`, `history` | Minute data (current/historical) |
-| `GET /api/count` | `exchange` | Security count per exchange |
-| `GET /api/auction` | `code` | Call auction data |
+| `GET /api/minute` | `code`, `date`, `history` | Intraday minute |
 | `GET /api/trade` | `code`, `start`, `count`, `date`, `history` | Tick trades |
 | `GET /api/xdxr` | `code` | Ex-rights/dividends |
 | `GET /api/finance` | `code` | Financial data |
 | `GET /api/company` | `code` | F10 category list |
 | `GET /api/company/content` | `code`, `filename` | F10 content |
-| `GET /api/block` | `file` | Sector classification |
-| `GET /api/indicator` | `code`, `type` | Technical indicators + signals |
-| `GET /api/screen` | `codes`, `type`, `signal` | Batch signal screening |
+| `GET /api/block` | `file` | Sector classification (legacy) |
+| `GET /api/block/files` | - | List available block files |
+| `GET /api/block/list` | `file`, `type`, `sort` | Structured block list |
+| `GET /api/block/show` | `name`, `code`, `file` | Block stocks or query by stock |
+| `GET /api/indicator` | `code`, `type` | Technical indicators |
+| `GET /api/screen` | `codes`, `type`, `signal` | Signal screening |
+| `GET /api/count` | `exchange` | Securities count |
+| `GET /api/auction` | `code` | Call auction |
+
+### API Examples
 
 ```bash
+# 查询行情
 curl "http://localhost:8080/api/quote?code=000001"
+
+# 股票代码列表（带分类）
+curl "http://localhost:8080/api/codes/list?exchange=sz&category=stock"
+curl "http://localhost:8080/api/codes/list?exchange=sz&category=etf"
+
+# 股票代码统计
+curl "http://localhost:8080/api/codes/stats?exchange=sz"
+curl "http://localhost:8080/api/codes/stats?all=true"
+
+# 查询K线
 curl "http://localhost:8080/api/kline?code=000001&type=day"
+
+# 板块文件列表
+curl "http://localhost:8080/api/block/files"
+
+# 板块列表（过滤+排序）
+curl "http://localhost:8080/api/block/list?file=block_zs.dat&type=2&sort=true"
+
+# 板块成分股
+curl "http://localhost:8080/api/block/show?name=沪深300&file=block_zs.dat"
+
+# 按股票代码查询所属板块
+curl "http://localhost:8080/api/block/show?code=600519"
+
+# 查询财务数据
 curl "http://localhost:8080/api/finance?code=600519"
+
+# 查询除权除息
 curl "http://localhost:8080/api/xdxr?code=000001"
-curl "http://localhost:8080/api/index?code=999999&type=day"
-curl "http://localhost:8080/api/company?code=000001"
-curl "http://localhost:8080/api/company/content?code=000001&filename=000001.txt"
-curl "http://localhost:8080/api/block?file=block_fg.dat"
-curl "http://localhost:8080/api/minute?code=000001&history=true&date=20250314"
-curl "http://localhost:8080/api/count?exchange=sh"
-curl "http://localhost:8080/api/auction?code=000001"
+
+# 技术指标
+curl "http://localhost:8080/api/indicator?code=000001&type=day"
 ```
+
+### Caching
+
+Codes and Block APIs are cached in SQLite for 24 hours:
+- `codes.db` - codes cache
+- `blocks.db` - blocks cache
 
 ## Stock Code Conventions
 

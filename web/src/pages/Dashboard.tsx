@@ -11,9 +11,20 @@ const INDICES = [
   { code: '399300', name: '沪深300' },
 ];
 
+type IndexRow = (typeof INDICES)[number] & {
+  last: { Close: number } | null;
+  change: number;
+  up: boolean;
+};
+
+function initialIndexPlaceholders(): IndexRow[] {
+  return INDICES.map(idx => ({ ...idx, last: null, change: 0, up: true }));
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [indices, setIndices] = useState<any[]>([]);
+  /** 首屏即渲染与 INDICES 等量的卡片，避免请求返回前网格高度为 0 造成跳动 */
+  const [indices, setIndices] = useState<IndexRow[]>(initialIndexPlaceholders);
   const [history, setHistory] = useState<HistoryStock[]>([]);
   const [historyQuotes, setHistoryQuotes] = useState<Record<string, Quote>>({});
   const [stockNames, setStockNames] = useState<Record<string, string>>({});
@@ -25,7 +36,7 @@ export default function Dashboard() {
       for (const idx of INDICES) {
         try {
           const bars = await api.index(idx.code, 'day');
-          const last = bars?.[bars.length - 1];
+          const last = bars?.[bars.length - 1] ?? null;
           const prev = bars?.[bars.length - 2];
           const change = last && prev ? ((last.Close - prev.Close) / prev.Close * 100) : 0;
           results.push({ ...idx, last, change, up: change >= 0 });
@@ -33,7 +44,7 @@ export default function Dashboard() {
           results.push({ ...idx, last: null, change: 0, up: true });
         }
       }
-      setIndices(results);
+      setIndices(results as IndexRow[]);
       setLoading(false);
     })();
 
@@ -64,24 +75,30 @@ export default function Dashboard() {
         <BarChart3 size={24} /> 市场总览
       </h1>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 min-h-[7.5rem]">
         {indices.map((idx) => (
-          <div key={idx.code} className="bg-slate-900 rounded-xl border border-slate-800 p-5 h-28 flex flex-col justify-between">
+          <div
+            key={idx.code}
+            className="bg-slate-900 rounded-xl border border-slate-800 p-5 min-h-[7rem] flex flex-col justify-between"
+          >
             <div className="text-slate-400 text-sm">{idx.name}</div>
             {loading && !idx.last ? (
-              <div className="h-8 bg-slate-800 rounded animate-pulse" />
+              <div className="space-y-2 flex-1 flex flex-col justify-end">
+                <div className="h-8 w-28 bg-slate-800 rounded animate-pulse" />
+                <div className="h-4 w-20 bg-slate-800/80 rounded animate-pulse" />
+              </div>
             ) : idx.last ? (
               <>
-                <div className={`text-2xl font-bold ${idx.up ? 'text-red-400' : 'text-green-400'}`}>
-                  {idx.last.Close?.toFixed(2)}
+                <div className={`text-2xl font-bold tabular-nums ${idx.up ? 'text-red-400' : 'text-green-400'}`}>
+                  {idx.last.Close.toFixed(2)}
                 </div>
-                <div className={`flex items-center gap-1 text-sm ${idx.up ? 'text-red-400' : 'text-green-400'}`}>
+                <div className={`flex items-center gap-1 text-sm tabular-nums ${idx.up ? 'text-red-400' : 'text-green-400'}`}>
                   {idx.up ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
                   {idx.change > 0 ? '+' : ''}{idx.change.toFixed(2)}%
                 </div>
               </>
             ) : (
-              <div className="text-slate-500">数据加载失败</div>
+              <div className="text-slate-500 text-sm">数据加载失败</div>
             )}
           </div>
         ))}

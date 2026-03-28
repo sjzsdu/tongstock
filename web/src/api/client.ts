@@ -65,6 +65,37 @@ export const api = {
   block: (file = 'block_zs.dat', stocksOnly = true) =>
     fetchJSON<BlockItem[]>(`/api/block?file=${file}${stocksOnly ? '&stocks_only=true' : ''}`),
 
+  // Block APIs with new structure
+  blockFiles: () =>
+    fetchJSON<{ files: { file: string; name: string; desc: string }[] }>('/api/block/files'),
+
+  blockList: (file = 'block_zs.dat', type?: string, sort = false) => {
+    const params = new URLSearchParams({ file });
+    if (type) params.set('type', type);
+    if (sort) params.set('sort', 'true');
+    return fetchJSON<{ blocks: { name: string; type: number; count: number }[] }>(`/api/block/list?${params}`);
+  },
+
+  blockShow: (name?: string, code?: string, file = 'block_zs.dat') => {
+    const params = new URLSearchParams({ file });
+    if (name) params.set('name', name);
+    if (code) params.set('code', code);
+    return fetchJSON<{ stocks?: { code: string; name: string; exchange: string }[]; blocks?: { name: string; type: number; count: number }[] }>(`/api/block/show?${params}`);
+  },
+
+  // Codes APIs with new structure
+  codesList: (exchange = 'sz', category?: string) => {
+    const params = new URLSearchParams({ exchange });
+    if (category) params.set('category', category);
+    return fetchJSON<{ exchange: string; category: string; total: number; codes: { code: string; name: string; cat: string; exchange: string }[] }>(`/api/codes/list?${params}`);
+  },
+
+  codesStats: (exchange = 'sz', all = false) => {
+    const params = new URLSearchParams({ exchange });
+    if (all) params.set('all', 'true');
+    return fetchJSON<{ stats: { exchange: string; name: string; total: number; categories: Record<string, number> }[] }>(`/api/codes/stats?${params}`);
+  },
+
   screen: (codes: string, type = 'day', signal?: string) => {
     const p = new URLSearchParams({ codes, type });
     if (signal) p.set('signal', signal);

@@ -15,11 +15,12 @@
 - **板块分类** - 行业、概念、地域、风格等板块分类数据
 - **集合竞价** - 开盘前竞价阶段的匹配量、未匹配量等数据
 - **证券数量** - 查询各交易所证券总数
-- **股票代码** - 获取沪深北交易所所有股票代码
+- **股票代码** - 获取沪深北交易所所有股票代码，支持分类过滤
 - **技术指标** - MACD/KDJ/MA/BOLL/RSI，支持参数化计算
 - **信号检测** - 金叉/死叉/超买/超卖/突破，自动检测并标记
 - **批量筛选** - 按板块或代码列表批量筛选信号，支持并发
 - **双模式** - CLI 命令行工具 + HTTP REST API
+- **数据缓存** - 股票代码和板块数据 24 小时缓存
 
 ## 安装
 
@@ -77,15 +78,36 @@ npm run dev        # 启动开发服务器，默认代理到 localhost:8080
 ### 获取股票代码列表
 
 ```bash
-# 深圳市场 (默认)
-./tongstock-cli codes
+# 默认列出深圳市场所有证券
+./tongstock-cli codes list
 
 # 上海市场
-./tongstock-cli codes --exchange sh
+./tongstock-cli codes list -e sh
 
 # 北京市场
-./tongstock-cli codes --exchange bj
+./tongstock-cli codes list -e bj
+
+# 按分类过滤 - 只显示股票
+./tongstock-cli codes list -e sz -c stock
+
+# 按分类过滤 - 只显示ETF
+./tongstock-cli codes list -e sz -c etf
+
+# 查看各分类统计信息
+./tongstock-cli codes stats
+
+# 查看所有交易所统计
+./tongstock-cli codes stats --all
 ```
+
+**支持的分类：**
+- `all` - 全部
+- `stock` - 股票
+- `gem` - 创业板
+- `fund` - 基金
+- `etf` - ETF
+- `bond` - 债券
+- `index` - 指数
 
 ### 查询K线数据
 
@@ -196,15 +218,35 @@ npm run dev        # 启动开发服务器，默认代理到 localhost:8080
 ### 查询板块分类
 
 ```bash
-# 指数板块
-./tongstock-cli block --file block_zs.dat
+# 列出所有板块文件
+./tongstock-cli block files
 
-# 行业板块
-./tongstock-cli block --file block_fg.dat
+# 列出指数板块
+./tongstock-cli block list -f block_zs.dat
 
-# 概念板块
-./tongstock-cli block --file block_gn.dat
+# 按Type过滤（2=标准板块）
+./tongstock-cli block list -f block.dat -t 2
+
+# 按成分股数量排序
+./tongstock-cli block list -f block_fg.dat -s
+
+# 显示板块成分股
+./tongstock-cli block show "沪深300" -f block_zs.dat
+
+# 模糊搜索板块
+./tongstock-cli block show "银行" -f block_fg.dat
+
+# 按股票代码查询所属板块
+./tongstock-cli block show --code 600519
 ```
+
+**板块文件：**
+| 文件 | 名称 | 说明 |
+|------|------|------|
+| `block.dat` | 综合板块 | 综合分类 |
+| `block_zs.dat` | 指数板块 | 主要指数成分股 |
+| `block_fg.dat` | 行业板块 | 行业分类 |
+| `block_gn.dat` | 概念板块 | 概念主题 |
 
 ### 技术指标分析
 
@@ -257,18 +299,23 @@ npm run dev        # 启动开发服务器，默认代理到 localhost:8080
 |------|------|------|------|
 | `/health` | GET | - | 健康检查 |
 | `/api/quote` | GET | `code` | 实时行情 |
+| `/api/codes` | GET | `exchange` | 股票代码(传统) |
+| `/api/codes/list` | GET | `exchange`, `category` | 股票代码列表(支持过滤) |
+| `/api/codes/stats` | GET | `exchange`, `all` | 代码统计 |
 | `/api/kline` | GET | `code`, `type`, `start`, `count` | K线数据 |
-| `/api/codes` | GET | `exchange` | 股票代码 |
-| `/api/minute` | GET | `code`, `date`, `history` | 分时数据（当日/历史） |
 | `/api/count` | GET | `exchange` | 证券数量 |
 | `/api/auction` | GET | `code` | 集合竞价数据 |
+| `/api/minute` | GET | `code`, `date`, `history` | 分时数据（当日/历史） |
 | `/api/trade` | GET | `code`, `start`, `count`, `date`, `history` | 分笔成交数据 |
 | `/api/xdxr` | GET | `code` | 除权除息信息 |
 | `/api/finance` | GET | `code` | 财务数据 |
 | `/api/index` | GET | `code`, `type` | 指数K线 |
 | `/api/company` | GET | `code` | 公司信息目录(F10) |
 | `/api/company/content` | GET | `code`, `filename` | 公司信息内容 |
-| `/api/block` | GET | `file` | 板块分类数据 |
+| `/api/block` | GET | `file` | 板块分类(传统) |
+| `/api/block/files` | GET | - | 板块文件列表 |
+| `/api/block/list` | GET | `file`, `type`, `sort` | 结构化板块列表 |
+| `/api/block/show` | GET | `name`, `code`, `file` | 板块成分股/按股票查板块 |
 | `/api/indicator` | GET | `code`, `type` | 技术指标（MACD/KDJ/MA/BOLL/RSI + 信号） |
 | `/api/screen` | GET | `codes`, `type`, `signal` | 批量信号筛选 |
 
@@ -278,11 +325,16 @@ npm run dev        # 启动开发服务器，默认代理到 localhost:8080
 # 查询行情
 curl "http://localhost:8080/api/quote?code=000001"
 
+# 股票代码列表（带分类）
+curl "http://localhost:8080/api/codes/list?exchange=sz&category=stock"
+curl "http://localhost:8080/api/codes/list?exchange=sz&category=etf"
+
+# 股票代码统计
+curl "http://localhost:8080/api/codes/stats?exchange=sz"
+curl "http://localhost:8080/api/codes/stats?all=true"
+
 # 查询K线
 curl "http://localhost:8080/api/kline?code=000001&type=day"
-
-# 获取股票列表
-curl "http://localhost:8080/api/codes?exchange=sz"
 
 # 查询当日分时数据
 curl "http://localhost:8080/api/minute?code=000001"
@@ -317,9 +369,24 @@ curl "http://localhost:8080/api/company?code=000001"
 # 查询公司信息内容
 curl "http://localhost:8080/api/company/content?code=000001&filename=000001.txt"
 
-# 查询板块分类
-curl "http://localhost:8080/api/block?file=block_zs.dat"
+# 板块文件列表
+curl "http://localhost:8080/api/block/files"
+
+# 板块列表（过滤+排序）
+curl "http://localhost:8080/api/block/list?file=block_zs.dat&type=2&sort=true"
+
+# 板块成分股
+curl "http://localhost:8080/api/block/show?name=沪深300&file=block_zs.dat"
+
+# 按股票代码查询所属板块
+curl "http://localhost:8080/api/block/show?code=600519"
 ```
+
+### 缓存说明
+
+股票代码和板块数据 API 使用 SQLite 进行缓存，缓存有效期为 24 小时：
+- `codes.db` - 股票代码缓存
+- `blocks.db` - 板块数据缓存
 
 ## 配置
 

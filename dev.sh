@@ -26,6 +26,13 @@ kill_port() {
 
 kill_port 8080
 kill_port 5173
+
+# Create a symlink from pkg/web/dist to web/dist for hot reload
+mkdir -p pkg/web
+if [ -L pkg/web/dist ]; then
+    rm pkg/web/dist
+fi
+ln -s ../../web/dist pkg/web/dist
 if ! command -v air &> /dev/null; then
     echo "Installing air for Go hot reload..."
     go install github.com/air-verse/air@latest

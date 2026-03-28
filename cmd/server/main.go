@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -97,6 +98,9 @@ func main() {
 	r.GET("/api/company", handleCompany)
 	r.GET("/api/company/content", handleCompanyContent)
 	r.GET("/api/block", handleBlock)
+	r.GET("/api/block/files", handleBlockFiles)
+	r.GET("/api/block/list", handleBlockList)
+	r.GET("/api/block/show", handleBlockShow)
 
 	r.GET("/api/count", handleCount)
 	r.GET("/api/auction", handleAuction)
@@ -534,6 +538,284 @@ func handleBlock(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, items)
+}
+
+// handleBlockFiles 返回所有可用的板块文件列表
+func handleBlockFiles(c *gin.Context) {
+	files := []struct {
+		File string `json:"file"`
+		Name string `json:"name"`
+		Desc string `json:"desc"`
+	}{
+		{"block.dat", "综合板块", "综合分类"},
+		{"block_zs.dat", "指数板块", "主要指数成分股"},
+		{"block_fg.dat", "行业板块", "行业分类"},
+		{"block_gn.dat", "概念板块", "概念主题"},
+	}
+	c.JSON(http.StatusOK, gin.H{"files": files})
+}
+
+// blockStatsServer 用于按板块名称分组统计
+type blockStatsServer struct {
+	blockType  uint16
+	stockCodes []string
+}
+
+// serverBlockStats 按板块名称分组
+func serverBlockStats(items []*protocol.BlockItem) map[string]*blockStatsServer {
+	result := make(map[string]*blockStatsServer)
+	for _, item := range items {
+		if _, ok := result[item.BlockName]; !ok {
+			result[item.BlockName] = &blockStatsServer{blockType: item.BlockType, stockCodes: make([]string, 0)}
+		}
+		result[item.BlockName].stockCodes = append(result[item.BlockName].stockCodes, item.StockCode)
+	}
+	return result
+}
+
+// isValidBlockNameServer 检查板块名称是否有效 (过滤掉纯数字)
+func isValidBlockNameServer(name string) bool {
+	if name == "" {
+		return false
+	}
+	hasNonDigit := false
+	for _, c := range name {
+		if c < '0' || c > '9' {
+			hasNonDigit = true
+			break
+		}
+	}
+	return hasNonDigit
+}
+
+// handleBlockList 返回结构化的板块列表
+func handleBlockList(c *gin.Context) {
+	blockFile := c.DefaultQuery("file", "block_zs.dat")
+	blockType := c.Query("type")
+	sortByCount := c.Query("sort") == "true"
+
+	items, err := withRetry(func() ([]*protocol.BlockItem, error) {
+		s, e := getService()
+		if e != nil {
+			return nil, e
+		}
+		return s.FetchBlock(blockFile)
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取板块信息失败: %v", err)})
+		return
+	}
+
+	blockMap := serverBlockStats(items)
+
+	// 构建板块列表并过滤
+	type blockInfo struct {
+		BlockType uint16   `json:"type"`
+		Name      string   `json:"name"`
+		Count     int      `json:"count"`
+		Stocks    []string `json:"stocks"`
+	}
+	var blocks []blockInfo
+	for name, stats := range blockMap {
+		if !isValidBlockNameServer(name) {
+			continue
+		}
+		if blockType != "" && fmt.Sprintf("%d", stats.blockType) != blockType {
+			continue
+		}
+		blocks = append(blocks, blockInfo{
+			BlockType: stats.blockType,
+			Name:      name,
+			Count:     len(stats.stockCodes),
+			Stocks:    stats.stockCodes,
+		})
+	}
+
+	// 排序
+	if sortByCount {
+		sort.Slice(blocks, func(i, j int) bool {
+			return blocks[i].Count > blocks[j].Count
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"file":  blockFile,
+		"total": len(blocks),
+		"blocks": blocks,
+	})
+}
+
+// getCodeNameMapServer 获取股票代码到名称的映射
+func getCodeNameMapServer() map[string]string {
+	codeNameMap := make(map[string]string)
+
+	svc, err := getService()
+	if err != nil {
+		return codeNameMap
+	}
+
+	codesSZ, _ := svc.FetchCodes(protocol.ExchangeSZ)
+	if codesSZ != nil {
+		for _, c := range codesSZ {
+			codeNameMap[c.Code] = c.Name
+		}
+	}
+
+	codesSH, _ := svc.FetchCodes(protocol.ExchangeSH)
+	if codesSH != nil {
+		for _, c := range codesSH {
+			codeNameMap[c.Code] = c.Name
+		}
+	}
+
+	return codeNameMap
+}
+
+// handleBlockShow 返回指定板块的成分股
+func handleBlockShow(c *gin.Context) {
+	blockFile := c.DefaultQuery("file", "block_zs.dat")
+	blockName := c.Query("name")
+	code := c.Query("code") // 根据股票代码查询所属板块
+
+	items, err := withRetry(func() ([]*protocol.BlockItem, error) {
+		s, e := getService()
+		if e != nil {
+			return nil, e
+		}
+		return s.FetchBlock(blockFile)
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取板块信息失败: %v", err)})
+		return
+	}
+
+	// 根据股票代码查询所属板块
+	if code != "" {
+		type blockResult struct {
+			Name  string `json:"name"`
+			Type  uint16 `json:"type"`
+			Count int    `json:"count"`
+		}
+		var results []blockResult
+
+		blockMap := serverBlockStats(items)
+		for name, stats := range blockMap {
+			if !isValidBlockNameServer(name) {
+				continue
+			}
+			for _, stockCode := range stats.stockCodes {
+				if stockCode == code {
+					results = append(results, blockResult{
+						Name:  name,
+						Type:  stats.blockType,
+						Count: len(stats.stockCodes),
+					})
+					break
+				}
+			}
+		}
+
+		if len(results) == 0 {
+			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("未找到股票 %s 所属的板块", code)})
+			return
+		}
+
+		// 获取股票名称
+		codeNameMap := getCodeNameMapServer()
+		stockName := codeNameMap[code]
+		if stockName == "" {
+			stockName = "未知"
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"code": code,
+			"name": stockName,
+			"blocks": results,
+		})
+		return
+	}
+
+	// 根据板块名称查询成分股
+	if blockName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 name 或 code 参数"})
+		return
+	}
+
+	blockMap := serverBlockStats(items)
+
+	// 模糊匹配
+	var matchedBlocks []struct {
+		name      string
+		blockType uint16
+		stocks    []string
+	}
+	for name, stats := range blockMap {
+		if !isValidBlockNameServer(name) {
+			continue
+		}
+		if strings.Contains(name, blockName) || name == blockName {
+			matchedBlocks = append(matchedBlocks, struct {
+				name      string
+				blockType uint16
+				stocks    []string
+			}{name: name, blockType: stats.blockType, stocks: stats.stockCodes})
+		}
+	}
+
+	if len(matchedBlocks) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("未找到板块: %s", blockName)})
+		return
+	}
+
+	if len(matchedBlocks) > 1 {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "找到多个匹配的板块",
+			"blocks": matchedBlocks,
+		})
+		return
+	}
+
+	block := matchedBlocks[0]
+	stocks := block.stocks
+
+	// 获取股票名称
+	codeNameMap := getCodeNameMapServer()
+
+	type stockInfo struct {
+		Code  string `json:"code"`
+		Name  string `json:"name"`
+		Exchange string `json:"exchange"`
+	}
+	var stockList []stockInfo
+	for _, stockCode := range stocks {
+		name := codeNameMap[stockCode]
+		if name == "" {
+			name = "未知"
+		}
+		exchange := "未知"
+		if len(stockCode) >= 1 {
+			switch stockCode[0] {
+			case '0', '3':
+				exchange = "深交所"
+			case '6':
+				exchange = "上交所"
+			case '8', '9':
+				exchange = "北交所"
+			}
+		}
+		stockList = append(stockList, stockInfo{
+			Code:    stockCode,
+			Name:    name,
+			Exchange: exchange,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"name":  block.name,
+		"type":  block.blockType,
+		"count": len(stocks),
+		"stocks": stockList,
+	})
 }
 
 func handleTrade(c *gin.Context) {

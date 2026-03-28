@@ -122,6 +122,19 @@ export interface BlockItem {
   BlockType: number;
 }
 
+export interface BlockListItem {
+  name: string;
+  type: number;
+  count: number;
+  stocks?: string[];
+}
+
+export interface BlockListResponse {
+  blocks: BlockListItem[];
+  file: string;
+  total: number;
+}
+
 export interface CodeItem {
   Code: string;
   Name: string;

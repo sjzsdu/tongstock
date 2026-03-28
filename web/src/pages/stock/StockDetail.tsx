@@ -1,4 +1,24 @@
 import { useState, useEffect, useRef } from 'react';
+
+// 获取最近一个交易日的日期（YYYYMMDD 格式）
+function getLastTradingDay(): string {
+  const today = new Date();
+  const dayOfWeek = today.getDay();
+  
+  // 计算调整天数
+  let adjustDays = 1; // 默认昨天
+  if (dayOfWeek === 0) adjustDays = 2; // 周日 -> 周五
+  else if (dayOfWeek === 1) adjustDays = 3; // 周一 -> 上周五
+  
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - adjustDays);
+  
+  const year = yesterday.getFullYear();
+  const month = String(yesterday.getMonth() + 1).padStart(2, '0');
+  const day = String(yesterday.getDate()).padStart(2, '0');
+  
+  return `${year}${month}${day}`;
+}
 import { useParams, useNavigate } from 'react-router-dom';
 import { BarChart3, DollarSign, Building2, Gift, Clock, Maximize2, Minimize2 } from 'lucide-react';
 import { api } from '../../api/client';
@@ -22,8 +42,8 @@ const TABS: { key: Tab; label: string; icon: any }[] = [
 export default function StockDetail() {
   const { code: paramCode, tab: paramTab } = useParams();
   const navigate = useNavigate();
-  const [code, setCode] = useState(paramCode || '000001');
-  const [inputCode, setInputCode] = useState(paramCode || '000001');
+  const [code, setCode] = useState(paramCode || '');
+  const [inputCode, setInputCode] = useState(paramCode || '');
   const [tab, setTab] = useState<Tab>((paramTab as Tab) || 'chart');
   const [quote, setQuote] = useState<any>(null);
   const [klines, setKlines] = useState<any[]>([]);
@@ -37,19 +57,23 @@ export default function StockDetail() {
   const [selectedCat, setSelectedCat] = useState('');
   const [dividends, setDividends] = useState<any[]>([]);
   const [minuteData, setMinuteData] = useState<any[]>([]);
+  const [minuteDate, setMinuteDate] = useState<string>(''); // 分时数据的实际日期
   const [analysis, setAnalysis] = useState<SignalAnalysisType | null>(null);
   const [highlightedIdx, setHighlightedIdx] = useState(-1);
   const [fullscreen, setFullscreen] = useState(false);
   const tradeRowRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const [loading, setLoading] = useState(false);
 
+  // 如果没有股票代码，重定向到选择页面
   useEffect(() => {
-    if (paramCode) {
-      setCode(paramCode);
-      setInputCode(paramCode);
+    if (!paramCode) {
+      navigate('/stock/choose');
+      return;
     }
+    setCode(paramCode);
+    setInputCode(paramCode);
     if (paramTab) setTab(paramTab as Tab);
-  }, [paramCode, paramTab]);
+  }, [paramCode, paramTab, navigate]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
@@ -90,8 +114,29 @@ export default function StockDetail() {
     }).catch(() => {});
     if (tab === 'dividend') api.xdxr(code).then(d => setDividends([...d].reverse())).catch(() => {});
     if (tab === 'intraday') {
-      const fetchMinute = () => {
-        api.minute(code).then(r => setMinuteData(r.List || [])).catch(() => {});
+      const fetchMinute = async () => {
+        try {
+          // 先尝试获取当日分时数据
+          const r = await api.minute(code);
+          if (r.List && r.List.length > 0) {
+            setMinuteData(r.List);
+            // 当日有数据，显示今日日期
+            const today = new Date();
+            setMinuteDate(today.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }));
+          } else {
+            // 当日没有数据，获取最近一个交易日的分时数据
+            const yesterday = getLastTradingDay();
+            try {
+              const histR = await api.minuteHistory(code, yesterday);
+              if (histR.List && histR.List.length > 0) {
+                setMinuteData(histR.List);
+                // 解析日期字符串
+                const dateStr = yesterday;
+                setMinuteDate(`${dateStr.slice(4, 6)}-${dateStr.slice(6, 8)}`);
+              }
+            } catch { /* 忽略历史数据错误 */ }
+          }
+        } catch { /* 忽略错误 */ }
         api.quote(code).then(setQuote).catch(() => {});
       };
       fetchMinute();
@@ -400,7 +445,7 @@ export default function StockDetail() {
           <div className="flex flex-col gap-3 h-full min-h-0">
             <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm bg-slate-900/50 rounded-lg px-4 py-2">
               <span className="text-slate-400">
-                {new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' })}
+                {minuteDate || new Date().toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', weekday: 'short' })}
               </span>
               <span className="text-slate-400">昨收 <span className="text-white font-medium">{lastClose.toFixed(2)}</span></span>
               {quote && (
