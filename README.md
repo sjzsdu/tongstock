@@ -38,6 +38,23 @@ make server
 make cli
 ```
 
+## Skill 使用（推荐）
+
+本项目已发布为 Skills，可通过以下命令直接安装使用：
+
+```bash
+npx skills add sjzsdu/tongstock
+```
+
+安装后即可通过 Codebuff 与 AI 对话的方式使用 TongStock 的所有功能：
+- 查询股票行情、K线、分时、财务等数据
+- 技术指标分析与信号检测
+- 批量筛选股票信号
+- 板块分类与成分股查询
+- 股票代码批量操作
+
+**提示**：首次使用需确保 TongStock 服务已启动（`./tongstock-server`），默认服务地址 `http://localhost:8080`
+
 ## Web UI
 
 启动 server 后访问 `http://localhost:8080` 即可使用 Web 界面。
