@@ -318,15 +318,59 @@ tongstock-cli block show --code 600519
 ### indicator — Technical Indicators (技术指标)
 
 ```bash
-tongstock-cli indicator --code <code> --type <type> [--all] [--count <n>]
+tongstock-cli indicator --code <code> --type <type> [--all] [--count <n>] [--json]
 ```
 
-Computes MACD, KDJ, MA, BOLL, RSI indicators with signal detection.
+Computes MACD, KDJ, MA(5/10/20/60/120), BOLL, RSI(6/12/24), Volume Ratio indicators with signal detection.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--code`, `-c` | required | Stock code |
+| `--type`, `-t` | `day` | K-line type |
+| `--all`, `-a` | `false` | Fetch ALL historical data |
+| `--count`, `-n` | `250` | Number of K-lines |
+| `--json`, `-j` | `false` | JSON format output |
+| `--days`, `-d` | `1` | Number of days to return in JSON output |
+| `--config` | - | Custom parameter config file |
+
+**Supported Indicators:**
+- **MA**: 5, 10, 20, 60, 120 day moving averages
+- **MACD**: DIF, DEA, Histogram (default: 12/26/9)
+- **KDJ**: K, D, J values (default: 9/3/3)
+- **BOLL**: Upper, Middle, Lower bands (default: 20/2.0)
+- **RSI**: RSI6, RSI12, RSI24 (relative strength)
+- **Volume Ratio**: Current volume / 5-day average volume
 
 ```bash
+# Basic usage (table output)
 tongstock-cli indicator -c 000001 -t day
+
+# Full history
 tongstock-cli indicator -c 000001 -t day --all
+
+# Custom K-line count
 tongstock-cli indicator -c 000001 -t day --count 500
+
+# JSON output (for program parsing)
+tongstock-cli indicator -c 000001 -t day --json
+```
+
+**JSON Output Format:**
+```json
+{
+  "code": "000001",
+  "name": "平安银行",
+  "timestamp": "2026-03-29",
+  "price": { "current": 12.58, "change": 0.45, "change_pct": 3.71 },
+  "ma": { "ma5": 12.32, "ma10": 12.18, "ma20": 11.95, "ma60": 11.50, "ma120": 11.20, "trend": "bullish" },
+  "macd": { "dif": 0.35, "dea": 0.22, "hist": 0.26, "signal": "golden_cross" },
+  "kdj": { "k": 72.5, "d": 68.2, "j": 81.1, "signal": "overbought" },
+  "rsi": { "rsi6": 65.2, "rsi12": 62.8, "rsi24": 58.4, "signal": "neutral" },
+  "boll": { "upper": 13.20, "middle": 12.50, "lower": 11.80, "position": 0.65, "signal": "normal" },
+  "volume": { "current": 1250000, "avg5": 980000, "ratio": 1.28, "signal": "active" },
+  "signals": ["golden_cross", "overbought", "多头排列"],
+  "summary": { "trend": "上升趋势", "signal": "持有", "strength": 72 }
+}
 ```
 
 ### screen — Signal Screening (信号筛选)
@@ -401,7 +445,7 @@ Start server: `tongstock-server` (listens on `:8080`)
 | `GET /api/block/files` | - | List available block files |
 | `GET /api/block/list` | `file`, `type`, `sort` | Structured block list |
 | `GET /api/block/show` | `name`, `code`, `file` | Block stocks or query by stock |
-| `GET /api/indicator` | `code`, `type` | Technical indicators |
+| `GET /api/indicator` | `code`, `type`, `days` | Technical indicators (MA/MACD/KDJ/BOLL/RSI/VolumeRatio), days param limits K-line count |
 | `GET /api/screen` | `codes`, `type`, `signal` | Signal screening |
 | `GET /api/count` | `exchange` | Securities count |
 | `GET /api/auction` | `code` | Call auction |

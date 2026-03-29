@@ -29,11 +29,11 @@ type BOLLConfig struct {
 
 func DefaultConfig() *IndicatorConfig {
 	return &IndicatorConfig{
-		MA:   []int{5, 10, 20, 60},
+		MA:   []int{5, 10, 20, 60, 120},
 		MACD: &MACDConfig{Fast: 12, Slow: 26, Signal: 9},
 		KDJ:  &KDJConfig{N: 9, M1: 3, M2: 3},
 		BOLL: &BOLLConfig{N: 20, K: 2.0},
-		RSI:  []int{6, 14},
+		RSI:  []int{6, 12, 24},
 	}
 }
 
@@ -43,12 +43,23 @@ func Calculate(klines []KlineInput, cfg *IndicatorConfig) *IndicatorResult {
 	}
 
 	result := &IndicatorResult{
-		MA:  make(map[string][]float64),
-		RSI: make(map[string][]float64),
+		MA:          make(map[string][]float64),
+		RSI:         make(map[string][]float64),
+		VolumeRatio: &VolumeRatioResult{},
 	}
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
+
+	// Calculate volume ratio first (needed for signal detection)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		data := CalcVolumeRatio(klines, 5)
+		mu.Lock()
+		result.VolumeRatio = data
+		mu.Unlock()
+	}()
 
 	for _, period := range cfg.MA {
 		wg.Add(1)

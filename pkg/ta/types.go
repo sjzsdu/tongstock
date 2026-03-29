@@ -23,11 +23,12 @@ const (
 )
 
 type IndicatorResult struct {
-	MA   map[string][]float64
-	MACD *MACDResult
-	KDJ  *KDJResult
-	BOLL *BOLLResult
-	RSI  map[string][]float64
+	MA          map[string][]float64
+	MACD        *MACDResult
+	KDJ         *KDJResult
+	BOLL        *BOLLResult
+	RSI         map[string][]float64
+	VolumeRatio *VolumeRatioResult
 }
 
 type MACDResult struct {
@@ -54,6 +55,13 @@ type BOLLResult struct {
 	Lower  []float64
 	N      int
 	K      float64
+}
+
+type VolumeRatioResult struct {
+	Current float64
+	Avg5    float64
+	Ratio   float64
+	Signal  string
 }
 
 type IndicatorFunc func(klines []KlineInput) (interface{}, error)

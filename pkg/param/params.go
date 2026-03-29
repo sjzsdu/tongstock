@@ -28,11 +28,11 @@ func Init(configPath string) error {
 func LoadDefault() {
 	globalConfig = &ParamConfig{
 		Defaults: CategoryParams{
-			MA:   []int{5, 10, 20, 60},
+			MA:   []int{5, 10, 20, 60, 120},
 			MACD: &ta.MACDConfig{Fast: 12, Slow: 26, Signal: 9},
 			KDJ:  &ta.KDJConfig{N: 9, M1: 3, M2: 3},
 			BOLL: &ta.BOLLConfig{N: 20, K: 2.0},
-			RSI:  []int{6, 14},
+			RSI:  []int{6, 12, 24},
 		},
 	}
 }
@@ -68,7 +68,7 @@ const defaultYAML = `# TongStock 技术指标参数配置
 # 用户可自行修改此文件以自定义指标参数
 
 defaults:
-  ma: [5, 10, 20, 60]
+  ma: [5, 10, 20, 60, 120]
   macd:
     fast: 12
     slow: 26
@@ -80,7 +80,7 @@ defaults:
   boll:
     n: 20
     k: 2.0
-  rsi: [6, 14]
+  rsi: [6, 12, 24]
 
 categories:
   large_cap:

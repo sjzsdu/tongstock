@@ -639,8 +639,8 @@ func handleBlockList(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"file":  blockFile,
-		"total": len(blocks),
+		"file":   blockFile,
+		"total":  len(blocks),
 		"blocks": blocks,
 	})
 }
@@ -728,8 +728,8 @@ func handleBlockShow(c *gin.Context) {
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"code": code,
-			"name": stockName,
+			"code":   code,
+			"name":   stockName,
 			"blocks": results,
 		})
 		return
@@ -770,7 +770,7 @@ func handleBlockShow(c *gin.Context) {
 	if len(matchedBlocks) > 1 {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "找到多个匹配的板块",
-			"blocks": matchedBlocks,
+			"blocks":  matchedBlocks,
 		})
 		return
 	}
@@ -782,8 +782,8 @@ func handleBlockShow(c *gin.Context) {
 	codeNameMap := getCodeNameMapServer()
 
 	type stockInfo struct {
-		Code  string `json:"code"`
-		Name  string `json:"name"`
+		Code     string `json:"code"`
+		Name     string `json:"name"`
 		Exchange string `json:"exchange"`
 	}
 	var stockList []stockInfo
@@ -804,16 +804,16 @@ func handleBlockShow(c *gin.Context) {
 			}
 		}
 		stockList = append(stockList, stockInfo{
-			Code:    stockCode,
-			Name:    name,
+			Code:     stockCode,
+			Name:     name,
 			Exchange: exchange,
 		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"name":  block.name,
-		"type":  block.blockType,
-		"count": len(stocks),
+		"name":   block.name,
+		"type":   block.blockType,
+		"count":  len(stocks),
 		"stocks": stockList,
 	})
 }
@@ -862,6 +862,7 @@ func toKlineInputs(klines []*protocol.Kline) []ta.KlineInput {
 func handleIndicator(c *gin.Context) {
 	code := c.Query("code")
 	ktype := c.DefaultQuery("type", "day")
+	daysStr := c.DefaultQuery("days", "0")
 
 	if code == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 code 参数"})
@@ -906,20 +907,38 @@ func handleIndicator(c *gin.Context) {
 	}
 	signals := signal.Detect(code, inputs, result, nil)
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":     code,
-		"type":     ktype,
-		"category": string(category),
-		"count":    len(inputs),
-		"last":     inputs[len(inputs)-1],
-		"klines":   inputs,
-		"ma":       result.MA,
-		"macd":     result.MACD,
-		"kdj":      result.KDJ,
-		"boll":     result.BOLL,
-		"rsi":      result.RSI,
-		"signals":  signals,
-	})
+	days := 0
+	if daysStr != "" {
+		if d, err := strconv.Atoi(daysStr); err == nil && d > 0 {
+			days = d
+		}
+	}
+
+	response := gin.H{
+		"code":         code,
+		"type":         ktype,
+		"category":     string(category),
+		"count":        len(inputs),
+		"ma":           result.MA,
+		"macd":         result.MACD,
+		"kdj":          result.KDJ,
+		"boll":         result.BOLL,
+		"rsi":          result.RSI,
+		"volume_ratio": result.VolumeRatio,
+		"signals":      signals,
+	}
+
+	if days > 0 && days < len(inputs) {
+		start := len(inputs) - days
+		response["days"] = days
+		response["klines"] = inputs[start:]
+		response["last"] = inputs[len(inputs)-1]
+	} else {
+		response["klines"] = inputs
+		response["last"] = inputs[len(inputs)-1]
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 func handleScreen(c *gin.Context) {
@@ -938,7 +957,8 @@ func handleScreen(c *gin.Context) {
 		c = strings.TrimSpace(c)
 		if c != "" {
 			filteredCodes = append(filteredCodes, c)
-		}	}
+		}
+	}
 	codeList = filteredCodes
 
 	if len(codeList) == 0 {
@@ -970,14 +990,14 @@ func handleScreen(c *gin.Context) {
 	}
 
 	type result struct {
-		Code     string               `json:"code"`
-		Name     string               `json:"name"`
-		Last     ta.KlineInput        `json:"last"`
-		MA       map[string][]float64 `json:"ma"`
-		MACD     *ta.MACDResult       `json:"macd,omitempty"`
-		KDJ      *ta.KDJResult        `json:"kdj,omitempty"`
-		Signals  []signal.Signal      `json:"signals"`
-		Cycles   []signal.TradeCycle  `json:"cycles"` // 完整的交易周期
+		Code    string               `json:"code"`
+		Name    string               `json:"name"`
+		Last    ta.KlineInput        `json:"last"`
+		MA      map[string][]float64 `json:"ma"`
+		MACD    *ta.MACDResult       `json:"macd,omitempty"`
+		KDJ     *ta.KDJResult        `json:"kdj,omitempty"`
+		Signals []signal.Signal      `json:"signals"`
+		Cycles  []signal.TradeCycle  `json:"cycles"` // 完整的交易周期
 	}
 
 	results := make([]result, len(codeList))
@@ -1048,10 +1068,10 @@ func handleScreen(c *gin.Context) {
 
 	// 买入信号类型
 	buySignalTypes := map[signal.SignalType]bool{
-		signal.SignalGoldenCross: true,  // 金叉
-		signal.SignalOversold:    true,  // 超卖
-		signal.SignalBreakLower:  true,  // 跌破下轨
-		signal.SignalBullAlign:   true,  // 多头排列
+		signal.SignalGoldenCross: true, // 金叉
+		signal.SignalOversold:    true, // 超卖
+		signal.SignalBreakLower:  true, // 跌破下轨
+		signal.SignalBullAlign:   true, // 多头排列
 	}
 
 	// 只返回当前处于买入信号状态的个股

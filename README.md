@@ -16,7 +16,7 @@
 - **集合竞价** - 开盘前竞价阶段的匹配量、未匹配量等数据
 - **证券数量** - 查询各交易所证券总数
 - **股票代码** - 获取沪深北交易所所有股票代码，支持分类过滤
-- **技术指标** - MACD/KDJ/MA/BOLL/RSI，支持参数化计算
+- **技术指标** - MACD/KDJ/MA(5/10/20/60/120)/BOLL/RSI(6/12/24)/量比，支持参数化计算
 - **信号检测** - 金叉/死叉/超买/超卖/突破，自动检测并标记
 - **批量筛选** - 按板块或代码列表批量筛选信号，支持并发
 - **双模式** - CLI 命令行工具 + HTTP REST API
@@ -268,8 +268,14 @@ npm run dev        # 启动开发服务器，默认代理到 localhost:8080
 ### 技术指标分析
 
 ```bash
-# 单股指标分析（默认参数）
+# 单股指标分析（默认参数，表格输出）
 ./tongstock-cli indicator --code 000001 --type day
+
+# JSON格式输出（默认返回最新一天）
+./tongstock-cli indicator --code 000001 --type day --json
+
+# JSON格式输出，返回最近5天数据
+./tongstock-cli indicator --code 000001 --type day --json --days 5
 
 # 获取全部历史K线计算指标
 ./tongstock-cli indicator --code 000001 --type day --all
@@ -281,9 +287,45 @@ npm run dev        # 启动开发服务器，默认代理到 localhost:8080
 ./tongstock-cli indicator --code 000001 --type day --config configs/params.yaml
 ```
 
-输出包含：
-- 最近 20 天 K 线 + MA(5/10/20) + MACD(DIF/DEA/HIST) + KDJ(K/D/J) + BOLL(UPPER/MID/LOWER)
+**输出包含：**
+- 最近 20 天 K 线 + MA(5/10/20/60/120) + MACD(DIF/DEA/HIST) + KDJ(K/D/J) + BOLL(UPPER/MID/LOWER) + RSI(6/12/24) + 量比
 - 最新信号（金叉/死叉/超买/超卖/多头排列/空头排列等）
+
+**JSON 输出格式（单日）：**
+```json
+{
+  "code": "000001",
+  "name": "平安银行",
+  "timestamp": "2026-03-29",
+  "price": { "current": 12.58, "change": 0.45, "change_pct": 3.71 },
+  "ma": { "ma5": 12.32, "ma10": 12.18, "ma20": 11.95, "ma60": 11.50, "ma120": 11.20, "trend": "bullish" },
+  "macd": { "dif": 0.35, "dea": 0.22, "hist": 0.26, "signal": "golden_cross" },
+  "kdj": { "k": 72.5, "d": 68.2, "j": 81.1, "signal": "overbought" },
+  "rsi": { "rsi6": 65.2, "rsi12": 62.8, "rsi24": 58.4, "signal": "neutral" },
+  "boll": { "upper": 13.20, "middle": 12.50, "lower": 11.80, "position": 0.65, "signal": "normal" },
+  "volume": { "current": 1250000, "avg5": 980000, "ratio": 1.28, "signal": "active" },
+  "signals": ["golden_cross", "overbought", "多头排列"],
+  "summary": { "trend": "上升趋势", "signal": "持有", "strength": 72 }
+}
+```
+
+**JSON 输出格式（多日，--days > 1）：**
+```json
+{
+  "code": "000001",
+  "name": "平安银行",
+  "days": 5,
+  "count": 5,
+  "history": [
+    { "timestamp": "2026-03-25", "price": {...}, "ma": {...}, ... },
+    { "timestamp": "2026-03-26", "price": {...}, "ma": {...}, ... },
+    { "timestamp": "2026-03-27", "price": {...}, "ma": {...}, ... },
+    { "timestamp": "2026-03-28", "price": {...}, "ma": {...}, ... },
+    { "timestamp": "2026-03-29", "price": {...}, "ma": {...}, ... }
+  ],
+  "summary": { "trend": "上升趋势", "signal": "持有", "strength": 72 }
+}
+```
 
 ### 批量信号筛选
 
@@ -333,7 +375,7 @@ npm run dev        # 启动开发服务器，默认代理到 localhost:8080
 | `/api/block/files` | GET | - | 板块文件列表 |
 | `/api/block/list` | GET | `file`, `type`, `sort` | 结构化板块列表 |
 | `/api/block/show` | GET | `name`, `code`, `file` | 板块成分股/按股票查板块 |
-| `/api/indicator` | GET | `code`, `type` | 技术指标（MACD/KDJ/MA/BOLL/RSI + 信号） |
+| `/api/indicator` | GET | `code`, `type`, `days` | 技术指标（MACD/KDJ/MA/BOLL/RSI/量比 + 信号），days参数可限制返回的K线数量 |
 | `/api/screen` | GET | `codes`, `type`, `signal` | 批量信号筛选 |
 
 ### 示例

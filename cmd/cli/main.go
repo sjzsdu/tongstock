@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -70,6 +71,8 @@ var (
 	indicatorAll    bool
 	indicatorCount  int
 	indicatorConfig string
+	indicatorJSON   bool
+	indicatorDays   int
 )
 
 var indicatorCmd = &cobra.Command{
@@ -84,6 +87,8 @@ func init() {
 	indicatorCmd.Flags().BoolVarP(&indicatorAll, "all", "a", false, "获取全部历史K线")
 	indicatorCmd.Flags().IntVarP(&indicatorCount, "count", "n", 250, "K线数量")
 	indicatorCmd.Flags().StringVarP(&indicatorConfig, "config", "", "", "参数配置文件路径")
+	indicatorCmd.Flags().BoolVarP(&indicatorJSON, "json", "j", false, "JSON格式输出")
+	indicatorCmd.Flags().IntVarP(&indicatorDays, "days", "d", 1, "JSON输出时返回的历史天数")
 	_ = indicatorCmd.MarkFlagRequired("code")
 }
 
@@ -122,44 +127,406 @@ func runIndicator(cmd *cobra.Command, args []string) error {
 	result := ta.Calculate(inputs, cfg)
 	signals := signal.Detect(indicatorCode, inputs, result, nil)
 
-	// Table header
-	fmt.Printf("\n%s 技术指标 (分类: %s)\n", indicatorCode, category)
-	fmt.Println(strings.Repeat("=", 80))
-	header := fmt.Sprintf("%-12s %-8s %-8s %-8s %-8s", "日期", "收盘", "MA5", "MA10", "MA20")
+	if indicatorJSON {
+		return outputIndicatorJSON(indicatorCode, inputs, result, signals)
+	}
+
+	return outputIndicatorTable(indicatorCode, string(category), inputs, result, signals)
+}
+
+func outputIndicatorJSON(code string, inputs []ta.KlineInput, result *ta.IndicatorResult, signals []signal.Signal) error {
+	n := len(inputs)
+	if n == 0 {
+		return fmt.Errorf("无数据")
+	}
+
+	stockName := code
+	quotes, err := func() ([]*protocol.QuoteItem, error) {
+		svc, err := dialService()
+		if err != nil {
+			return nil, err
+		}
+		defer svc.Close()
+		return svc.Client.GetQuote(code)
+	}()
+	if err == nil && len(quotes) > 0 {
+		stockName = quotes[0].Name
+	}
+
+	days := indicatorDays
+	if days < 1 {
+		days = 1
+	}
+	if days > n {
+		days = n
+	}
+
+	startIdx := n - days
+
+	if days == 1 {
+		last := inputs[n-1]
+		var change, changePct float64
+		if n > 1 {
+			change = last.Close - inputs[n-2].Close
+			if inputs[n-2].Close > 0 {
+				changePct = change / inputs[n-2].Close * 100
+			}
+		}
+
+		trend := calcTrend(result, n-1)
+		macdSignal := calcMACDSignal(result, n-1)
+		kdjSignal := calcKDJSignal(result, n-1)
+		rsiSignal := calcRSISignal(result, n-1)
+		bollSignal, bollPosition := calcBOLLSignal(result, inputs[n-1], n-1)
+
+		jsonOutput := map[string]interface{}{
+			"code":      code,
+			"name":      stockName,
+			"timestamp": last.Time.Format("2006-01-02"),
+			"price": map[string]interface{}{
+				"current":    last.Close,
+				"change":     change,
+				"change_pct": changePct,
+			},
+			"ma":      buildMAData(result, n-1, trend),
+			"macd":    buildMACDData(result, n-1, macdSignal),
+			"kdj":     buildKDJData(result, n-1, kdjSignal),
+			"rsi":     buildRSIData(result, n-1, rsiSignal),
+			"boll":    buildBOLLData(result, n-1, bollSignal, bollPosition),
+			"volume":  buildVolumeData(result),
+			"signals": buildSignals(macdSignal, kdjSignal, trend),
+			"summary": buildSummary(trend),
+		}
+
+		output, err := json.MarshalIndent(jsonOutput, "", "  ")
+		if err != nil {
+			return fmt.Errorf("JSON序列化失败: %w", err)
+		}
+		fmt.Println(string(output))
+		return nil
+	}
+
+	var history []map[string]interface{}
+	for i := startIdx; i < n; i++ {
+		dayData := inputs[i]
+		var change, changePct float64
+		if i > 0 {
+			change = dayData.Close - inputs[i-1].Close
+			if inputs[i-1].Close > 0 {
+				changePct = change / inputs[i-1].Close * 100
+			}
+		}
+
+		trend := calcTrend(result, i)
+		macdSignal := calcMACDSignal(result, i)
+		kdjSignal := calcKDJSignal(result, i)
+		rsiSignal := calcRSISignal(result, i)
+		bollSignal, bollPosition := calcBOLLSignal(result, dayData, i)
+
+		history = append(history, map[string]interface{}{
+			"timestamp": dayData.Time.Format("2006-01-02"),
+			"price": map[string]interface{}{
+				"current":    dayData.Close,
+				"change":     change,
+				"change_pct": changePct,
+			},
+			"ma":      buildMAData(result, i, trend),
+			"macd":    buildMACDData(result, i, macdSignal),
+			"kdj":     buildKDJData(result, i, kdjSignal),
+			"rsi":     buildRSIData(result, i, rsiSignal),
+			"boll":    buildBOLLData(result, i, bollSignal, bollPosition),
+			"signals": buildSignals(macdSignal, kdjSignal, trend),
+		})
+	}
+
+	latestTrend := calcTrend(result, n-1)
+	jsonOutput := map[string]interface{}{
+		"code":    code,
+		"name":    stockName,
+		"days":    days,
+		"count":   len(history),
+		"history": history,
+		"summary": buildSummary(latestTrend),
+	}
+
+	output, err := json.MarshalIndent(jsonOutput, "", "  ")
+	if err != nil {
+		return fmt.Errorf("JSON序列化失败: %w", err)
+	}
+	fmt.Println(string(output))
+	return nil
+}
+
+func calcTrend(result *ta.IndicatorResult, idx int) string {
+	if ma5, ok := result.MA["5"]; ok {
+		if ma20, ok2 := result.MA["20"]; ok2 && idx >= 0 {
+			if ma5[idx] > ma20[idx] {
+				return "bullish"
+			} else if ma5[idx] < ma20[idx] {
+				return "bearish"
+			}
+		}
+	}
+	return "neutral"
+}
+
+func calcMACDSignal(result *ta.IndicatorResult, idx int) string {
+	if result.MACD != nil && idx >= 0 {
+		if result.MACD.DIF[idx] > result.MACD.DEA[idx] {
+			return "golden_cross"
+		} else if result.MACD.DIF[idx] < result.MACD.DEA[idx] {
+			return "death_cross"
+		}
+	}
+	return "neutral"
+}
+
+func calcKDJSignal(result *ta.IndicatorResult, idx int) string {
+	if result.KDJ != nil && idx >= 0 {
+		if result.KDJ.J[idx] > 100 {
+			return "overbought"
+		} else if result.KDJ.J[idx] < 0 {
+			return "oversold"
+		}
+	}
+	return "neutral"
+}
+
+func calcRSISignal(result *ta.IndicatorResult, idx int) string {
+	if rsi6, ok := result.RSI["6"]; ok && idx >= 0 {
+		if rsi6[idx] > 80 {
+			return "overbought"
+		} else if rsi6[idx] < 20 {
+			return "oversold"
+		}
+	}
+	return "neutral"
+}
+
+func calcBOLLSignal(result *ta.IndicatorResult, day ta.KlineInput, idx int) (string, float64) {
+	signal := "normal"
+	position := 0.0
+	if result.BOLL != nil && idx >= 0 {
+		upper := result.BOLL.Upper[idx]
+		lower := result.BOLL.Lower[idx]
+		if upper > lower {
+			position = (day.Close - lower) / (upper - lower)
+		}
+		if day.Close > upper {
+			signal = "break_upper"
+		} else if day.Close < lower {
+			signal = "break_lower"
+		}
+	}
+	return signal, position
+}
+
+func buildMAData(result *ta.IndicatorResult, idx int, trend string) map[string]interface{} {
+	m := map[string]interface{}{"trend": trend}
+	for _, p := range []string{"5", "10", "20", "60", "120"} {
+		if v, ok := result.MA[p]; ok && idx >= 0 && idx < len(v) {
+			m["ma"+p] = v[idx]
+		}
+	}
+	return m
+}
+
+func buildMACDData(result *ta.IndicatorResult, idx int, signal string) map[string]interface{} {
+	if result.MACD == nil || idx < 0 || idx >= len(result.MACD.DIF) {
+		return nil
+	}
+	return map[string]interface{}{
+		"dif":    result.MACD.DIF[idx],
+		"dea":    result.MACD.DEA[idx],
+		"hist":   result.MACD.Hist[idx],
+		"signal": signal,
+	}
+}
+
+func buildKDJData(result *ta.IndicatorResult, idx int, signal string) map[string]interface{} {
+	if result.KDJ == nil || idx < 0 || idx >= len(result.KDJ.K) {
+		return nil
+	}
+	return map[string]interface{}{
+		"k":      result.KDJ.K[idx],
+		"d":      result.KDJ.D[idx],
+		"j":      result.KDJ.J[idx],
+		"signal": signal,
+	}
+}
+
+func buildRSIData(result *ta.IndicatorResult, idx int, signal string) map[string]interface{} {
+	if len(result.RSI) == 0 || idx < 0 {
+		return nil
+	}
+	m := map[string]interface{}{"signal": signal}
+	for p, v := range result.RSI {
+		if idx < len(v) {
+			m["rsi"+p] = v[idx]
+		}
+	}
+	return m
+}
+
+func buildBOLLData(result *ta.IndicatorResult, idx int, signal string, position float64) map[string]interface{} {
+	if result.BOLL == nil || idx < 0 || idx >= len(result.BOLL.Upper) {
+		return nil
+	}
+	return map[string]interface{}{
+		"upper":    result.BOLL.Upper[idx],
+		"middle":   result.BOLL.Middle[idx],
+		"lower":    result.BOLL.Lower[idx],
+		"position": position,
+		"signal":   signal,
+	}
+}
+
+func buildVolumeData(result *ta.IndicatorResult) map[string]interface{} {
+	if result.VolumeRatio == nil {
+		return nil
+	}
+	return map[string]interface{}{
+		"current": result.VolumeRatio.Current,
+		"avg5":    result.VolumeRatio.Avg5,
+		"ratio":   result.VolumeRatio.Ratio,
+		"signal":  result.VolumeRatio.Signal,
+	}
+}
+
+func buildSignals(macdSignal, kdjSignal, trend string) []string {
+	var s []string
+	if macdSignal == "golden_cross" {
+		s = append(s, "golden_cross")
+	}
+	if macdSignal == "death_cross" {
+		s = append(s, "death_cross")
+	}
+	if kdjSignal == "overbought" {
+		s = append(s, "overbought")
+	}
+	if kdjSignal == "oversold" {
+		s = append(s, "oversold")
+	}
+	if trend == "bullish" {
+		s = append(s, "多头排列")
+	}
+	if trend == "bearish" {
+		s = append(s, "空头排列")
+	}
+	return s
+}
+
+func buildSummary(trend string) map[string]interface{} {
+	signal := "持有"
+	if trend == "bullish" {
+		signal = "买入"
+	} else if trend == "bearish" {
+		signal = "卖出"
+	}
+	strength := 50
+	if trend == "bullish" {
+		strength = 70
+	} else if trend == "bearish" {
+		strength = 30
+	}
+	return map[string]interface{}{
+		"trend":    trend,
+		"signal":   signal,
+		"strength": strength,
+	}
+}
+
+func outputIndicatorTable(code, category string, inputs []ta.KlineInput, result *ta.IndicatorResult, signals []signal.Signal) error {
+	n := len(inputs)
+	if n == 0 {
+		return fmt.Errorf("无数据")
+	}
+
+	fmt.Printf("\n%s 技术指标 (分类: %s)\n", code, category)
+	fmt.Println(strings.Repeat("=", 100))
+
+	header := "%-12s %-8s %-8s %-8s %-8s %-8s %-8s"
+	headerArgs := []interface{}{"日期", "收盘", "MA5", "MA10", "MA20", "MA60", "MA120"}
+
 	if result.MACD != nil {
-		header += fmt.Sprintf(" %-8s %-8s %-8s", "DIF", "DEA", "HIST")
+		header += " %-8s %-8s %-8s"
+		headerArgs = append(headerArgs, "DIF", "DEA", "HIST")
 	}
 	if result.KDJ != nil {
-		header += fmt.Sprintf(" %-8s %-8s %-8s", "K", "D", "J")
+		header += " %-8s %-8s %-8s"
+		headerArgs = append(headerArgs, "K", "D", "J")
+	}
+	if len(result.RSI) > 0 {
+		header += " %-8s %-8s %-8s"
+		headerArgs = append(headerArgs, "RSI6", "RSI12", "RSI24")
 	}
 	if result.BOLL != nil {
-		header += fmt.Sprintf(" %-8s %-8s %-8s", "UPPER", "MID", "LOWER")
+		header += " %-8s %-8s %-8s"
+		headerArgs = append(headerArgs, "UPPER", "MID", "LOWER")
 	}
-	fmt.Println(header)
-	fmt.Println(strings.Repeat("-", len(header)))
+	if result.VolumeRatio != nil {
+		header += " %-8s"
+		headerArgs = append(headerArgs, "量比")
+	}
 
-	// Show last 20 rows (most recent)
+	fmt.Printf(header+"\n", headerArgs...)
+	fmt.Println(strings.Repeat("-", 120))
+
 	start := 0
-	if len(inputs) > 20 {
-		start = len(inputs) - 20
+	if n > 20 {
+		start = n - 20
 	}
-	for i := start; i < len(inputs); i++ {
-		row := fmt.Sprintf("%-12s %-8.2f %-8.2f %-8.2f %-8.2f",
+	for i := start; i < n; i++ {
+		ma60 := 0.0
+		ma120 := 0.0
+		if v, ok := result.MA["60"]; ok {
+			ma60 = v[i]
+		}
+		if v, ok := result.MA["120"]; ok {
+			ma120 = v[i]
+		}
+
+		row := fmt.Sprintf("%-12s %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f",
 			inputs[i].Time.Format("2006-01-02"), inputs[i].Close,
-			result.MA["5"][i], result.MA["10"][i], result.MA["20"][i])
+			result.MA["5"][i], result.MA["10"][i], result.MA["20"][i], ma60, ma120)
+
 		if result.MACD != nil {
 			row += fmt.Sprintf(" %-8.2f %-8.2f %-8.2f", result.MACD.DIF[i], result.MACD.DEA[i], result.MACD.Hist[i])
 		}
 		if result.KDJ != nil {
 			row += fmt.Sprintf(" %-8.2f %-8.2f %-8.2f", result.KDJ.K[i], result.KDJ.D[i], result.KDJ.J[i])
 		}
+		if len(result.RSI) > 0 {
+			rsi6 := 0.0
+			rsi12 := 0.0
+			rsi24 := 0.0
+			if v, ok := result.RSI["6"]; ok {
+				rsi6 = v[i]
+			}
+			if v, ok := result.RSI["12"]; ok {
+				rsi12 = v[i]
+			}
+			if v, ok := result.RSI["24"]; ok {
+				rsi24 = v[i]
+			}
+			row += fmt.Sprintf(" %-8.1f %-8.1f %-8.1f", rsi6, rsi12, rsi24)
+		}
 		if result.BOLL != nil {
 			row += fmt.Sprintf(" %-8.2f %-8.2f %-8.2f", result.BOLL.Upper[i], result.BOLL.Middle[i], result.BOLL.Lower[i])
+		}
+		if result.VolumeRatio != nil && i == n-1 {
+			row += fmt.Sprintf(" %-8.2f", result.VolumeRatio.Ratio)
+		} else if result.VolumeRatio != nil {
+			row += fmt.Sprintf(" %-8s", "-")
 		}
 		fmt.Println(row)
 	}
 
-	// Signals summary
+	if result.VolumeRatio != nil {
+		fmt.Printf("\n量比: %.2f (5日均量: %.0f, 信号: %s)\n",
+			result.VolumeRatio.Ratio, result.VolumeRatio.Avg5, result.VolumeRatio.Signal)
+	}
+
 	if len(signals) > 0 {
 		fmt.Printf("\n最新信号:\n")
 		fmt.Println(strings.Repeat("-", 60))

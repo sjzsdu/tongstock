@@ -198,8 +198,14 @@ done
 Compute and display technical indicators for a single stock.
 
 ```bash
-# Single stock with default parameters
+# Single stock with default parameters (table output)
 tongstock-cli indicator -c <code> -t day
+
+# JSON format output (single day)
+tongstock-cli indicator -c <code> -t day --json
+
+# JSON format with multiple days history
+tongstock-cli indicator -c <code> -t day --json --days 5
 
 # All historical data
 tongstock-cli indicator -c <code> -t day --all
@@ -212,9 +218,35 @@ tongstock-cli indicator -c <code> -t 60m    # 60-minute
 tongstock-cli indicator -c <code> -t week   # Weekly
 ```
 
-**Output includes:**
-- Last 20 days: Date, Close, MA5/10/20, DIF/DEA/HIST, K/D/J, UPPER/MID/LOWER
+**Supported Indicators:**
+- **MA**: 5, 10, 20, 60, 120 day moving averages
+- **MACD**: DIF, DEA, Histogram (default: 12/26/9)
+- **KDJ**: K, D, J values (default: 9/3/3)
+- **BOLL**: Upper, Middle, Lower bands (default: 20/2.0)
+- **RSI**: RSI6, RSI12, RSI24 (relative strength)
+- **Volume Ratio**: Current volume / 5-day average volume
+
+**Table Output includes:**
+- Last 20 days: Date, Close, MA5/10/20/60/120, DIF/DEA/HIST, K/D/J, RSI6/12/24, UPPER/MID/LOWER, Volume Ratio
 - Latest signals: 金叉 (golden cross), 死叉 (death cross), 超买 (overbought), 超卖 (oversold), 多头排列 (bull alignment), 空头排列 (bear alignment), 突破上轨 (break upper band), 跌破下轨 (break lower band)
+
+**JSON Output (single day):**
+```json
+{
+  "code": "000001",
+  "name": "平安银行",
+  "timestamp": "2026-03-29",
+  "price": { "current": 12.58, "change": 0.45, "change_pct": 3.71 },
+  "ma": { "ma5": 12.32, "ma10": 12.18, "ma20": 11.95, "ma60": 11.50, "ma120": 11.20, "trend": "bullish" },
+  "macd": { "dif": 0.35, "dea": 0.22, "hist": 0.26, "signal": "golden_cross" },
+  "kdj": { "k": 72.5, "d": 68.2, "j": 81.1, "signal": "overbought" },
+  "rsi": { "rsi6": 65.2, "rsi12": 62.8, "rsi24": 58.4, "signal": "neutral" },
+  "boll": { "upper": 13.20, "middle": 12.50, "lower": 11.80, "position": 0.65, "signal": "normal" },
+  "volume": { "current": 1250000, "avg5": 980000, "ratio": 1.28, "signal": "active" },
+  "signals": ["golden_cross", "overbought", "多头排列"],
+  "summary": { "trend": "上升趋势", "signal": "持有", "strength": 72 }
+}
+```
 
 **Parameter resolution:**
 - Per-stock override > Category override (large_cap/small_cap) > Default
