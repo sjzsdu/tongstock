@@ -1273,17 +1273,13 @@ func getCodeNameMap(svc *tdx.Service) map[string]string {
 	codeNameMap := make(map[string]string)
 
 	codesSZ, _ := svc.FetchCodes(protocol.ExchangeSZ)
-	if codesSZ != nil {
-		for _, c := range codesSZ {
-			codeNameMap[c.Code] = c.Name
-		}
+	for _, c := range codesSZ {
+		codeNameMap[c.Code] = c.Name
 	}
 
 	codesSH, _ := svc.FetchCodes(protocol.ExchangeSH)
-	if codesSH != nil {
-		for _, c := range codesSH {
-			codeNameMap[c.Code] = c.Name
-		}
+	for _, c := range codesSH {
+		codeNameMap[c.Code] = c.Name
 	}
 
 	return codeNameMap

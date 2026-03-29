@@ -64,9 +64,13 @@ jobs:
           cd web
           pnpm install
           pnpm build
-          cd ..
+        shell: bash
+
+      - name: Prepare web dist
+        run: |
           rm -rf pkg/web/dist
           cp -r web/dist pkg/web/dist
+        shell: bash
 
       - name: Build CLI (Unix)
         if: matrix.goos != 'windows'

@@ -19,6 +19,31 @@ jobs:
           go-version: '1.23'
           cache: true
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Build web
+        run: |
+          cd web
+          pnpm install
+          pnpm build
+        shell: bash
+
+      - name: Prepare web dist
+        run: |
+          rm -rf pkg/web/dist
+          cp -r web/dist pkg/web/dist
+        shell: bash
+
       - name: Download dependencies
         run: go mod download
 
@@ -58,17 +83,18 @@ jobs:
           cache: 'pnpm'
           cache-dependency-path: web/pnpm-lock.yaml
 
-      - name: Download dependencies
-        run: go mod download
-
       - name: Build web
         run: |
           cd web
           pnpm install
           pnpm build
-          cd ..
+        shell: bash
+
+      - name: Prepare web dist
+        run: |
           rm -rf pkg/web/dist
           cp -r web/dist pkg/web/dist
+        shell: bash
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
