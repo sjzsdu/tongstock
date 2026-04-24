@@ -104,7 +104,7 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {history.length > 0 && (
+      {history?.length > 0 && (
         <div className="bg-slate-900 rounded-xl border border-slate-800 p-6">
           <div className="flex items-center gap-2 mb-4">
             <Clock size={18} className="text-slate-400" />
