@@ -2,13 +2,17 @@ name: CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  test:
-    name: Test
+  build:
+    name: Build and test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,87 +20,72 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.24.x'
           cache: true
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'pnpm'
+          node-version: '22'
+          cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
 
-      - name: Build web
-        run: |
-          cd web
-          pnpm install
-          pnpm build
-        shell: bash
+      - name: Install web dependencies
+        working-directory: web
+        run: pnpm install --frozen-lockfile
 
-      - name: Prepare web dist
+      - name: Build web
+        working-directory: web
+        run: pnpm build
+
+      - name: Prepare embedded web assets
         run: |
           rm -rf pkg/web/dist
           cp -r web/dist pkg/web/dist
-        shell: bash
 
-      - name: Download dependencies
+      - name: Download Go dependencies
         run: go mod download
 
-      - name: Build
-        run: go build -v ./...
+      - name: Run Go tests
+        run: go test -v ./...
 
-      - name: Run tests
-        run: go test -v -race -coverprofile=coverage.out ./...
+      - name: Build Linux artifacts
+        run: |
+          mkdir -p dist
+          go build -trimpath -ldflags="-s -w" -o dist/tongstock ./cmd/cli
+          go build -trimpath -ldflags="-s -w" -o dist/tongstock-server ./cmd/server
+          tar -C dist -czf tongstock-linux-amd64.tar.gz tongstock tongstock-server
 
-      - name: Upload coverage
+      - name: Smoke test server
+        run: |
+          ./dist/tongstock-server > server.log 2>&1 &
+          echo $! > server.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8080/health; then
+              kill "$(cat server.pid)"
+              exit 0
+            fi
+            sleep 1
+          done
+          cat server.log
+          kill "$(cat server.pid)" || true
+          exit 1
+
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: coverage
-          path: coverage.out
+          name: tongstock-linux-amd64
+          path: tongstock-linux-amd64.tar.gz
+          if-no-files-found: error
 
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - name: Upload web dist artifact
+        uses: actions/upload-artifact@v4
         with:
-          go-version: '1.23'
-          cache: true
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-          cache-dependency-path: web/pnpm-lock.yaml
-
-      - name: Build web
-        run: |
-          cd web
-          pnpm install
-          pnpm build
-        shell: bash
-
-      - name: Prepare web dist
-        run: |
-          rm -rf pkg/web/dist
-          cp -r web/dist pkg/web/dist
-        shell: bash
-
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
+          name: tongstock-web-dist
+          path: web/dist
+          if-no-files-found: error

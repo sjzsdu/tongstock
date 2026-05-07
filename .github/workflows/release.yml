@@ -4,112 +4,114 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   build:
-    name: Build
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             goos: linux
             goarch: amd64
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             goos: linux
             goarch: arm64
-          - os: macos-latest
+          - os: macos-13
             goos: darwin
             goarch: amd64
-          - os: macos-latest
+          - os: macos-14
             goos: darwin
             goarch: arm64
           - os: windows-latest
             goos: windows
             goarch: amd64
-          - os: windows-latest
-            goos: windows
-            goarch: arm64
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.24.x'
           cache: true
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'pnpm'
+          node-version: '22'
+          cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
 
-      - name: Get tag
-        id: get_tag
+      - name: Resolve version
+        id: version
         shell: bash
-        run: echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "value=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=manual-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install web dependencies
+        working-directory: web
+        run: pnpm install --frozen-lockfile
 
       - name: Build web
-        run: |
-          cd web
-          pnpm install
-          pnpm build
-        shell: bash
+        working-directory: web
+        run: pnpm build
 
-      - name: Prepare web dist
+      - name: Prepare embedded web assets
         run: |
           rm -rf pkg/web/dist
           cp -r web/dist pkg/web/dist
+
+      - name: Build package
         shell: bash
-
-      - name: Build CLI (Unix)
-        if: matrix.goos != 'windows'
+        env:
+          CGO_ENABLED: 1
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ steps.version.outputs.value }}
         run: |
-          go build -o tongstock-cli-${{ steps.get_tag.outputs.TAG }}-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/cli
+          set -euo pipefail
+          package="tongstock-${VERSION}-${GOOS}-${GOARCH}"
+          mkdir -p "dist/${package}"
+          ext=""
+          if [[ "${GOOS}" == "windows" ]]; then ext=".exe"; fi
+          go build -trimpath -ldflags="-s -w" -o "dist/${package}/tongstock${ext}" ./cmd/cli
+          go build -trimpath -ldflags="-s -w" -o "dist/${package}/tongstock-server${ext}" ./cmd/server
+          cp README.md "dist/${package}/" || true
+          if [[ "${GOOS}" == "windows" ]]; then
+            (cd dist && 7z a "${package}.zip" "${package}")
+          else
+            tar -C dist -czf "dist/${package}.tar.gz" "${package}"
+          fi
 
-      - name: Build CLI (Windows)
-        if: matrix.goos == 'windows'
-        run: |
-          go build -o tongstock-cli-${{ steps.get_tag.outputs.TAG }}-${{ matrix.goos }}-${{ matrix.goarch }}.exe ./cmd/cli
-
-      - name: Build Server (Unix)
-        if: matrix.goos != 'windows'
-        run: |
-          go build -o tongstock-server-${{ steps.get_tag.outputs.TAG }}-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/server
-
-      - name: Build Server (Windows)
-        if: matrix.goos == 'windows'
-        run: |
-          go build -o tongstock-server-${{ steps.get_tag.outputs.TAG }}-${{ matrix.goos }}-${{ matrix.goarch }}.exe ./cmd/server
-
-      - name: Upload CLI
+      - name: Upload package artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tongstock-cli-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: tongstock-cli-*
-
-      - name: Upload Server
-        uses: actions/upload-artifact@v4
-        with:
-          name: tongstock-server-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: tongstock-server-*
+          name: tongstock-${{ steps.version.outputs.value }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+          if-no-files-found: error
 
   release:
-    name: Release
+    name: Publish draft release
+    if: startsWith(github.ref, 'refs/tags/')
     needs: build
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -118,11 +120,7 @@ jobs:
           pattern: tongstock-*
           merge-multiple: true
 
-      - name: Prepare files
-        run: |
-          ls -la artifacts/
-
-      - name: Create Release
+      - name: Create draft release
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
