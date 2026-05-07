@@ -5,8 +5,10 @@ import {
   ArrowDownOutlined,
   ArrowUpOutlined,
   CloseOutlined,
+  DownloadOutlined,
   EyeOutlined,
   PlusOutlined,
+  SaveOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -142,6 +144,21 @@ function getMaTrend(result: ScreenResult): { label: string; color: string } {
     return { label: '↘ 空头', color: 'green' };
   }
   return { label: '→ 震荡', color: 'default' };
+}
+
+function exportCsv(filename: string, headers: string[], rows: string[][]) {
+  const csv = [headers, ...rows]
+    .map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 function SortHeader({
@@ -340,6 +357,23 @@ export default function Screen() {
   useEffect(() => {
     saveStockListToStorage(stockList);
   }, [stockList, saveStockListToStorage]);
+
+  useEffect(() => {
+    api.watchlist()
+      .then((items) => {
+        if (items.length === 0) return;
+        setStockList((previous) => {
+          const merged = [...previous];
+          for (const item of items) {
+            if (!merged.some((stock) => stock.code === item.code)) {
+              merged.push({ code: item.code, name: item.name });
+            }
+          }
+          return merged;
+        });
+      })
+      .catch(() => {});
+  }, []);
 
   const preloadCodesCache = useCallback(async (): Promise<Record<string, CodesCacheEntry>> => {
     const exchanges = ['sz', 'sh', 'bj'] as const;
@@ -574,6 +608,7 @@ export default function Screen() {
         messageApi.error('股票代码不存在');
       } else {
         setStockList((previous) => [...previous, ...resolved]);
+        resolved.forEach((stock) => api.watchlistAdd(stock.code, stock.name).catch(() => {}));
         messageApi.success(resolved.length === 1 ? `已添加 ${resolved[0].name}` : `已添加 ${resolved.length} 只股票`);
       }
     } catch {
@@ -619,7 +654,46 @@ export default function Screen() {
     }
 
     setStockList((previous) => [...previous, ...newStocks]);
+    newStocks.forEach((stock) => api.watchlistAdd(stock.code, stock.name).catch(() => {}));
     messageApi.success(`已添加 ${newStocks.length} 只股票`);
+  };
+
+  const exportScreenResults = () => {
+    exportCsv(
+      `tongstock-screen-${new Date().toISOString().slice(0, 10)}.csv`,
+      ['代码', '名称', '收盘', '涨跌幅', 'MA趋势', 'DIF', 'K', 'J', '信号'],
+      sortedResults.map((result) => {
+        const maTrend = getMaTrend(result);
+        return [
+          result.code,
+          result.name || '',
+          String(result.last?.Close ?? ''),
+          formatPercent(getChangePct(result)),
+          maTrend.label,
+          getLastValue(result.macd?.DIF).toFixed(4),
+          getLastValue(result.kdj?.K).toFixed(2),
+          getLastValue(result.kdj?.J).toFixed(2),
+          (result.signals || []).map((signal) => `${signal.Indicator}${signal.Type}`).join(';'),
+        ];
+      }),
+    );
+  };
+
+  const saveScreenResults = async () => {
+    if (sortedResults.length === 0) return;
+    try {
+      await api.saveScreenResults(sortedResults.map((item) => ({ code: item.code, name: item.name })));
+      setStockList((previous) => {
+        const merged = [...previous];
+        for (const item of sortedResults) {
+          if (!merged.some((stock) => stock.code === item.code)) merged.push({ code: item.code, name: item.name });
+        }
+        return merged;
+      });
+      messageApi.success(`已保存 ${sortedResults.length} 只命中股票到自选股`);
+    } catch (error) {
+      messageApi.error(error instanceof Error ? error.message : '保存失败');
+    }
   };
 
   return (
@@ -674,10 +748,11 @@ export default function Screen() {
                                 type="text"
                                 danger
                                 icon={<CloseOutlined />}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setStockList((previous) => previous.filter((_, itemIndex) => itemIndex !== index));
-                                }}
+								  onClick={(event) => {
+								    event.stopPropagation();
+								    api.watchlistDelete(stock.code).catch(() => {});
+								    setStockList((previous) => previous.filter((_, itemIndex) => itemIndex !== index));
+								  }}
                               />,
                             ]}
                           >
@@ -757,26 +832,34 @@ export default function Screen() {
 
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
             <Card>
-              <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                <Flex justify="space-between" align="center" wrap="wrap" gap={12}>
-                  <Space wrap>
+					<Space direction="vertical" size={16} style={{ width: '100%' }}>
+						<Flex justify="space-between" align="center" wrap="wrap" gap={12}>
+						  <Space wrap>
                     <Text type="secondary">周期</Text>
                     <Segmented
                       value={ktype}
                       onChange={(value) => setKtype(String(value))}
                       options={KTYPE_OPTIONS}
                     />
-                  </Space>
-                  <Button
-                    type="primary"
-                    icon={<SearchOutlined />}
-                    loading={loading}
-                    onClick={() => void doScreen()}
-                    disabled={!resolvedCodes.trim()}
-                  >
-                    开始筛选
-                  </Button>
-                </Flex>
+						  </Space>
+						  <Space wrap>
+						    <Button icon={<DownloadOutlined />} onClick={exportScreenResults} disabled={sortedResults.length === 0}>
+						      导出CSV
+						    </Button>
+						    <Button icon={<SaveOutlined />} onClick={() => void saveScreenResults()} disabled={sortedResults.length === 0}>
+						      保存结果
+						    </Button>
+						    <Button
+						      type="primary"
+						      icon={<SearchOutlined />}
+						      loading={loading}
+						      onClick={() => void doScreen()}
+						      disabled={!resolvedCodes.trim()}
+						    >
+						      开始筛选
+						    </Button>
+						  </Space>
+						</Flex>
 
                 <div>
                   <Text type="secondary">信号过滤</Text>
@@ -884,11 +967,13 @@ export default function Screen() {
                         icon={inWatchlist ? <CloseOutlined /> : <PlusOutlined />}
                         onClick={(event) => {
                           event.stopPropagation();
-                          if (inWatchlist) {
-                            setStockList((previous) => previous.filter((item) => item.code !== stock.code));
-                            messageApi.success(`已移除 ${stock.name}`);
-                          } else {
-                            setStockList((previous) => [...previous, { code: stock.code, name: stock.name }]);
+								  if (inWatchlist) {
+								    api.watchlistDelete(stock.code).catch(() => {});
+								    setStockList((previous) => previous.filter((item) => item.code !== stock.code));
+								    messageApi.success(`已移除 ${stock.name}`);
+								  } else {
+								    api.watchlistAdd(stock.code, stock.name).catch(() => {});
+								    setStockList((previous) => [...previous, { code: stock.code, name: stock.name }]);
                             messageApi.success(`已添加 ${stock.name}`);
                           }
                         }}

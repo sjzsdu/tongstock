@@ -488,6 +488,9 @@ func main() {
 	r.GET("/api/history", handleHistoryGet)
 	r.POST("/api/history", handleHistoryPost)
 	r.DELETE("/api/history/:code", handleHistoryDelete)
+	r.GET("/api/watchlist", handleHistoryGet)
+	r.POST("/api/watchlist", handleHistoryPost)
+	r.DELETE("/api/watchlist/:code", handleHistoryDelete)
 
 	r.GET("/api/settings/indicator", handleIndicatorSettingsGet)
 	r.PUT("/api/settings/indicator", handleIndicatorSettingsPut)

@@ -218,6 +218,42 @@ tongstock-cli indicator -c <code> -t 60m    # 60-minute
 tongstock-cli indicator -c <code> -t week   # Weekly
 ```
 
+## Workflow 9: Natural-Language Stock Screening (自然语言选股)
+
+Use this workflow when the user describes conditions in plain Chinese or English, e.g. “找最近20日放量突破且 MACD 金叉的半导体股票”, “筛选自选股里超卖反弹的票”, or “找概念板块里多头排列的股票”. Translate the request into a concrete stock universe, timeframe, signal filters, and optional post-filters.
+
+```bash
+# 1. Resolve the universe
+# Optional: inspect block files and constituents when the user mentions industry/concept/theme.
+tongstock-cli block -f block_fg.dat
+tongstock-cli block -f block_gn.dat
+
+# 2. Run signal screening for candidate codes through the HTTP API when server is available.
+# codes should be comma-separated, type can be day/week/60m/30m/15m.
+curl -s "http://localhost:8080/api/screen?codes=<codes>&type=day" | jq .
+
+# 3. For each shortlisted stock, collect evidence.
+curl -s "http://localhost:8080/api/indicator?code=<code>&type=day&days=60" | jq .
+curl -s "http://localhost:8080/api/signal-analysis?code=<code>&type=day" | jq .
+curl -s "http://localhost:8080/api/finance?code=<code>" | jq .
+```
+
+**Translation rules:**
+- “金叉 / golden cross” → signal contains `金叉`.
+- “死叉 / death cross” → signal contains `死叉`.
+- “超卖 / oversold” → signal contains `超卖`.
+- “超买 / overbought” → signal contains `超买`.
+- “多头排列 / uptrend alignment” → signal contains `多头排列`.
+- “突破 / breakout” → combine latest close, MA trend, BOLL upper/lower, and volume expansion if available.
+- “最近 N 日” → request indicator with `days=N` and only keep signals whose dates fall inside the window.
+- “半导体/新能源/银行等板块” → use `block_gn.dat` for concepts first, then `block_fg.dat` for industries.
+
+**Answer format:**
+1. State the interpreted conditions and stock universe.
+2. Return a ranked table: code, name, latest price/change, matched signals, signal date, strength, 5/10/20-day historical outcome if available.
+3. Explain why each stock matched and list missing/uncertain data.
+4. Include risk notes: data source is TDX, signals are not investment advice.
+
 **Supported Indicators:**
 - **MA**: 5, 10, 20, 60, 120 day moving averages
 - **MACD**: DIF, DEA, Histogram (default: 12/26/9)

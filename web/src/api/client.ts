@@ -136,6 +136,23 @@ export const api = {
       method: 'DELETE',
     }),
 
+  watchlist: () =>
+    fetchJSON<{ data: HistoryStock[] }>('/api/watchlist').then(r => r.data),
+
+  watchlistAdd: (code: string, name?: string) =>
+    fetchJSON<{ message: string }>('/api/watchlist', {
+      method: 'POST',
+      body: JSON.stringify({ code, name }),
+    }),
+
+  watchlistDelete: (code: string) =>
+    fetchJSON<{ message: string }>(`/api/watchlist/${code}`, {
+      method: 'DELETE',
+    }),
+
+  saveScreenResults: (results: { code: string; name?: string }[]) =>
+    Promise.all(results.map((item) => api.watchlistAdd(item.code, item.name))),
+
   indicatorSettings: () =>
     fetchJSON<IndicatorConfig>('/api/settings/indicator'),
 
