@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useState } from 'react';
 import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { BarChartOutlined, DashboardOutlined, SearchOutlined, SettingOutlined, StockOutlined } from '@ant-design/icons';
 import { Avatar, Breadcrumb, Layout, Menu, Skeleton, Space, Typography } from 'antd';
@@ -40,6 +40,7 @@ function RouteFallback() {
 
 function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
+  const [collapsed, setCollapsed] = useState(false);
   const selectedKey = location.pathname.startsWith('/stock')
     ? '/stock/choose'
     : location.pathname.startsWith('/screen')
@@ -59,16 +60,26 @@ function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <Layout>
-      <Sider width={240} theme="dark" style={{ borderRight: '1px solid #1f2937' }}>
-        <div style={{ padding: 20, borderBottom: '1px solid #1f2937' }}>
+      <Sider
+        width={240}
+        collapsedWidth={72}
+        collapsible
+        collapsed={collapsed}
+        onCollapse={setCollapsed}
+        theme="dark"
+        style={{ borderRight: '1px solid #1f2937' }}
+      >
+        <div style={{ padding: collapsed ? '20px 12px' : 20, borderBottom: '1px solid #1f2937' }}>
           <Space align="center" size={12}>
             <Avatar shape="square" icon={<StockOutlined />} style={{ backgroundColor: '#1677ff' }} />
-            <div>
-              <Typography.Title level={4} style={{ margin: 0, color: '#fff' }}>
-                TongStock
-              </Typography.Title>
-              <Typography.Text type="secondary">A 股分析工作台</Typography.Text>
-            </div>
+            {!collapsed && (
+              <div>
+                <Typography.Title level={4} style={{ margin: 0, color: '#fff' }}>
+                  TongStock
+                </Typography.Title>
+                <Typography.Text type="secondary">A 股分析工作台</Typography.Text>
+              </div>
+            )}
           </Space>
         </div>
         <Menu
