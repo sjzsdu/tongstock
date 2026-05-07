@@ -484,6 +484,7 @@ func main() {
 	r.GET("/api/indicator", handleIndicator)
 	r.GET("/api/screen", handleScreen)
 	r.GET("/api/signal-analysis", handleSignalAnalysis)
+	r.POST("/api/sync/daily", handleSyncDaily)
 
 	r.GET("/api/history", handleHistoryGet)
 	r.POST("/api/history", handleHistoryPost)
@@ -1719,6 +1720,52 @@ func handleSignalAnalysis(c *gin.Context) {
 		"outcomes": outcomes,
 		"summary":  sumList,
 	})
+}
+
+type syncDailyRequest struct {
+	Codes       []string `json:"codes"`
+	Mode        string   `json:"mode"`
+	Concurrency int      `json:"concurrency"`
+}
+
+func handleSyncDaily(c *gin.Context) {
+	var req syncDailyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	codes := normalizeCodeList(req.Codes)
+	if len(codes) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 codes"})
+		return
+	}
+	mode := tdx.SyncMode(req.Mode)
+	if mode == "" {
+		mode = tdx.SyncModeAuto
+	}
+	s, err := getService()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("初始化服务失败: %v", err)})
+		return
+	}
+	result := s.SyncDailyKlines(codes, mode, req.Concurrency)
+	c.JSON(http.StatusOK, result)
+}
+
+func normalizeCodeList(codes []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, raw := range codes {
+		for _, part := range strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == ' ' || r == '\n' || r == '\t' }) {
+			code := strings.TrimSpace(part)
+			if code == "" || seen[code] {
+				continue
+			}
+			seen[code] = true
+			out = append(out, code)
+		}
+	}
+	return out
 }
 
 func prevDate(dateStr string) string {

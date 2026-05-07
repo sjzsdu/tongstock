@@ -275,6 +275,33 @@ export interface HistoryStock {
   analyzed_at: string;
 }
 
+export interface KlineSyncState {
+  code: string;
+  ktype: number;
+  first_date?: string;
+  last_date?: string;
+  row_count: number;
+  last_sync_at: string;
+  status: string;
+  error?: string;
+}
+
+export interface KlineSyncResult {
+  code: string;
+  mode: string;
+  status: string;
+  count: number;
+  state?: KlineSyncState;
+  error?: string;
+}
+
+export interface KlineBatchSyncResult {
+  total: number;
+  success: number;
+  failed: number;
+  results: KlineSyncResult[];
+}
+
 export interface IndicatorParams {
   ma: number[];
   macd: { fast: number; slow: number; signal: number };

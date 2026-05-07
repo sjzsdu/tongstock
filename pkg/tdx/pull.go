@@ -15,6 +15,17 @@ type KlineStore struct {
 	loc *time.Location
 }
 
+type KlineSyncState struct {
+	Code       string    `json:"code"`
+	KType      uint8     `json:"ktype"`
+	FirstDate  string    `json:"first_date,omitempty"`
+	LastDate   string    `json:"last_date,omitempty"`
+	RowCount   int       `json:"row_count"`
+	LastSyncAt time.Time `json:"last_sync_at"`
+	Status     string    `json:"status"`
+	Error      string    `json:"error,omitempty"`
+}
+
 var (
 	klineStore     *KlineStore
 	klineStoreOnce sync.Once
@@ -36,7 +47,7 @@ func GetKlineStore(dbPath string) (*KlineStore, error) {
 
 func (s *KlineStore) init() error {
 	_, err := s.db.Exec(`
-		CREATE TABLE IF NOT EXISTS kline (
+			CREATE TABLE IF NOT EXISTS kline (
 			code TEXT,
 			ktype INTEGER,
 			date TEXT,
@@ -48,9 +59,20 @@ func (s *KlineStore) init() error {
 			amount REAL,
 			PRIMARY KEY (code, ktype, date)
 		);
-		CREATE INDEX IF NOT EXISTS idx_code_ktype ON kline(code, ktype);
-		CREATE INDEX IF NOT EXISTS idx_date ON kline(date);
-	`)
+			CREATE INDEX IF NOT EXISTS idx_code_ktype ON kline(code, ktype);
+			CREATE INDEX IF NOT EXISTS idx_date ON kline(date);
+			CREATE TABLE IF NOT EXISTS kline_sync_state (
+				code TEXT,
+				ktype INTEGER,
+				first_date TEXT NOT NULL DEFAULT '',
+				last_date TEXT NOT NULL DEFAULT '',
+				row_count INTEGER NOT NULL DEFAULT 0,
+				last_sync_at INTEGER NOT NULL DEFAULT 0,
+				status TEXT NOT NULL DEFAULT '',
+				error TEXT NOT NULL DEFAULT '',
+				PRIMARY KEY (code, ktype)
+			);
+		`)
 	return err
 }
 
@@ -133,6 +155,47 @@ func (s *KlineStore) GetLatestDate(code string, ktype uint8) (string, error) {
 		code, ktype,
 	).Scan(&date)
 	return date, err
+}
+
+func (s *KlineStore) UpdateSyncState(code string, ktype uint8, status, errMsg string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var firstDate, lastDate string
+	var rowCount int
+	_ = s.db.QueryRow(`SELECT COALESCE(MIN(date), ''), COALESCE(MAX(date), ''), COUNT(*) FROM kline WHERE code = ? AND ktype = ?`, code, ktype).
+		Scan(&firstDate, &lastDate, &rowCount)
+	_, err := s.db.Exec(`
+		INSERT INTO kline_sync_state (code, ktype, first_date, last_date, row_count, last_sync_at, status, error)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(code, ktype) DO UPDATE SET
+			first_date = excluded.first_date,
+			last_date = excluded.last_date,
+			row_count = excluded.row_count,
+			last_sync_at = excluded.last_sync_at,
+			status = excluded.status,
+			error = excluded.error
+	`, code, ktype, firstDate, lastDate, rowCount, time.Now().Unix(), status, errMsg)
+	return err
+}
+
+func (s *KlineStore) GetSyncState(code string, ktype uint8) (*KlineSyncState, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var state KlineSyncState
+	var lastSyncAt int64
+	err := s.db.QueryRow(`
+		SELECT code, ktype, first_date, last_date, row_count, last_sync_at, status, error
+		FROM kline_sync_state WHERE code = ? AND ktype = ?
+	`, code, ktype).Scan(&state.Code, &state.KType, &state.FirstDate, &state.LastDate, &state.RowCount, &lastSyncAt, &state.Status, &state.Error)
+	if err != nil {
+		return nil, err
+	}
+	if lastSyncAt > 0 {
+		state.LastSyncAt = time.Unix(lastSyncAt, 0)
+	}
+	return &state, nil
 }
 
 type PullKlineOption struct {

@@ -3,9 +3,35 @@ package tdx
 import (
 	"database/sql"
 	"errors"
+	"fmt"
+	"sync"
 
 	protocol "github.com/sjzsdu/tongstock/pkg/tdx/protocol"
 )
+
+type SyncMode string
+
+const (
+	SyncModeAuto        SyncMode = "auto"
+	SyncModeFull        SyncMode = "full"
+	SyncModeIncremental SyncMode = "incremental"
+)
+
+type KlineSyncResult struct {
+	Code   string          `json:"code"`
+	Mode   SyncMode        `json:"mode"`
+	Status string          `json:"status"`
+	Count  int             `json:"count"`
+	State  *KlineSyncState `json:"state,omitempty"`
+	Error  string          `json:"error,omitempty"`
+}
+
+type KlineBatchSyncResult struct {
+	Total   int               `json:"total"`
+	Success int               `json:"success"`
+	Failed  int               `json:"failed"`
+	Results []KlineSyncResult `json:"results"`
+}
 
 // Service wraps Client + local stores for cached data access.
 // For data that benefits from local caching (codes, klines, workdays),
@@ -236,6 +262,73 @@ func (s *Service) FetchKlineAll(code string, ktype uint8) ([]*protocol.Kline, er
 	}
 
 	return s.fetchIncrementalKline(code, ktype, latest)
+}
+
+func (s *Service) SyncDailyKline(code string, mode SyncMode) KlineSyncResult {
+	if mode == "" {
+		mode = SyncModeAuto
+	}
+	ktype := ParseKlineType("day")
+	result := KlineSyncResult{Code: code, Mode: mode, Status: "ok"}
+
+	var klines []*protocol.Kline
+	var err error
+	switch mode {
+	case SyncModeFull:
+		klines, err = s.fetchAndSaveKlineAll(code, ktype)
+	case SyncModeIncremental:
+		latest, latestErr := s.klines.GetLatestDate(code, ktype)
+		if latestErr == sql.ErrNoRows || latest == "" {
+			klines, err = s.fetchAndSaveKlineAll(code, ktype)
+		} else if latestErr != nil {
+			err = latestErr
+		} else {
+			klines, err = s.fetchIncrementalKline(code, ktype, latest)
+		}
+	case SyncModeAuto:
+		klines, err = s.FetchKlineAll(code, ktype)
+	default:
+		err = fmt.Errorf("unsupported sync mode: %s", mode)
+	}
+
+	if err != nil {
+		result.Status = "failed"
+		result.Error = err.Error()
+		_ = s.klines.UpdateSyncState(code, ktype, result.Status, result.Error)
+		result.State, _ = s.klines.GetSyncState(code, ktype)
+		return result
+	}
+	result.Count = len(klines)
+	_ = s.klines.UpdateSyncState(code, ktype, result.Status, "")
+	result.State, _ = s.klines.GetSyncState(code, ktype)
+	return result
+}
+
+func (s *Service) SyncDailyKlines(codes []string, mode SyncMode, concurrency int) KlineBatchSyncResult {
+	if concurrency <= 0 {
+		concurrency = 3
+	}
+	out := KlineBatchSyncResult{Total: len(codes), Results: make([]KlineSyncResult, len(codes))}
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+	for i, code := range codes {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(idx int, c string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			out.Results[idx] = s.SyncDailyKline(c, mode)
+		}(i, code)
+	}
+	wg.Wait()
+	for _, r := range out.Results {
+		if r.Status == "ok" {
+			out.Success++
+		} else {
+			out.Failed++
+		}
+	}
+	return out
 }
 
 func (s *Service) fetchAndSaveKlineAll(code string, ktype uint8) ([]*protocol.Kline, error) {

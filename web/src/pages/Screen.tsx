@@ -10,6 +10,7 @@ import {
   PlusOutlined,
   SaveOutlined,
   SearchOutlined,
+  SyncOutlined,
 } from '@ant-design/icons';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
@@ -341,6 +342,7 @@ export default function Screen() {
   const [hasScreenLoaded, setHasScreenLoaded] = useState(false);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
   const [error, setError] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('code');
   const [sortAsc, setSortAsc] = useState(true);
@@ -696,6 +698,24 @@ export default function Screen() {
     }
   };
 
+  const syncWatchlistDaily = async () => {
+    const codes = stockList.map((stock) => stock.code);
+    if (codes.length === 0) return;
+    setSyncLoading(true);
+    try {
+      const result = await api.syncDaily(codes, 'auto', 3);
+      if (result.failed > 0) {
+        messageApi.warning(`同步完成：成功 ${result.success} 只，失败 ${result.failed} 只`);
+      } else {
+        messageApi.success(`同步完成：${result.success} 只自选股日K已更新`);
+      }
+    } catch (error) {
+      messageApi.error(error instanceof Error ? error.message : '同步失败');
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
   return (
     <>
       {contextHolder}
@@ -730,7 +750,18 @@ export default function Screen() {
                     placeholder="输入股票代码，支持逗号/空格分隔"
                     suffix={inputLoading ? <Spin size="small" /> : null}
                   />
-                  <Text type="secondary">共 {stockList.length} 只股票</Text>
+                  <Flex justify="space-between" align="center" gap={8}>
+                    <Text type="secondary">共 {stockList.length} 只股票</Text>
+                    <Button
+                      size="small"
+                      icon={<SyncOutlined spin={syncLoading} />}
+                      loading={syncLoading}
+                      disabled={stockList.length === 0}
+                      onClick={() => void syncWatchlistDaily()}
+                    >
+                      同步日K
+                    </Button>
+                  </Flex>
                   <div style={{ maxHeight: 420, overflow: 'auto' }}>
                     {stockList.length === 0 ? (
                       <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="输入股票代码后回车添加" />

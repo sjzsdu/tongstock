@@ -8,6 +8,7 @@ import type {
   IndicatorConfig,
   FinanceTrendsResponse,
   FinanceMetricsResponse,
+  KlineBatchSyncResult,
 } from '../types/api';
 
 const BASE = '';
@@ -152,6 +153,12 @@ export const api = {
 
   saveScreenResults: (results: { code: string; name?: string }[]) =>
     Promise.all(results.map((item) => api.watchlistAdd(item.code, item.name))),
+
+  syncDaily: (codes: string[], mode = 'auto', concurrency = 3) =>
+    fetchJSON<KlineBatchSyncResult>('/api/sync/daily', {
+      method: 'POST',
+      body: JSON.stringify({ codes, mode, concurrency }),
+    }),
 
   indicatorSettings: () =>
     fetchJSON<IndicatorConfig>('/api/settings/indicator'),
