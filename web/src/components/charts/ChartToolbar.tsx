@@ -1,4 +1,4 @@
-import { Radio, Segmented, Space, Typography } from 'antd';
+import { Radio, Space, Typography } from 'antd';
 
 interface Props {
   ktype: string;
@@ -48,7 +48,14 @@ export default function ChartToolbar({
           <Typography.Text type="secondary" style={labelStyle}>
             K线
           </Typography.Text>
-          <Segmented size="small" options={KTYPES} value={ktype} onChange={(value) => onKtypeChange(String(value))} />
+          <Radio.Group
+            size="small"
+            optionType="button"
+            buttonStyle="solid"
+            options={KTYPES}
+            value={ktype}
+            onChange={(event) => onKtypeChange(event.target.value)}
+          />
         </Space>
         <Space size={8} align="center" wrap={false}>
           <Typography.Text type="secondary" style={labelStyle}>
