@@ -22,6 +22,7 @@ import {
   Input,
   List,
   Modal,
+  Radio,
   Segmented,
   Space,
   Spin,
@@ -867,9 +868,12 @@ export default function Screen() {
 						<Flex justify="space-between" align="center" wrap="wrap" gap={12}>
 						  <Space wrap>
                     <Text type="secondary">周期</Text>
-                    <Segmented
+                    <Radio.Group
+                      size="small"
+                      optionType="button"
+                      buttonStyle="solid"
                       value={ktype}
-                      onChange={(value) => setKtype(String(value))}
+                      onChange={(event) => setKtype(event.target.value)}
                       options={KTYPE_OPTIONS}
                     />
 						  </Space>
