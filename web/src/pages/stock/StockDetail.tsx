@@ -229,13 +229,14 @@ export default function StockDetail() {
   const [minuteDate, setMinuteDate] = useState<string>('');
   const [analysis, setAnalysis] = useState<SignalAnalysisType | null>(null);
   const [highlightedIdx, setHighlightedIdx] = useState(-1);
-  const [fullscreen, setFullscreen] = useState(false);
-  const tradeRowRefs = useRef<Record<number, HTMLDivElement | null>>({});
-  const amountChartRef = useRef<FinanceTrendChartHandle | null>(null);
-  const marginChartRef = useRef<FinanceTrendChartHandle | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [detailStatus, setDetailStatus] = useState<DetailStatus>('loading');
-  const [detailError, setDetailError] = useState('');
+	const [fullscreen, setFullscreen] = useState(false);
+	const tradeRowRefs = useRef<Record<number, HTMLDivElement | null>>({});
+	const amountChartRef = useRef<FinanceTrendChartHandle | null>(null);
+	const marginChartRef = useRef<FinanceTrendChartHandle | null>(null);
+	const [loading, setLoading] = useState(false);
+	const [chartLoading, setChartLoading] = useState(false);
+	const [detailStatus, setDetailStatus] = useState<DetailStatus>('loading');
+	const [detailError, setDetailError] = useState('');
 
   useEffect(() => {
     if (!paramCode) {
@@ -269,79 +270,102 @@ export default function StockDetail() {
     }
   };
 
-  useEffect(() => {
-    if (!code) return;
-    let cancelled = false;
-    setLoading(true);
-    setDetailStatus('loading');
-    setDetailError('');
-    setQuote(null);
-    setIndicator(null);
-    setKlines([]);
-    setAnalysis(null);
-    setFinance(null);
-    setFinanceTrends(null);
-    setCompanyCats([]);
+	useEffect(() => {
+		if (!code) return;
+		let cancelled = false;
+		setLoading(true);
+		setDetailStatus('loading');
+		setDetailError('');
+		setQuote(null);
+		setFinance(null);
+		setFinanceTrends(null);
+		setCompanyCats([]);
     setCompanyContent('');
     setSelectedCat('');
     setDividends([]);
     setMinuteData([]);
     setMinuteDate('');
 
-    const loadCore = async () => {
-      const [quoteResult, indicatorResult, analysisResult] = await Promise.allSettled([
-        api.quote(code),
-        api.indicator(code, ktype),
-        api.signalAnalysis(code, ktype),
-      ]);
+		const loadQuote = async () => {
+			try {
+				const quoteResult = await api.quote(code);
+				if (cancelled) return;
+				setQuote(quoteResult);
+				api.historyAdd(code, quoteResult.Name).catch(() => {});
+				setLoading(false);
+			} catch (error) {
+				if (cancelled) return;
+				setDetailStatus('not_found');
+				setDetailError(getDetailErrorMessage(error, '未找到匹配股票或行情数据'));
+				setLoading(false);
+				return;
+			}
+		};
 
-      if (cancelled) return;
+		loadQuote().catch((error) => {
+			if (cancelled) return;
+			setDetailStatus(classifyDetailStatus(error));
+			setDetailError(getDetailErrorMessage(error, '加载股票详情失败'));
+			setLoading(false);
+		});
 
-      if (quoteResult.status === 'rejected') {
-        setDetailStatus('not_found');
-        setDetailError(getDetailErrorMessage(quoteResult.reason, '未找到匹配股票或行情数据'));
-        setLoading(false);
-        return;
-      }
+		return () => {
+			cancelled = true;
+		};
+	}, [code]);
 
-      setQuote(quoteResult.value);
+	useEffect(() => {
+		if (!code) return;
+		let cancelled = false;
+		setChartLoading(true);
+		setIndicator(null);
+		setKlines([]);
+		setAnalysis(null);
 
-      if (indicatorResult.status === 'rejected') {
-        setDetailStatus(classifyDetailStatus(indicatorResult.reason));
-        setDetailError(getDetailErrorMessage(indicatorResult.reason, '该股票暂无可展示的数据'));
-        setLoading(false);
-        return;
-      }
+		const loadChart = async () => {
+			const [indicatorResult, analysisResult] = await Promise.allSettled([
+				api.indicator(code, ktype),
+				api.signalAnalysis(code, ktype),
+			]);
+
+			if (cancelled) return;
+
+			if (indicatorResult.status === 'rejected') {
+				setDetailStatus(classifyDetailStatus(indicatorResult.reason));
+				setDetailError(getDetailErrorMessage(indicatorResult.reason, '该股票暂无可展示的数据'));
+				setChartLoading(false);
+				return;
+			}
 
       const indicatorData = indicatorResult.value;
       const nextKlines = indicatorData?.klines || [];
       setIndicator(indicatorData);
       setKlines(nextKlines);
 
-      if (nextKlines.length === 0) {
-        setDetailStatus('no_data');
-        setDetailError('该股票暂无可展示的K线数据');
-        setLoading(false);
-        return;
-      }
+			if (nextKlines.length === 0) {
+				setDetailStatus('no_data');
+				setDetailError('该股票暂无可展示的K线数据');
+				setChartLoading(false);
+				return;
+			}
 
-      if (analysisResult.status === 'fulfilled') setAnalysis(analysisResult.value);
-      setDetailStatus('ready');
-      api.historyAdd(code, quoteResult.value.Name).catch(() => {});
-      setLoading(false);
-    };
+			if (analysisResult.status === 'fulfilled') setAnalysis(analysisResult.value);
+			setDetailStatus('ready');
+			setDetailError('');
+			setChartLoading(false);
+		};
 
-    loadCore().catch((error) => {
-      if (cancelled) return;
-      setDetailStatus(classifyDetailStatus(error));
-      setDetailError(getDetailErrorMessage(error, '加载股票详情失败'));
-      setLoading(false);
-    });
+		loadChart().catch((error) => {
+			if (cancelled) return;
+			setDetailStatus(classifyDetailStatus(error));
+			setDetailError(getDetailErrorMessage(error, '加载K线失败'));
+			setChartLoading(false);
+		});
 
-    return () => {
-      cancelled = true;
-    };
-  }, [code, ktype]);
+		return () => {
+			cancelled = true;
+		};
+	}, [code, ktype]);
 
   useEffect(() => {
     if (!code || detailStatus !== 'ready') return;
@@ -621,12 +645,16 @@ export default function StockDetail() {
           />
         )}
 
-        {showTabs && tab === 'chart' && klines.length > 0 && (
-          <Space direction="vertical" size={16} style={{ display: 'flex' }}>
-            <Card><ChartToolbar ktype={ktype} onKtypeChange={setKtype} mainOverlay={mainOverlay} onMainOverlayChange={setMainOverlay} subPanel={subPanel} onSubPanelChange={setSubPanel} /></Card>
-            <Card bodyStyle={{ padding: 0 }}><CandlestickChart klines={klines} indicator={indicator} mainOverlay={mainOverlay} subPanel={subPanel} /></Card>
-          </Space>
-        )}
+		{showTabs && tab === 'chart' && (klines.length > 0 || chartLoading) && (
+		  <Space direction="vertical" size={16} style={{ display: 'flex' }}>
+		    <Card><ChartToolbar ktype={ktype} onKtypeChange={setKtype} mainOverlay={mainOverlay} onMainOverlayChange={setMainOverlay} subPanel={subPanel} onSubPanelChange={setSubPanel} /></Card>
+		    {chartLoading ? (
+		      <Card><Flex justify="center" align="center" style={{ minHeight: 470 }}><Spin size="large" /></Flex></Card>
+		    ) : (
+		      <Card bodyStyle={{ padding: 0 }}><CandlestickChart klines={klines} indicator={indicator} mainOverlay={mainOverlay} subPanel={subPanel} /></Card>
+		    )}
+		  </Space>
+		)}
 
         {showTabs && tab === 'signal' && (
           <Space direction="vertical" size={16} style={{ display: 'flex' }}>
