@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowRightOutlined,
   ClockCircleOutlined,
+  DeleteOutlined,
   RiseOutlined,
   SearchOutlined,
   StockOutlined,
@@ -19,6 +20,7 @@ import {
   Statistic,
   Tag,
   Typography,
+  message,
 } from 'antd';
 import { api } from '../api/client';
 import type { HistoryStock, Quote } from '../types/api';
@@ -106,6 +108,21 @@ export default function Dashboard() {
     }
   };
 
+  const deleteHistoryStock = async (code: string) => {
+    try {
+      await api.historyDelete(code);
+      setHistory((prev) => prev.filter((item) => item.code !== code));
+      setHistoryQuotes((prev) => {
+        const next = { ...prev };
+        delete next[code];
+        return next;
+      });
+      void message.success(`已删除 ${code}`);
+    } catch (error) {
+      void message.error(error instanceof Error ? error.message : '删除失败');
+    }
+  };
+
   return (
     <Space direction="vertical" size={24} style={{ display: 'flex' }}>
       <Card bordered={false} style={{ background: 'linear-gradient(135deg, rgba(22,119,255,0.22), rgba(14,165,233,0.12))' }}>
@@ -189,11 +206,14 @@ export default function Dashboard() {
                   const color = getValueColor(item.change);
                   return (
                     <List.Item
-                      actions={[
-                        <Button key="open" type="link" icon={<ArrowRightOutlined />} onClick={() => navigate(`/stock/${item.code}`)}>
-                          查看
-                        </Button>,
-                      ]}
+									  actions={[
+										<Button key="open" type="link" icon={<ArrowRightOutlined />} onClick={() => navigate(`/stock/${item.code}`)}>
+										  查看
+										</Button>,
+										<Button key="delete" type="link" danger icon={<DeleteOutlined />} onClick={() => void deleteHistoryStock(item.code)}>
+										  删除
+										</Button>,
+									  ]}
                     >
                       <List.Item.Meta
                         avatar={<StockOutlined style={{ fontSize: 18, color: '#1677ff' }} />}
