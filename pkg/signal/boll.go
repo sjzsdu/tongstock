@@ -7,7 +7,8 @@ import (
 
 func detectBOLLSignals(code string, klines []ta.KlineInput, boll *ta.BOLLResult) []Signal {
 	var signals []Signal
-	for i := range klines {
+	n := min(len(klines), len(boll.Upper), len(boll.Lower))
+	for i := 0; i < n; i++ {
 		close := klines[i].Close
 		if close > boll.Upper[i] && boll.Upper[i] > 0 {
 			signals = append(signals, Signal{

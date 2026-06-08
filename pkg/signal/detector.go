@@ -14,10 +14,10 @@ func Detect(code string, klines []ta.KlineInput, result *ta.IndicatorResult, opt
 	// 首先判断当前趋势方向
 	trend := TrendUnknown
 	if result.MA != nil {
-		trend = detectTrend(klines, result.MA)
+		trend = DetectTrend(klines, result.MA)
 	}
 
-	var signals []Signal
+	signals := make([]Signal, 0)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 

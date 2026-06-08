@@ -13,6 +13,9 @@ func detectMACDSignals(code string, klines []ta.KlineInput, macd *ta.MACDResult)
 	}
 
 	crosses := detectLineCross(macd.DIF, macd.DEA)
+	if len(crosses) > len(klines) {
+		crosses = crosses[:len(klines)]
+	}
 	for i, c := range crosses {
 		if c == 0 {
 			continue

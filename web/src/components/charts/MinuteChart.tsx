@@ -8,11 +8,14 @@ interface Props {
   onClickIndex?: (index: number) => void;
 }
 
-function timeToTimestamp(timeStr: string): number {
-  const [h, m] = timeStr.split(':').map(Number);
+function timeToTimestamp(timeStr: string): number | null {
+  const timePart = timeStr.includes(' ') ? timeStr.split(' ').pop()! : timeStr;
+  const [h, m] = timePart.split(':').map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
   const now = new Date();
   now.setHours(h, m, 0, 0);
-  return Math.floor(now.getTime() / 1000);
+  const ts = Math.floor(now.getTime() / 1000);
+  return Number.isFinite(ts) ? ts : null;
 }
 
 function generateAllTradingMinutes(): number[] {
@@ -36,6 +39,19 @@ export default function MinuteChart({ data, lastClose, onClickIndex }: Props) {
 
   useEffect(() => {
     if (!containerRef.current || data.length === 0 || lastClose <= 0) return;
+
+    const dataMap = new Map<number, MinuteItem>();
+    data.forEach((m) => {
+      const ts = timeToTimestamp(m.Time);
+      if (ts !== null && typeof m.Price === 'number' && Number.isFinite(m.Price)) dataMap.set(ts, m);
+    });
+
+    const allTimestamps = generateAllTradingMinutes();
+    const priceData = allTimestamps
+      .filter(ts => dataMap.has(ts))
+      .map(ts => ({ time: ts as Time, value: dataMap.get(ts)!.Price }));
+
+    if (priceData.length === 0) return;
 
     const chart = createChart(containerRef.current, {
       width: containerRef.current.clientWidth,
@@ -77,13 +93,6 @@ export default function MinuteChart({ data, lastClose, onClickIndex }: Props) {
         },
       },
     });
-
-    const allTimestamps = generateAllTradingMinutes();
-    const dataMap = new Map(data.map(m => [timeToTimestamp(m.Time), m]));
-
-    const priceData = allTimestamps
-      .filter(ts => dataMap.has(ts))
-      .map(ts => ({ time: ts as Time, value: dataMap.get(ts)!.Price }));
 
     const priceSeries = chart.addSeries(LineSeries, {
       color: '#3b82f6',

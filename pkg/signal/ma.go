@@ -16,6 +16,9 @@ func detectMASignals(code string, klines []ta.KlineInput, ma map[string][]float6
 			continue
 		}
 		crosses := detectLineCross(line1, line2)
+		if len(crosses) > len(klines) {
+			crosses = crosses[:len(klines)]
+		}
 		for j, c := range crosses {
 			if c == 0 {
 				continue
@@ -41,11 +44,11 @@ func detectMASignals(code string, klines []ta.KlineInput, ma map[string][]float6
 		ma20 := maMap["20"]
 		ma60 := maMap["60"]
 
-		if ma5 == nil || ma10 == nil || ma20 == nil {
+		idx := min(len(klines), len(ma5), len(ma10), len(ma20)) - 1
+		if ma5 == nil || ma10 == nil || ma20 == nil || idx < 0 {
 			return
 		}
 
-		idx := len(ma5) - 1
 		if ma5[idx] == 0 || ma10[idx] == 0 || ma20[idx] == 0 {
 			return
 		}
@@ -79,6 +82,9 @@ func detectMASignals(code string, klines []ta.KlineInput, ma map[string][]float6
 
 	isBull, isBear, details, strength := makeMA(ma)
 	lastIdx := len(klines) - 1
+	if lastIdx < 0 {
+		return signals
+	}
 
 	if isBull {
 		signals = append(signals, Signal{

@@ -34,6 +34,48 @@ func TestDetect(t *testing.T) {
 	}
 }
 
+func TestDetectWithShortKlinesDoesNotPanic(t *testing.T) {
+	klines := makeKlines([]float64{100})
+	result := ta.Calculate(klines, ta.DefaultConfig())
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("Detect should not panic for short kline data: %v", r)
+		}
+	}()
+
+	signals := Detect("000001", klines, result, nil)
+	if signals == nil {
+		t.Fatal("signals should be an empty slice or populated slice, not nil")
+	}
+}
+
+func TestDetectWithMismatchedIndicatorLengthsDoesNotPanic(t *testing.T) {
+	klines := makeKlines([]float64{100, 101, 102})
+	result := &ta.IndicatorResult{
+		MA: map[string][]float64{
+			"5":  {100},
+			"10": {100, 101, 102, 103},
+			"20": {},
+			"60": {100},
+		},
+		MACD: &ta.MACDResult{DIF: []float64{1, -1, 1, -1}, DEA: []float64{0, 0, 0, 0}, Hist: []float64{1, 1, 1, 1}},
+		KDJ:  &ta.KDJResult{K: []float64{1, -1, 1, -1}, D: []float64{0, 0, 0, 0}, J: []float64{101, -1, 50, 120}},
+		BOLL: &ta.BOLLResult{Upper: []float64{}, Lower: []float64{}},
+		RSI: map[string][]float64{
+			"6": {90, 10, 50, 95},
+		},
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("Detect should not panic for mismatched indicator lengths: %v", r)
+		}
+	}()
+
+	_ = Detect("000001", klines, result, nil)
+}
+
 func TestDetectCross(t *testing.T) {
 	if detectCross(1, -1) != 1 {
 		t.Error("should detect golden cross")

@@ -3,12 +3,16 @@
 
 # Build outputs
 /tongstock
+/bin/
 tongstock-cli
 tongstock-server
-server
+/server
 pkg/web/dist
 tmp
 
 # Web dependencies
 web/node_modules
 web/.vite
+
+# Local AI/config state
+.tt/

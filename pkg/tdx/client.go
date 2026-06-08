@@ -556,7 +556,11 @@ func (c *Client) GetBlockInfoAll(blockFile string) ([]*protocol.BlockItem, error
 	const chunkSize = 0x7530
 	var content []byte
 	for offset := uint32(0); offset < meta.Size; offset += chunkSize {
-		piece, err := c.GetBlockInfo(blockFile, offset, meta.Size)
+		size := uint32(chunkSize)
+		if remaining := meta.Size - offset; remaining < size {
+			size = remaining
+		}
+		piece, err := c.GetBlockInfo(blockFile, offset, size)
 		if err != nil {
 			return nil, err
 		}
@@ -593,6 +597,30 @@ func (c *Client) GetCompanyInfoContent(code, filename string, start, length uint
 		return "", err
 	}
 	return protocol.MCompanyContent.Decode(data)
+}
+
+func (c *Client) GetCompanyInfoContentAll(code, filename string, start, length uint32) (string, error) {
+	if length == 0 {
+		return c.GetCompanyInfoContent(code, filename, start, length)
+	}
+
+	const chunkSize uint32 = 12000
+	var b strings.Builder
+	for offset := uint32(0); offset < length; offset += chunkSize {
+		size := chunkSize
+		if remaining := length - offset; remaining < size {
+			size = remaining
+		}
+		part, err := c.GetCompanyInfoContent(code, filename, start+offset, size)
+		if err != nil {
+			return "", err
+		}
+		if part == "" {
+			break
+		}
+		b.WriteString(part)
+	}
+	return b.String(), nil
 }
 
 func (c *Client) GetCallAuction(code string) (*protocol.CallAuctionResp, error) {

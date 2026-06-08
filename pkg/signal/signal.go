@@ -17,9 +17,9 @@ const (
 	TrendSideways   // 横盘震荡
 )
 
-// detectTrend 判断当前的趋势方向
+// DetectTrend 判断当前的趋势方向
 // 基于均线排列和价格位置来判断
-func detectTrend(klines []ta.KlineInput, ma map[string][]float64) TrendDirection {
+func DetectTrend(klines []ta.KlineInput, ma map[string][]float64) TrendDirection {
 	if len(klines) < 20 || ma["20"] == nil {
 		return TrendUnknown
 	}

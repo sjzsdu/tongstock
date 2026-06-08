@@ -1,6 +1,6 @@
 import { Suspense, lazy, useState } from 'react';
 import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { BarChartOutlined, DashboardOutlined, SearchOutlined, SettingOutlined, StockOutlined } from '@ant-design/icons';
+import { BarChartOutlined, DashboardOutlined, FundOutlined, HeartOutlined, SearchOutlined, SettingOutlined, StockOutlined } from '@ant-design/icons';
 import { Avatar, Breadcrumb, Layout, Menu, Skeleton, Space, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import StockSearchInput from './components/StockSearchInput';
@@ -9,6 +9,8 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 const StockDetail = lazy(() => import('./pages/stock/StockDetail'));
 const StockChoose = lazy(() => import('./pages/stock/StockChoose'));
 const Screen = lazy(() => import('./pages/Screen'));
+const Blocks = lazy(() => import('./pages/Blocks'));
+const Watchlist = lazy(() => import('./pages/Watchlist'));
 const SettingsPage = lazy(() => import('./pages/settings/SettingsPage'));
 
 const { Header, Content, Sider } = Layout;
@@ -45,14 +47,20 @@ function AppLayout({ children }: { children: React.ReactNode }) {
     ? '/stock/choose'
     : location.pathname.startsWith('/screen')
       ? '/screen'
-      : location.pathname.startsWith('/settings')
-        ? '/settings'
-        : '/';
+      : location.pathname.startsWith('/blocks')
+        ? '/blocks'
+        : location.pathname.startsWith('/watchlist')
+          ? '/watchlist'
+          : location.pathname.startsWith('/settings')
+            ? '/settings'
+            : '/';
 
   const menuItems: MenuProps['items'] = [
     { key: '/', icon: <DashboardOutlined />, label: <Link to="/">市场总览</Link> },
+    { key: '/watchlist', icon: <HeartOutlined />, label: <Link to="/watchlist">自选股</Link> },
     { key: '/stock/choose', icon: <BarChartOutlined />, label: <Link to="/stock/choose">个股分析</Link> },
     { key: '/screen', icon: <SearchOutlined />, label: <Link to="/screen">信号筛选</Link> },
+    { key: '/blocks', icon: <FundOutlined />, label: <Link to="/blocks">板块热点</Link> },
     { key: '/settings', icon: <SettingOutlined />, label: <Link to="/settings">配置</Link> },
   ];
 
@@ -119,10 +127,12 @@ export default function App() {
       <AppLayout>
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/watchlist" element={<Watchlist />} />
           <Route path="/stock/choose" element={<StockChoose />} />
           <Route path="/stock/:code" element={<StockDetail />} />
           <Route path="/stock/:code/:tab" element={<StockDetail />} />
           <Route path="/screen" element={<Screen />} />
+          <Route path="/blocks" element={<Blocks />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </AppLayout>
@@ -142,7 +152,9 @@ function buildBreadcrumbs(pathname: string) {
   const labels: Record<string, string> = {
     stock: '个股分析',
     choose: '选择股票',
+    watchlist: '自选股',
     screen: '信号筛选',
+    blocks: '板块热点',
     settings: '配置',
     chart: 'K线+指标',
     signal: '信号',

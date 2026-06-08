@@ -4,9 +4,13 @@ import {
   ArrowRightOutlined,
   ClockCircleOutlined,
   DeleteOutlined,
+  FundOutlined,
+  HeartOutlined,
+  RadarChartOutlined,
   RiseOutlined,
   SearchOutlined,
   StockOutlined,
+  TrophyOutlined,
 } from '@ant-design/icons';
 import {
   Button,
@@ -23,7 +27,7 @@ import {
   message,
 } from 'antd';
 import { api } from '../api/client';
-import type { HistoryStock, Quote } from '../types/api';
+import type { HistoryStock, Quote, WatchlistStock } from '../types/api';
 import StockSearchInput from '../components/StockSearchInput';
 import { formatDateTime } from '../lib/datetime';
 
@@ -52,14 +56,27 @@ function formatSignedPercent(value: number) {
 export default function Dashboard() {
   const navigate = useNavigate();
   const [indices, setIndices] = useState<IndexRow[]>(() => INDICES.map((item) => ({ ...item, last: null, change: 0 })));
+  const [watchlist, setWatchlist] = useState<WatchlistStock[]>([]);
+  const [watchlistQuotes, setWatchlistQuotes] = useState<Record<string, Quote>>({});
   const [history, setHistory] = useState<HistoryStock[]>([]);
   const [historyQuotes, setHistoryQuotes] = useState<Record<string, Quote>>({});
   const [loadingIndices, setLoadingIndices] = useState(true);
+  const [loadingWatchlist, setLoadingWatchlist] = useState(true);
   const [loadingHistory, setLoadingHistory] = useState(true);
 
   useEffect(() => {
     void loadDashboardData();
   }, []);
+
+  const watchlistRows = useMemo(() => watchlist.map((stock) => {
+    const quote = watchlistQuotes[stock.code];
+    const change = quote ? ((quote.Price - quote.LastClose) / quote.LastClose) * 100 : 0;
+    return {
+      ...stock,
+      quote,
+      change,
+    };
+  }), [watchlist, watchlistQuotes]);
 
   const historyRows = useMemo(() => history.map((stock) => {
     const quote = historyQuotes[stock.code];
@@ -73,8 +90,10 @@ export default function Dashboard() {
 
   const loadDashboardData = async () => {
     setLoadingIndices(true);
+    setLoadingWatchlist(true);
     setLoadingHistory(true);
 
+    // 加载指数数据
     const indexResults = await Promise.all(
       INDICES.map(async (idx) => {
         try {
@@ -88,14 +107,30 @@ export default function Dashboard() {
         }
       }),
     );
-
     setIndices(indexResults);
     setLoadingIndices(false);
 
+    // 加载自选股
     try {
-      const saved = await api.history();
-      setHistory(saved);
-      await Promise.all(saved.map(async (stock) => {
+      const savedWatchlist = await api.watchlist();
+      setWatchlist(savedWatchlist);
+      await Promise.all(savedWatchlist.map(async (stock) => {
+        try {
+          const quote = await api.quote(stock.code);
+          setWatchlistQuotes((prev) => ({ ...prev, [stock.code]: quote }));
+        } catch {
+          // ignore single quote failure
+        }
+      }));
+    } finally {
+      setLoadingWatchlist(false);
+    }
+
+    // 加载历史记录
+    try {
+      const savedHistory = await api.history();
+      setHistory(savedHistory);
+      await Promise.all(savedHistory.map(async (stock) => {
         try {
           const quote = await api.quote(stock.code);
           setHistoryQuotes((prev) => ({ ...prev, [stock.code]: quote }));
@@ -105,6 +140,21 @@ export default function Dashboard() {
       }));
     } finally {
       setLoadingHistory(false);
+    }
+  };
+
+  const deleteWatchlistStock = async (code: string) => {
+    try {
+      await api.watchlistDelete(code);
+      setWatchlist((prev) => prev.filter((item) => item.code !== code));
+      setWatchlistQuotes((prev) => {
+        const next = { ...prev };
+        delete next[code];
+        return next;
+      });
+      void message.success(`已从自选移除 ${code}`);
+    } catch (error) {
+      void message.error(error instanceof Error ? error.message : '删除失败');
     }
   };
 
@@ -125,16 +175,17 @@ export default function Dashboard() {
 
   return (
     <Space direction="vertical" size={24} style={{ display: 'flex' }}>
+      {/* 查公司 - 快速搜索入口 */}
       <Card bordered={false} style={{ background: 'linear-gradient(135deg, rgba(22,119,255,0.22), rgba(14,165,233,0.12))' }}>
         <Row gutter={[24, 24]} align="middle">
           <Col xs={24} xl={15}>
             <Space direction="vertical" size={10} style={{ display: 'flex' }}>
               <Tag color="blue" style={{ width: 'fit-content', marginInlineEnd: 0 }}>TongStock 工作台</Tag>
               <Typography.Title level={2} style={{ margin: 0 }}>
-                市场总览
+                轻量投研工作台
               </Typography.Title>
               <Typography.Text type="secondary">
-                查看主要指数表现、最近分析记录与快速入口，作为日常盯盘与个股分析的起点。
+                场景化入口：看市场、找机会、跟自选、查公司、做复盘，快速定位投资机会。
               </Typography.Text>
             </Space>
           </Col>
@@ -143,7 +194,7 @@ export default function Dashboard() {
               <Space direction="vertical" size={16} style={{ display: 'flex' }}>
                 <Space>
                   <SearchOutlined />
-                  <Typography.Text strong>快速分析</Typography.Text>
+                  <Typography.Text strong>查公司 - 快速分析</Typography.Text>
                 </Space>
                 <StockSearchInput
                   limit={10}
@@ -151,7 +202,7 @@ export default function Dashboard() {
                   onSelect={(match) => navigate(`/stock/${match.code}`)}
                 />
                 <Typography.Text type="secondary">
-                  输入股票代码、简称或拼音，直接进入指标分析页面。
+                  输入股票代码、简称或拼音，直接进入个股分析页面。
                 </Typography.Text>
               </Space>
             </Card>
@@ -159,70 +210,123 @@ export default function Dashboard() {
         </Row>
       </Card>
 
-      <Row gutter={[16, 16]}>
-        {indices.map((idx) => {
-          const color = getValueColor(idx.change);
-          return (
-            <Col xs={24} sm={12} lg={6} key={idx.code}>
-              <Card>
-                {loadingIndices && !idx.last ? (
-                  <Skeleton active paragraph={{ rows: 2 }} title={false} />
-                ) : idx.last ? (
-                  <Space direction="vertical" size={8} style={{ display: 'flex' }}>
-                    <Typography.Text type="secondary">{idx.name}</Typography.Text>
-                    <Statistic
-                      value={idx.last.Close}
-                      precision={2}
-                      valueStyle={{ color }}
-                      prefix={<RiseOutlined />}
-                    />
-                    <Tag color={idx.change >= 0 ? 'red' : 'green'} style={{ width: 'fit-content' }}>
-                      {formatSignedPercent(idx.change)}
-                    </Tag>
-                  </Space>
-                ) : (
-                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="数据加载失败" />
-                )}
-              </Card>
-            </Col>
-          );
-        })}
-      </Row>
+      {/* 看市场 - 指数总览 */}
+      <div>
+        <Typography.Title level={4} style={{ marginBottom: 12 }}>
+          <RiseOutlined style={{ marginRight: 8 }} />
+          看市场
+        </Typography.Title>
+        <Row gutter={[16, 16]}>
+          {indices.map((idx) => {
+            const color = getValueColor(idx.change);
+            return (
+              <Col xs={24} sm={12} lg={6} key={idx.code}>
+                <Card hoverable onClick={() => navigate(`/stock/${idx.code}`)}>
+                  {loadingIndices && !idx.last ? (
+                    <Skeleton active paragraph={{ rows: 2 }} title={false} />
+                  ) : idx.last ? (
+                    <Space direction="vertical" size={8} style={{ display: 'flex' }}>
+                      <Typography.Text type="secondary">{idx.name}</Typography.Text>
+                      <Statistic
+                        value={idx.last.Close}
+                        precision={2}
+                        valueStyle={{ color }}
+                        prefix={<RiseOutlined />}
+                      />
+                      <Tag color={idx.change >= 0 ? 'red' : 'green'} style={{ width: 'fit-content' }}>
+                        {formatSignedPercent(idx.change)}
+                      </Tag>
+                    </Space>
+                  ) : (
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="数据加载失败" />
+                  )}
+                </Card>
+              </Col>
+            );
+          })}
+        </Row>
+      </div>
 
+      {/* 场景化入口区域 */}
       <Row gutter={[16, 16]}>
-        <Col xs={24} xl={15}>
+        {/* 找机会 */}
+        <Col xs={24} lg={8}>
           <Card
-            title={<Space><ClockCircleOutlined /><span>历史个股</span></Space>}
-            extra={<Button type="link" onClick={() => navigate('/stock/choose')}>新增分析</Button>}
+            title={
+              <Space>
+                <RadarChartOutlined />
+                <span>找机会</span>
+              </Space>
+            }
+            extra={<Button type="link" onClick={() => navigate('/screen')}>信号筛选</Button>}
           >
-            {loadingHistory ? (
-              <Skeleton active paragraph={{ rows: 6 }} title={false} />
-            ) : historyRows.length === 0 ? (
-              <Empty description="暂无历史个股" />
+            <Space direction="vertical" size={12} style={{ display: 'flex' }}>
+              <Card
+                size="small"
+                hoverable
+                style={{ cursor: 'pointer' }}
+                onClick={() => navigate('/screen')}
+              >
+                <Space>
+                  <TrophyOutlined style={{ color: '#1677ff' }} />
+                  <Typography.Text strong>信号筛选</Typography.Text>
+                </Space>
+                <div><Typography.Text type="secondary">按技术指标信号筛选股票，发现金叉、超卖等机会。</Typography.Text></div>
+              </Card>
+              <Card
+                size="small"
+                hoverable
+                style={{ cursor: 'pointer' }}
+                onClick={() => navigate('/blocks')}
+              >
+                <Space>
+                  <FundOutlined style={{ color: '#1677ff' }} />
+                  <Typography.Text strong>板块热点</Typography.Text>
+                </Space>
+                <div><Typography.Text type="secondary">查看行业板块、概念板块涨跌排行，把握市场热点。</Typography.Text></div>
+              </Card>
+            </Space>
+          </Card>
+        </Col>
+
+        {/* 跟自选 */}
+        <Col xs={24} lg={8}>
+          <Card
+            title={
+              <Space>
+                <HeartOutlined />
+                <span>跟自选</span>
+              </Space>
+            }
+            extra={<Button type="link" onClick={() => navigate('/watchlist')}>管理</Button>}
+          >
+            {loadingWatchlist ? (
+              <Skeleton active paragraph={{ rows: 4 }} title={false} />
+            ) : watchlistRows.length === 0 ? (
+              <Empty description="暂无自选股" image={Empty.PRESENTED_IMAGE_SIMPLE}>
+                <Button type="primary" onClick={() => navigate('/stock/choose')}>
+                  添加自选
+                </Button>
+              </Empty>
             ) : (
               <List
-                dataSource={historyRows}
+                dataSource={watchlistRows.slice(0, 5)}
                 renderItem={(item) => {
                   const color = getValueColor(item.change);
                   return (
                     <List.Item
-									  actions={[
-										<Button key="open" type="link" icon={<ArrowRightOutlined />} onClick={() => navigate(`/stock/${item.code}`)}>
-										  查看
-										</Button>,
-										<Button key="delete" type="link" danger icon={<DeleteOutlined />} onClick={() => void deleteHistoryStock(item.code)}>
-										  删除
-										</Button>,
-									  ]}
+                      actions={[
+                        <Button key="open" type="link" size="small" icon={<ArrowRightOutlined />} onClick={() => navigate(`/stock/${item.code}`)} />,
+                        <Button key="delete" type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => void deleteWatchlistStock(item.code)} />,
+                      ]}
                     >
                       <List.Item.Meta
-                        avatar={<StockOutlined style={{ fontSize: 18, color: '#1677ff' }} />}
-                        title={<Space><span>{item.quote?.Name || item.name || item.code}</span><Typography.Text type="secondary">{item.code}</Typography.Text></Space>}
-                        description={item.analyzed_at ? `最近分析：${formatDateTime(item.analyzed_at)}` : '已加入历史记录'}
+                        avatar={<StockOutlined style={{ fontSize: 16, color: '#1677ff' }} />}
+                        title={<Space size={4}><span>{item.quote?.Name || item.name || item.code}</span><Typography.Text type="secondary" style={{ fontSize: 12 }}>{item.code}</Typography.Text></Space>}
                       />
                       <Space direction="vertical" size={0} style={{ alignItems: 'flex-end' }}>
-                        <Typography.Text>{item.quote?.Price?.toFixed(2) ?? '--'}</Typography.Text>
-                        <Typography.Text style={{ color }}>
+                        <Typography.Text style={{ fontSize: 14 }}>{item.quote?.Price?.toFixed(2) ?? '--'}</Typography.Text>
+                        <Typography.Text style={{ color, fontSize: 12 }}>
                           {item.quote ? formatSignedPercent(item.change) : '--'}
                         </Typography.Text>
                       </Space>
@@ -233,34 +337,54 @@ export default function Dashboard() {
             )}
           </Card>
         </Col>
-        <Col xs={24} xl={9}>
-          <Card>
-            <Space direction="vertical" size={18} style={{ display: 'flex' }}>
+
+        {/* 做复盘 */}
+        <Col xs={24} lg={8}>
+          <Card
+            title={
               <Space>
-                <StockOutlined />
-                <Typography.Text strong>使用提示</Typography.Text>
+                <ClockCircleOutlined />
+                <span>做复盘</span>
               </Space>
-              <Row gutter={[12, 12]}>
-                <Col span={24}>
-                  <Card size="small">
-                    <Typography.Text strong>1. 搜索个股</Typography.Text>
-                    <div><Typography.Text type="secondary">支持代码、名称、拼音和首字母模糊匹配。</Typography.Text></div>
-                  </Card>
-                </Col>
-                <Col span={24}>
-                  <Card size="small">
-                    <Typography.Text strong>2. 查看指标</Typography.Text>
-                    <div><Typography.Text type="secondary">进入个股详情页后可切换 K 线、财务、公司、分红和分时视图。</Typography.Text></div>
-                  </Card>
-                </Col>
-                <Col span={24}>
-                  <Card size="small">
-                    <Typography.Text strong>3. 跟踪历史</Typography.Text>
-                    <div><Typography.Text type="secondary">分析过的个股会自动加入历史记录，方便快速回看。</Typography.Text></div>
-                  </Card>
-                </Col>
-              </Row>
-            </Space>
+            }
+            extra={<Button type="link" onClick={() => navigate('/stock/choose')}>新增分析</Button>}
+          >
+            {loadingHistory ? (
+              <Skeleton active paragraph={{ rows: 4 }} title={false} />
+            ) : historyRows.length === 0 ? (
+              <Empty description="暂无历史记录" image={Empty.PRESENTED_IMAGE_SIMPLE}>
+                <Button type="primary" onClick={() => navigate('/stock/choose')}>
+                  开始分析
+                </Button>
+              </Empty>
+            ) : (
+              <List
+                dataSource={historyRows.slice(0, 5)}
+                renderItem={(item) => {
+                  const color = getValueColor(item.change);
+                  return (
+                    <List.Item
+                      actions={[
+                        <Button key="open" type="link" size="small" icon={<ArrowRightOutlined />} onClick={() => navigate(`/stock/${item.code}`)} />,
+                        <Button key="delete" type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => void deleteHistoryStock(item.code)} />,
+                      ]}
+                    >
+                      <List.Item.Meta
+                        avatar={<StockOutlined style={{ fontSize: 16, color: '#1677ff' }} />}
+                        title={<Space size={4}><span>{item.quote?.Name || item.name || item.code}</span><Typography.Text type="secondary" style={{ fontSize: 12 }}>{item.code}</Typography.Text></Space>}
+                        description={item.analyzed_at ? formatDateTime(item.analyzed_at) : ''}
+                      />
+                      <Space direction="vertical" size={0} style={{ alignItems: 'flex-end' }}>
+                        <Typography.Text style={{ fontSize: 14 }}>{item.quote?.Price?.toFixed(2) ?? '--'}</Typography.Text>
+                        <Typography.Text style={{ color, fontSize: 12 }}>
+                          {item.quote ? formatSignedPercent(item.change) : '--'}
+                        </Typography.Text>
+                      </Space>
+                    </List.Item>
+                  );
+                }}
+              />
+            )}
           </Card>
         </Col>
       </Row>

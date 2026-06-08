@@ -13,6 +13,9 @@ func detectKDJSignals(code string, klines []ta.KlineInput, kdj *ta.KDJResult) []
 	}
 
 	crosses := detectLineCross(kdj.K, kdj.D)
+	if len(crosses) > len(klines) {
+		crosses = crosses[:len(klines)]
+	}
 	for i, c := range crosses {
 		if c == 0 {
 			continue
@@ -31,7 +34,9 @@ func detectKDJSignals(code string, klines []ta.KlineInput, kdj *ta.KDJResult) []
 		})
 	}
 
-	for i, jVal := range kdj.J {
+	n := min(len(klines), len(kdj.J))
+	for i := 0; i < n; i++ {
+		jVal := kdj.J[i]
 		if jVal > 100 {
 			signals = append(signals, Signal{
 				Code:      code,

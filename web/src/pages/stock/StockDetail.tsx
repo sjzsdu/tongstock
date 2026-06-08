@@ -10,6 +10,7 @@ import {
   DollarOutlined,
   ExpandOutlined,
   FileExcelOutlined,
+  FundOutlined,
   GiftOutlined,
   InfoCircleOutlined,
   ThunderboltOutlined,
@@ -28,6 +29,7 @@ import {
   Progress,
   Row,
   Segmented,
+  Skeleton,
   Space,
   Spin,
   Statistic,
@@ -42,19 +44,24 @@ import type {
   FinanceTrendsResponse,
   FinanceMetricsResponse,
   MinuteItem,
+  CompanyCategory,
   Signal,
   SignalAnalysis as SignalAnalysisType,
+  SignalOutcome,
+  StockCompareResponse,
   XdXrItem,
 } from '../../types/api';
 import CandlestickChart from '../../components/charts/CandlestickChart';
 import ChartToolbar from '../../components/charts/ChartToolbar';
 import FinanceTrendChart, { type FinanceTrendChartHandle, type FinanceTrendMetric } from '../../components/charts/FinanceTrendChart';
 import MinuteChart from '../../components/charts/MinuteChart';
+import SignalInterpretationCard from '../../components/SignalInterpretationCard';
+import StockCompareView from '../../components/StockCompareView';
 import TabContent from '../../components/TabContent';
 import { formatDate, formatShortDate, formatTdxDate, formatTime } from '../../lib/datetime';
 import { parseTdxText, renderTdxHtml } from '../../lib/tdx-parser';
 
-type Tab = 'chart' | 'signal' | 'finance' | 'company' | 'dividend' | 'intraday';
+type Tab = 'chart' | 'signal' | 'compare' | 'finance' | 'company' | 'dividend' | 'intraday';
 type DetailStatus = 'loading' | 'ready' | 'not_found' | 'no_data';
 type FinanceCompareMode = 'raw' | 'yoy' | 'qoq';
 type FinanceViewMode = 'chart' | 'table';
@@ -62,6 +69,7 @@ type FinanceViewMode = 'chart' | 'table';
 const TAB_ITEMS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: 'chart', label: 'K线+指标', icon: <AreaChartOutlined /> },
   { key: 'signal', label: '信号', icon: <ThunderboltOutlined /> },
+  { key: 'compare', label: '对比', icon: <FundOutlined /> },
   { key: 'finance', label: '财务', icon: <DollarOutlined /> },
   { key: 'company', label: '公司', icon: <BankOutlined /> },
   { key: 'dividend', label: '分红', icon: <GiftOutlined /> },
@@ -103,6 +111,10 @@ function getValueColor(value: number) {
 
 function formatSigned(value: number, suffix = '') {
   return `${value > 0 ? '+' : ''}${value.toFixed(2)}${suffix}`;
+}
+
+function compareDateDesc(a: string | undefined, b: string | undefined): number {
+  return String(b ?? '').localeCompare(String(a ?? ''));
 }
 
 function amountWanToYi(value: number | undefined): number | undefined {
@@ -227,7 +239,11 @@ export default function StockDetail() {
   const [dividends, setDividends] = useState<any[]>([]);
   const [minuteData, setMinuteData] = useState<any[]>([]);
   const [minuteDate, setMinuteDate] = useState<string>('');
+  const [minuteLoading, setMinuteLoading] = useState(false);
+  const [minuteError, setMinuteError] = useState('');
   const [analysis, setAnalysis] = useState<SignalAnalysisType | null>(null);
+  const [compareData, setCompareData] = useState<StockCompareResponse | null>(null);
+  const [compareLoading, setCompareLoading] = useState(false);
   const [highlightedIdx, setHighlightedIdx] = useState(-1);
 	const [fullscreen, setFullscreen] = useState(false);
 	const tradeRowRefs = useRef<Record<number, HTMLDivElement | null>>({});
@@ -260,10 +276,12 @@ export default function StockDetail() {
     navigate(`/stock/${code}/${nextTab}`, { replace: true });
   };
 
-  const loadCompanyContent = async (catName: string) => {
+  const loadCompanyContent = async (cat: string | CompanyCategory) => {
+    const catName = typeof cat === 'string' ? cat : cat.Name;
     setSelectedCat(catName);
+    setCompanyContent('');
     try {
-      const r = await api.companyContent(code, catName);
+      const r = await api.companyContent(code, cat);
       setCompanyContent((r.content || '').replace(/\r/g, ''));
     } catch {
       setCompanyContent('加载失败');
@@ -285,6 +303,7 @@ export default function StockDetail() {
     setDividends([]);
     setMinuteData([]);
     setMinuteDate('');
+    setMinuteError('');
 
 		const loadQuote = async () => {
 			try {
@@ -375,33 +394,58 @@ export default function StockDetail() {
     }
     if (tab === 'company') api.company(code).then((cats) => {
       setCompanyCats(cats);
-      if (cats.length > 0 && !selectedCat) void loadCompanyContent(cats[0].Name);
+      if (cats.length > 0 && !selectedCat) void loadCompanyContent(cats[0]);
     }).catch(() => {});
     if (tab === 'dividend') api.xdxr(code).then((d) => setDividends([...d].reverse())).catch(() => {});
+    if (tab === 'compare') {
+      setCompareLoading(true);
+      api.stockCompare(code).then((d) => {
+        setCompareData(d);
+        setCompareLoading(false);
+      }).catch(() => {
+        setCompareLoading(false);
+      });
+    }
     if (tab === 'intraday') {
       const fetchMinute = async () => {
+        setMinuteLoading(true);
+        setMinuteError('');
+        let loaded = false;
         try {
           const r = await api.minute(code);
           if (r.List && r.List.length > 0) {
             setMinuteData(r.List);
             const today = new Date();
             setMinuteDate(formatShortDate(today));
+            loaded = true;
           } else {
-            const yesterday = getLastTradingDay();
-            try {
-              const histR = await api.minuteHistory(code, yesterday);
-              if (histR.List && histR.List.length > 0) {
-                setMinuteData(histR.List);
-                setMinuteDate(formatShortDate(yesterday));
-              }
-            } catch {
-              // ignore historical minute errors
-            }
+            setMinuteData([]);
           }
         } catch {
-          // ignore minute errors
+          // fall back to last trading day's minute data below
+        }
+
+        if (!loaded) {
+          const yesterday = getLastTradingDay();
+          try {
+            const histR = await api.minuteHistory(code, yesterday);
+            if (histR.List && histR.List.length > 0) {
+              setMinuteData(histR.List);
+              setMinuteDate(formatShortDate(yesterday));
+              loaded = true;
+            }
+          } catch {
+            // ignore historical minute errors
+          }
+        }
+
+        if (!loaded) {
+          setMinuteData([]);
+          setMinuteDate('');
+          setMinuteError('暂无可展示的分时数据');
         }
         api.quote(code).then(setQuote).catch(() => {});
+        setMinuteLoading(false);
       };
       void fetchMinute();
       api.finance(code).then(setFinance).catch(() => {});
@@ -434,8 +478,16 @@ export default function StockDetail() {
   const pct = quote ? ((quote.Price - quote.LastClose) / quote.LastClose) * 100 : 0;
   const up = pct >= 0;
   const showTabs = detailStatus === 'ready';
+  const showInitialLoading = !showTabs && (loading || chartLoading || detailStatus === 'loading');
   const valueColor = getValueColor(pct);
-  const latestSignals = indicator?.signals?.slice(-3).reverse() ?? [];
+  const sortedSignals = useMemo(
+    () => [...(indicator?.signals ?? [])].sort((a, b) => compareDateDesc(a.Date, b.Date)),
+    [indicator?.signals],
+  );
+  const sortedSignalOutcomes = useMemo<SignalOutcome[]>(
+    () => [...(analysis?.outcomes ?? [])].sort((a, b) => compareDateDesc(a.date, b.date)),
+    [analysis?.outcomes],
+  );
   const latestClose = klines.length > 0 ? klines[klines.length - 1].Close : undefined;
 
   const financeItems = finance ? [
@@ -617,11 +669,11 @@ export default function StockDetail() {
           </Card>
         )}
 
-        {loading && (
+        {showInitialLoading && (
           <Card><Flex justify="center" align="center" style={{ minHeight: 240 }}><Spin size="large" /></Flex></Card>
         )}
 
-        {!loading && !showTabs && (
+        {!showInitialLoading && !showTabs && (
           <Card>
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -656,8 +708,21 @@ export default function StockDetail() {
 		  </Space>
 		)}
 
-        {showTabs && tab === 'signal' && (
+        {showTabs && tab === 'signal' && chartLoading && (
+          <Card><Flex justify="center" align="center" style={{ minHeight: 240 }}><Spin size="large" /></Flex></Card>
+        )}
+
+        {showTabs && tab === 'signal' && !chartLoading && (
           <Space direction="vertical" size={16} style={{ display: 'flex' }}>
+            {/* 信号解读卡片 */}
+            {analysis && (
+              <SignalInterpretationCard
+                interpretations={analysis.interpretations ?? []}
+                overallSummary={analysis.overall_summary ?? '当前无明显技术信号'}
+                trend={analysis.trend ?? '趋势不明'}
+              />
+            )}
+
             <Row gutter={[16, 16]}>
               <Col xs={24} xl={12}>
                 <Card>
@@ -683,25 +748,32 @@ export default function StockDetail() {
               </Col>
             </Row>
 
-            <Card title={<Space><ThunderboltOutlined />最新信号</Space>}>
-              {latestSignals.length > 0 ? (
-                <Space direction="vertical" size={10} style={{ display: 'flex' }}>
-                  {latestSignals.map((signal: Signal) => (
-                    <Flex key={`${signal.Date}-${signal.Type}-${signal.Indicator}`} justify="space-between" align="center" gap={12}>
-                      <Space direction="vertical" size={2}>
-                        <Typography.Text strong>{signal.Type}</Typography.Text>
-                        <Typography.Text type="secondary">{formatTdxDate(signal.Date)} · {signal.Indicator}</Typography.Text>
-                      </Space>
-                      <Tag color={signal.Strength >= 0 ? 'red' : 'green'}>{signal.Details || '触发'}</Tag>
-                    </Flex>
-                  ))}
-                </Space>
-              ) : (
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无最新信号" />
-              )}
+            <Card title={<Space><ThunderboltOutlined />信号列表</Space>}>
+              <Table<Signal>
+                size="small"
+                pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
+                rowKey={(row, index) => `${row.Date}-${row.Type}-${row.Indicator}-${index}`}
+                dataSource={sortedSignals}
+                locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无信号" /> }}
+                columns={[
+                  {
+                    title: '日期',
+                    dataIndex: 'Date',
+                    defaultSortOrder: 'ascend',
+                    sorter: (a, b) => compareDateDesc(a.Date, b.Date),
+                    render: (value) => formatTdxDate(value),
+                  },
+                  { title: '指标', dataIndex: 'Indicator' },
+                  { title: '信号', dataIndex: 'Type' },
+                  { title: '强度', dataIndex: 'Strength', align: 'right', render: (value) => typeof value === 'number' ? value.toFixed(3) : '-' },
+                  { title: '详情', dataIndex: 'Details', render: (value) => <Tag>{value || '触发'}</Tag> },
+                ]}
+              />
             </Card>
 
-            {analysis && analysis.summary.length > 0 ? (
+            {!analysis ? (
+              <Card><Flex justify="center" align="center" style={{ minHeight: 160 }}><Spin /></Flex></Card>
+            ) : analysis.summary.length > 0 ? (
               <Card title="信号回测" extra={<Typography.Text type="secondary">基于历史 {analysis.count} 根K线中的 {analysis.signals} 个信号</Typography.Text>}>
                 <Table
                   pagination={false}
@@ -725,13 +797,13 @@ export default function StockDetail() {
               <Card><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无信号回测数据" /></Card>
             )}
 
-            {analysis && analysis.outcomes.length > 0 && (
+            {sortedSignalOutcomes.length > 0 && (
               <Card title="信号明细">
                 <Table
                   size="small"
-                  pagination={{ pageSize: 10 }}
+                  pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
                   rowKey={(row) => `${row.date}-${row.type}-${row.indicator}`}
-                  dataSource={[...analysis.outcomes].reverse()}
+                  dataSource={sortedSignalOutcomes}
                   columns={[
                     { title: '日期', dataIndex: 'date', render: (value) => formatDate(value) },
                     { title: '指标', dataIndex: 'indicator' },
@@ -747,6 +819,22 @@ export default function StockDetail() {
               </Card>
             )}
           </Space>
+        )}
+
+        {showTabs && tab === 'compare' && (
+          compareLoading ? (
+            <Skeleton active paragraph={{ rows: 8 }} title={false} />
+          ) : compareData ? (
+            <StockCompareView
+              code={compareData.code}
+              stockName={compareData.stock_name}
+              stockChange={compareData.stock_change}
+              comparisons={compareData.comparisons}
+              loading={compareLoading}
+            />
+          ) : (
+            <Empty description="暂无对比数据" />
+          )
         )}
 
         {showTabs && tab === 'finance' && finance && (
@@ -923,7 +1011,7 @@ export default function StockDetail() {
                     dataSource={companyCats}
                     renderItem={(cat) => (
                       <List.Item>
-                        <Button type={selectedCat === cat.Name ? 'primary' : 'text'} block onClick={() => void loadCompanyContent(cat.Name)}>
+                        <Button type={selectedCat === cat.Name ? 'primary' : 'text'} block onClick={() => void loadCompanyContent(cat)}>
                           {cat.Name}
                         </Button>
                       </List.Item>
@@ -950,7 +1038,15 @@ export default function StockDetail() {
           </Card>
         )}
 
-        {showTabs && tab === 'intraday' && minuteData.length > 0 && (() => {
+        {showTabs && tab === 'intraday' && minuteLoading && (
+          <Card><Flex justify="center" align="center" style={{ minHeight: 240 }}><Spin size="large" /></Flex></Card>
+        )}
+
+        {showTabs && tab === 'intraday' && !minuteLoading && minuteData.length === 0 && (
+          <Card><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={minuteError || '暂无可展示的分时数据'} /></Card>
+        )}
+
+        {showTabs && tab === 'intraday' && !minuteLoading && minuteData.length > 0 && (() => {
           const lastClose = quote?.LastClose || 0;
           let totalAmount = 0;
           let totalVolume = 0;

@@ -204,16 +204,16 @@ func (s *Service) FetchCompanyCategory(code string) ([]*protocol.CompanyCategory
 }
 
 func (s *Service) FetchCompanyContent(code, filename string, start, length uint32) (string, error) {
-	if s.company != nil {
+	if s.company != nil && start == 0 && length == 0 {
 		if content, err := s.company.GetContent(code, filename); err == nil && content != "" {
 			return content, nil
 		}
 	}
-	content, err := s.Client.GetCompanyInfoContent(code, filename, start, length)
+	content, err := s.Client.GetCompanyInfoContentAll(code, filename, start, length)
 	if err != nil {
 		return "", err
 	}
-	if s.company != nil {
+	if s.company != nil && start == 0 && length == 0 {
 		_ = s.company.SaveContent(code, filename, content)
 	}
 	return content, nil
@@ -237,7 +237,15 @@ func (s *Service) FetchBlock(blockFile string) ([]*protocol.BlockItem, error) {
 
 func (s *Service) FetchKlineAll(code string, ktype uint8) ([]*protocol.Kline, error) {
 	if !isDailyKline(ktype) {
-		return s.Client.GetKlineAll(code, ktype)
+		if ktype == protocol.TypeKlineMinute {
+			klines, err := s.Client.GetKline(code, ktype, 0, 800)
+			if err != nil {
+				return s.Client.GetKline(code, protocol.TypeKlineMinute2, 0, 800)
+			}
+			return klines, nil
+		}
+		klines, err := s.Client.GetKlineAll(code, ktype)
+		return klines, err
 	}
 
 	latest, err := s.klines.GetLatestDate(code, ktype)
@@ -366,7 +374,11 @@ func (s *Service) fetchIncrementalKline(code string, ktype uint8, latest string)
 
 // FetchKline passes through to the Client for non-cached real-time data.
 func (s *Service) FetchKline(code string, ktype uint8, start, count uint16) ([]*protocol.Kline, error) {
-	return s.Client.GetKline(code, ktype, start, count)
+	klines, err := s.Client.GetKline(code, ktype, start, count)
+	if err != nil && ktype == protocol.TypeKlineMinute {
+		return s.Client.GetKline(code, protocol.TypeKlineMinute2, start, count)
+	}
+	return klines, err
 }
 
 // EnsureWorkday makes sure there is workday data available.

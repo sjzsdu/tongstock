@@ -9,7 +9,9 @@ func detectRSISignals(code string, klines []ta.KlineInput, rsi map[string][]floa
 	var signals []Signal
 
 	for period, values := range rsi {
-		for i, val := range values {
+		n := min(len(klines), len(values))
+		for i := 0; i < n; i++ {
+			val := values[i]
 			if val == 0 {
 				continue
 			}

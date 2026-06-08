@@ -26,6 +26,7 @@ export interface MACDResult {
   DIF: number[];
   DEA: number[];
   Hist: number[];
+  HIST?: number[];
 }
 
 export interface KDJResult {
@@ -260,11 +261,33 @@ export interface SignalSummary {
   avg20: number;
 }
 
+export interface SignalInterpretation {
+  summary: string;
+  explanation: string;
+  suggestions: string[];
+  risk_level: string;
+  trend: string;
+}
+
+export interface SignalWithInterpretation {
+  signal: {
+    type: string;
+    indicator: string;
+    date: string;
+    strength: number;
+    details: string;
+  };
+  interpretation: SignalInterpretation;
+}
+
 export interface SignalAnalysis {
   code: string;
   type: string;
   count: number;
   signals: number;
+  overall_summary: string;
+  trend: string;
+  interpretations: SignalWithInterpretation[];
   outcomes: SignalOutcome[];
   summary: SignalSummary[];
 }
@@ -273,6 +296,15 @@ export interface HistoryStock {
   code: string;
   name?: string;
   analyzed_at: string;
+}
+
+export interface WatchlistStock {
+  code: string;
+  name?: string;
+  group?: string;
+  note?: string;
+  added_at: string;
+  updated_at?: string;
 }
 
 export interface KlineSyncState {
@@ -315,4 +347,40 @@ export interface IndicatorConfig {
   categories: Record<string, Partial<IndicatorParams>>;
   overrides: Record<string, Partial<IndicatorParams>>;
   path?: string;
+}
+
+export interface BlockComparisonStock {
+  code: string;
+  name: string;
+  price: number;
+  change: number;
+}
+
+export interface BlockComparison {
+  block_name: string;
+  block_type: number;
+  block_file: string;
+  total_stocks: number;
+  valid_stocks: number;
+  up_count: number;
+  down_count: number;
+  avg_change: number;
+  stock_rank: number;
+  stock_change: number;
+  stock_quote: {
+    code: string;
+    name: string;
+    price: number;
+    change: number;
+    last_close: number;
+  };
+  top_stocks: BlockComparisonStock[];
+  bottom_stocks: BlockComparisonStock[];
+}
+
+export interface StockCompareResponse {
+  code: string;
+  stock_name: string;
+  stock_change: number;
+  comparisons: BlockComparison[];
 }

@@ -3,6 +3,8 @@ package history
 import (
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -11,6 +13,19 @@ type DB struct {
 }
 
 func Open(dbPath string) (*DB, error) {
+	if dbPath == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return nil, err
+		}
+		dbPath = filepath.Join(homeDir, ".tongstock", "history.db")
+	}
+
+	// Ensure directory exists
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+		return nil, err
+	}
+
 	db, err := sql.Open("sqlite3", dbPath+"?cache=shared&_busy_timeout=5000")
 	if err != nil {
 		return nil, err

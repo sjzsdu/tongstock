@@ -5,10 +5,12 @@ import type {
   StockSearchResponse,
   StockSearchIndexResponse,
   HistoryStock,
+  WatchlistStock,
   IndicatorConfig,
   FinanceTrendsResponse,
   FinanceMetricsResponse,
   KlineBatchSyncResult,
+  StockCompareResponse,
 } from '../types/api';
 
 const BASE = '';
@@ -22,7 +24,12 @@ async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error || '请求失败');
   }
-  return res.json();
+  const data = await res.json();
+  // 检查响应是否包含错误字段
+  if (data && typeof data === 'object' && 'error' in data) {
+    throw new Error(data.error || '请求失败');
+  }
+  return data;
 }
 
 export const api = {
@@ -71,8 +78,17 @@ export const api = {
   company: (code: string) =>
     fetchJSON<CompanyCategory[]>(`/api/company?code=${code}`),
 
-  companyContent: (code: string, block: string) =>
-    fetchJSON<{ content: string }>(`/api/company/content?code=${code}&block=${encodeURIComponent(block)}`),
+  companyContent: (code: string, blockOrCategory: string | { Name: string; Filename: string; Start: number; Length: number }) => {
+    const params = new URLSearchParams({ code });
+    if (typeof blockOrCategory === 'string') {
+      params.set('block', blockOrCategory);
+    } else {
+      params.set('filename', blockOrCategory.Filename);
+      params.set('start', String(blockOrCategory.Start));
+      params.set('length', String(blockOrCategory.Length));
+    }
+    return fetchJSON<{ content: string }>(`/api/company/content?${params}`);
+  },
 
   block: (file = 'block_zs.dat', stocksOnly = true) =>
     fetchJSON<BlockItem[]>(`/api/block?file=${file}${stocksOnly ? '&stocks_only=true' : ''}`),
@@ -137,19 +153,38 @@ export const api = {
       method: 'DELETE',
     }),
 
-  watchlist: () =>
-    fetchJSON<{ data: HistoryStock[] }>('/api/watchlist').then(r => r.data),
+  watchlist: (group?: string) => {
+    const params = new URLSearchParams();
+    if (group) params.set('group', group);
+    const query = params.toString();
+    return fetchJSON<{ data: WatchlistStock[] }>(`/api/watchlist${query ? `?${query}` : ''}`).then(r => r.data);
+  },
 
-  watchlistAdd: (code: string, name?: string) =>
+  watchlistAdd: (code: string, name?: string, group?: string, note?: string) =>
     fetchJSON<{ message: string }>('/api/watchlist', {
       method: 'POST',
-      body: JSON.stringify({ code, name }),
+      body: JSON.stringify({ code, name, group, note }),
     }),
 
   watchlistDelete: (code: string) =>
     fetchJSON<{ message: string }>(`/api/watchlist/${code}`, {
       method: 'DELETE',
     }),
+
+  watchlistUpdateNote: (code: string, note: string) =>
+    fetchJSON<{ message: string }>(`/api/watchlist/${code}/note`, {
+      method: 'PUT',
+      body: JSON.stringify({ note }),
+    }),
+
+  watchlistUpdateGroup: (code: string, group: string) =>
+    fetchJSON<{ message: string }>(`/api/watchlist/${code}/group`, {
+      method: 'PUT',
+      body: JSON.stringify({ group }),
+    }),
+
+  watchlistGroups: () =>
+    fetchJSON<{ groups: { name: string; count: number }[] }>('/api/watchlist/groups'),
 
   saveScreenResults: (results: { code: string; name?: string }[]) =>
     Promise.all(results.map((item) => api.watchlistAdd(item.code, item.name))),
@@ -168,4 +203,7 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(config),
     }),
+
+  stockCompare: (code: string) =>
+    fetchJSON<StockCompareResponse>(`/api/stock/compare?code=${code}`),
 };
