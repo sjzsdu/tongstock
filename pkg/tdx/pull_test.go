@@ -33,7 +33,7 @@ func TestParseKlineStoreDateRejectsInvalid(t *testing.T) {
 	}
 }
 
-func TestKlineStoreReadsLegacyDashedDates(t *testing.T) {
+func TestKlineStoreReadsLegacyDashedDatesAndSkipsInvalidDates(t *testing.T) {
 	database, err := db.OpenSQLite(t.TempDir() + "/kline.db")
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -48,7 +48,9 @@ func TestKlineStoreReadsLegacyDashedDates(t *testing.T) {
 	_, err = database.Exec(`
 		INSERT INTO kline (code, ktype, date, open, high, low, close, volume, amount) VALUES
 		('000001', 9, '2026-06-21', 1, 2, 1, 2, 100, 1000),
-		('000001', 9, '20260622', 2, 3, 2, 3, 200, 2000)
+		('000001', 9, '20260622', 2, 3, 2, 3, 200, 2000),
+		('000001', 9, '100410731', 9, 9, 9, 9, 900, 9000),
+		('000001', 9, '999999999', 9, 9, 9, 9, 900, 9000)
 	`)
 	if err != nil {
 		t.Fatalf("insert klines: %v", err)
