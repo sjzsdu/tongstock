@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"regexp"
 	"sort"
@@ -418,14 +419,56 @@ func (s *Server) handleQuote(c *gin.Context) {
 		return s.svc.Client.GetQuote(code)
 	})
 	if err != nil {
+		fallback, fallbackErr := s.fallbackQuoteFromKline(code)
+		if fallbackErr == nil {
+			c.JSON(http.StatusOK, fallback)
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取行情失败: %v", err)})
 		return
 	}
 	if len(quotes) == 0 {
+		fallback, fallbackErr := s.fallbackQuoteFromKline(code)
+		if fallbackErr == nil {
+			c.JSON(http.StatusOK, fallback)
+			return
+		}
 		c.JSON(http.StatusNotFound, gin.H{"error": "未找到该股票"})
 		return
 	}
 	c.JSON(http.StatusOK, quotes[0])
+}
+
+func (s *Server) fallbackQuoteFromKline(code string) (*protocol.QuoteItem, error) {
+	klines, err := s.svc.FetchKlineAll(code, tdx.ParseKlineType("day"))
+	if err != nil {
+		return nil, err
+	}
+	if len(klines) == 0 {
+		return nil, fmt.Errorf("no kline data")
+	}
+	last := klines[len(klines)-1]
+	if !isFiniteKlinePrice(last.Open) || !isFiniteKlinePrice(last.High) || !isFiniteKlinePrice(last.Low) || !isFiniteKlinePrice(last.Close) {
+		return nil, fmt.Errorf("invalid latest kline")
+	}
+	lastClose := last.Close
+	if len(klines) > 1 && isFiniteKlinePrice(klines[len(klines)-2].Close) {
+		lastClose = klines[len(klines)-2].Close
+	}
+	return &protocol.QuoteItem{
+		Code:      code,
+		Open:      last.Open,
+		High:      last.High,
+		Low:       last.Low,
+		Price:     last.Close,
+		LastClose: lastClose,
+		Volume:    last.Volume,
+		Amount:    last.Amount,
+	}, nil
+}
+
+func isFiniteKlinePrice(v float64) bool {
+	return !math.IsNaN(v) && !math.IsInf(v, 0)
 }
 
 // handleCodes handles legacy codes requests

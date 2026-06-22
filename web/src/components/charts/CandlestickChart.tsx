@@ -46,17 +46,27 @@ function formatKlineTime(dateStr: string | undefined, intraday: boolean): string
   return intraday ? formatDateTime(dateStr) : formatTdxDate(dateStr);
 }
 
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
 function safeTime(klines: KlineItem[], i: number, intraday: boolean): Time | null {
   const t = klines[i]?.Time;
   return toTime(t, intraday);
 }
 
-function safeData(values: number[], klines: KlineItem[], intraday: boolean): { time: Time; value: number }[] {
+function safeData(values: unknown[] | undefined, klines: KlineItem[], intraday: boolean): { time: Time; value: number }[] {
   const data: { time: Time; value: number }[] = [];
+  if (!Array.isArray(values)) return data;
   for (let i = 0; i < values.length && i < klines.length; i++) {
     const time = safeTime(klines, i, intraday);
-    const value = values[i];
-    if (time !== null && typeof value === 'number' && Number.isFinite(value)) data.push({ time, value });
+    const value = toFiniteNumber(values[i]);
+    if (time !== null && value !== null) data.push({ time, value });
   }
   return data;
 }
@@ -83,14 +93,24 @@ export default function CandlestickChart({ klines, indicator, mainOverlay, subPa
   const chartKlines = useMemo(() => {
     const intraday = isIntradayKline(klines);
     const seen = new Set<string>();
-    return klines.filter((k) => {
+    const cleaned: KlineItem[] = [];
+    for (const k of klines) {
       const time = toTime(k.Time, intraday);
-      if (time === null) return false;
+      if (time === null) continue;
       const key = String(time);
-      if (seen.has(key)) return false;
+      if (seen.has(key)) continue;
+      const open = toFiniteNumber(k.Open);
+      const high = toFiniteNumber(k.High);
+      const low = toFiniteNumber(k.Low);
+      const close = toFiniteNumber(k.Close);
+      const volume = toFiniteNumber(k.Volume) ?? 0;
+      const amount = toFiniteNumber(k.Amount) ?? 0;
+      if ([open, high, low, close].some((v) => v === null)) continue;
+      if (high! < low!) continue;
       seen.add(key);
-      return [k.Open, k.High, k.Low, k.Close, k.Volume].every((v) => typeof v === 'number' && Number.isFinite(v));
-    });
+      cleaned.push({ ...k, Open: open!, High: high!, Low: low!, Close: close!, Volume: volume, Amount: amount });
+    }
+    return cleaned;
   }, [klines]);
 
   useEffect(() => {
@@ -161,7 +181,8 @@ export default function CandlestickChart({ klines, indicator, mainOverlay, subPa
           const data = [];
           for (let j = 0; j < values.length && j < chartKlines.length; j++) {
             const time = safeTime(chartKlines, j, intraday);
-            if (values[j] > 0 && time) data.push({ time, value: values[j] });
+            const value = toFiniteNumber(values[j]);
+            if (value !== null && value > 0 && time) data.push({ time, value });
           }
           series.setData(data);
         }
@@ -224,7 +245,8 @@ export default function CandlestickChart({ klines, indicator, mainOverlay, subPa
           const histData: { time: Time; value: number; color: string }[] = [];
           for (let i = 0; i < indicator.macd.Hist.length && i < chartKlines.length; i++) {
             const time = safeTime(chartKlines, i, intraday);
-            if (time) histData.push({ time, value: indicator.macd.Hist[i], color: indicator.macd.Hist[i] >= 0 ? 'rgba(239,68,68,0.6)' : 'rgba(34,197,94,0.6)' });
+            const value = toFiniteNumber(indicator.macd.Hist[i]);
+            if (time && value !== null) histData.push({ time, value, color: value >= 0 ? 'rgba(239,68,68,0.6)' : 'rgba(34,197,94,0.6)' });
           }
           subChart.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false }).setData(histData);
         }
