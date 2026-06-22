@@ -138,10 +138,26 @@ func (s *KlineStore) GetKline(code string, ktype uint8, startDate, endDate strin
 		if err := rows.Scan(&date, &k.Open, &k.High, &k.Low, &k.Close, &k.Volume, &k.Amount); err != nil {
 			return nil, err
 		}
-		k.Time, _ = time.Parse("20060102", date)
+		parsedTime, err := parseKlineStoreDate(date, s.loc)
+		if err != nil {
+			return nil, err
+		}
+		k.Time = parsedTime
 		klines = append(klines, &k)
 	}
 	return klines, nil
+}
+
+func parseKlineStoreDate(date string, loc *time.Location) (time.Time, error) {
+	if loc == nil {
+		loc = time.Local
+	}
+	for _, layout := range []string{"20060102", "2006-01-02"} {
+		if t, err := time.ParseInLocation(layout, date, loc); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("invalid kline date %q", date)
 }
 
 // GetLatestDate returns the latest date string for a given code and ktype.
@@ -151,10 +167,17 @@ func (s *KlineStore) GetLatestDate(code string, ktype uint8) (string, error) {
 	defer s.mu.RUnlock()
 	var date string
 	err := s.db.QueryRow(
-		`SELECT date FROM kline WHERE code = ? AND ktype = ? ORDER BY date DESC LIMIT 1`,
+		`SELECT date FROM kline WHERE code = ? AND ktype = ? ORDER BY REPLACE(date, '-', '') DESC LIMIT 1`,
 		code, ktype,
 	).Scan(&date)
-	return date, err
+	if err != nil {
+		return "", err
+	}
+	parsed, err := parseKlineStoreDate(date, s.loc)
+	if err != nil {
+		return "", err
+	}
+	return parsed.Format("20060102"), nil
 }
 
 func (s *KlineStore) UpdateSyncState(code string, ktype uint8, status, errMsg string) error {
