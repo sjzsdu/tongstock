@@ -436,6 +436,7 @@ func (s *Server) handleQuote(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "未找到该股票"})
 		return
 	}
+	quotes[0].Name = s.resolveDisplayName(code, quotes[0].Name)
 	c.JSON(http.StatusOK, quotes[0])
 }
 
@@ -457,6 +458,7 @@ func (s *Server) fallbackQuoteFromKline(code string) (*protocol.QuoteItem, error
 	}
 	return &protocol.QuoteItem{
 		Code:      code,
+		Name:      s.resolveDisplayName(code, ""),
 		Open:      last.Open,
 		High:      last.High,
 		Low:       last.Low,
@@ -1245,6 +1247,23 @@ func (s *Server) getCodeNameMapServer() map[string]string {
 	return codeNameMap
 }
 
+func (s *Server) resolveDisplayName(code, current string) string {
+	code = strings.TrimSpace(code)
+	current = strings.TrimSpace(current)
+	items, err := s.getStockSearchIndex()
+	if err == nil {
+		for _, item := range items {
+			if item.Code == code && strings.TrimSpace(item.Name) != "" {
+				return strings.TrimSpace(item.Name)
+			}
+		}
+	}
+	if current == "" || strings.ContainsRune(current, '\ufffd') {
+		return code
+	}
+	return current
+}
+
 func getExchangeFromCode(code string) string {
 	if len(code) == 0 {
 		return "sz"
@@ -1720,11 +1739,12 @@ func (s *Server) handleHistoryList(c *gin.Context) {
 	}
 
 	var data []gin.H
-	for _, s := range stocks {
+	for _, stock := range stocks {
+		resolvedName := s.resolveDisplayName(stock.Code, stock.Name)
 		data = append(data, gin.H{
-			"code":        s.Code,
-			"name":        s.Name,
-			"analyzed_at": s.AnalyzedAt.Format(time.RFC3339),
+			"code":        stock.Code,
+			"name":        resolvedName,
+			"analyzed_at": stock.AnalyzedAt.Format(time.RFC3339),
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"data": data})
@@ -1748,7 +1768,7 @@ func (s *Server) handleHistoryAdd(c *gin.Context) {
 
 	stock := history.HistoryStock{
 		Code:       req.Code,
-		Name:       req.Name,
+		Name:       s.resolveDisplayName(req.Code, req.Name),
 		AnalyzedAt: time.Now(),
 	}
 
@@ -1800,14 +1820,15 @@ func (s *Server) handleWatchlistList(c *gin.Context) {
 	}
 
 	var data []gin.H
-	for _, s := range stocks {
+	for _, stock := range stocks {
+		resolvedName := s.resolveDisplayName(stock.Code, stock.Name)
 		data = append(data, gin.H{
-			"code":       s.Code,
-			"name":       s.Name,
-			"group":      s.Group,
-			"note":       s.Note,
-			"added_at":   s.AddedAt.Format(time.RFC3339),
-			"updated_at": s.UpdatedAt.Format(time.RFC3339),
+			"code":       stock.Code,
+			"name":       resolvedName,
+			"group":      stock.Group,
+			"note":       stock.Note,
+			"added_at":   stock.AddedAt.Format(time.RFC3339),
+			"updated_at": stock.UpdatedAt.Format(time.RFC3339),
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"data": data})
@@ -1833,7 +1854,7 @@ func (s *Server) handleWatchlistAdd(c *gin.Context) {
 
 	stock := watchlist.WatchlistStock{
 		Code:    req.Code,
-		Name:    req.Name,
+		Name:    s.resolveDisplayName(req.Code, req.Name),
 		Group:   req.Group,
 		Note:    req.Note,
 		AddedAt: time.Now(),
