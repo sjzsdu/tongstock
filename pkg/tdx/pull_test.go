@@ -49,6 +49,8 @@ func TestKlineStoreReadsLegacyDashedDatesAndSkipsInvalidDates(t *testing.T) {
 		INSERT INTO kline (code, ktype, date, open, high, low, close, volume, amount) VALUES
 		('000001', 9, '2026-06-21', 1, 2, 1, 2, 100, 1000),
 		('000001', 9, '20260622', 2, 3, 2, 3, 200, 2000),
+		('000001', 9, '20260623', 3, 2, 4, 3, 300, 3000),
+		('000001', 9, '19800101', 1, 2, 1, 2, 100, 1000),
 		('000001', 9, '100410731', 9, 9, 9, 9, 900, 9000),
 		('000001', 9, '999999999', 9, 9, 9, 9, 900, 9000)
 	`)

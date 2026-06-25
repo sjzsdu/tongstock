@@ -344,6 +344,7 @@ func (s *Service) fetchAndSaveKlineAll(code string, ktype uint8) ([]*protocol.Kl
 	if err != nil {
 		return nil, err
 	}
+	klines = filterValidKlines(klines)
 	_ = s.klines.SaveKline(code, ktype, klines)
 	return klines, nil
 }
@@ -354,6 +355,7 @@ func (s *Service) refreshTodayKline(code string, ktype uint8) ([]*protocol.Kline
 		return s.klines.GetKline(code, ktype, "", "")
 	}
 	if len(fresh) > 0 {
+		fresh = filterValidKlines(fresh)
 		_ = s.klines.SaveKline(code, ktype, fresh)
 	}
 	return s.klines.GetKline(code, ktype, "", "")
@@ -366,10 +368,24 @@ func (s *Service) fetchIncrementalKline(code string, ktype uint8, latest string)
 	if err != nil {
 		return nil, err
 	}
+	klines = filterValidKlines(klines)
 	if len(klines) > 0 {
 		_ = s.klines.SaveKline(code, ktype, klines)
 	}
 	return s.klines.GetKline(code, ktype, "", "")
+}
+
+func filterValidKlines(klines []*protocol.Kline) []*protocol.Kline {
+	if len(klines) == 0 {
+		return klines
+	}
+	filtered := make([]*protocol.Kline, 0, len(klines))
+	for _, k := range klines {
+		if isValidKlineStoreRecord(k) {
+			filtered = append(filtered, k)
+		}
+	}
+	return filtered
 }
 
 // FetchKline passes through to the Client for non-cached real-time data.

@@ -3,6 +3,7 @@ package tdx
 import (
 	"database/sql"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -98,6 +99,9 @@ func (s *KlineStore) SaveKline(code string, ktype uint8, klines []*protocol.Klin
 	defer stmt.Close()
 
 	for _, k := range klines {
+		if !isValidKlineStoreRecord(k) {
+			continue
+		}
 		date := k.Time.Format("20060102")
 		_, err := stmt.Exec(code, ktype, date, k.Open, k.High, k.Low, k.Close, k.Volume, k.Amount)
 		if err != nil {
@@ -143,6 +147,9 @@ func (s *KlineStore) GetKline(code string, ktype uint8, startDate, endDate strin
 			continue
 		}
 		k.Time = parsedTime
+		if !isValidKlineStoreRecord(&k) {
+			continue
+		}
 		klines = append(klines, &k)
 	}
 	if err := rows.Err(); err != nil {
@@ -157,10 +164,34 @@ func parseKlineStoreDate(date string, loc *time.Location) (time.Time, error) {
 	}
 	for _, layout := range []string{"20060102", "2006-01-02"} {
 		if t, err := time.ParseInLocation(layout, date, loc); err == nil {
+			if !isValidKlineStoreDate(t, loc) {
+				return time.Time{}, fmt.Errorf("out-of-range kline date %q", date)
+			}
 			return t, nil
 		}
 	}
 	return time.Time{}, fmt.Errorf("invalid kline date %q", date)
+}
+
+func isValidKlineStoreDate(t time.Time, loc *time.Location) bool {
+	if loc == nil {
+		loc = time.Local
+	}
+	min := time.Date(1990, 12, 19, 0, 0, 0, 0, loc)
+	max := time.Now().In(loc).AddDate(0, 0, 1)
+	return !t.Before(min) && !t.After(max)
+}
+
+func isValidKlineStoreRecord(k *protocol.Kline) bool {
+	if k == nil || !isValidKlineStoreDate(k.Time, time.Local) {
+		return false
+	}
+	for _, v := range []float64{k.Open, k.High, k.Low, k.Close} {
+		if v <= 0 || math.IsNaN(v) || math.IsInf(v, 0) {
+			return false
+		}
+	}
+	return k.High >= k.Low && k.High >= k.Open && k.High >= k.Close && k.Low <= k.Open && k.Low <= k.Close
 }
 
 // GetLatestDate returns the latest date string for a given code and ktype.
@@ -169,7 +200,7 @@ func (s *KlineStore) GetLatestDate(code string, ktype uint8) (string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	rows, err := s.db.Query(
-		`SELECT date FROM kline WHERE code = ? AND ktype = ? ORDER BY REPLACE(date, '-', '') DESC`,
+		`SELECT date, open, high, low, close, volume, amount FROM kline WHERE code = ? AND ktype = ? ORDER BY REPLACE(date, '-', '') DESC`,
 		code, ktype,
 	)
 	if err != nil {
@@ -178,12 +209,17 @@ func (s *KlineStore) GetLatestDate(code string, ktype uint8) (string, error) {
 	defer rows.Close()
 
 	for rows.Next() {
+		var k protocol.Kline
 		var date string
-		if err := rows.Scan(&date); err != nil {
+		if err := rows.Scan(&date, &k.Open, &k.High, &k.Low, &k.Close, &k.Volume, &k.Amount); err != nil {
 			return "", err
 		}
 		parsed, err := parseKlineStoreDate(date, s.loc)
 		if err != nil {
+			continue
+		}
+		k.Time = parsed
+		if !isValidKlineStoreRecord(&k) {
 			continue
 		}
 		return parsed.Format("20060102"), nil
