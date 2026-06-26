@@ -3,6 +3,7 @@ package tdx
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"math"
 	"sync"
 	"time"
@@ -98,8 +99,10 @@ func (s *KlineStore) SaveKline(code string, ktype uint8, klines []*protocol.Klin
 	}
 	defer stmt.Close()
 
+	skipped := make(map[string]int)
 	for _, k := range klines {
-		if !isValidKlineStoreRecord(k) {
+		if reason := validateKlineStoreRecord(k); reason != "" {
+			skipped[reason]++
 			continue
 		}
 		date := k.Time.Format("20060102")
@@ -107,6 +110,9 @@ func (s *KlineStore) SaveKline(code string, ktype uint8, klines []*protocol.Klin
 		if err != nil {
 			return err
 		}
+	}
+	if len(skipped) > 0 {
+		log.Printf("[kline] skipped invalid records before save: code=%s ktype=%d reasons=%v", code, ktype, skipped)
 	}
 
 	return tx.Commit()
@@ -183,15 +189,33 @@ func isValidKlineStoreDate(t time.Time, loc *time.Location) bool {
 }
 
 func isValidKlineStoreRecord(k *protocol.Kline) bool {
-	if k == nil || !isValidKlineStoreDate(k.Time, time.Local) {
-		return false
+	return validateKlineStoreRecord(k) == ""
+}
+
+func validateKlineStoreRecord(k *protocol.Kline) string {
+	if k == nil {
+		return "nil_record"
 	}
-	for _, v := range []float64{k.Open, k.High, k.Low, k.Close} {
-		if v <= 0 || math.IsNaN(v) || math.IsInf(v, 0) {
-			return false
+	if !isValidKlineStoreDate(k.Time, time.Local) {
+		return "bad_date"
+	}
+	for _, item := range []struct {
+		name  string
+		value float64
+	}{
+		{"open", k.Open},
+		{"high", k.High},
+		{"low", k.Low},
+		{"close", k.Close},
+	} {
+		if item.value <= 0 || math.IsNaN(item.value) || math.IsInf(item.value, 0) {
+			return "bad_" + item.name
 		}
 	}
-	return k.High >= k.Low && k.High >= k.Open && k.High >= k.Close && k.Low <= k.Open && k.Low <= k.Close
+	if k.High < k.Low || k.High < k.Open || k.High < k.Close || k.Low > k.Open || k.Low > k.Close {
+		return "bad_ohlc_order"
+	}
+	return ""
 }
 
 // GetLatestDate returns the latest date string for a given code and ktype.

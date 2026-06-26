@@ -1,10 +1,12 @@
 package tdx
 
 import (
+	"math"
 	"testing"
 	"time"
 
 	"github.com/sjzsdu/tongstock/pkg/db"
+	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
 )
 
 func TestParseKlineStoreDateSupportsCompactAndDashed(t *testing.T) {
@@ -75,5 +77,41 @@ func TestKlineStoreReadsLegacyDashedDatesAndSkipsInvalidDates(t *testing.T) {
 	}
 	if klines[0].Time.IsZero() || klines[1].Time.IsZero() {
 		t.Fatalf("expected parsed non-zero dates, got %v and %v", klines[0].Time, klines[1].Time)
+	}
+}
+
+func TestSaveKlineRejectsInvalidRecordsBeforePersisting(t *testing.T) {
+	database, err := db.OpenSQLite(t.TempDir() + "/save-kline.db")
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer database.Close()
+
+	store := &KlineStore{db: database, loc: time.Local}
+	if err := store.init(); err != nil {
+		t.Fatalf("init store: %v", err)
+	}
+
+	validDate := time.Date(2026, time.June, 22, 0, 0, 0, 0, time.Local)
+	klines := []*protocol.Kline{
+		{Time: validDate, Open: 2, High: 3, Low: 1, Close: 2.5, Volume: 100, Amount: 1000},
+		{Time: time.Date(1980, time.January, 1, 0, 0, 0, 0, time.Local), Open: 2, High: 3, Low: 1, Close: 2.5},
+		{Time: validDate.AddDate(0, 0, 1), Open: 0, High: 3, Low: 1, Close: 2.5},
+		{Time: validDate.AddDate(0, 0, 2), Open: 2, High: 1, Low: 3, Close: 2.5},
+		{Time: validDate.AddDate(0, 0, 3), Open: 2, High: math.Inf(1), Low: 1, Close: 2.5},
+	}
+	if err := store.SaveKline("000001", 9, klines); err != nil {
+		t.Fatalf("SaveKline: %v", err)
+	}
+
+	got, err := store.GetKline("000001", 9, "", "")
+	if err != nil {
+		t.Fatalf("GetKline: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("len(got) = %d, want 1", len(got))
+	}
+	if got[0].Time.Format("20060102") != "20260622" {
+		t.Fatalf("persisted date = %s, want 20260622", got[0].Time.Format("20060102"))
 	}
 }
