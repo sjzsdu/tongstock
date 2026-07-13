@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "tongstock",
+  "project_id": "29beabce-1751-4ff5-8b51-57859971674e"
+}
