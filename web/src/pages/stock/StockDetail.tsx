@@ -58,8 +58,9 @@ import MinuteChart from '../../components/charts/MinuteChart';
 import SignalInterpretationCard from '../../components/SignalInterpretationCard';
 import StockCompareView from '../../components/StockCompareView';
 import TabContent from '../../components/TabContent';
+import TdxContent from '../../components/TdxContent';
 import { formatDate, formatShortDate, formatTdxDate, formatTime } from '../../lib/datetime';
-import { parseTdxText, renderTdxHtml } from '../../lib/tdx-parser';
+import { parseTdxText } from '../../lib/tdx-parser';
 
 type Tab = 'chart' | 'signal' | 'compare' | 'finance' | 'company' | 'dividend' | 'intraday';
 type DetailStatus = 'loading' | 'ready' | 'not_found' | 'no_data';
@@ -1022,7 +1023,7 @@ export default function StockDetail() {
               <Col xs={24} lg={18}>
                 <Card title={<Space><InfoCircleOutlined />内容</Space>}>
                   {companyContent ? (
-                    <div className="tdx-content text-sm text-slate-300" dangerouslySetInnerHTML={{ __html: renderTdxHtml(parseTdxText(companyContent)) }} />
+                    <TdxContent sections={parseTdxText(companyContent)} />
                   ) : (
                     <Empty description="点击左侧目录查看内容" />
                   )}

@@ -1,4 +1,4 @@
-interface Section {
+export interface Section {
   type: 'header' | 'table' | 'paragraph' | 'link' | 'divider';
   content: string[][];
   text: string;
@@ -97,50 +97,7 @@ export function parseTdxText(text: string): Section[] {
   return sections;
 }
 
-export function renderTdxHtml(sections: Section[]): string {
-  let html = '';
-
-  for (const section of sections) {
-    switch (section.type) {
-      case 'header':
-        html += `<h3 class="tdx-header">${escapeHtml(section.text)}</h3>`;
-        break;
-
-      case 'table':
-        const maxCols = Math.max(...section.content.map(r => r.length));
-        html += '<div class="tdx-table-wrap"><table class="tdx-table">';
-        let isFirstRow = true;
-        for (const row of section.content) {
-          html += '<tr>';
-          const isHeaderRow = isFirstRow || (row.length > 0 && /^●/.test(row[0]));
-          for (let i = 0; i < maxCols; i++) {
-            const cell = row[i] || '';
-            const tag = isHeaderRow ? 'th' : 'td';
-            html += `<${tag} class="${isHeaderRow ? 'tdx-th' : 'tdx-td'}">${escapeHtml(cell)}</${tag}>`;
-          }
-          html += '</tr>';
-          isFirstRow = false;
-        }
-        html += '</table></div>';
-        break;
-
-      case 'paragraph':
-        html += `<div class="tdx-para">${escapeHtml(section.text)}</div>`;
-        break;
-
-      case 'link':
-        html += `<a href="${escapeHtml(section.text)}" target="_blank" class="tdx-link">${escapeHtml(section.text)}</a>`;
-        break;
-
-      case 'divider':
-        html += '<hr class="tdx-divider" />';
-        break;
-    }
-  }
-
-  return html;
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
+// renderTdxHtml and escapeHtml have been removed in favor of the TdxContent React
+// component, which renders the parsed Section[] as React elements. This eliminates
+// the dangerouslySetInnerHTML XSS surface entirely — React auto-escapes all text
+// content, and link protocols are validated at render time.
