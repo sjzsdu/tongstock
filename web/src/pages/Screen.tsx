@@ -17,6 +17,7 @@ import {
   Alert,
   Button,
   Card,
+  Collapse,
   Empty,
   Flex,
   Input,
@@ -32,7 +33,7 @@ import {
   message,
 } from 'antd';
 import { api } from '../api/client';
-import type { ScreenResult } from '../types/api';
+import type { ScreenCodeStatus, ScreenResult } from '../types/api';
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -340,6 +341,8 @@ export default function Screen() {
   const [ktype, setKtype] = useState(urlKtype);
   const [selectedSignals, setSelectedSignals] = useState<string[]>(urlSignals);
   const [results, setResults] = useState<ScreenResult[]>([]);
+  const [failedCodes, setFailedCodes] = useState<ScreenCodeStatus[]>([]);
+  const [skippedCodes, setSkippedCodes] = useState<ScreenCodeStatus[]>([]);
   const [hasScreenLoaded, setHasScreenLoaded] = useState(false);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -465,8 +468,8 @@ export default function Screen() {
     window.history.replaceState({}, '', newUrl);
   }, [ktype, selectedSignals]);
 
-  const doScreen = async () => {
-    const codes = resolvedCodes.trim();
+  const doScreen = async (retryCodes?: string) => {
+    const codes = (retryCodes ?? resolvedCodes).trim();
     if (!codes) return;
 
     setLoading(true);
@@ -476,12 +479,20 @@ export default function Screen() {
       const valid = response.results.filter((item) => item.code);
       setResults(valid);
       setTotal(response.total);
+      setFailedCodes(response.failed ?? []);
+      setSkippedCodes(response.skipped ?? []);
       setHasScreenLoaded(true);
     } catch (screenError: unknown) {
       setError(screenError instanceof Error ? screenError.message : '筛选失败');
     } finally {
       setLoading(false);
     }
+  };
+
+  const retryFailed = async () => {
+    if (failedCodes.length === 0) return;
+    const codes = failedCodes.map((item) => item.code).join(',');
+    await doScreen(codes);
   };
 
   useEffect(() => {
@@ -926,11 +937,50 @@ export default function Screen() {
 
             {error && <Alert type="error" showIcon message="筛选失败" description={error} />}
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 16 }}>
               <Card><Statistic title="扫描总数" value={total} suffix="只" /></Card>
               <Card><Statistic title="命中结果" value={filteredResults.length} suffix="只" /></Card>
               <Card><Statistic title="活跃信号" value={Object.keys(signalCounts).length} suffix="种" /></Card>
+              {hasScreenLoaded && failedCodes.length > 0 && (
+                <Card><Statistic title="失败" value={failedCodes.length} suffix="只" valueStyle={{ color: '#cf1322' }} /></Card>
+              )}
+              {hasScreenLoaded && skippedCodes.length > 0 && (
+                <Card><Statistic title="跳过" value={skippedCodes.length} suffix="只" valueStyle={{ color: '#faad14' }} /></Card>
+              )}
             </div>
+
+            {hasScreenLoaded && failedCodes.length > 0 && (
+              <Collapse
+                items={[{
+                  key: 'failed',
+                  label: <Space><Tag color="error">失败 {failedCodes.length}</Tag><Text type="secondary">点击查看详情</Text></Space>,
+                  children: (
+                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                      <Flex justify="flex-end">
+                        <Button size="small" icon={<SyncOutlined />} loading={loading} onClick={() => void retryFailed()}>
+                          重试失败项
+                        </Button>
+                      </Flex>
+                      <List
+                        size="small"
+                        dataSource={failedCodes}
+                        renderItem={(item) => (
+                          <List.Item>
+                            <Flex justify="space-between" align="center" style={{ width: '100%' }}>
+                              <Space>
+                                <Text code>{item.code}</Text>
+                                {item.name && <Text type="secondary">{item.name}</Text>}
+                              </Space>
+                              <Text type="danger" style={{ fontSize: 12 }}>{item.reason}</Text>
+                            </Flex>
+                          </List.Item>
+                        )}
+                      />
+                    </Space>
+                  ),
+                }]}
+              />
+            )}
 
             {results.length > 0 && (
               <Card>

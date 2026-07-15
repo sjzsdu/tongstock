@@ -1451,17 +1451,30 @@ func (s *Server) handleScreen(c *gin.Context) {
 	codes := strings.Split(codesStr, ",")
 	results := make([]gin.H, 0, len(codes))
 
+	// Track per-code status for transparent reporting
+	type codeStatus struct {
+		Code   string `json:"code"`
+		Name   string `json:"name,omitempty"`
+		Status string `json:"status"` // "failed" or "skipped"
+		Reason string `json:"reason"`
+	}
+	var failed []codeStatus
+	var skipped []codeStatus
+
+	processedCount := 0
 	for _, code := range codes {
 		code = strings.TrimSpace(code)
 		if code == "" {
 			continue
 		}
+		processedCount++
 
 		// Get klines
 		klines, err := withRetry(s, func() ([]*protocol.Kline, error) {
 			return s.svc.FetchKlineAll(code, ktype)
 		})
 		if err != nil {
+			failed = append(failed, codeStatus{Code: code, Status: "failed", Reason: fmt.Sprintf("获取K线失败: %v", err)})
 			continue
 		}
 
@@ -1489,6 +1502,7 @@ func (s *Server) handleScreen(c *gin.Context) {
 		}
 
 		if len(inputs) == 0 {
+			failed = append(failed, codeStatus{Code: code, Name: name, Status: "failed", Reason: "无K线数据"})
 			continue
 		}
 
@@ -1514,6 +1528,7 @@ func (s *Server) handleScreen(c *gin.Context) {
 				}
 			}
 			if !hasSignal {
+				skipped = append(skipped, codeStatus{Code: code, Name: name, Status: "skipped", Reason: fmt.Sprintf("未命中信号: %s", signalFilter)})
 				continue
 			}
 		}
@@ -1546,8 +1561,13 @@ func (s *Server) handleScreen(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"total":   len(codes),
-		"results": results,
+		"total":        processedCount,
+		"successCount": len(results),
+		"failedCount":  len(failed),
+		"skippedCount": len(skipped),
+		"results":      results,
+		"failed":       failed,
+		"skipped":      skipped,
 	})
 }
 

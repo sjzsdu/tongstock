@@ -224,10 +224,22 @@ export interface ScreenResult {
   signals: Signal[];
 }
 
+export interface ScreenCodeStatus {
+  code: string;
+  name?: string;
+  status: 'failed' | 'skipped';
+  reason: string;
+}
+
 export interface ScreenResponse {
   results: ScreenResult[];
   total: number;
   matched?: number;
+  successCount?: number;
+  failedCount?: number;
+  skippedCount?: number;
+  failed?: ScreenCodeStatus[];
+  skipped?: ScreenCodeStatus[];
 }
 
 export interface SignalOutcome {
