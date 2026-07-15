@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   DeleteOutlined,
+  ExclamationCircleOutlined,
   InfoCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -15,6 +16,7 @@ import {
   Flex,
   Input,
   InputNumber,
+  Modal,
   Skeleton,
   Space,
   Tabs,
@@ -29,17 +31,17 @@ import type { IndicatorConfig, IndicatorParams } from '../../types/api';
 const { Paragraph, Text, Title } = Typography;
 
 const DEFAULT_PARAMS: IndicatorParams = {
-  ma: [5, 10, 20, 60],
+  ma: [5, 10, 20, 60, 120],
   macd: { fast: 12, slow: 26, signal: 9 },
   kdj: { n: 9, m1: 3, m2: 3 },
   boll: { n: 20, k: 2.0 },
-  rsi: [6, 14],
+  rsi: [6, 12, 24],
 };
 
 const INITIAL_CONFIG: IndicatorConfig = {
   defaults: { ...DEFAULT_PARAMS, ma: [...DEFAULT_PARAMS.ma], rsi: [...DEFAULT_PARAMS.rsi] },
   categories: {
-    large_cap: { ma: [5, 10, 20, 60, 120] },
+    large_cap: { ma: [5, 10, 20, 60, 120], macd: { fast: 12, slow: 26, signal: 9 } },
     small_cap: { ma: [5, 10, 20], macd: { fast: 8, slow: 17, signal: 9 }, kdj: { n: 7, m1: 3, m2: 3 } },
   },
   overrides: {
@@ -457,11 +459,11 @@ function OverridesTab({ config, onChange }: { config: IndicatorConfig; onChange:
 
 function ParamReference() {
   const items = useMemo(() => ([
-    { key: '1', label: 'ma', value: '[5, 10, 20, 60]', desc: '均线周期列表' },
+    { key: '1', label: 'ma', value: '[5, 10, 20, 60, 120]', desc: '均线周期列表' },
     { key: '2', label: 'macd', value: '12 / 26 / 9', desc: '快线 / 慢线 / 信号线周期' },
     { key: '3', label: 'kdj', value: '9 / 3 / 3', desc: 'RSV 周期 / K 平滑 / D 平滑' },
     { key: '4', label: 'boll', value: '20 / 2.0', desc: '均线周期 / 标准差倍数' },
-    { key: '5', label: 'rsi', value: '[6, 14]', desc: 'RSI 周期列表' },
+    { key: '5', label: 'rsi', value: '[6, 12, 24]', desc: 'RSI 周期列表' },
   ]), []);
 
   return (
@@ -496,15 +498,33 @@ function ParamReference() {
 
 export default function SettingsPage() {
   const [config, setConfig] = useState<IndicatorConfig>(cloneIndicatorConfig(INITIAL_CONFIG));
+  const [savedConfig, setSavedConfig] = useState<IndicatorConfig>(cloneIndicatorConfig(INITIAL_CONFIG));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [messageApi, contextHolder] = message.useMessage();
+
+  const isDirty = useMemo(
+    () => JSON.stringify(config) !== JSON.stringify(savedConfig),
+    [config, savedConfig],
+  );
+
+  // Warn before leaving page with unsaved changes
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
 
   const loadConfig = async () => {
     setLoading(true);
     try {
       const next = await api.indicatorSettings();
       setConfig(next);
+      setSavedConfig(structuredClone(next));
     } catch (error) {
       const text = error instanceof Error ? error.message : '加载配置失败';
       messageApi.error(text);
@@ -522,6 +542,7 @@ export default function SettingsPage() {
     try {
       const result = await api.saveIndicatorSettings(config);
       setConfig(result.config);
+      setSavedConfig(structuredClone(result.config));
       messageApi.success('配置已保存');
     } catch (error) {
       const text = error instanceof Error ? error.message : '保存配置失败';
@@ -529,6 +550,36 @@ export default function SettingsPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleReload = () => {
+    if (isDirty) {
+      Modal.confirm({
+        title: '确认重新加载？',
+        icon: <ExclamationCircleOutlined />,
+        content: '当前有未保存的修改，重新加载将丢弃这些改动。',
+        okText: '丢弃并重新加载',
+        okType: 'danger',
+        cancelText: '取消',
+        onOk: () => void loadConfig(),
+      });
+    } else {
+      void loadConfig();
+    }
+  };
+
+  const handleReset = () => {
+    Modal.confirm({
+      title: '确认恢复示例默认配置？',
+      icon: <ExclamationCircleOutlined />,
+      content: '这将把当前页面所有参数重置为内置示例值。重置后仍需点击"保存配置"才会写入服务端。',
+      okText: '确认重置',
+      cancelText: '取消',
+      onOk: () => {
+        setConfig(cloneIndicatorConfig(INITIAL_CONFIG));
+        messageApi.info('已重置为示例配置，请确认后点击"保存配置"');
+      },
+    });
   };
 
   return (
@@ -560,6 +611,15 @@ export default function SettingsPage() {
           </Card>
         ) : (
           <>
+            {isDirty && (
+              <Alert
+                type="warning"
+                showIcon
+                message="有未保存的修改"
+                description="您已修改配置但尚未保存。离开页面或重新加载将丢失这些改动。"
+              />
+            )}
+
             <Tabs
               items={[
                 {
@@ -584,15 +644,15 @@ export default function SettingsPage() {
 
             <Flex justify="space-between" align="center" wrap="wrap" gap={12}>
               <Space wrap>
-                <Button type="primary" size="large" icon={<SaveOutlined />} loading={saving} onClick={handleSave}>
+                <Button type="primary" size="large" icon={<SaveOutlined />} loading={saving} onClick={handleSave} disabled={!isDirty}>
                   保存配置
                 </Button>
-                <Button icon={<ReloadOutlined />} onClick={() => void loadConfig()}>
+                <Button icon={<ReloadOutlined />} onClick={handleReload}>
                   重新加载
                 </Button>
               </Space>
-              <Tooltip title="重置为当前页面内置的默认示例配置，再按保存写入服务端。">
-                <Button onClick={() => setConfig(cloneIndicatorConfig(INITIAL_CONFIG))}>
+              <Tooltip title="重置为内置示例默认配置，需手动点击保存才会写入服务端。">
+                <Button onClick={handleReset}>
                   恢复示例默认配置
                 </Button>
               </Tooltip>
