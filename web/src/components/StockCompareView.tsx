@@ -156,6 +156,9 @@ export default function StockCompareView({
               <Tag color={comparison.block_type === 1 ? 'blue' : 'green'}>
                 {blockFile.includes('fg') ? '行业' : blockFile.includes('gn') ? '概念' : '指数'}
               </Tag>
+              {comparison.capped && (
+                <Tag color="warning">部分数据</Tag>
+              )}
             </Space>
           }
           extra={

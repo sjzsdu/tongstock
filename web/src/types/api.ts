@@ -240,6 +240,9 @@ export interface ScreenResponse {
   skippedCount?: number;
   failed?: ScreenCodeStatus[];
   skipped?: ScreenCodeStatus[];
+  capped?: boolean;
+  maxCodes?: number;
+  reason?: string;
 }
 
 export interface SignalOutcome {
@@ -379,6 +382,7 @@ export interface BlockComparison {
   avg_change: number;
   stock_rank: number;
   stock_change: number;
+  capped?: boolean;
   stock_quote: {
     code: string;
     name: string;

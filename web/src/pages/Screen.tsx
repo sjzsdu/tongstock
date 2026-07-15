@@ -343,6 +343,7 @@ export default function Screen() {
   const [results, setResults] = useState<ScreenResult[]>([]);
   const [failedCodes, setFailedCodes] = useState<ScreenCodeStatus[]>([]);
   const [skippedCodes, setSkippedCodes] = useState<ScreenCodeStatus[]>([]);
+  const [cappedInfo, setCappedInfo] = useState<{ maxCodes: number; reason: string } | null>(null);
   const [hasScreenLoaded, setHasScreenLoaded] = useState(false);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -481,6 +482,7 @@ export default function Screen() {
       setTotal(response.total);
       setFailedCodes(response.failed ?? []);
       setSkippedCodes(response.skipped ?? []);
+      setCappedInfo(response.capped ? { maxCodes: response.maxCodes ?? 0, reason: response.reason ?? '' } : null);
       setHasScreenLoaded(true);
     } catch (screenError: unknown) {
       setError(screenError instanceof Error ? screenError.message : '筛选失败');
@@ -936,6 +938,10 @@ export default function Screen() {
             </Card>
 
             {error && <Alert type="error" showIcon message="筛选失败" description={error} />}
+
+            {cappedInfo && (
+              <Alert type="warning" showIcon message="批量已截断" description={cappedInfo.reason} />
+            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 16 }}>
               <Card><Statistic title="扫描总数" value={total} suffix="只" /></Card>

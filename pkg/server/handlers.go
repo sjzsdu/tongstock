@@ -1448,8 +1448,23 @@ func (s *Server) handleScreen(c *gin.Context) {
 
 	signalFilter := c.Query("signal")
 
-	codes := strings.Split(codesStr, ",")
-	results := make([]gin.H, 0, len(codes))
+	// Parse, trim, deduplicate, and cap batch size
+	const maxCodes = 500
+	seen := make(map[string]bool)
+	var codes []string
+	capped := false
+	for _, raw := range strings.Split(codesStr, ",") {
+		code := strings.TrimSpace(raw)
+		if code == "" || seen[code] {
+			continue
+		}
+		if len(codes) >= maxCodes {
+			capped = true
+			break
+		}
+		seen[code] = true
+		codes = append(codes, code)
+	}
 
 	// Track per-code status for transparent reporting
 	type codeStatus struct {
@@ -1458,117 +1473,154 @@ func (s *Server) handleScreen(c *gin.Context) {
 		Status string `json:"status"` // "failed" or "skipped"
 		Reason string `json:"reason"`
 	}
-	var failed []codeStatus
-	var skipped []codeStatus
-
-	processedCount := 0
-	for _, code := range codes {
-		code = strings.TrimSpace(code)
-		if code == "" {
-			continue
-		}
-		processedCount++
-
-		// Get klines
-		klines, err := withRetry(s, func() ([]*protocol.Kline, error) {
-			return s.svc.FetchKlineAll(code, ktype)
-		})
-		if err != nil {
-			failed = append(failed, codeStatus{Code: code, Status: "failed", Reason: fmt.Sprintf("获取K线失败: %v", err)})
-			continue
-		}
-
-		// Get quote
-		quotes, err := withRetry(s, func() ([]*protocol.QuoteItem, error) {
-			return s.svc.Client.GetQuote(code)
-		})
-		name := ""
-		if err == nil && len(quotes) > 0 {
-			name = quotes[0].Name
-		}
-
-		// Build inputs
-		var inputs []ta.KlineInput
-		for _, k := range klines {
-			inputs = append(inputs, ta.KlineInput{
-				Time:   k.Time,
-				Open:   k.Open,
-				High:   k.High,
-				Low:    k.Low,
-				Close:  k.Close,
-				Volume: k.Volume,
-				Amount: k.Amount,
-			})
-		}
-
-		if len(inputs) == 0 {
-			failed = append(failed, codeStatus{Code: code, Name: name, Status: "failed", Reason: "无K线数据"})
-			continue
-		}
-
-		// Get params
-		params := param.Resolve(code, param.DetectCategory(code))
-
-		// Calculate indicators
-		result := ta.Calculate(inputs, params)
-
-		// Detect signals
-		signals := signal.Detect(code, inputs, result, signal.DefaultDetectOptions())
-
-		// Detect cycles
-		cycles := signal.DetectAllCycles(code, inputs, result)
-
-		// Filter by signal if specified
-		if signalFilter != "" {
-			hasSignal := false
-			for _, s := range signals {
-				if string(s.Type) == signalFilter {
-					hasSignal = true
-					break
-				}
-			}
-			if !hasSignal {
-				skipped = append(skipped, codeStatus{Code: code, Name: name, Status: "skipped", Reason: fmt.Sprintf("未命中信号: %s", signalFilter)})
-				continue
-			}
-		}
-
-		results = append(results, gin.H{
-			"code":    code,
-			"name":    name,
-			"signals": buildSignalsResponse(signals),
-			"cycles":  cycles,
-			"ma":      result.MA,
-			"macd": gin.H{
-				"DIF":  result.MACD.DIF,
-				"DEA":  result.MACD.DEA,
-				"Hist": result.MACD.Hist,
-				"HIST": result.MACD.Hist,
-			},
-			"kdj": gin.H{
-				"K": result.KDJ.K,
-				"D": result.KDJ.D,
-				"J": result.KDJ.J,
-			},
-			"last": gin.H{
-				"Open":   inputs[len(inputs)-1].Open,
-				"High":   inputs[len(inputs)-1].High,
-				"Low":    inputs[len(inputs)-1].Low,
-				"Close":  inputs[len(inputs)-1].Close,
-				"Volume": inputs[len(inputs)-1].Volume,
-			},
-		})
+	type screenOutput struct {
+		result  *gin.H
+		failed  *codeStatus
+		skipped *codeStatus
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"total":        processedCount,
+	// Bounded concurrent processing
+	const concurrency = 8
+	sem := make(chan struct{}, concurrency)
+	outputs := make([]screenOutput, len(codes))
+	var wg sync.WaitGroup
+
+	for i, code := range codes {
+		wg.Add(1)
+		go func(idx int, code string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			out := screenOutput{}
+
+			// Get klines
+			klines, err := withRetry(s, func() ([]*protocol.Kline, error) {
+				return s.svc.FetchKlineAll(code, ktype)
+			})
+			if err != nil {
+				out.failed = &codeStatus{Code: code, Status: "failed", Reason: fmt.Sprintf("获取K线失败: %v", err)}
+				outputs[idx] = out
+				return
+			}
+
+			// Get quote
+			quotes, err := withRetry(s, func() ([]*protocol.QuoteItem, error) {
+				return s.svc.Client.GetQuote(code)
+			})
+			name := ""
+			if err == nil && len(quotes) > 0 {
+				name = quotes[0].Name
+			}
+
+			// Build inputs
+			var inputs []ta.KlineInput
+			for _, k := range klines {
+				inputs = append(inputs, ta.KlineInput{
+					Time:   k.Time,
+					Open:   k.Open,
+					High:   k.High,
+					Low:    k.Low,
+					Close:  k.Close,
+					Volume: k.Volume,
+					Amount: k.Amount,
+				})
+			}
+
+			if len(inputs) == 0 {
+				out.failed = &codeStatus{Code: code, Name: name, Status: "failed", Reason: "无K线数据"}
+				outputs[idx] = out
+				return
+			}
+
+			// Get params
+			params := param.Resolve(code, param.DetectCategory(code))
+
+			// Calculate indicators
+			result := ta.Calculate(inputs, params)
+
+			// Detect signals
+			signals := signal.Detect(code, inputs, result, signal.DefaultDetectOptions())
+
+			// Detect cycles
+			cycles := signal.DetectAllCycles(code, inputs, result)
+
+			// Filter by signal if specified
+			if signalFilter != "" {
+				hasSignal := false
+				for _, s := range signals {
+					if string(s.Type) == signalFilter {
+						hasSignal = true
+						break
+					}
+				}
+				if !hasSignal {
+					out.skipped = &codeStatus{Code: code, Name: name, Status: "skipped", Reason: fmt.Sprintf("未命中信号: %s", signalFilter)}
+					outputs[idx] = out
+					return
+				}
+			}
+
+			out.result = &gin.H{
+				"code":    code,
+				"name":    name,
+				"signals": buildSignalsResponse(signals),
+				"cycles":  cycles,
+				"ma":      result.MA,
+				"macd": gin.H{
+					"DIF":  result.MACD.DIF,
+					"DEA":  result.MACD.DEA,
+					"Hist": result.MACD.Hist,
+					"HIST": result.MACD.Hist,
+				},
+				"kdj": gin.H{
+					"K": result.KDJ.K,
+					"D": result.KDJ.D,
+					"J": result.KDJ.J,
+				},
+				"last": gin.H{
+					"Open":   inputs[len(inputs)-1].Open,
+					"High":   inputs[len(inputs)-1].High,
+					"Low":    inputs[len(inputs)-1].Low,
+					"Close":  inputs[len(inputs)-1].Close,
+					"Volume": inputs[len(inputs)-1].Volume,
+				},
+			}
+			outputs[idx] = out
+		}(i, code)
+	}
+	wg.Wait()
+
+	// Assemble results from concurrent outputs
+	results := make([]gin.H, 0, len(codes))
+	var failed []codeStatus
+	var skipped []codeStatus
+	for _, out := range outputs {
+		if out.result != nil {
+			results = append(results, *out.result)
+		} else if out.failed != nil {
+			failed = append(failed, *out.failed)
+		} else if out.skipped != nil {
+			skipped = append(skipped, *out.skipped)
+		}
+	}
+
+	response := gin.H{
+		"total":        len(codes),
 		"successCount": len(results),
 		"failedCount":  len(failed),
 		"skippedCount": len(skipped),
 		"results":      results,
 		"failed":       failed,
 		"skipped":      skipped,
-	})
+	}
+	if capped {
+		response["capped"] = true
+		response["maxCodes"] = maxCodes
+		response["reason"] = fmt.Sprintf("批量上限 %d 只，已截断", maxCodes)
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 // handleSignalAnalysis handles signal analysis requests
@@ -2358,33 +2410,91 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 				continue
 			}
 
-			// Get quotes for all stocks in this block
+			// Cap the number of stocks to compare per block for performance
+			const maxBlockStocks = 100
+			compareStocks := stockCodes
+			cappedBlock := false
+			if len(compareStocks) > maxBlockStocks {
+				// Ensure the target stock is always in the comparison set
+				compareStocks = make([]string, 0, maxBlockStocks+1)
+				targetIncluded := false
+				for i, sc := range stockCodes {
+					if i >= maxBlockStocks && sc != code {
+						continue
+					}
+					if sc == code {
+						targetIncluded = true
+					}
+					compareStocks = append(compareStocks, sc)
+				}
+				if !targetIncluded {
+					compareStocks = append(compareStocks, code)
+				}
+				cappedBlock = true
+			}
+
+			// Bounded concurrent quote fetching
+			const quoteConcurrency = 8
+			type quoteResult struct {
+				code  string
+				name  string
+				price float64
+				change float64
+				ok    bool
+			}
+			quoteResults := make([]quoteResult, len(compareStocks))
+			var qwg sync.WaitGroup
+			qsem := make(chan struct{}, quoteConcurrency)
+
+			for i, sc := range compareStocks {
+				qwg.Add(1)
+				go func(idx int, stockCode string) {
+					defer qwg.Done()
+					qsem <- struct{}{}
+					defer func() { <-qsem }()
+
+					qs, err := s.svc.Client.GetQuote(stockCode)
+					if err != nil || len(qs) == 0 {
+						quoteResults[idx] = quoteResult{code: stockCode, ok: false}
+						return
+					}
+					q := qs[0]
+					change := (q.Price - q.LastClose) / q.LastClose * 100
+					quoteResults[idx] = quoteResult{
+						code:  stockCode,
+						name:  q.Name,
+						price: q.Price,
+						change: change,
+						ok:    true,
+					}
+				}(i, sc)
+			}
+			qwg.Wait()
+
+			// Collect results
 			var blockQuotes []gin.H
 			var totalChange float64
 			var validCount int
 			var upCount int
 			var downCount int
 
-			for _, sc := range stockCodes {
-				qs, err := s.svc.Client.GetQuote(sc)
-				if err != nil || len(qs) == 0 {
+			for _, qr := range quoteResults {
+				if !qr.ok {
 					continue
 				}
-				q := qs[0]
-				change := (q.Price - q.LastClose) / q.LastClose * 100
-				totalChange += change
+				totalChange += qr.change
 				validCount++
-				if change > 0 {
+				if qr.change > 0 {
 					upCount++
-				} else if change < 0 {
+				} else if qr.change < 0 {
 					downCount++
 				}
 
 				blockQuotes = append(blockQuotes, gin.H{
-					"code":   sc,
-					"name":   q.Name,
-					"price":  q.Price,
-					"change": change,
+					"code":   qr.code,
+					"name":   qr.name,
+					"price":  qr.price,
+					"change": qr.change,
 				})
 			}
 
@@ -2419,6 +2529,7 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 				"avg_change":   avgChange,
 				"stock_rank":   rank,
 				"stock_change": stockChange,
+				"capped":       cappedBlock,
 				"stock_quote": gin.H{
 					"code":       stockQuote.Code,
 					"name":       stockQuote.Name,
