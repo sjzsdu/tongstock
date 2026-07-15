@@ -401,6 +401,7 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 
 		// Sync
 		api.POST("/sync/daily", s.handleSyncDaily)
+		api.GET("/sync/state", s.handleSyncState)
 
 		// Settings
 		api.GET("/settings/indicator", s.handleIndicatorSettings)
@@ -2076,6 +2077,31 @@ func (s *Server) handleSyncDaily(c *gin.Context) {
 
 	result := s.svc.SyncDailyKlines(codes, mode, req.Concurrency)
 	c.JSON(http.StatusOK, result)
+}
+
+// handleSyncState returns sync state for a given code without triggering a sync.
+func (s *Server) handleSyncState(c *gin.Context) {
+	code := strings.TrimSpace(c.Query("code"))
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "code is required"})
+		return
+	}
+
+	ktypeStr := c.DefaultQuery("ktype", "day")
+	ktype := tdx.ParseKlineType(ktypeStr)
+
+	state, err := s.svc.GetSyncState(code, ktype)
+	if err != nil {
+		// No sync state record found — return empty state
+		c.JSON(http.StatusOK, gin.H{
+			"code":   code,
+			"ktype":  ktype,
+			"status": "unknown",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, state)
 }
 
 // handleIndicatorSettings handles indicator settings requests

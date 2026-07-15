@@ -33,7 +33,7 @@ import {
   message,
 } from 'antd';
 import { api } from '../api/client';
-import type { ScreenCodeStatus, ScreenResult } from '../types/api';
+import type { KlineBatchSyncResult, ScreenCodeStatus, ScreenResult } from '../types/api';
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -348,6 +348,7 @@ export default function Screen() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
+  const [syncResult, setSyncResult] = useState<KlineBatchSyncResult | null>(null);
   const [error, setError] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('code');
   const [sortAsc, setSortAsc] = useState(true);
@@ -716,8 +717,10 @@ export default function Screen() {
     const codes = stockList.map((stock) => stock.code);
     if (codes.length === 0) return;
     setSyncLoading(true);
+    setSyncResult(null);
     try {
       const result = await api.syncDaily(codes, 'auto', 3);
+      setSyncResult(result);
       if (result.failed > 0) {
         messageApi.warning(`同步完成：成功 ${result.success} 只，失败 ${result.failed} 只`);
       } else {
@@ -1077,6 +1080,75 @@ export default function Screen() {
               );
             }}
           />
+        )}
+      </Modal>
+
+      <Modal
+        title="同步结果详情"
+        open={!!syncResult}
+        onCancel={() => setSyncResult(null)}
+        footer={<Button onClick={() => setSyncResult(null)}>关闭</Button>}
+        width={600}
+      >
+        {syncResult && (
+          <Space direction="vertical" size={12} style={{ display: 'flex' }}>
+            <Flex gap={24}>
+              <Statistic title="总数" value={syncResult.total} />
+              <Statistic title="成功" value={syncResult.success} valueStyle={{ color: '#22c55e' }} />
+              <Statistic title="失败" value={syncResult.failed} valueStyle={{ color: '#ef4444' }} />
+            </Flex>
+            {syncResult.results.filter((r) => r.status !== 'ok').length > 0 && (
+              <Collapse
+                size="small"
+                items={[
+                  {
+                    key: 'failed',
+                    label: <Text type="danger">失败详情 ({syncResult.results.filter((r) => r.status !== 'ok').length})</Text>,
+                    children: (
+                      <List
+                        size="small"
+                        dataSource={syncResult.results.filter((r) => r.status !== 'ok')}
+                        renderItem={(item) => (
+                          <List.Item>
+                            <Space>
+                              <Text code>{item.code}</Text>
+                              <Text type="danger">{item.error || item.status}</Text>
+                            </Space>
+                          </List.Item>
+                        )}
+                      />
+                    ),
+                  },
+                ]}
+              />
+            )}
+            {syncResult.results.filter((r) => r.status === 'ok' && r.state).length > 0 && (
+              <Collapse
+                size="small"
+                items={[
+                  {
+                    key: 'success',
+                    label: <Text type="success">成功详情 ({syncResult.results.filter((r) => r.status === 'ok' && r.state).length})</Text>,
+                    children: (
+                      <List
+                        size="small"
+                        dataSource={syncResult.results.filter((r) => r.status === 'ok' && r.state)}
+                        renderItem={(item) => (
+                          <List.Item>
+                            <Space>
+                              <Text code>{item.code}</Text>
+                              {item.state?.last_date && <Tag>{item.state.last_date}</Tag>}
+                              {item.state?.row_count !== undefined && <Text type="secondary">{item.state.row_count} 条</Text>}
+                            </Space>
+                          </List.Item>
+                        )}
+                      />
+                    ),
+                  },
+                ]}
+              />
+            )}
+          </Space>
         )}
       </Modal>
     </>

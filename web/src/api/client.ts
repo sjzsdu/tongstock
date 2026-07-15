@@ -10,6 +10,7 @@ import type {
   FinanceTrendsResponse,
   FinanceMetricsResponse,
   KlineBatchSyncResult,
+  KlineSyncState,
   StockCompareResponse,
 } from '../types/api';
 
@@ -194,6 +195,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ codes, mode, concurrency }),
     }),
+
+  getSyncState: (code: string, ktype = 'day') =>
+    fetchJSON<KlineSyncState>(`/api/sync/state?code=${encodeURIComponent(code)}&ktype=${ktype}`),
 
   indicatorSettings: () =>
     fetchJSON<IndicatorConfig>('/api/settings/indicator'),

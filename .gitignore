@@ -21,3 +21,4 @@ web/.vite
 .dolt/
 *.db
 .beads-credential-key
+.workbuddy

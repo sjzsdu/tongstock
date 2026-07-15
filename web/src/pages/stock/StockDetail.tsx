@@ -36,6 +36,7 @@ import {
   Table,
   Tabs,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -43,6 +44,7 @@ import { api } from '../../api/client';
 import type {
   FinanceTrendsResponse,
   FinanceMetricsResponse,
+  KlineSyncState,
   MinuteItem,
   CompanyCategory,
   Signal,
@@ -254,6 +256,7 @@ export default function StockDetail() {
 	const [chartLoading, setChartLoading] = useState(false);
 	const [detailStatus, setDetailStatus] = useState<DetailStatus>('loading');
 	const [detailError, setDetailError] = useState('');
+	const [syncState, setSyncState] = useState<KlineSyncState | null>(null);
 
   useEffect(() => {
     if (!paramCode) {
@@ -305,6 +308,12 @@ export default function StockDetail() {
     setMinuteData([]);
     setMinuteDate('');
     setMinuteError('');
+    setSyncState(null);
+
+    // Load sync state (non-blocking, best-effort)
+    api.getSyncState(code, ktype).then((state) => {
+      if (!cancelled) setSyncState(state);
+    }).catch(() => {});
 
 		const loadQuote = async () => {
 			try {
@@ -341,6 +350,11 @@ export default function StockDetail() {
 		setIndicator(null);
 		setKlines([]);
 		setAnalysis(null);
+
+    // Refresh sync state when ktype changes
+    api.getSyncState(code, ktype).then((state) => {
+      if (!cancelled) setSyncState(state);
+    }).catch(() => {});
 
 		const loadChart = async () => {
 			const [indicatorResult, analysisResult] = await Promise.allSettled([
@@ -628,6 +642,18 @@ export default function StockDetail() {
                     <Tag color="blue">{quote.Code || code}</Tag>
                     <Tag color={ktype === 'day' ? 'geekblue' : 'purple'}>{ktype.toUpperCase()}</Tag>
                     <Tag color={detailStatus === 'ready' ? 'success' : 'default'}>实时分析</Tag>
+                    {syncState?.last_date && (
+                      <Tooltip title={syncState.last_sync_at ? `最后同步: ${formatDate(new Date(syncState.last_sync_at))}` : '同步时间未知'}>
+                        <Tag color={syncState.status === 'ok' ? 'cyan' : 'orange'}>
+                          数据截至 {syncState.last_date}
+                        </Tag>
+                      </Tooltip>
+                    )}
+                    {syncState?.status === 'failed' && syncState.error && (
+                      <Tooltip title={syncState.error}>
+                        <Tag color="red">同步异常</Tag>
+                      </Tooltip>
+                    )}
                   </Space>
                   <Space wrap size={[8, 8]} align="center">
                     <Typography.Title level={2} style={{ margin: 0 }}>{quote.Name}</Typography.Title>

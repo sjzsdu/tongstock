@@ -135,6 +135,14 @@ func (s *Service) Close() error {
 	return nil
 }
 
+// GetSyncState returns the sync state for a given code and kline type.
+func (s *Service) GetSyncState(code string, ktype uint8) (*KlineSyncState, error) {
+	if s.klines == nil {
+		return nil, errors.New("kline store not initialized")
+	}
+	return s.klines.GetSyncState(code, ktype)
+}
+
 // FetchCodes tries to load codes from cache first, then fetches from the Client if needed.
 func (s *Service) FetchCodes(exchange protocol.Exchange) ([]*protocol.CodeItem, error) {
 	// Try cache first
