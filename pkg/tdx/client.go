@@ -118,13 +118,30 @@ func (c *Client) heartbeat() {
 
 	for range ticker.C {
 		c.mu.Lock()
+		if c.closed {
+			c.mu.Unlock()
+			return
+		}
+		if err := c.conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+			c.mu.Unlock()
+			log.Printf("心跳设置超时失败: %v", err)
+			return
+		}
 		f := protocol.MHeart.Frame()
 		_, err := c.conn.Write(f.Bytes())
-		c.mu.Unlock()
 		if err != nil {
+			_ = c.conn.SetDeadline(time.Time{})
+			c.mu.Unlock()
 			log.Printf("心跳失败: %v", err)
 			return
 		}
+		// Must read and discard the heartbeat response, otherwise it
+		// stays in the bufio.Reader buffer and the next send() call
+		// picks up the stale heartbeat response, causing a type mismatch
+		// error like "响应类型不匹配: 请求 2c5, 响应 4".
+		_, _ = c.readResponse()
+		_ = c.conn.SetDeadline(time.Time{})
+		c.mu.Unlock()
 	}
 }
 
