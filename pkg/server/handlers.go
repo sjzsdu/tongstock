@@ -125,6 +125,12 @@ func (s *Server) resolveStockCodeOrRespond(c *gin.Context, raw string) (string, 
 		return "", false
 	}
 
+	// Fast path: 6-digit numeric code is always treated as a direct stock code.
+	// Skip search index — let the TDX data fetch validate existence.
+	if code := normalizeStockCodeQuery(query); code != "" {
+		return code, true
+	}
+
 	matches, resolved, _, err := s.searchStockMatches(query, stockSearchDefaultLimit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -161,12 +167,23 @@ func (s *Server) searchStockMatches(query string, limit int) ([]stockSearchMatch
 	}
 
 	matches := make([]scoredStockMatch, 0, limit)
+	var exactCodeMatch *scoredStockMatch
 	for _, item := range items {
 		score, matchType, ok := s.scoreStockMatch(item, normalizedQuery, normalizedCode)
 		if !ok {
 			continue
 		}
-		matches = append(matches, scoredStockMatch{stockSearchMatch: stockSearchMatch{Code: item.Code, Name: item.Name, Exchange: item.Exchange, MatchType: matchType}, Score: score})
+		m := scoredStockMatch{stockSearchMatch: stockSearchMatch{Code: item.Code, Name: item.Name, Exchange: item.Exchange, MatchType: matchType}, Score: score}
+		matches = append(matches, m)
+		if matchType == "exact_code" && exactCodeMatch == nil {
+			exactCodeMatch = &m
+		}
+	}
+
+	// If there's an exact code match, return it directly as resolved
+	if exactCodeMatch != nil {
+		result := []stockSearchMatch{exactCodeMatch.stockSearchMatch}
+		return result, true, true, nil
 	}
 
 	sort.Slice(matches, func(i, j int) bool {
