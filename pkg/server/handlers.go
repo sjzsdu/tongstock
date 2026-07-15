@@ -420,6 +420,9 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 		api.POST("/sync/daily", s.handleSyncDaily)
 		api.GET("/sync/state", s.handleSyncState)
 
+		// Data cleanup
+		api.POST("/kline/clean", s.handleCleanKlines)
+
 		// Settings
 		api.GET("/settings/indicator", s.handleIndicatorSettings)
 		api.PUT("/settings/indicator", s.handleSaveIndicatorSettings)
@@ -1321,6 +1324,48 @@ func (s *Server) handleCount(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"exchange": exchange, "count": count})
 }
 
+// findCorruptedKlines detects obviously corrupted kline data points.
+// TDX delta-encoding can produce spikes (e.g., close jumping from 13 to 3000+)
+// when the binary stream is corrupted. Returns the dates of corrupted entries.
+func findCorruptedKlines(klines []*protocol.Kline) []string {
+	if len(klines) == 0 {
+		return nil
+	}
+
+	const maxPriceChangeRatio = 5.0 // 500% price change in one day is suspicious
+	const maxPrice = 100000.0       // No A-share stock should exceed 100k yuan
+
+	var corrupted []string
+	var lastValidClose float64
+
+	for i, k := range klines {
+		isBad := false
+
+		// Basic sanity checks
+		if k.Close <= 0 || k.Open <= 0 || k.High <= 0 || k.Low <= 0 {
+			isBad = true
+		} else if k.High < k.Low {
+			isBad = true
+		} else if k.Close > maxPrice || k.Open > maxPrice {
+			isBad = true
+		} else if i > 0 && lastValidClose > 0 {
+			// Check for unreasonable price jump from last valid close
+			ratio := k.Close / lastValidClose
+			if ratio > maxPriceChangeRatio || ratio < 1.0/maxPriceChangeRatio {
+				isBad = true
+			}
+		}
+
+		if isBad {
+			corrupted = append(corrupted, k.Time.Format("2006-01-02"))
+		} else {
+			lastValidClose = k.Close
+		}
+	}
+
+	return corrupted
+}
+
 // handleIndicator handles indicator requests
 func (s *Server) handleIndicator(c *gin.Context) {
 	code, ok := s.resolveStockCodeOrRespond(c, c.Query("code"))
@@ -1343,6 +1388,16 @@ func (s *Server) handleIndicator(c *gin.Context) {
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取K线数据失败: %v", err)})
+		return
+	}
+
+	// Validate klines - reject corrupted data with clear error
+	if corrupted := findCorruptedKlines(klines); len(corrupted) > 0 {
+		log.Printf("[indicator] 检测到 %s 的 %d 条异常K线数据，已拒绝", code, len(corrupted))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("检测到 %d 条异常K线数据（价格突变），请稍后重试或联系管理员清理数据", len(corrupted)),
+			"corrupted_dates": corrupted,
+		})
 		return
 	}
 
@@ -1518,6 +1573,13 @@ func (s *Server) handleScreen(c *gin.Context) {
 			})
 			if err != nil {
 				out.failed = &codeStatus{Code: code, Status: "failed", Reason: fmt.Sprintf("获取K线失败: %v", err)}
+				outputs[idx] = out
+				return
+			}
+
+			// Validate klines
+			if corrupted := findCorruptedKlines(klines); len(corrupted) > 0 {
+				out.failed = &codeStatus{Code: code, Status: "failed", Reason: fmt.Sprintf("检测到 %d 条异常K线数据", len(corrupted))}
 				outputs[idx] = out
 				return
 			}
@@ -2119,6 +2181,31 @@ func (s *Server) handleSyncState(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, state)
+}
+
+// handleCleanKlines handles requests to clean corrupted kline data and re-fetch.
+func (s *Server) handleCleanKlines(c *gin.Context) {
+	code := strings.TrimSpace(c.Query("code"))
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "code is required"})
+		return
+	}
+
+	ktypeStr := c.DefaultQuery("type", "day")
+	ktype := tdx.ParseKlineType(ktypeStr)
+
+	// Clean corrupted data and re-fetch
+	klines, err := s.svc.CleanAndRefetchKlines(code, ktype)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    code,
+		"count":   len(klines),
+		"message": "数据清理完成并已重新获取",
+	})
 }
 
 // handleIndicatorSettings handles indicator settings requests

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"sync"
 
 	protocol "github.com/sjzsdu/tongstock/pkg/tdx/protocol"
@@ -394,6 +395,36 @@ func filterValidKlines(klines []*protocol.Kline) []*protocol.Kline {
 		}
 	}
 	return filtered
+}
+
+// CleanAndRefetchKlines removes corrupted klines from DB and re-fetches from TDX server.
+// Returns the cleaned klines or error if re-fetch fails.
+func (s *Service) CleanAndRefetchKlines(code string, ktype uint8) ([]*protocol.Kline, error) {
+	// Step 1: Detect and delete corrupted records from database
+	deleted, err := s.klines.DetectAndCleanCorruptedKlines(code, ktype)
+	if err != nil {
+		return nil, fmt.Errorf("清理异常数据失败: %w", err)
+	}
+	if deleted == 0 {
+		// No corrupted data found, just return existing data
+		return s.klines.GetKline(code, ktype, "", "")
+	}
+
+	log.Printf("[kline] 清理了 %d 条异常数据，重新获取 %s 的K线数据", deleted, code)
+
+	// Step 2: Re-fetch all klines from TDX server
+	klines, err := s.Client.GetKlineAll(code, ktype)
+	if err != nil {
+		return nil, fmt.Errorf("重新获取K线数据失败: %w", err)
+	}
+
+	// Step 3: Save the fresh data (with validation)
+	klines = filterValidKlines(klines)
+	if err := s.klines.SaveKline(code, ktype, klines); err != nil {
+		return nil, fmt.Errorf("保存K线数据失败: %w", err)
+	}
+
+	return klines, nil
 }
 
 // FetchKline passes through to the Client for non-cached real-time data.

@@ -86,6 +86,7 @@ export default function CandlestickChart({ klines, indicator, mainOverlay, subPa
   const subRef = useRef<HTMLDivElement>(null);
   const chartRefs = useRef<IChartApi[]>([]);
   const [hover, setHover] = useState<HoverInfo | null>(null);
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
 
   const MAIN_H = 320;
   const SUB_H = 150;
@@ -173,7 +174,7 @@ export default function CandlestickChart({ klines, indicator, mainOverlay, subPa
 
       // MA lines on main chart
       if (mainOverlay === 'MA' && indicator?.ma) {
-        const maColors: Record<string, string> = { '5': '#f59e0b', '10': '#3b82f6', '20': '#8b5cf6', '60': '#ec4899' };
+        const maColors: Record<string, string> = { '5': '#f59e0b', '10': '#3b82f6', '20': '#8b5cf6', '60': '#ec4899', '120': '#06b6d4' };
         for (const [period, values] of Object.entries(indicator.ma)) {
           const color = maColors[period];
           if (!color) continue;
@@ -200,9 +201,9 @@ export default function CandlestickChart({ klines, indicator, mainOverlay, subPa
 
       // Crosshair move for hover info
       mainChart.subscribeCrosshairMove((param) => {
-        if (!param.time) { setHover(null); return; }
+        if (!param.time) { setHover(null); setMousePos(null); return; }
         const idx = chartKlines.findIndex(k => toTime(k.Time, intraday) === param.time);
-        if (idx < 0) { setHover(null); return; }
+        if (idx < 0) { setHover(null); setMousePos(null); return; }
         const k = chartKlines[idx];
         const prev = idx > 0 ? chartKlines[idx - 1].Close : k.Close;
         const pct = prev > 0 ? (k.Close - prev) / prev * 100 : 0;
@@ -228,6 +229,24 @@ export default function CandlestickChart({ klines, indicator, mainOverlay, subPa
           rsi: Object.keys(rsi).length > 0 ? rsi : undefined,
         });
       });
+
+      // Track mouse position for tooltip
+      const chartContainer = mainRef.current;
+      if (chartContainer) {
+        const handleMouseMove = (e: MouseEvent) => {
+          const rect = chartContainer.getBoundingClientRect();
+          setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+        };
+        chartContainer.addEventListener('mousemove', handleMouseMove);
+        // Clean up on chart removal
+        const origRemove = charts[0]?.remove.bind(charts[0]);
+        if (origRemove) {
+          charts[0].remove = () => {
+            chartContainer.removeEventListener('mousemove', handleMouseMove);
+            origRemove();
+          };
+        }
+      }
 
       const visibleBars = Math.max(80, Math.floor((mainRef.current?.clientWidth || 1000) / 7));
       mainChart.timeScale().setVisibleLogicalRange({ from: Math.max(0, chartKlines.length - visibleBars), to: chartKlines.length });
@@ -310,56 +329,18 @@ export default function CandlestickChart({ klines, indicator, mainOverlay, subPa
   const h = hover;
 
   return (
-    <div>
+    <div className="relative">
+      {/* Static header - always shows last kline info */}
       <div className="bg-slate-900 border border-slate-800 border-b-0 rounded-t-lg px-3 py-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs min-h-[28px]">
-        {h ? (
-          <>
-            <span className="text-slate-400 font-medium">{h.time}</span>
-            <span>开 <span className="text-white">{fmtN(h.open)}</span></span>
-            <span>高 <span className="text-red-400">{fmtN(h.high)}</span></span>
-            <span>低 <span className="text-green-400">{fmtN(h.low)}</span></span>
-            <span>收 <span className={h.pct >= 0 ? 'text-red-400' : 'text-green-400'}>{fmtN(h.close)}</span></span>
-            <span className={h.pct >= 0 ? 'text-red-400' : 'text-green-400'}>{fmtPct(h.pct)}</span>
-            <span>量 <span className="text-slate-300">{(h.volume / 10000).toFixed(1)}万</span></span>
-            {mainOverlay === 'MA' && Object.entries(h.ma).map(([p, v]) => (
-              <span key={p}>MA{p} <span className="text-slate-300">{fmtN(v)}</span></span>
-            ))}
-            {mainOverlay === 'BOLL' && h.boll && (
-              <>
-                <span>上轨 <span className="text-red-400">{fmtN(h.boll.upper)}</span></span>
-                <span>中轨 <span className="text-yellow-400">{fmtN(h.boll.middle)}</span></span>
-                <span>下轨 <span className="text-green-400">{fmtN(h.boll.lower)}</span></span>
-              </>
-            )}
-            {subPanel === 'MACD' && h.macd && (
-              <>
-                <span>DIF <span className="text-yellow-400">{fmtN(h.macd.dif)}</span></span>
-                <span>DEA <span className="text-blue-400">{fmtN(h.macd.dea)}</span></span>
-                <span>HIST <span className={h.macd.hist >= 0 ? 'text-red-400' : 'text-green-400'}>{fmtN(h.macd.hist)}</span></span>
-              </>
-            )}
-            {subPanel === 'KDJ' && h.kdj && (
-              <>
-                <span>K <span className="text-yellow-400">{fmtN(h.kdj.k, 1)}</span></span>
-                <span>D <span className="text-blue-400">{fmtN(h.kdj.d, 1)}</span></span>
-                <span>J <span className={h.kdj.j > 100 ? 'text-red-400' : h.kdj.j < 0 ? 'text-green-400' : 'text-white'}>{fmtN(h.kdj.j, 1)}</span></span>
-              </>
-            )}
-            {subPanel === 'RSI' && h.rsi && Object.entries(h.rsi).map(([p, v]) => (
-              <span key={p}>RSI{p} <span className={v > 80 ? 'text-red-400' : v < 20 ? 'text-green-400' : 'text-slate-300'}>{fmtN(v, 1)}</span></span>
-            ))}
-          </>
-        ) : (
-          <>
-            <span className="text-slate-400 font-medium">{formatKlineTime(last?.Time, intraday)}</span>
-            <span>开 <span className="text-white">{fmtN(last?.Open)}</span></span>
-            <span>高 <span className="text-red-400">{fmtN(last?.High)}</span></span>
-            <span>低 <span className="text-green-400">{fmtN(last?.Low)}</span></span>
-            <span>收 <span className={defaultPct >= 0 ? 'text-red-400' : 'text-green-400'}>{fmtN(last?.Close)}</span></span>
-            <span className={defaultPct >= 0 ? 'text-red-400' : 'text-green-400'}>{fmtPct(defaultPct)}</span>
-          </>
-        )}
+        <span className="text-slate-400 font-medium">{formatKlineTime(last?.Time, intraday)}</span>
+        <span>开 <span className="text-white">{fmtN(last?.Open)}</span></span>
+        <span>高 <span className="text-red-400">{fmtN(last?.High)}</span></span>
+        <span>低 <span className="text-green-400">{fmtN(last?.Low)}</span></span>
+        <span>收 <span className={defaultPct >= 0 ? 'text-red-400' : 'text-green-400'}>{fmtN(last?.Close)}</span></span>
+        <span className={defaultPct >= 0 ? 'text-red-400' : 'text-green-400'}>{fmtPct(defaultPct)}</span>
       </div>
+
+      {/* Chart area */}
       <div className="rounded-b-lg overflow-hidden border border-slate-800 border-t-0">
         <div ref={mainRef} style={{ height: MAIN_H }} />
         {subPanel && (
@@ -368,6 +349,63 @@ export default function CandlestickChart({ klines, indicator, mainOverlay, subPa
           </div>
         )}
       </div>
+
+      {/* Floating tooltip */}
+      {h && mousePos && (
+        <div
+          className="absolute z-50 pointer-events-none bg-slate-800/95 border border-slate-700 rounded-lg px-3 py-2 text-xs shadow-xl"
+          style={{
+            left: mousePos.x + 16,
+            top: mousePos.y + 16,
+            transform: mousePos.x > 300 ? 'translateX(-110%)' : 'none',
+          }}
+        >
+          <div className="font-medium text-slate-300 mb-1">{h.time}</div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+            <span className="text-slate-400">开</span><span className="text-white text-right">{fmtN(h.open)}</span>
+            <span className="text-slate-400">高</span><span className="text-red-400 text-right">{fmtN(h.high)}</span>
+            <span className="text-slate-400">低</span><span className="text-green-400 text-right">{fmtN(h.low)}</span>
+            <span className="text-slate-400">收</span><span className={h.pct >= 0 ? 'text-red-400 text-right' : 'text-green-400 text-right'}>{fmtN(h.close)}</span>
+            <span className="text-slate-400">涨跌</span><span className={h.pct >= 0 ? 'text-red-400 text-right' : 'text-green-400 text-right'}>{fmtPct(h.pct)}</span>
+            <span className="text-slate-400">量</span><span className="text-slate-300 text-right">{(h.volume / 10000).toFixed(1)}万</span>
+          </div>
+          {mainOverlay === 'MA' && Object.keys(h.ma).length > 0 && (
+            <div className="mt-1 pt-1 border-t border-slate-700 grid grid-cols-3 gap-x-3 gap-y-0.5">
+              {Object.entries(h.ma).map(([p, v]) => (
+                <span key={p} className="text-slate-400">MA{p} <span className="text-slate-200">{fmtN(v)}</span></span>
+              ))}
+            </div>
+          )}
+          {mainOverlay === 'BOLL' && h.boll && (
+            <div className="mt-1 pt-1 border-t border-slate-700 grid grid-cols-3 gap-x-3 gap-y-0.5">
+              <span className="text-slate-400">上轨 <span className="text-red-400">{fmtN(h.boll.upper)}</span></span>
+              <span className="text-slate-400">中轨 <span className="text-yellow-400">{fmtN(h.boll.middle)}</span></span>
+              <span className="text-slate-400">下轨 <span className="text-green-400">{fmtN(h.boll.lower)}</span></span>
+            </div>
+          )}
+          {subPanel === 'MACD' && h.macd && (
+            <div className="mt-1 pt-1 border-t border-slate-700 grid grid-cols-3 gap-x-3 gap-y-0.5">
+              <span className="text-slate-400">DIF <span className="text-yellow-400">{fmtN(h.macd.dif)}</span></span>
+              <span className="text-slate-400">DEA <span className="text-blue-400">{fmtN(h.macd.dea)}</span></span>
+              <span className="text-slate-400">HIST <span className={h.macd.hist >= 0 ? 'text-red-400' : 'text-green-400'}>{fmtN(h.macd.hist)}</span></span>
+            </div>
+          )}
+          {subPanel === 'KDJ' && h.kdj && (
+            <div className="mt-1 pt-1 border-t border-slate-700 grid grid-cols-3 gap-x-3 gap-y-0.5">
+              <span className="text-slate-400">K <span className="text-yellow-400">{fmtN(h.kdj.k, 1)}</span></span>
+              <span className="text-slate-400">D <span className="text-blue-400">{fmtN(h.kdj.d, 1)}</span></span>
+              <span className="text-slate-400">J <span className={h.kdj.j > 100 ? 'text-red-400' : h.kdj.j < 0 ? 'text-green-400' : 'text-white'}>{fmtN(h.kdj.j, 1)}</span></span>
+            </div>
+          )}
+          {subPanel === 'RSI' && h.rsi && Object.keys(h.rsi).length > 0 && (
+            <div className="mt-1 pt-1 border-t border-slate-700 grid grid-cols-3 gap-x-3 gap-y-0.5">
+              {Object.entries(h.rsi).map(([p, v]) => (
+                <span key={p} className="text-slate-400">RSI{p} <span className={v > 80 ? 'text-red-400' : v < 20 ? 'text-green-400' : 'text-slate-200'}>{fmtN(v, 1)}</span></span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

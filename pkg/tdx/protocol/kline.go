@@ -58,6 +58,12 @@ func (k klineStruct) Decode(bs []byte, ktype uint8) ([]*Kline, error) {
 
 	var lastClose float64
 	items := make([]*Kline, 0, count)
+
+	// TDX协议: 第一条K线使用绝对价格，后续使用增量编码
+	// 增量单位是厘 (0.001元)
+	const maxPrice = 1000000 // 单价上限100万元，A股不可能超过
+	const maxPriceChange = 5.0 // 单日价格变动上限500%
+
 	for i := 0; i < count && len(bs) >= 12; i++ {
 		t := utils.GetTimeFromBytes(bs[:4], ktype)
 		bs = bs[4:]
@@ -68,10 +74,45 @@ func (k klineStruct) Decode(bs []byte, ktype uint8) ([]*Kline, error) {
 		bs, highRaw = varPrice(bs)
 		bs, lowRaw = varPrice(bs)
 
-		open := lastClose + float64(openRaw)/1000
-		close := open + float64(closeRaw)/1000
-		high := open + float64(highRaw)/1000
-		low := open + float64(lowRaw)/1000
+		var open, close, high, low float64
+		if i == 0 {
+			// 第一条K线: 绝对价格 (除以1000得到元)
+			open = float64(openRaw) / 1000
+			close = open + float64(closeRaw)/1000
+			high = open + float64(highRaw)/1000
+			low = open + float64(lowRaw)/1000
+		} else {
+			// 后续K线: 增量编码
+			open = lastClose + float64(openRaw)/1000
+			close = open + float64(closeRaw)/1000
+			high = open + float64(highRaw)/1000
+			low = open + float64(lowRaw)/1000
+		}
+
+		// 校验解码后的价格是否合理
+		if open <= 0 || close <= 0 || high <= 0 || low <= 0 {
+			lastClose = close
+			continue
+		}
+		if open > maxPrice || close > maxPrice {
+			lastClose = close
+			continue
+		}
+		if high < low {
+			lastClose = close
+			continue
+		}
+
+		// 检查与前一条K线的价格变动是否合理
+		if i > 0 && lastClose > 0 {
+			changeRatio := close / lastClose
+			if changeRatio > maxPriceChange || changeRatio < 1.0/maxPriceChange {
+				// 价格变动超过500%，数据可能损坏，跳过
+				lastClose = close
+				continue
+			}
+		}
+
 		lastClose = close
 
 		if len(bs) < 8 {

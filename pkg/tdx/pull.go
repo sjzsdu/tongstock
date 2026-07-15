@@ -215,6 +215,10 @@ func validateKlineStoreRecord(k *protocol.Kline) string {
 	if k.High < k.Low || k.High < k.Open || k.High < k.Close || k.Low > k.Open || k.Low > k.Close {
 		return "bad_ohlc_order"
 	}
+	// TDX delta-encoding corruption produces prices > 100k for normal A-shares
+	if k.Close > 100000 || k.Open > 100000 {
+		return "price_too_high"
+	}
 	return ""
 }
 
@@ -368,6 +372,99 @@ func (s *KlineStore) Close() error {
 		return s.db.Close()
 	}
 	return nil
+}
+
+// DetectAndCleanCorruptedKlines finds and removes klines with unreasonable price jumps.
+// TDX delta-encoding corruption causes spikes (e.g., close jumping from 13 to 3000+).
+// Returns the number of deleted rows and any error.
+func (s *KlineStore) DetectAndCleanCorruptedKlines(code string, ktype uint8) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Fetch all klines ordered by date
+	rows, err := s.db.Query(`
+		SELECT date, open, high, low, close, volume, amount 
+		FROM kline WHERE code = ? AND ktype = ? 
+		ORDER BY date
+	`, code, ktype)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	const maxPriceChangeRatio = 5.0 // 500% price change is suspicious
+	const maxPrice = 100000.0
+
+	var corruptedDates []string
+	var lastValidClose float64
+	var lastValidIdx int
+
+	for rows.Next() {
+		var k protocol.Kline
+		var date string
+		if err := rows.Scan(&date, &k.Open, &k.High, &k.Low, &k.Close, &k.Volume, &k.Amount); err != nil {
+			continue
+		}
+		parsedTime, err := parseKlineStoreDate(date, s.loc)
+		if err != nil {
+			continue
+		}
+		k.Time = parsedTime
+
+		isCorrupted := false
+
+		// Check basic validity
+		if k.Close <= 0 || k.Open <= 0 || k.High <= 0 || k.Low <= 0 {
+			isCorrupted = true
+		} else if k.Close > maxPrice || k.Open > maxPrice {
+			isCorrupted = true
+		} else if k.High < k.Low {
+			isCorrupted = true
+		} else if lastValidIdx > 0 && lastValidClose > 0 {
+			// Check for unreasonable price jump
+			ratio := k.Close / lastValidClose
+			if ratio > maxPriceChangeRatio || ratio < 1.0/maxPriceChangeRatio {
+				isCorrupted = true
+			}
+		}
+
+		if isCorrupted {
+			corruptedDates = append(corruptedDates, date)
+		} else {
+			lastValidClose = k.Close
+			lastValidIdx++
+		}
+	}
+
+	if len(corruptedDates) == 0 {
+		return 0, nil
+	}
+
+	// Delete corrupted entries
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	stmt, err := tx.Prepare(`DELETE FROM kline WHERE code = ? AND ktype = ? AND date = ?`)
+	if err != nil {
+		return 0, err
+	}
+	defer stmt.Close()
+
+	for _, date := range corruptedDates {
+		if _, err := stmt.Exec(code, ktype, date); err != nil {
+			return 0, err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+
+	log.Printf("[kline] cleaned %d corrupted records for %s ktype=%d dates=%v", len(corruptedDates), code, ktype, corruptedDates)
+	return len(corruptedDates), nil
 }
 
 func (s *KlineStore) String() string {
