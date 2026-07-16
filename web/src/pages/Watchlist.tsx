@@ -88,8 +88,9 @@ export default function Watchlist() {
     try {
       const groupParam = activeGroup !== '__all__' ? activeGroup : undefined;
       const saved = await api.watchlist(groupParam);
-      setWatchlist(saved);
-      await Promise.all(saved.map(async (stock) => {
+      const list = saved ?? [];
+      setWatchlist(list);
+      await Promise.all(list.map(async (stock) => {
         try {
           const quote = await api.quote(stock.code);
           setQuotes((prev) => ({ ...prev, [stock.code]: quote }));
@@ -107,7 +108,7 @@ export default function Watchlist() {
     void loadWatchlist();
   }, [loadWatchlist]);
 
-  const rows = useMemo(() => watchlist.map((stock) => {
+  const rows = useMemo(() => (watchlist ?? []).map((stock) => {
     const quote = quotes[stock.code];
     const change = quote ? ((quote.Price - quote.LastClose) / quote.LastClose) * 100 : 0;
     return {

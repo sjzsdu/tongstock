@@ -1,12 +1,13 @@
 package tdx
 
 import (
-	"database/sql"
 	"errors"
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
+	"github.com/sjzsdu/tongstock/pkg/storage"
 	protocol "github.com/sjzsdu/tongstock/pkg/tdx/protocol"
 )
 
@@ -35,55 +36,59 @@ type KlineBatchSyncResult struct {
 }
 
 // Service wraps Client + local stores for cached data access.
-// For data that benefits from local caching (codes, klines, workdays),
-// use Service methods. For real-time data (quotes, minutes, trades), access Client directly via svc.Client.
 type Service struct {
-	Client   *Client // Public: for direct protocol calls
+	Client   *Client
+	storage  *storage.Storage
 	codes    *CodeStore
 	klines   *KlineStore
-	workdays *Workday
+	workdays *WorkdayStore
 	xdxr     *XdXrStore
 	finance  *FinanceStore
 	company  *CompanyStore
 	block    *BlockStore
 }
 
-// NewService creates a new Service instance wrapping an already-connected Client.
-// It initializes the singleton stores for codes, klines and workdays.
-func NewService(client *Client) (*Service, error) {
+// NewService creates a new Service with a shared storage instance.
+func NewService(client *Client, s *storage.Storage) (*Service, error) {
 	if client == nil {
 		return nil, errors.New("nil client")
 	}
-	svc := &Service{Client: client}
+	if s == nil {
+		return nil, errors.New("nil storage")
+	}
+
+	svc := &Service{Client: client, storage: s}
+
 	// Codes store
 	codes, err := GetCodeStore("")
 	if err != nil {
-		_ = client.Close()
 		return nil, err
 	}
 	svc.codes = codes
+
 	// Kline store
-	klines, err := GetKlineStore("")
+	klines, err := NewKlineStore(s)
 	if err != nil {
 		_ = codes.Close()
-		_ = client.Close()
 		return nil, err
 	}
 	svc.klines = klines
+
 	// Workday store
-	w, err := GetWorkday("")
+	w, err := NewWorkdayStore(s)
 	if err != nil {
 		_ = klines.Close()
 		_ = codes.Close()
-		_ = client.Close()
 		return nil, err
 	}
 	svc.workdays = w
-	// Cache-backed stores that reuse CodeStore's cache backend
+
+	// Cache-backed stores
 	svc.xdxr = &XdXrStore{cache: codes.cache, ttl: xdxrTTL}
 	svc.finance = &FinanceStore{cache: codes.cache, ttl: financeTTL}
 	svc.company = &CompanyStore{cache: codes.cache, ttl: companyTTL}
 	svc.block = &BlockStore{cache: codes.cache, ttl: blockTTL}
+
 	return svc, nil
 }
 
@@ -102,26 +107,6 @@ func (s *Service) Close() error {
 	}
 	if s.workdays != nil {
 		if err := s.workdays.Close(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	if s.xdxr != nil {
-		if err := s.xdxr.Close(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	if s.finance != nil {
-		if err := s.finance.Close(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	if s.company != nil {
-		if err := s.company.Close(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	if s.block != nil {
-		if err := s.block.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -146,13 +131,11 @@ func (s *Service) GetSyncState(code string, ktype uint8) (*KlineSyncState, error
 
 // FetchCodes tries to load codes from cache first, then fetches from the Client if needed.
 func (s *Service) FetchCodes(exchange protocol.Exchange) ([]*protocol.CodeItem, error) {
-	// Try cache first
 	if s.codes != nil {
 		if codes, err := s.codes.GetCodes(exchange); err == nil && codes != nil && len(codes) > 0 {
 			return codes, nil
 		}
 	}
-	// Fallback to remote
 	items, err := s.Client.GetCode(exchange)
 	if err != nil {
 		return nil, err
@@ -258,11 +241,11 @@ func (s *Service) FetchKlineAll(code string, ktype uint8) ([]*protocol.Kline, er
 	}
 
 	latest, err := s.klines.GetLatestDate(code, ktype)
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil && !errors.Is(err, ErrKlineNotFound) {
 		return s.Client.GetKlineAll(code, ktype)
 	}
 
-	if err == sql.ErrNoRows || latest == "" {
+	if errors.Is(err, ErrKlineNotFound) || latest == "" {
 		return s.fetchAndSaveKlineAll(code, ktype)
 	}
 
@@ -295,7 +278,7 @@ func (s *Service) SyncDailyKline(code string, mode SyncMode) KlineSyncResult {
 		klines, err = s.fetchAndSaveKlineAll(code, ktype)
 	case SyncModeIncremental:
 		latest, latestErr := s.klines.GetLatestDate(code, ktype)
-		if latestErr == sql.ErrNoRows || latest == "" {
+		if errors.Is(latestErr, ErrKlineNotFound) || latest == "" {
 			klines, err = s.fetchAndSaveKlineAll(code, ktype)
 		} else if latestErr != nil {
 			err = latestErr
@@ -353,7 +336,7 @@ func (s *Service) fetchAndSaveKlineAll(code string, ktype uint8) ([]*protocol.Kl
 	if err != nil {
 		return nil, err
 	}
-	klines = filterValidKlines(klines)
+	klines = FilterValidKlines(klines)
 	_ = s.klines.SaveKline(code, ktype, klines)
 	return klines, nil
 }
@@ -364,7 +347,7 @@ func (s *Service) refreshTodayKline(code string, ktype uint8) ([]*protocol.Kline
 		return s.klines.GetKline(code, ktype, "", "")
 	}
 	if len(fresh) > 0 {
-		fresh = filterValidKlines(fresh)
+		fresh = FilterValidKlines(fresh)
 		_ = s.klines.SaveKline(code, ktype, fresh)
 	}
 	return s.klines.GetKline(code, ktype, "", "")
@@ -377,49 +360,63 @@ func (s *Service) fetchIncrementalKline(code string, ktype uint8, latest string)
 	if err != nil {
 		return nil, err
 	}
-	klines = filterValidKlines(klines)
+	klines = FilterValidKlines(klines)
 	if len(klines) > 0 {
 		_ = s.klines.SaveKline(code, ktype, klines)
 	}
 	return s.klines.GetKline(code, ktype, "", "")
 }
 
-func filterValidKlines(klines []*protocol.Kline) []*protocol.Kline {
+func FilterValidKlines(klines []*protocol.Kline) []*protocol.Kline {
 	if len(klines) == 0 {
 		return klines
 	}
+	// 日期范围检查
+	now := time.Now()
+	maxDate := now.AddDate(0, 0, 1)
+	minDate := time.Date(1990, 1, 1, 0, 0, 0, 0, time.Local)
+
 	filtered := make([]*protocol.Kline, 0, len(klines))
+	var lastClose float64
 	for _, k := range klines {
-		if isValidKlineStoreRecord(k) {
-			filtered = append(filtered, k)
+		// 过滤日期异常的数据
+		if k.Time.Before(minDate) || k.Time.After(maxDate) {
+			continue
 		}
+		if validateKline(k) != "" {
+			continue
+		}
+		// 检查与前一条有效 K 线的价格变化
+		if lastClose > 0 {
+			ratio := k.Close / lastClose
+			if ratio > 3.0 || ratio < 0.33 {
+				continue // 跳过异常跳变
+			}
+		}
+		lastClose = k.Close
+		filtered = append(filtered, k)
 	}
 	return filtered
 }
 
 // CleanAndRefetchKlines removes corrupted klines from DB and re-fetches from TDX server.
-// Returns the cleaned klines or error if re-fetch fails.
 func (s *Service) CleanAndRefetchKlines(code string, ktype uint8) ([]*protocol.Kline, error) {
-	// Step 1: Detect and delete corrupted records from database
 	deleted, err := s.klines.DetectAndCleanCorruptedKlines(code, ktype)
 	if err != nil {
 		return nil, fmt.Errorf("清理异常数据失败: %w", err)
 	}
 	if deleted == 0 {
-		// No corrupted data found, just return existing data
 		return s.klines.GetKline(code, ktype, "", "")
 	}
 
 	log.Printf("[kline] 清理了 %d 条异常数据，重新获取 %s 的K线数据", deleted, code)
 
-	// Step 2: Re-fetch all klines from TDX server
 	klines, err := s.Client.GetKlineAll(code, ktype)
 	if err != nil {
 		return nil, fmt.Errorf("重新获取K线数据失败: %w", err)
 	}
 
-	// Step 3: Save the fresh data (with validation)
-	klines = filterValidKlines(klines)
+	klines = FilterValidKlines(klines)
 	if err := s.klines.SaveKline(code, ktype, klines); err != nil {
 		return nil, fmt.Errorf("保存K线数据失败: %w", err)
 	}
@@ -448,30 +445,29 @@ func (s *Service) EnsureWorkday() error {
 }
 
 // ParseKlineType converts a human-friendly kline type string to the protocol uint8 constant.
-// This is a package-level helper used by CLI and Server.
 func ParseKlineType(s string) uint8 {
 	switch s {
 	case "1m", "minute":
-		return 7 // TypeKlineMinute
+		return 7
 	case "5m":
-		return 0 // TypeKline5Minute
+		return 0
 	case "15m":
-		return 1 // TypeKline15Minute
+		return 1
 	case "30m":
-		return 2 // TypeKline30Minute
+		return 2
 	case "60m":
-		return 3 // TypeKline60Minute
+		return 3
 	case "day":
-		return 9 // TypeKlineDay
+		return 9
 	case "week":
-		return 5 // TypeKlineWeek
+		return 5
 	case "month":
-		return 6 // TypeKlineMonth
+		return 6
 	case "quarter":
-		return 10 // TypeKlineQuarter
+		return 10
 	case "year":
-		return 11 // TypeKlineYear
+		return 11
 	default:
-		return 9 // TypeKlineDay as default
+		return 9
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/sjzsdu/tongstock/pkg/config"
 	"github.com/sjzsdu/tongstock/pkg/param"
 	"github.com/sjzsdu/tongstock/pkg/signal"
+	"github.com/sjzsdu/tongstock/pkg/storage"
 	"github.com/sjzsdu/tongstock/pkg/ta"
 	"github.com/sjzsdu/tongstock/pkg/tdx"
 	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
@@ -38,7 +39,13 @@ func dialService() (*tdx.Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return tdx.NewService(client)
+	cfg := config.Get()
+	s, err := storage.New(storage.Config{Driver: cfg.Database.Driver, DSN: cfg.Database.DSN})
+	if err != nil {
+		_ = client.Close()
+		return nil, err
+	}
+	return tdx.NewService(client, s)
 }
 
 // dialClient keeps backward compatibility for commands that use the raw Client.

@@ -26,8 +26,8 @@ import (
 // Server holds the service and stores for the HTTP server
 type Server struct {
 	svc                   *tdx.Service
-	historyDB             *history.DB
-	watchlistDB           *watchlist.DB
+	historyDB             *history.Store
+	watchlistDB           *watchlist.Store
 	stockSearchIndexCache stockSearchIndexCache
 	tdxMu                 sync.Mutex
 }
@@ -39,7 +39,7 @@ const (
 )
 
 // NewServer creates a new Server instance
-func NewServer(svc *tdx.Service, historyDB *history.DB, watchlistDB *watchlist.DB) *Server {
+func NewServer(svc *tdx.Service, historyDB *history.Store, watchlistDB *watchlist.Store) *Server {
 	return &Server{
 		svc:                   svc,
 		historyDB:             historyDB,
@@ -1391,13 +1391,10 @@ func (s *Server) handleIndicator(c *gin.Context) {
 		return
 	}
 
-	// Validate klines - reject corrupted data with clear error
-	if corrupted := findCorruptedKlines(klines); len(corrupted) > 0 {
-		log.Printf("[indicator] 检测到 %s 的 %d 条异常K线数据，已拒绝", code, len(corrupted))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": fmt.Sprintf("检测到 %d 条异常K线数据（价格突变），请稍后重试或联系管理员清理数据", len(corrupted)),
-			"corrupted_dates": corrupted,
-		})
+	// Filter out corrupted klines (keep valid data for display)
+	klines = tdx.FilterValidKlines(klines)
+	if len(klines) == 0 {
+		c.JSON(http.StatusOK, gin.H{"error": "该股票暂无可展示的数据", "klines": []gin.H{}})
 		return
 	}
 
@@ -1879,7 +1876,7 @@ func (s *Server) handleStockSearchIndex(c *gin.Context) {
 
 // handleHistoryList handles history list requests
 func (s *Server) handleHistoryList(c *gin.Context) {
-	stocks, err := history.GetAll(s.historyDB)
+	stocks, err := s.historyDB.GetAll()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1924,7 +1921,7 @@ func (s *Server) handleHistoryAdd(c *gin.Context) {
 		AnalyzedAt: time.Now(),
 	}
 
-	if err := history.Upsert(s.historyDB, stock); err != nil {
+	if err := s.historyDB.Upsert(stock); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -1940,7 +1937,7 @@ func (s *Server) handleHistoryDelete(c *gin.Context) {
 		return
 	}
 
-	if err := history.Delete(s.historyDB, code); err != nil {
+	if err := s.historyDB.Delete(code); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

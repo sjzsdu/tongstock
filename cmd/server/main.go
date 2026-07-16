@@ -15,6 +15,7 @@ import (
 	"github.com/sjzsdu/tongstock/pkg/history"
 	"github.com/sjzsdu/tongstock/pkg/param"
 	"github.com/sjzsdu/tongstock/pkg/server"
+	"github.com/sjzsdu/tongstock/pkg/storage"
 	"github.com/sjzsdu/tongstock/pkg/tdx"
 	"github.com/sjzsdu/tongstock/pkg/watchlist"
 	"github.com/sjzsdu/tongstock/pkg/web"
@@ -50,29 +51,32 @@ func main() {
 		log.Fatalf("获取连接失败: %v", err)
 	}
 
-	// Create service
-	svc, err := tdx.NewService(client)
+	// Initialize unified storage
+	s, err := storage.New(storage.Config{Driver: cfg.Database.Driver, DSN: cfg.Database.DSN})
+	if err != nil {
+		log.Fatalf("初始化存储失败: %v", err)
+	}
+
+	// Create service with shared storage
+	svc, err := tdx.NewService(client, s)
 	if err != nil {
 		log.Fatalf("创建服务失败: %v", err)
 	}
 
-	// Initialize history database
-	historyDB, err := history.Open("")
+	// Initialize history store with same storage
+	historyStore, err := history.New(s)
 	if err != nil {
 		log.Fatalf("打开历史数据库失败: %v", err)
 	}
-	if err := history.InitTable(historyDB); err != nil {
-		log.Fatalf("初始化历史表失败: %v", err)
-	}
 
-	// Initialize watchlist database
-	watchlistDB, err := watchlist.GetWatchlistDB("")
+	// Initialize watchlist store with same storage
+	watchlistStore, err := watchlist.New(s)
 	if err != nil {
 		log.Fatalf("打开自选股数据库失败: %v", err)
 	}
 
 	// Create HTTP server
-	httpServer := server.NewServer(svc, historyDB, watchlistDB)
+	httpServer := server.NewServer(svc, historyStore, watchlistStore)
 
 	// Setup Gin router
 	gin.SetMode(gin.ReleaseMode)
@@ -150,11 +154,8 @@ func main() {
 		if err := svc.Close(); err != nil {
 			log.Printf("关闭服务失败: %v", err)
 		}
-		if err := historyDB.Close(); err != nil {
-			log.Printf("关闭历史数据库失败: %v", err)
-		}
-		if err := watchlistDB.Close(); err != nil {
-			log.Printf("关闭自选股数据库失败: %v", err)
+		if err := s.Close(); err != nil {
+			log.Printf("关闭存储失败: %v", err)
 		}
 
 		os.Exit(0)
