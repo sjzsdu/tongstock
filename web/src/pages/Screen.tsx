@@ -6,6 +6,7 @@ import {
   ArrowUpOutlined,
   CloseOutlined,
   DownloadOutlined,
+  EditOutlined,
   EyeOutlined,
   PlusOutlined,
   SaveOutlined,
@@ -18,13 +19,15 @@ import {
   Button,
   Card,
   Collapse,
+  Divider,
   Empty,
   Flex,
   Input,
   List,
   Modal,
-  Radio,
+  Popover,
   Segmented,
+  Select,
   Space,
   Spin,
   Statistic,
@@ -45,15 +48,15 @@ const KTYPE_OPTIONS = [
   { value: '15m', label: '15分' },
 ];
 
-const SIGNAL_OPTIONS: { value: string; label: string; buy: boolean }[] = [
-  { value: '金叉', label: '金叉', buy: true },
-  { value: '死叉', label: '死叉', buy: false },
-  { value: '超买', label: '超买', buy: false },
-  { value: '超卖', label: '超卖', buy: true },
-  { value: '突破上轨', label: '突破上轨', buy: false },
-  { value: '跌破下轨', label: '跌破下轨', buy: true },
-  { value: '多头排列', label: '多头排列', buy: true },
-  { value: '空头排列', label: '空头排列', buy: false },
+const SIGNAL_OPTIONS: { value: string; label: string; buy: boolean; desc: string }[] = [
+  { value: '金叉', label: '金叉', buy: true, desc: 'DIF上穿DEA，MACD看涨信号' },
+  { value: '死叉', label: '死叉', buy: false, desc: 'DIF下穿DEA，MACD看跌信号' },
+  { value: '超卖', label: '超卖', buy: true, desc: 'KDJ指标J值低于0，可能反弹' },
+  { value: '超买', label: '超买', buy: false, desc: 'KDJ指标J值高于100，可能回调' },
+  { value: '跌破下轨', label: '跌破下轨', buy: true, desc: '价格跌破布林带下轨，超卖信号' },
+  { value: '突破上轨', label: '突破上轨', buy: false, desc: '价格突破布林带上轨，超买信号' },
+  { value: '多头排列', label: '多头排列', buy: true, desc: 'MA5>MA10>MA20，上升趋势' },
+  { value: '空头排列', label: '空头排列', buy: false, desc: 'MA5<MA10<MA20，下降趋势' },
 ];
 
 const ALL_BLOCK_FILES = [
@@ -64,7 +67,7 @@ const ALL_BLOCK_FILES = [
 ];
 
 type SourceTab = 'watchlist' | 'block';
-type SortKey = 'code' | 'name' | 'close' | 'change' | 'dif' | 'k' | 'j';
+type SortKey = 'code' | 'name' | 'close' | 'change';
 
 interface StockItem {
   code: string;
@@ -81,12 +84,7 @@ interface BlockInfo {
 
 type CodesCacheEntry = { list: { Code?: string; Name?: string }[]; timestamp: number };
 
-const ROW_HEIGHT = 58;
-
-function getLastValue(arr: number[] | undefined): number {
-  if (!arr || arr.length === 0) return 0;
-  return arr[arr.length - 1];
-}
+const ROW_HEIGHT = 48;
 
 function isBuySignal(type: string): boolean {
   return SIGNAL_OPTIONS.find((signal) => signal.value === type)?.buy ?? false;
@@ -211,6 +209,7 @@ function VirtualResultTable({
   sortAsc,
   onSortChange,
   navigate,
+  extra,
 }: {
   results: ScreenResult[];
   tableContainerRef: RefObject<HTMLDivElement | null>;
@@ -218,6 +217,7 @@ function VirtualResultTable({
   sortAsc: boolean;
   onSortChange: (key: SortKey) => void;
   navigate: (path: string) => void;
+  extra?: ReactNode;
 }) {
   const rowVirtualizer = useVirtualizer({
     count: results.length,
@@ -227,26 +227,23 @@ function VirtualResultTable({
   });
 
   return (
-    <Card bodyStyle={{ padding: 0 }}>
+    <Card bodyStyle={{ padding: 0 }} extra={extra}>
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '88px 1.2fr 96px 96px 88px 72px 56px 56px 1.5fr',
+          gridTemplateColumns: '80px 1fr 96px 96px 80px 1fr',
           gap: 0,
           padding: '0 16px',
           borderBottom: '1px solid var(--ant-color-border-secondary)',
           background: 'var(--ant-color-fill-quaternary)',
         }}
       >
-        <div style={{ padding: '12px 0' }}><SortHeader sortKey="code" sortAsc={sortAsc} current={sortKey} onChange={onSortChange}>代码</SortHeader></div>
-        <div style={{ padding: '12px 12px' }}><SortHeader sortKey="name" sortAsc={sortAsc} current={sortKey} onChange={onSortChange}>名称</SortHeader></div>
-        <div style={{ padding: '12px 0' }}><SortHeader sortKey="close" sortAsc={sortAsc} current={sortKey} onChange={onSortChange} align="right">收盘</SortHeader></div>
-        <div style={{ padding: '12px 0' }}><SortHeader sortKey="change" sortAsc={sortAsc} current={sortKey} onChange={onSortChange} align="right">涨跌幅</SortHeader></div>
-        <div style={{ padding: '12px 0', textAlign: 'right', color: 'var(--ant-color-text-secondary)', fontSize: 12 }}>MA趋势</div>
-        <div style={{ padding: '12px 0' }}><SortHeader sortKey="dif" sortAsc={sortAsc} current={sortKey} onChange={onSortChange} align="right">DIF</SortHeader></div>
-        <div style={{ padding: '12px 0' }}><SortHeader sortKey="k" sortAsc={sortAsc} current={sortKey} onChange={onSortChange} align="right">K</SortHeader></div>
-        <div style={{ padding: '12px 0' }}><SortHeader sortKey="j" sortAsc={sortAsc} current={sortKey} onChange={onSortChange} align="right">J</SortHeader></div>
-        <div style={{ padding: '12px 12px', color: 'var(--ant-color-text-secondary)', fontSize: 12 }}>信号</div>
+        <div style={{ padding: '10px 0' }}><SortHeader sortKey="code" sortAsc={sortAsc} current={sortKey} onChange={onSortChange}>代码</SortHeader></div>
+        <div style={{ padding: '10px 12px' }}><SortHeader sortKey="name" sortAsc={sortAsc} current={sortKey} onChange={onSortChange}>名称</SortHeader></div>
+        <div style={{ padding: '10px 0' }}><SortHeader sortKey="close" sortAsc={sortAsc} current={sortKey} onChange={onSortChange} align="right">收盘</SortHeader></div>
+        <div style={{ padding: '10px 0' }}><SortHeader sortKey="change" sortAsc={sortAsc} current={sortKey} onChange={onSortChange} align="right">涨跌幅</SortHeader></div>
+        <div style={{ padding: '10px 0', textAlign: 'right', color: 'var(--ant-color-text-secondary)', fontSize: 12 }}>MA趋势</div>
+        <div style={{ padding: '10px 12px', color: 'var(--ant-color-text-secondary)', fontSize: 12 }}>信号</div>
       </div>
 
       <div ref={tableContainerRef} style={{ maxHeight: 'calc(100vh - 360px)', minHeight: 320, overflow: 'auto' }}>
@@ -255,11 +252,22 @@ function VirtualResultTable({
             const result = results[virtualRow.index];
             const close = result.last?.Close || 0;
             const changePct = getChangePct(result);
-            const dif = getLastValue(result.macd?.DIF);
-            const kValue = getLastValue(result.kdj?.K);
-            const jValue = getLastValue(result.kdj?.J);
-            const recentSignals = result.signals?.slice(-5) || [];
+            const allSignals = result.signals || [];
+            const latestSignal = allSignals.length > 0 ? allSignals[allSignals.length - 1] : null;
             const maTrend = getMaTrend(result);
+
+            const signalContent = (
+              <Space direction="vertical" size={8}>
+                {allSignals.map((signal, index) => (
+                  <div key={`${result.code}-${signal.Type}-${index}`} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Tag color={isBuySignal(signal.Type) ? 'red' : 'green'}>
+                      {signal.Indicator}{signal.Type}
+                    </Tag>
+                    <Text type="secondary" style={{ fontSize: 12 }}>{signal.Date}</Text>
+                  </div>
+                ))}
+              </Space>
+            );
 
             return (
               <div
@@ -273,7 +281,7 @@ function VirtualResultTable({
                   height: ROW_HEIGHT,
                   padding: '0 16px',
                   display: 'grid',
-                  gridTemplateColumns: '88px 1.2fr 96px 96px 88px 72px 56px 56px 1.5fr',
+                  gridTemplateColumns: '80px 1fr 96px 96px 80px 1fr',
                   alignItems: 'center',
                   borderBottom: '1px solid var(--ant-color-border-secondary)',
                   cursor: 'pointer',
@@ -284,17 +292,18 @@ function VirtualResultTable({
                 <Text ellipsis style={{ padding: '0 12px' }}>{result.name || '-'}</Text>
                 <Text style={{ textAlign: 'right', color: getPriceColor(changePct), fontVariantNumeric: 'tabular-nums' }}>{close.toFixed(2)}</Text>
                 <Text style={{ textAlign: 'right', color: getPriceColor(changePct), fontVariantNumeric: 'tabular-nums' }}>{formatPercent(changePct)}</Text>
-                <Tag color={maTrend.color} style={{ justifySelf: 'end' }}>{maTrend.label}</Tag>
-                <Text style={{ textAlign: 'right', color: getPriceColor(dif), fontVariantNumeric: 'tabular-nums' }}>{dif.toFixed(2)}</Text>
-                <Text style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{kValue.toFixed(1)}</Text>
-                <Text style={{ textAlign: 'right', color: jValue > 100 ? '#fa8c16' : jValue < 0 ? '#1677ff' : undefined, fontVariantNumeric: 'tabular-nums' }}>{jValue.toFixed(1)}</Text>
-                <Space size={[4, 4]} wrap style={{ paddingLeft: 12 }}>
-                  {recentSignals.map((signal, index) => (
-                    <Tag key={`${result.code}-${signal.Type}-${index}`} color={isBuySignal(signal.Type) ? 'red' : 'green'}>
-                      {signal.Indicator}{signal.Type}
-                    </Tag>
-                  ))}
-                </Space>
+                <Tag color={maTrend.color} style={{ justifySelf: 'end', fontSize: 12 }}>{maTrend.label}</Tag>
+                <div style={{ paddingLeft: 12 }}>
+                  {latestSignal ? (
+                    <Popover content={signalContent} title="全部信号" placement="topLeft">
+                      <Tag color={isBuySignal(latestSignal.Type) ? 'red' : 'green'} style={{ cursor: 'pointer' }}>
+                        {latestSignal.Indicator}{latestSignal.Type}
+                      </Tag>
+                    </Popover>
+                  ) : (
+                    <Text type="secondary" style={{ fontSize: 12 }}>无信号</Text>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -359,6 +368,7 @@ export default function Screen() {
   const [blockStocksLoading, setBlockStocksLoading] = useState(false);
   const [blockSearch, setBlockSearch] = useState('');
   const [showBlockModal, setShowBlockModal] = useState(false);
+  const [showSourceModal, setShowSourceModal] = useState(false);
   const [blockStocksWithNames, setBlockStocksWithNames] = useState<{ code: string; name: string }[]>([]);
   const [blockStocksLoadingNames, setBlockStocksLoadingNames] = useState(false);
 
@@ -533,18 +543,6 @@ export default function Screen() {
           va = getChangePct(a);
           vb = getChangePct(b);
           break;
-        case 'dif':
-          va = getLastValue(a.macd?.DIF);
-          vb = getLastValue(b.macd?.DIF);
-          break;
-        case 'k':
-          va = getLastValue(a.kdj?.K);
-          vb = getLastValue(b.kdj?.K);
-          break;
-        case 'j':
-          va = getLastValue(a.kdj?.J);
-          vb = getLastValue(b.kdj?.J);
-          break;
       }
       if (typeof va === 'string' && typeof vb === 'string') {
         return va.localeCompare(vb) * dir;
@@ -570,14 +568,6 @@ export default function Screen() {
     const query = blockSearch.toLowerCase();
     return sorted.filter((block) => block.name.toLowerCase().includes(query));
   }, [blockData, blockSearch]);
-
-  const toggleSignal = (signal: string) => {
-    setSelectedSignals((previous) => (
-      previous.includes(signal)
-        ? previous.filter((item) => item !== signal)
-        : [...previous, signal]
-    ));
-  };
 
   useEffect(() => {
     updateUrlParams();
@@ -678,7 +668,7 @@ export default function Screen() {
   const exportScreenResults = () => {
     exportCsv(
       `tongstock-screen-${new Date().toISOString().slice(0, 10)}.csv`,
-      ['代码', '名称', '收盘', '涨跌幅', 'MA趋势', 'DIF', 'K', 'J', '信号'],
+      ['代码', '名称', '收盘', '涨跌幅', 'MA趋势', '信号'],
       sortedResults.map((result) => {
         const maTrend = getMaTrend(result);
         return [
@@ -687,9 +677,6 @@ export default function Screen() {
           String(result.last?.Close ?? ''),
           formatPercent(getChangePct(result)),
           maTrend.label,
-          getLastValue(result.macd?.DIF).toFixed(4),
-          getLastValue(result.kdj?.K).toFixed(2),
-          getLastValue(result.kdj?.J).toFixed(2),
           (result.signals || []).map((signal) => `${signal.Indicator}${signal.Type}`).join(';'),
         ];
       }),
@@ -744,219 +731,110 @@ export default function Screen() {
               从自选股或板块成分股中批量计算指标信号，并快速跳转到个股详情。
             </Paragraph>
           </div>
-          <Segmented<SourceTab>
-            value={sourceTab}
-            onChange={(value) => setSourceTab(value)}
-            options={[
-              { label: '自选股', value: 'watchlist' },
-              { label: '板块', value: 'block' },
-            ]}
-          />
         </Flex>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '320px minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
-          <Space direction="vertical" size={16} style={{ width: '100%' }}>
-            <Card title={sourceTab === 'watchlist' ? '自选股列表' : '板块来源'}>
+        <Card size="small" hoverable style={{ cursor: 'pointer' }} onClick={() => setShowSourceModal(true)}>
+          <Flex justify="space-between" align="center">
+            <Space>
+              <Text type="secondary">股票池：</Text>
               {sourceTab === 'watchlist' ? (
-                <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                  <Input
-                    prefix={<SearchOutlined />}
-                    value={inputCode}
-                    onChange={(event) => setInputCode(event.target.value)}
-                    onPressEnter={() => void addCodesFromInput()}
-                    placeholder="输入股票代码，支持逗号/空格分隔"
-                    suffix={inputLoading ? <Spin size="small" /> : null}
-                  />
-                  <Flex justify="space-between" align="center" gap={8}>
-                    <Text type="secondary">共 {stockList.length} 只股票</Text>
-                    <Button
-                      size="small"
-                      icon={<SyncOutlined spin={syncLoading} />}
-                      loading={syncLoading}
-                      disabled={stockList.length === 0}
-                      onClick={() => void syncWatchlistDaily()}
-                    >
-                      同步日K
-                    </Button>
-                  </Flex>
-                  <div style={{ maxHeight: 420, overflow: 'auto' }}>
-                    {stockList.length === 0 ? (
-                      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="输入股票代码后回车添加" />
-                    ) : (
-                      <List
-                        size="small"
-                        dataSource={stockList}
-                        renderItem={(stock, index) => (
-                          <List.Item
-                            style={{ cursor: 'pointer' }}
-                            onClick={() => navigate(`/stock/${stock.code}/chart`)}
-                            actions={[
-                              <Button
-                                key="remove"
-                                type="text"
-                                danger
-                                icon={<CloseOutlined />}
-								  onClick={(event) => {
-								    event.stopPropagation();
-								    api.watchlistDelete(stock.code).catch(() => {});
-								    setStockList((previous) => previous.filter((_, itemIndex) => itemIndex !== index));
-								  }}
-                              />,
-                            ]}
-                          >
-                            <List.Item.Meta
-                              title={<Space><Text code>{stock.code}</Text><Text>{stock.name || '-'}</Text></Space>}
-                            />
-                          </List.Item>
-                        )}
-                      />
-                    )}
-                  </div>
-                </Space>
+                <Text strong>{stockList.length} 只自选股</Text>
+              ) : selectedBlock ? (
+                <Text strong>{selectedBlock.name}（{selectedBlock.stocks?.length || selectedBlock.count} 只）</Text>
               ) : (
-                <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                  <Segmented
-                    block
-                    value={blockFile}
-                    onChange={(value) => {
-                      const nextFile = String(value);
-                      const config = ALL_BLOCK_FILES.find((item) => item.file === nextFile);
-                      setBlockFile(nextFile);
-                      void loadBlocks(nextFile, config?.type);
-                    }}
-                    options={ALL_BLOCK_FILES.map((item) => ({ label: item.label, value: item.file }))}
-                  />
-                  <Input
-                    prefix={<SearchOutlined />}
-                    value={blockSearch}
-                    onChange={(event) => setBlockSearch(event.target.value)}
-                    placeholder="搜索板块..."
-                  />
-                  <div style={{ maxHeight: 420, overflow: 'auto' }}>
-                    {blockLoading ? (
-                      <Flex justify="center" align="center" style={{ minHeight: 240 }}><Spin /></Flex>
-                    ) : (
-                      <List
-                        size="small"
-                        dataSource={filteredBlocks}
-                        renderItem={(block) => (
-                          <List.Item
-                            style={{
-                              cursor: 'pointer',
-                              borderRadius: 8,
-                              paddingInline: 12,
-                              background: selectedBlock?.name === block.name ? 'var(--ant-color-primary-bg)' : undefined,
-                            }}
-                            onClick={() => handleSelectBlock(block)}
-                          >
-                            <Flex justify="space-between" align="center" style={{ width: '100%' }}>
-                              <Text ellipsis style={{ maxWidth: 180 }}>{block.name}</Text>
-                              <Tag>{block.count}只</Tag>
-                            </Flex>
-                          </List.Item>
-                        )}
-                      />
+                <Text type="secondary">未选择板块</Text>
+              )}
+            </Space>
+            <Button size="small" icon={<EditOutlined />}>更换</Button>
+          </Flex>
+        </Card>
+
+        <Card title="筛选设置" size="small">
+          <Flex wrap="wrap" gap={12} align="center">
+            <Flex gap={8} align="center">
+              <Text type="secondary">周期</Text>
+              <Segmented
+                value={ktype}
+                onChange={(value) => setKtype(value as string)}
+                options={KTYPE_OPTIONS}
+                size="small"
+              />
+            </Flex>
+
+            <Divider type="vertical" />
+
+            <Flex gap={8} align="center" style={{ flex: 1, minWidth: 240 }}>
+              <Text type="secondary">信号过滤</Text>
+              <Select
+                mode="multiple"
+                value={selectedSignals}
+                onChange={(value) => setSelectedSignals(value as string[])}
+                placeholder="选择信号类型"
+                style={{ flex: 1 }}
+                size="small"
+                options={[
+                  {
+                    label: '买入信号',
+                    options: SIGNAL_OPTIONS.filter((opt) => opt.buy).map((opt) => ({
+                      value: opt.value,
+                      label: opt.label,
+                    })),
+                  },
+                  {
+                    label: '卖出信号',
+                    options: SIGNAL_OPTIONS.filter((opt) => !opt.buy).map((opt) => ({
+                      value: opt.value,
+                      label: opt.label,
+                    })),
+                  },
+                ]}
+              />
+            </Flex>
+
+            <Button
+              type="primary"
+              icon={<SearchOutlined />}
+              loading={loading}
+              onClick={() => void doScreen()}
+              disabled={!resolvedCodes.trim()}
+            >
+              开始筛选
+            </Button>
+          </Flex>
+        </Card>
+
+          {error && <Alert type="error" showIcon message="筛选失败" description={error} />}
+
+          {cappedInfo && (
+            <Alert type="warning" showIcon message="批量已截断" description={cappedInfo.reason} />
+          )}
+
+          {hasScreenLoaded && (
+              <Card size="small" style={{ background: 'linear-gradient(135deg, rgba(22,119,255,0.08), rgba(14,165,233,0.06))' }}>
+                <Flex justify="space-between" align="center" wrap="wrap" gap={16}>
+                  <Space size={24}>
+                    <Statistic title="扫描总数" value={total} suffix="只" style={{ fontSize: 13 }} />
+                    <Statistic title="命中结果" value={filteredResults.length} suffix="只" style={{ fontSize: 13 }} />
+                    <Statistic title="活跃信号" value={Object.keys(signalCounts).length} suffix="种" style={{ fontSize: 13 }} />
+                    {failedCodes.length > 0 && (
+                      <Statistic title="失败" value={failedCodes.length} suffix="只" valueStyle={{ color: '#cf1322' }} style={{ fontSize: 13 }} />
                     )}
-                  </div>
-                  {selectedBlock && (
-                    <Alert
-                      type="info"
-                      showIcon
-                      message={`已选 ${selectedBlock.name}`}
-                      description={
-                        <Space wrap>
-                          <Text>{blockStocksLoading ? '加载成分股中...' : `${selectedBlock.stocks?.length || selectedBlock.count} 只股票`}</Text>
-                          <Button size="small" icon={<EyeOutlined />} onClick={() => void openBlockModal()} disabled={!selectedBlock.stocks?.length}>
-                            查看成分股
-                          </Button>
-                        </Space>
-                      }
-                    />
-                  )}
-                </Space>
-              )}
-            </Card>
-          </Space>
-
-          <Space direction="vertical" size={16} style={{ width: '100%' }}>
-            <Card>
-					<Space direction="vertical" size={16} style={{ width: '100%' }}>
-						<Flex justify="space-between" align="center" wrap="wrap" gap={12}>
-						  <Space wrap>
-                    <Text type="secondary">周期</Text>
-                    <Radio.Group
-                      size="small"
-                      optionType="button"
-                      buttonStyle="solid"
-                      value={ktype}
-                      onChange={(event) => setKtype(event.target.value)}
-                      options={KTYPE_OPTIONS}
-                    />
-						  </Space>
-						  <Space wrap>
-						    <Button icon={<DownloadOutlined />} onClick={exportScreenResults} disabled={sortedResults.length === 0}>
-						      导出CSV
-						    </Button>
-						    <Button icon={<SaveOutlined />} onClick={() => void saveScreenResults()} disabled={sortedResults.length === 0}>
-						      保存结果
-						    </Button>
-						    <Button
-						      type="primary"
-						      icon={<SearchOutlined />}
-						      loading={loading}
-						      onClick={() => void doScreen()}
-						      disabled={!resolvedCodes.trim()}
-						    >
-						      开始筛选
-						    </Button>
-						  </Space>
-						</Flex>
-
-                <div>
-                  <Text type="secondary">信号过滤</Text>
-                  <div style={{ marginTop: 8 }}>
-                    <Space size={[8, 8]} wrap>
-                      {SIGNAL_OPTIONS.map((option) => {
-                        const active = selectedSignals.includes(option.value);
-                        return (
-                          <Tag
-                            key={option.value}
-                            color={active ? (option.buy ? 'red' : 'green') : 'default'}
-                            style={{ cursor: 'pointer', paddingInline: 10, paddingBlock: 4 }}
-                            onClick={() => toggleSignal(option.value)}
-                          >
-                            {option.label}
-                          </Tag>
-                        );
-                      })}
-                      {selectedSignals.length > 0 && (
-                        <Button size="small" type="text" onClick={() => setSelectedSignals([])}>
-                          清空
-                        </Button>
-                      )}
+                    {skippedCodes.length > 0 && (
+                      <Statistic title="跳过" value={skippedCodes.length} suffix="只" valueStyle={{ color: '#faad14' }} style={{ fontSize: 13 }} />
+                    )}
+                  </Space>
+                  {results.length > 0 && (
+                    <Space size={[6, 6]} wrap>
+                      {Object.entries(signalCounts).map(([type, count]) => (
+                        <Tag key={type} color={isBuySignal(type) ? 'red' : 'green'}>
+                          {type} {count}
+                        </Tag>
+                      ))}
                     </Space>
-                  </div>
-                </div>
-              </Space>
-            </Card>
-
-            {error && <Alert type="error" showIcon message="筛选失败" description={error} />}
-
-            {cappedInfo && (
-              <Alert type="warning" showIcon message="批量已截断" description={cappedInfo.reason} />
+                  )}
+                </Flex>
+              </Card>
             )}
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 16 }}>
-              <Card><Statistic title="扫描总数" value={total} suffix="只" /></Card>
-              <Card><Statistic title="命中结果" value={filteredResults.length} suffix="只" /></Card>
-              <Card><Statistic title="活跃信号" value={Object.keys(signalCounts).length} suffix="种" /></Card>
-              {hasScreenLoaded && failedCodes.length > 0 && (
-                <Card><Statistic title="失败" value={failedCodes.length} suffix="只" valueStyle={{ color: '#cf1322' }} /></Card>
-              )}
-              {hasScreenLoaded && skippedCodes.length > 0 && (
-                <Card><Statistic title="跳过" value={skippedCodes.length} suffix="只" valueStyle={{ color: '#faad14' }} /></Card>
-              )}
-            </div>
 
             {hasScreenLoaded && failedCodes.length > 0 && (
               <Collapse
@@ -991,18 +869,6 @@ export default function Screen() {
               />
             )}
 
-            {results.length > 0 && (
-              <Card>
-                <Space size={[8, 8]} wrap>
-                  {Object.entries(signalCounts).map(([type, count]) => (
-                    <Tag key={type} color={isBuySignal(type) ? 'red' : 'green'}>
-                      {type} {count}
-                    </Tag>
-                  ))}
-                </Space>
-              </Card>
-            )}
-
             {sortedResults.length > 0 ? (
               <VirtualResultTable
                 results={sortedResults}
@@ -1011,6 +877,16 @@ export default function Screen() {
                 sortAsc={sortAsc}
                 onSortChange={handleSortChange}
                 navigate={navigate}
+                extra={
+                  <Space wrap>
+                    <Button icon={<DownloadOutlined />} onClick={exportScreenResults} size="small">
+                      导出CSV
+                    </Button>
+                    <Button icon={<SaveOutlined />} onClick={() => void saveScreenResults()} size="small">
+                      保存结果
+                    </Button>
+                  </Space>
+                }
               />
             ) : !loading && !error ? (
               <Card>
@@ -1020,8 +896,6 @@ export default function Screen() {
                 />
               </Card>
             ) : null}
-          </Space>
-        </div>
       </Space>
 
       <Modal
@@ -1080,6 +954,150 @@ export default function Screen() {
               );
             }}
           />
+        )}
+      </Modal>
+
+      <Modal
+        title="选择股票来源"
+        open={showSourceModal}
+        onCancel={() => setShowSourceModal(false)}
+        footer={[
+          <Button key="cancel" onClick={() => setShowSourceModal(false)}>关闭</Button>,
+          <Button key="confirm" type="primary" onClick={() => setShowSourceModal(false)}>确定</Button>,
+        ]}
+        width={760}
+        style={{ maxHeight: '70vh' }}
+      >
+        <Segmented<SourceTab>
+          value={sourceTab}
+          onChange={(value) => setSourceTab(value)}
+          options={[
+            { label: '自选股', value: 'watchlist' },
+            { label: '板块', value: 'block' },
+          ]}
+          style={{ marginBottom: 16 }}
+        />
+
+        {sourceTab === 'watchlist' ? (
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Input
+              prefix={<SearchOutlined />}
+              value={inputCode}
+              onChange={(event) => setInputCode(event.target.value)}
+              onPressEnter={() => void addCodesFromInput()}
+              placeholder="输入股票代码，支持逗号/空格分隔"
+              suffix={inputLoading ? <Spin size="small" /> : null}
+            />
+            <Flex justify="space-between" align="center" gap={8}>
+              <Text type="secondary">共 {stockList.length} 只股票</Text>
+              <Button
+                size="small"
+                icon={<SyncOutlined spin={syncLoading} />}
+                loading={syncLoading}
+                disabled={stockList.length === 0}
+                onClick={() => void syncWatchlistDaily()}
+              >
+                同步日K
+              </Button>
+            </Flex>
+            <div style={{ maxHeight: 280, overflow: 'auto' }}>
+              {stockList.length === 0 ? (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="输入股票代码后回车添加" />
+              ) : (
+                <List
+                  size="small"
+                  dataSource={stockList}
+                  renderItem={(stock, index) => (
+                    <List.Item
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => {
+                        setShowSourceModal(false);
+                        navigate(`/stock/${stock.code}/chart`);
+                      }}
+                      actions={[
+                        <Button
+                          key="remove"
+                          type="text"
+                          danger
+                          icon={<CloseOutlined />}
+								  onClick={(event) => {
+								    event.stopPropagation();
+								    api.watchlistDelete(stock.code).catch(() => {});
+								    setStockList((previous) => previous.filter((_, itemIndex) => itemIndex !== index));
+								  }}
+                        />,
+                      ]}
+                    >
+                      <List.Item.Meta
+                        title={<Space><Text code>{stock.code}</Text><Text>{stock.name || '-'}</Text></Space>}
+                      />
+                    </List.Item>
+                  )}
+                />
+              )}
+            </div>
+          </Space>
+        ) : (
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Segmented
+              block
+              value={blockFile}
+              onChange={(value) => {
+                const nextFile = String(value);
+                const config = ALL_BLOCK_FILES.find((item) => item.file === nextFile);
+                setBlockFile(nextFile);
+                void loadBlocks(nextFile, config?.type);
+              }}
+              options={ALL_BLOCK_FILES.map((item) => ({ label: item.label, value: item.file }))}
+            />
+            <Input
+              prefix={<SearchOutlined />}
+              value={blockSearch}
+              onChange={(event) => setBlockSearch(event.target.value)}
+              placeholder="搜索板块..."
+            />
+            <div style={{ maxHeight: 280, overflow: 'auto' }}>
+              {blockLoading ? (
+                <Flex justify="center" align="center" style={{ minHeight: 240 }}><Spin /></Flex>
+              ) : (
+                <List
+                  size="small"
+                  dataSource={filteredBlocks}
+                  renderItem={(block) => (
+                    <List.Item
+                      style={{
+                        cursor: 'pointer',
+                        borderRadius: 8,
+                        paddingInline: 12,
+                        background: selectedBlock?.name === block.name ? 'var(--ant-color-primary-bg)' : undefined,
+                      }}
+                      onClick={() => handleSelectBlock(block)}
+                    >
+                      <Flex justify="space-between" align="center" style={{ width: '100%' }}>
+                        <Text ellipsis style={{ maxWidth: 180 }}>{block.name}</Text>
+                        <Tag>{block.count}只</Tag>
+                      </Flex>
+                    </List.Item>
+                  )}
+                />
+              )}
+            </div>
+            {selectedBlock && (
+              <Alert
+                type="info"
+                showIcon
+                message={`已选 ${selectedBlock.name}`}
+                description={
+                  <Space wrap>
+                    <Text>{blockStocksLoading ? '加载成分股中...' : `${selectedBlock.stocks?.length || selectedBlock.count} 只股票`}</Text>
+                    <Button size="small" icon={<EyeOutlined />} onClick={() => void openBlockModal()} disabled={!selectedBlock.stocks?.length}>
+                      查看成分股
+                    </Button>
+                  </Space>
+                }
+              />
+            )}
+          </Space>
         )}
       </Modal>
 

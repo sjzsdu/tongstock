@@ -1542,6 +1542,8 @@ func (s *Server) handleScreen(c *gin.Context) {
 	ktypeStr := c.DefaultQuery("type", "day")
 	ktype := tdx.ParseKlineType(ktypeStr)
 
+	codeNameMap := s.getCodeNameMapServer()
+
 	signalFilter := c.Query("signal")
 
 	// Parse, trim, deduplicate, and cap batch size
@@ -1607,13 +1609,15 @@ func (s *Server) handleScreen(c *gin.Context) {
 				return
 			}
 
-			// Get quote
-			quotes, err := withRetry(s, func() ([]*protocol.QuoteItem, error) {
-				return s.svc.Client.GetQuote(code)
-			})
-			name := ""
-			if err == nil && len(quotes) > 0 {
-				name = quotes[0].Name
+			// Get name from code-name map first, fallback to quote
+			name := codeNameMap[code]
+			if name == "" {
+				quotes, err := withRetry(s, func() ([]*protocol.QuoteItem, error) {
+					return s.svc.Client.GetQuote(code)
+				})
+				if err == nil && len(quotes) > 0 {
+					name = quotes[0].Name
+				}
 			}
 
 			// Build inputs
