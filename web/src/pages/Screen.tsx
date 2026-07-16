@@ -8,6 +8,7 @@ import {
   DownloadOutlined,
   EditOutlined,
   EyeOutlined,
+  InfoCircleOutlined,
   PlusOutlined,
   SaveOutlined,
   SearchOutlined,
@@ -28,6 +29,7 @@ import {
   Popover,
   Segmented,
   Select,
+  Tooltip,
   Space,
   Spin,
   Statistic,
@@ -356,6 +358,7 @@ export default function Screen() {
   const [hasScreenLoaded, setHasScreenLoaded] = useState(false);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [showHelpModal, setShowHelpModal] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncResult, setSyncResult] = useState<KlineBatchSyncResult | null>(null);
   const [error, setError] = useState('');
@@ -487,7 +490,7 @@ export default function Screen() {
     setLoading(true);
     setError('');
     try {
-      const response = await api.screen(codes, ktype);
+      const response = await api.screen(codes, ktype, selectedSignals);
       const valid = response.results.filter((item) => item.code);
       setResults(valid);
       setTotal(response.total);
@@ -765,6 +768,9 @@ export default function Screen() {
 
             <Flex gap={8} align="center" style={{ flex: 1, minWidth: 240 }}>
               <Text type="secondary">信号过滤</Text>
+              <Tooltip title="查看信号含义说明">
+                <Button icon={<InfoCircleOutlined />} size="small" type="text" onClick={() => setShowHelpModal(true)} />
+              </Tooltip>
               <Select
                 mode="multiple"
                 value={selectedSignals}
@@ -1099,6 +1105,50 @@ export default function Screen() {
             )}
           </Space>
         )}
+      </Modal>
+
+      <Modal
+        title="信号含义说明"
+        open={showHelpModal}
+        onCancel={() => setShowHelpModal(false)}
+        footer={<Button onClick={() => setShowHelpModal(false)}>关闭</Button>}
+        width={680}
+      >
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <div>
+            <Text strong style={{ fontSize: 14 }}>📈 买入信号</Text>
+            <Divider style={{ margin: '8px 0' }} />
+            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+              {SIGNAL_OPTIONS.filter((opt) => opt.buy).map((opt) => (
+                <div key={opt.value} style={{ display: 'flex', gap: 12 }}>
+                  <Tag color="red" style={{ flexShrink: 0 }}>{opt.label}</Tag>
+                  <Text>{opt.desc}</Text>
+                </div>
+              ))}
+            </Space>
+          </div>
+
+          <div>
+            <Text strong style={{ fontSize: 14 }}>📉 卖出信号</Text>
+            <Divider style={{ margin: '8px 0' }} />
+            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+              {SIGNAL_OPTIONS.filter((opt) => !opt.buy).map((opt) => (
+                <div key={opt.value} style={{ display: 'flex', gap: 12 }}>
+                  <Tag color="green" style={{ flexShrink: 0 }}>{opt.label}</Tag>
+                  <Text>{opt.desc}</Text>
+                </div>
+              ))}
+            </Space>
+          </div>
+
+          <Alert
+            type="info"
+            showIcon
+            message="筛选逻辑说明"
+            description="选择多个信号时，只要股票满足其中任意一个信号条件就会被列入结果。表格中显示的是该股票最近触发的信号。"
+            style={{ marginTop: 8 }}
+          />
+        </Space>
       </Modal>
 
       <Modal

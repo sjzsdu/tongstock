@@ -125,9 +125,11 @@ export const api = {
     return fetchJSON<{ stats: { exchange: string; name: string; total: number; categories: Record<string, number> }[] }>(`/api/codes/stats?${params}`);
   },
 
-  screen: (codes: string, type = 'day', signal?: string) => {
+  screen: (codes: string, type = 'day', signals?: string[]) => {
     const p = new URLSearchParams({ codes, type });
-    if (signal) p.set('signal', signal);
+    if (signals && signals.length > 0) {
+      p.set('signals', signals.join(','));
+    }
     return fetchJSON<ScreenResponse>(`/api/screen?${p}`);
   },
 

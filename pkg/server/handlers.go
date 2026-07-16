@@ -1544,7 +1544,14 @@ func (s *Server) handleScreen(c *gin.Context) {
 
 	codeNameMap := s.getCodeNameMapServer()
 
-	signalFilter := c.Query("signal")
+	signalFilters := strings.Split(c.Query("signals"), ",")
+	var signalFilterSet map[string]bool
+	if c.Query("signals") != "" {
+		signalFilterSet = make(map[string]bool)
+		for _, s := range signalFilters {
+			signalFilterSet[strings.TrimSpace(s)] = true
+		}
+	}
 
 	// Parse, trim, deduplicate, and cap batch size
 	const maxCodes = 500
@@ -1652,17 +1659,17 @@ func (s *Server) handleScreen(c *gin.Context) {
 			// Detect cycles
 			cycles := signal.DetectAllCycles(code, inputs, result)
 
-			// Filter by signal if specified
-			if signalFilter != "" {
+			// Filter by signals if specified (match any)
+			if signalFilterSet != nil && len(signalFilterSet) > 0 {
 				hasSignal := false
 				for _, s := range signals {
-					if string(s.Type) == signalFilter {
+					if signalFilterSet[string(s.Type)] {
 						hasSignal = true
 						break
 					}
 				}
 				if !hasSignal {
-					out.skipped = &codeStatus{Code: code, Name: name, Status: "skipped", Reason: fmt.Sprintf("未命中信号: %s", signalFilter)}
+					out.skipped = &codeStatus{Code: code, Name: name, Status: "skipped", Reason: "未命中指定信号"}
 					outputs[idx] = out
 					return
 				}
