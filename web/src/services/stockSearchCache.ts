@@ -1,7 +1,7 @@
 import { api } from '../api/client';
 import type { SearchStockMatch, StockSearchIndexItem, StockSearchResponse } from '../types/api';
 
-const CACHE_KEY = 'tongstock.stockSearchIndex.v1';
+const CACHE_KEY = 'tongstock.stockSearchIndex.v2';
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const BACKGROUND_REFRESH_INTERVAL_MS = 60 * 1000;
 

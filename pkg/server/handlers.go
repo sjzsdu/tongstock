@@ -38,6 +38,29 @@ const (
 	stockSearchIndexTTL     = 10 * time.Minute
 )
 
+func isStockCode(code string) bool {
+	switch {
+	case strings.HasPrefix(code, "688"):
+		return true
+	case strings.HasPrefix(code, "6"):
+		return true
+	case strings.HasPrefix(code, "300"), strings.HasPrefix(code, "301"):
+		return true
+	case strings.HasPrefix(code, "399"):
+		return true
+	case strings.HasPrefix(code, "000"), strings.HasPrefix(code, "001"):
+		return true
+	case strings.HasPrefix(code, "002"):
+		return true
+	case strings.HasPrefix(code, "8"):
+		return true
+	case strings.HasPrefix(code, "5"):
+		return true
+	default:
+		return false
+	}
+}
+
 // NewServer creates a new Server instance
 func NewServer(svc *tdx.Service, historyDB *history.Store, watchlistDB *watchlist.Store) *Server {
 	return &Server{
@@ -283,6 +306,9 @@ func (s *Server) getStockSearchIndex() ([]stockSearchIndexItem, error) {
 			return nil, err
 		}
 		for _, code := range codes {
+			if !isStockCode(code.Code) {
+				continue
+			}
 			item := stockSearchIndexItem{Code: code.Code, Name: code.Name, Exchange: source.label}
 			item.NameNorm = normalizeStockSearchText(item.Name)
 			item.PinyinNorm, item.Initials = buildStockPinyinKeys(item.Name)
@@ -2094,7 +2120,7 @@ func (s *Server) handleWatchlistGroups(c *gin.Context) {
 		counts = make(map[string]int)
 	}
 
-	var data []gin.H
+	data := make([]gin.H, 0)
 	for _, g := range groups {
 		data = append(data, gin.H{
 			"name":  g,
@@ -2563,11 +2589,11 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 			// Bounded concurrent quote fetching
 			const quoteConcurrency = 8
 			type quoteResult struct {
-				code  string
-				name  string
-				price float64
+				code   string
+				name   string
+				price  float64
 				change float64
-				ok    bool
+				ok     bool
 			}
 			quoteResults := make([]quoteResult, len(compareStocks))
 			var qwg sync.WaitGroup
@@ -2588,11 +2614,11 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 					q := qs[0]
 					change := (q.Price - q.LastClose) / q.LastClose * 100
 					quoteResults[idx] = quoteResult{
-						code:  stockCode,
-						name:  q.Name,
-						price: q.Price,
+						code:   stockCode,
+						name:   q.Name,
+						price:  q.Price,
 						change: change,
-						ok:    true,
+						ok:     true,
 					}
 				}(i, sc)
 			}

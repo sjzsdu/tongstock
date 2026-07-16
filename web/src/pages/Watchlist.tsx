@@ -77,7 +77,7 @@ export default function Watchlist() {
   const loadGroups = useCallback(async () => {
     try {
       const result = await api.watchlistGroups();
-      setGroups(result.groups);
+      setGroups(result.groups ?? []);
     } catch {
       // ignore group load failure
     }
@@ -184,7 +184,7 @@ export default function Watchlist() {
   }, [rows]);
 
   const groupOptions = useMemo(() => {
-    const existing = groups.map((g) => g.name);
+    const existing = (groups ?? []).map((g) => g.name);
     const presets = ['default', 'industry', 'concept', 'custom'];
     const all = Array.from(new Set([...presets, ...existing]));
     return all.map((name) => ({ label: getGroupLabel(name), value: name }));
@@ -274,8 +274,8 @@ export default function Watchlist() {
                 value={activeGroup}
                 onChange={(value) => setActiveGroup(value as string)}
                 options={[
-                  { label: `全部 (${groups.reduce((sum, g) => sum + g.count, 0)})`, value: '__all__' },
-                  ...groups.map((g) => ({
+                  { label: `全部 (${(groups ?? []).reduce((sum, g) => sum + g.count, 0)})`, value: '__all__' },
+                  ...(groups ?? []).map((g) => ({
                     label: `${getGroupLabel(g.name)} (${g.count})`,
                     value: g.name,
                   })),
