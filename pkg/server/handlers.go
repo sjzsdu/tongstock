@@ -32,6 +32,7 @@ type Server struct {
 	tradingDB             *trading.Store
 	stockSearchIndexCache stockSearchIndexCache
 	tdxMu                 sync.Mutex
+	agentState            *AgentState
 }
 
 const (
@@ -463,6 +464,9 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 		api.GET("/trades/positions", s.handleTradePositions)
 		api.DELETE("/trades/:id", s.handleTradeDelete)
 	}
+
+	// Agent routes
+	s.SetupAgentRoutes(api)
 }
 
 // handleQuote handles quote requests

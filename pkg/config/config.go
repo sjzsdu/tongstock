@@ -14,6 +14,7 @@ type Config struct {
 	TDX      TDXConfig      `yaml:"tdx"`
 	Cache    CacheConfig    `yaml:"cache"`
 	Database DatabaseConfig `yaml:"database"`
+	Agent    AgentConfig    `yaml:"agent"`
 }
 
 // ServerConfig HTTP 服务器配置
@@ -36,6 +37,16 @@ type CacheConfig struct {
 type DatabaseConfig struct {
 	Driver string `yaml:"driver"`
 	DSN    string `yaml:"dsn"`
+}
+
+// AgentConfig AI Agent 配置
+type AgentConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Home    string `yaml:"home"`
+	Config  string `yaml:"config"`
+	Model   string `yaml:"model"`
+	Agent   string `yaml:"agent"`
+	Session string `yaml:"session"`
 }
 
 // DefaultConfig 返回一个包含默认值的 Config 实例
@@ -77,6 +88,15 @@ database:
   driver: sqlite3
   # 连接字符串
   # dsn: ~/.tongstock/cache/tongstock.db
+
+# AI Agent 配置 (可选，需要 picoclaw)
+# agent:
+#   enabled: true
+#   home: ~/.picoclaw
+#   config: ~/.picoclaw/config.json
+#   model: ""
+#   agent: ""
+#   session: ""
 `
 }
 
@@ -126,6 +146,24 @@ func Load() (*Config, error) {
 	}
 	if tmp.Database.DSN != "" {
 		merged.Database.DSN = tmp.Database.DSN
+	}
+	if tmp.Agent.Enabled {
+		merged.Agent.Enabled = tmp.Agent.Enabled
+	}
+	if tmp.Agent.Home != "" {
+		merged.Agent.Home = tmp.Agent.Home
+	}
+	if tmp.Agent.Config != "" {
+		merged.Agent.Config = tmp.Agent.Config
+	}
+	if tmp.Agent.Model != "" {
+		merged.Agent.Model = tmp.Agent.Model
+	}
+	if tmp.Agent.Agent != "" {
+		merged.Agent.Agent = tmp.Agent.Agent
+	}
+	if tmp.Agent.Session != "" {
+		merged.Agent.Session = tmp.Agent.Session
 	}
 
 	return merged, nil

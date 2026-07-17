@@ -12,6 +12,11 @@ import type {
   KlineBatchSyncResult,
   KlineSyncState,
   StockCompareResponse,
+  AgentState,
+  AgentChatResponse,
+  AgentSessionsResponse,
+  AgentTranscriptResponse,
+  AgentDebateResponse,
 } from '../types/api';
 
 const BASE = '';
@@ -232,6 +237,31 @@ export const api = {
 
   tradeDelete: (id: number) =>
     fetchJSON<{ success: boolean }>(`/api/trades/${id}`, { method: 'DELETE' }),
+
+  // Agent APIs
+  agentState: () =>
+    fetchJSON<AgentState>('/api/agent/state'),
+
+  agentChat: (message: string, agent?: string, session?: string) =>
+    fetchJSON<AgentChatResponse>('/api/agent/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message, agent, session }),
+    }),
+
+  agentSessions: () =>
+    fetchJSON<AgentSessionsResponse>('/api/agent/sessions'),
+
+  agentTranscript: (session: string, agent?: string) => {
+    const params = new URLSearchParams({ session });
+    if (agent) params.set('agent', agent);
+    return fetchJSON<AgentTranscriptResponse>(`/api/agent/transcript?${params}`);
+  },
+
+  agentDebate: (stockCode: string, stockName?: string, topic?: string, agents?: string[]) =>
+    fetchJSON<AgentDebateResponse>('/api/agent/debate', {
+      method: 'POST',
+      body: JSON.stringify({ stock_code: stockCode, stock_name: stockName, topic, agents }),
+    }),
 };
 
 export interface TradeInfo {

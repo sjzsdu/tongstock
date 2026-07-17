@@ -1,6 +1,6 @@
 import { Suspense, lazy, useState } from 'react';
 import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { BarChartOutlined, DashboardOutlined, FundOutlined, HeartOutlined, SearchOutlined, SettingOutlined, StockOutlined, WalletOutlined } from '@ant-design/icons';
+import { BarChartOutlined, DashboardOutlined, FundOutlined, HeartOutlined, RobotOutlined, SearchOutlined, SettingOutlined, StockOutlined, WalletOutlined } from '@ant-design/icons';
 import { Avatar, Breadcrumb, Layout, Menu, Skeleton, Space, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import StockSearchInput from './components/StockSearchInput';
@@ -14,6 +14,7 @@ const Watchlist = lazy(() => import('./pages/Watchlist'));
 const Portfolio = lazy(() => import('./pages/Portfolio'));
 const SettingsPage = lazy(() => import('./pages/settings/SettingsPage'));
 const IndexDetail = lazy(() => import('./pages/index/IndexDetail'));
+const AgentWeb = lazy(() => import('./pages/AgentWeb'));
 
 const { Header, Content, Sider } = Layout;
 
@@ -59,7 +60,9 @@ function AppLayout({ children }: { children: React.ReactNode }) {
               ? '/watchlist'
               : location.pathname.startsWith('/settings')
                 ? '/settings'
-                : '/';
+                : location.pathname.startsWith('/agent')
+                  ? '/agent'
+                  : '/';
 
   const menuItems: MenuProps['items'] = [
     { key: '/', icon: <DashboardOutlined />, label: <Link to="/">市场总览</Link> },
@@ -69,6 +72,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
     { key: '/portfolio', icon: <WalletOutlined />, label: <Link to="/portfolio">虚拟持仓</Link> },
     { key: '/blocks', icon: <FundOutlined />, label: <Link to="/blocks">板块热点</Link> },
     { key: '/settings', icon: <SettingOutlined />, label: <Link to="/settings">配置</Link> },
+    { key: '/agent', icon: <RobotOutlined />, label: <Link to="/agent">AI 助手</Link> },
   ];
 
   const breadcrumbItems = buildBreadcrumbs(location.pathname);
@@ -144,6 +148,7 @@ export default function App() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/index/:code" element={<IndexDetail />} />
           <Route path="/index/:code/:tab" element={<IndexDetail />} />
+          <Route path="/agent" element={<AgentWeb />} />
         </Routes>
       </AppLayout>
     </BrowserRouter>

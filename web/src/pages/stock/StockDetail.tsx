@@ -39,6 +39,7 @@ import {
   Tooltip,
   Typography,
 } from 'antd';
+import { RobotOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { api } from '../../api/client';
 import type {
@@ -59,6 +60,7 @@ import FinanceTrendChart, { type FinanceTrendChartHandle, type FinanceTrendMetri
 import MinuteChart from '../../components/charts/MinuteChart';
 import SignalInterpretationCard from '../../components/SignalInterpretationCard';
 import StockCompareView from '../../components/StockCompareView';
+import AgentChatPanel from '../../components/AgentChatPanel';
 import TabContent from '../../components/TabContent';
 import TdxContent from '../../components/TdxContent';
 import { formatDate, formatShortDate, formatTdxDate, formatTime } from '../../lib/datetime';
@@ -257,6 +259,7 @@ export default function StockDetail() {
 	const [detailStatus, setDetailStatus] = useState<DetailStatus>('loading');
 	const [detailError, setDetailError] = useState('');
 	const [syncState, setSyncState] = useState<KlineSyncState | null>(null);
+	const [agentPanelOpen, setAgentPanelOpen] = useState(false);
 
   useEffect(() => {
     if (!paramCode) {
@@ -676,6 +679,13 @@ export default function StockDetail() {
               onClick={() => setFullscreen(!fullscreen)}
             >
               {fullscreen ? '退出全屏' : '全屏'}
+            </Button>
+            <Button
+              type="primary"
+              icon={<RobotOutlined />}
+              onClick={() => setAgentPanelOpen(true)}
+            >
+              AI 分析
             </Button>
           </Flex>
         </Card>
@@ -1149,6 +1159,13 @@ export default function StockDetail() {
             </Space>
           );
         })()}
+
+        <AgentChatPanel
+          stockCode={code}
+          stockName={quote?.Name}
+          open={agentPanelOpen}
+          onClose={() => setAgentPanelOpen(false)}
+        />
       </Space>
     </div>
   );

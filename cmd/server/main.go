@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sjzsdu/tongstock/internal/agents"
 	"github.com/sjzsdu/tongstock/pkg/config"
 	"github.com/sjzsdu/tongstock/pkg/history"
 	"github.com/sjzsdu/tongstock/pkg/param"
@@ -84,6 +85,37 @@ func main() {
 
 	// Create HTTP server
 	httpServer := server.NewServer(svc, historyStore, watchlistStore, tradingStore)
+
+	// Initialize Agent (picoclaw) if enabled
+	if cfg.Agent.Enabled {
+		log.Println("Initializing AI Agent (picoclaw)...")
+		agentLister := func() ([]server.EmbeddedAgent, error) {
+			allAgents, err := agents.All()
+			if err != nil {
+				return nil, err
+			}
+			result := make([]server.EmbeddedAgent, len(allAgents))
+			for i, a := range allAgents {
+				result[i] = server.EmbeddedAgent{
+					ID:          a.ID,
+					Name:        a.Name,
+					Description: a.Description,
+					Prompt:      a.Prompt,
+					Soul:        a.Soul,
+					Skills:      a.Skills,
+					Tools:       a.Tools,
+					NoHistory:   a.NoHistory,
+				}
+			}
+			return result, nil
+		}
+		server.RegisterAgentLister(agentLister)
+		if err := httpServer.InitAgentState(cfg.Agent.Home, cfg.Agent.Config, cfg.Agent.Model, cfg.Agent.Agent, ""); err != nil {
+			log.Printf("Warning: Failed to initialize agent: %v", err)
+		} else {
+			log.Println("AI Agent initialized successfully")
+		}
+	}
 
 	// Setup Gin router
 	gin.SetMode(gin.ReleaseMode)

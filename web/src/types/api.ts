@@ -402,3 +402,66 @@ export interface StockCompareResponse {
   stock_change: number;
   comparisons: BlockComparison[];
 }
+
+// Agent types
+export interface AgentState {
+  started_at: string;
+  workspace: string;
+  defaults: {
+    agent: string;
+    model: string;
+    session: string;
+    debug: boolean;
+  };
+  agents: AgentInfo[];
+}
+
+export interface AgentInfo {
+  id: string;
+  name: string;
+  description?: string;
+  skills?: string[];
+  tools?: string[];
+}
+
+export interface AgentChatResponse {
+  response?: string;
+  error?: string;
+}
+
+export interface AgentSessionsResponse {
+  sessions: AgentSessionInfo[];
+  missing?: boolean;
+  message?: string;
+}
+
+export interface AgentSessionInfo {
+  session: string;
+  agent?: string;
+  path: string;
+  updated_at?: string;
+  size?: number;
+}
+
+export interface AgentTranscriptResponse {
+  session: string;
+  agent?: string;
+  path?: string;
+  messages?: { role: string; content: string }[];
+  missing?: boolean;
+  message?: string;
+}
+
+export interface AgentDebateResponse {
+  stock_code: string;
+  stock_name?: string;
+  topic: string;
+  participants: {
+    agent: string;
+    agent_name: string;
+    response: string;
+    error?: string;
+  }[];
+  summary?: string;
+  error?: string;
+}
