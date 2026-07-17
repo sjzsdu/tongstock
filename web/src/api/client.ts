@@ -212,4 +212,33 @@ export const api = {
 
   stockCompare: (code: string) =>
     fetchJSON<StockCompareResponse>(`/api/stock/compare?code=${code}`),
+
+  tradeCreate: (data: { code: string; name?: string; action: 'buy' | 'sell'; price: number; signal?: string; ktype?: string; reason?: string }) =>
+    fetchJSON<{ id: number; code: string; action: string }>('/api/trades', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  trades: (codes?: string) => {
+    const params = codes ? `?codes=${encodeURIComponent(codes)}` : '';
+    return fetchJSON<Record<string, TradeInfo>>(`/api/trades${params}`);
+  },
+
+  tradePositions: () =>
+    fetchJSON<{ positions: TradeInfo[] }>('/api/trades/positions'),
+
+  tradeDelete: (id: number) =>
+    fetchJSON<{ success: boolean }>(`/api/trades/${id}`, { method: 'DELETE' }),
 };
+
+export interface TradeInfo {
+  id: number;
+  code: string;
+  name: string;
+  action: 'buy' | 'sell';
+  price: number;
+  signal: string;
+  ktype: string;
+  reason: string;
+  created_at: string;
+}

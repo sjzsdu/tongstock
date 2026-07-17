@@ -13,6 +13,8 @@ import {
   SaveOutlined,
   SearchOutlined,
   SyncOutlined,
+  ShoppingCartOutlined,
+  MinusCircleOutlined,
 } from '@ant-design/icons';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
@@ -26,7 +28,6 @@ import {
   Input,
   List,
   Modal,
-  Popover,
   Segmented,
   Select,
   Tooltip,
@@ -37,7 +38,7 @@ import {
   Typography,
   message,
 } from 'antd';
-import { api } from '../api/client';
+import { api, type TradeInfo } from '../api/client';
 import type { KlineBatchSyncResult, ScreenCodeStatus, ScreenResult } from '../types/api';
 
 const { Paragraph, Text, Title } = Typography;
@@ -212,6 +213,10 @@ function VirtualResultTable({
   onSortChange,
   navigate,
   extra,
+  trades,
+  tradingLoading,
+  handleBuy,
+  handleSell,
 }: {
   results: ScreenResult[];
   tableContainerRef: RefObject<HTMLDivElement | null>;
@@ -220,6 +225,10 @@ function VirtualResultTable({
   onSortChange: (key: SortKey) => void;
   navigate: (path: string) => void;
   extra?: ReactNode;
+  trades: Record<string, TradeInfo>;
+  tradingLoading: boolean;
+  handleBuy: (result: ScreenResult) => void;
+  handleSell: (result: ScreenResult) => void;
 }) {
   const rowVirtualizer = useVirtualizer({
     count: results.length,
@@ -233,7 +242,7 @@ function VirtualResultTable({
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '80px 1fr 96px 96px 80px 1fr',
+          gridTemplateColumns: '80px 1fr 96px 96px 80px 1fr 140px',
           gap: 0,
           padding: '0 16px',
           borderBottom: '1px solid var(--ant-color-border-secondary)',
@@ -246,6 +255,7 @@ function VirtualResultTable({
         <div style={{ padding: '10px 0' }}><SortHeader sortKey="change" sortAsc={sortAsc} current={sortKey} onChange={onSortChange} align="right">涨跌幅</SortHeader></div>
         <div style={{ padding: '10px 0', textAlign: 'right', color: 'var(--ant-color-text-secondary)', fontSize: 12 }}>MA趋势</div>
         <div style={{ padding: '10px 12px', color: 'var(--ant-color-text-secondary)', fontSize: 12 }}>信号</div>
+        <div style={{ padding: '10px 0', textAlign: 'center', color: 'var(--ant-color-text-secondary)', fontSize: 12 }}>虚拟操作</div>
       </div>
 
       <div ref={tableContainerRef} style={{ maxHeight: 'calc(100vh - 360px)', minHeight: 320, overflow: 'auto' }}>
@@ -254,22 +264,8 @@ function VirtualResultTable({
             const result = results[virtualRow.index];
             const close = result.last?.Close || 0;
             const changePct = getChangePct(result);
-            const allSignals = result.signals || [];
-            const latestSignal = allSignals.length > 0 ? allSignals[allSignals.length - 1] : null;
+            const signals = result.signals || [];
             const maTrend = getMaTrend(result);
-
-            const signalContent = (
-              <Space direction="vertical" size={8}>
-                {allSignals.map((signal, index) => (
-                  <div key={`${result.code}-${signal.Type}-${index}`} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Tag color={isBuySignal(signal.Type) ? 'red' : 'green'}>
-                      {signal.Indicator}{signal.Type}
-                    </Tag>
-                    <Text type="secondary" style={{ fontSize: 12 }}>{signal.Date}</Text>
-                  </div>
-                ))}
-              </Space>
-            );
 
             return (
               <div
@@ -283,7 +279,7 @@ function VirtualResultTable({
                   height: ROW_HEIGHT,
                   padding: '0 16px',
                   display: 'grid',
-                  gridTemplateColumns: '80px 1fr 96px 96px 80px 1fr',
+                  gridTemplateColumns: '80px 1fr 96px 96px 80px 1fr 140px',
                   alignItems: 'center',
                   borderBottom: '1px solid var(--ant-color-border-secondary)',
                   cursor: 'pointer',
@@ -296,14 +292,45 @@ function VirtualResultTable({
                 <Text style={{ textAlign: 'right', color: getPriceColor(changePct), fontVariantNumeric: 'tabular-nums' }}>{formatPercent(changePct)}</Text>
                 <Tag color={maTrend.color} style={{ justifySelf: 'end', fontSize: 12 }}>{maTrend.label}</Tag>
                 <div style={{ paddingLeft: 12 }}>
-                  {latestSignal ? (
-                    <Popover content={signalContent} title="全部信号" placement="topLeft">
-                      <Tag color={isBuySignal(latestSignal.Type) ? 'red' : 'green'} style={{ cursor: 'pointer' }}>
-                        {latestSignal.Indicator}{latestSignal.Type}
-                      </Tag>
-                    </Popover>
+                  {signals.length > 0 ? (
+                    <Space size={[4, 0]} wrap>
+                      {signals.map((signal, index) => (
+                        <Tag key={`${result.code}-${signal.Type}-${index}`} color={isBuySignal(signal.Type) ? 'red' : 'green'} style={{ fontSize: 11 }}>
+                          {signal.Indicator}{signal.Type}
+                        </Tag>
+                      ))}
+                    </Space>
                   ) : (
                     <Text type="secondary" style={{ fontSize: 12 }}>无信号</Text>
+                  )}
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <Space size={4}>
+                    <Button
+                      size="small"
+                      type="primary"
+                      icon={<ShoppingCartOutlined />}
+                      onClick={(e) => { e.stopPropagation(); handleBuy(result); }}
+                      disabled={tradingLoading || (trades[result.code]?.action === 'buy')}
+                      style={{ padding: '4px 8px', fontSize: 11 }}
+                    >
+                      买入
+                    </Button>
+                    <Button
+                      size="small"
+                      danger
+                      icon={<MinusCircleOutlined />}
+                      onClick={(e) => { e.stopPropagation(); handleSell(result); }}
+                      disabled={tradingLoading || (!trades[result.code] || trades[result.code].action !== 'buy')}
+                      style={{ padding: '4px 8px', fontSize: 11 }}
+                    >
+                      卖出
+                    </Button>
+                  </Space>
+                  {trades[result.code] && (
+                    <div style={{ fontSize: 10, marginTop: 2, color: trades[result.code].action === 'buy' ? '#ff4d4f' : '#52c41a' }}>
+                      {trades[result.code].action === 'buy' ? `已买入@${trades[result.code].price.toFixed(2)}` : '已卖出'}
+                    </div>
                   )}
                 </div>
               </div>
@@ -375,9 +402,110 @@ export default function Screen() {
   const [blockStocksWithNames, setBlockStocksWithNames] = useState<{ code: string; name: string }[]>([]);
   const [blockStocksLoadingNames, setBlockStocksLoadingNames] = useState(false);
 
+  const [trades, setTrades] = useState<Record<string, TradeInfo>>({});
+  const [tradingLoading, setTradingLoading] = useState(false);
+  const [showTradeModal, setShowTradeModal] = useState(false);
+  const [currentTradeAction, setCurrentTradeAction] = useState<'buy' | 'sell'>('buy');
+  const [currentTradeStock, setCurrentTradeStock] = useState<ScreenResult | null>(null);
+  const [tradeReason, setTradeReason] = useState('');
+
+  interface TradeInfo {
+    id: number;
+    code: string;
+    name: string;
+    action: 'buy' | 'sell';
+    price: number;
+    signal: string;
+    ktype: string;
+    reason: string;
+    created_at: string;
+  }
+
   useEffect(() => {
     saveStockListToStorage(stockList);
   }, [stockList, saveStockListToStorage]);
+
+  const loadTrades = useCallback(async (codes: string[]) => {
+    if (codes.length === 0) return;
+    try {
+      const response = await api.trades(codes.join(','));
+      setTrades(response);
+    } catch {
+      setTrades({});
+    }
+  }, []);
+
+  const handleBuy = (result: ScreenResult) => {
+    const currentTrade = trades[result.code];
+    if (currentTrade && currentTrade.action === 'buy') {
+      messageApi.warning('已持有该股票');
+      return;
+    }
+
+    const close = result.last?.Close || 0;
+    if (close <= 0) {
+      messageApi.error('无法获取当前价格');
+      return;
+    }
+
+    setCurrentTradeAction('buy');
+    setCurrentTradeStock(result);
+    setTradeReason('');
+    setShowTradeModal(true);
+  };
+
+  const handleSell = (result: ScreenResult) => {
+    const currentTrade = trades[result.code];
+    if (!currentTrade || currentTrade.action !== 'buy') {
+      messageApi.warning('未持有该股票');
+      return;
+    }
+
+    const close = result.last?.Close || 0;
+    if (close <= 0) {
+      messageApi.error('无法获取当前价格');
+      return;
+    }
+
+    setCurrentTradeAction('sell');
+    setCurrentTradeStock(result);
+    setTradeReason('');
+    setShowTradeModal(true);
+  };
+
+  const confirmTrade = async () => {
+    if (!currentTradeStock) return;
+
+    const close = currentTradeStock.last?.Close || 0;
+    setTradingLoading(true);
+    try {
+      const signalStr = (currentTradeStock.signals || []).map((s) => `${s.Indicator}${s.Type}`).join(',');
+      await api.tradeCreate({
+        code: currentTradeStock.code,
+        name: currentTradeStock.name || '',
+        action: currentTradeAction,
+        price: close,
+        signal: signalStr,
+        ktype,
+        reason: tradeReason,
+      });
+
+      if (currentTradeAction === 'buy') {
+        messageApi.success(`买入成功 @ ${close.toFixed(2)}`);
+      } else {
+        const currentTrade = trades[currentTradeStock.code];
+        const profit = ((close - currentTrade.price) / currentTrade.price * 100).toFixed(2);
+        const profitText = parseFloat(profit) >= 0 ? `+${profit}%` : `${profit}%`;
+        messageApi.success(`卖出成功 @ ${close.toFixed(2)} (${profitText})`);
+      }
+      void loadTrades([currentTradeStock.code]);
+      setShowTradeModal(false);
+    } catch {
+      messageApi.error(`${currentTradeAction === 'buy' ? '买入' : '卖出'}失败`);
+    } finally {
+      setTradingLoading(false);
+    }
+  };
 
   useEffect(() => {
     api.watchlist()
@@ -498,6 +626,10 @@ export default function Screen() {
       setSkippedCodes(response.skipped ?? []);
       setCappedInfo(response.capped ? { maxCodes: response.maxCodes ?? 0, reason: response.reason ?? '' } : null);
       setHasScreenLoaded(true);
+
+      if (valid.length > 0) {
+        void loadTrades(valid.map((item) => item.code));
+      }
     } catch (screenError: unknown) {
       setError(screenError instanceof Error ? screenError.message : '筛选失败');
     } finally {
@@ -883,6 +1015,10 @@ export default function Screen() {
                 sortAsc={sortAsc}
                 onSortChange={handleSortChange}
                 navigate={navigate}
+                trades={trades}
+                tradingLoading={tradingLoading}
+                handleBuy={handleBuy}
+                handleSell={handleSell}
                 extra={
                   <Space wrap>
                     <Button icon={<DownloadOutlined />} onClick={exportScreenResults} size="small">
@@ -1218,6 +1354,75 @@ export default function Screen() {
             )}
           </Space>
         )}
+      </Modal>
+
+      <Modal
+        title={currentTradeAction === 'buy' ? '确认买入' : '确认卖出'}
+        open={showTradeModal}
+        onCancel={() => setShowTradeModal(false)}
+        footer={[
+          <Button key="cancel" onClick={() => setShowTradeModal(false)}>取消</Button>,
+          <Button key="confirm" type="primary" loading={tradingLoading} onClick={confirmTrade}>
+            {currentTradeAction === 'buy' ? '确认买入' : '确认卖出'}
+          </Button>,
+        ]}
+        width={480}
+      >
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <Card size="small" style={{ marginBottom: 0 }}>
+            <Flex justify="space-between" align="center">
+              <Space>
+                <Text code>{currentTradeStock?.code}</Text>
+                <Text>{currentTradeStock?.name}</Text>
+              </Space>
+              <Tag color={currentTradeAction === 'buy' ? 'red' : 'green'}>
+                {currentTradeAction === 'buy' ? '买入' : '卖出'}
+              </Tag>
+            </Flex>
+            <Divider style={{ margin: '12px 0' }} />
+            <Flex justify="space-between">
+              <Text type="secondary">当前价格</Text>
+              <Text strong style={{ fontVariantNumeric: 'tabular-nums' }}>
+                {(currentTradeStock?.last?.Close || 0).toFixed(2)}
+              </Text>
+            </Flex>
+            {currentTradeAction === 'sell' && trades[currentTradeStock?.code || ''] && (
+              <>
+                <Divider style={{ margin: '12px 0' }} />
+                <Flex justify="space-between">
+                  <Text type="secondary">买入成本</Text>
+                  <Text style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    {trades[currentTradeStock?.code || ''].price.toFixed(2)}
+                  </Text>
+                </Flex>
+                <Flex justify="space-between">
+                  <Text type="secondary">预估盈亏</Text>
+                  <Text
+                    style={{
+                      fontVariantNumeric: 'tabular-nums',
+                      color: ((currentTradeStock?.last?.Close || 0) - trades[currentTradeStock?.code || ''].price) >= 0 ? '#22c55e' : '#ef4444',
+                    }}
+                  >
+                    {(() => {
+                      const profit = ((currentTradeStock?.last?.Close || 0) - trades[currentTradeStock?.code || ''].price) / trades[currentTradeStock?.code || ''].price * 100;
+                      return profit >= 0 ? `+${profit.toFixed(2)}%` : `${profit.toFixed(2)}%`;
+                    })()}
+                  </Text>
+                </Flex>
+              </>
+            )}
+          </Card>
+          <div>
+            <Text type="secondary" style={{ fontSize: 12 }}>交易理由（可选）</Text>
+            <Input.TextArea
+              value={tradeReason}
+              onChange={(e) => setTradeReason(e.target.value)}
+              placeholder="输入买入/卖出的理由，便于后期复盘分析..."
+              rows={3}
+              style={{ marginTop: 8 }}
+            />
+          </div>
+        </Space>
       </Modal>
     </>
   );

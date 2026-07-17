@@ -17,6 +17,7 @@ import (
 	"github.com/sjzsdu/tongstock/pkg/server"
 	"github.com/sjzsdu/tongstock/pkg/storage"
 	"github.com/sjzsdu/tongstock/pkg/tdx"
+	"github.com/sjzsdu/tongstock/pkg/trading"
 	"github.com/sjzsdu/tongstock/pkg/watchlist"
 	"github.com/sjzsdu/tongstock/pkg/web"
 )
@@ -75,8 +76,14 @@ func main() {
 		log.Fatalf("打开自选股数据库失败: %v", err)
 	}
 
+	// Initialize trading store with same storage
+	tradingStore, err := trading.New(s)
+	if err != nil {
+		log.Fatalf("打开交易数据库失败: %v", err)
+	}
+
 	// Create HTTP server
-	httpServer := server.NewServer(svc, historyStore, watchlistStore)
+	httpServer := server.NewServer(svc, historyStore, watchlistStore, tradingStore)
 
 	// Setup Gin router
 	gin.SetMode(gin.ReleaseMode)

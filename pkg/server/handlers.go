@@ -20,6 +20,7 @@ import (
 	"github.com/sjzsdu/tongstock/pkg/ta"
 	"github.com/sjzsdu/tongstock/pkg/tdx"
 	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
+	"github.com/sjzsdu/tongstock/pkg/trading"
 	"github.com/sjzsdu/tongstock/pkg/watchlist"
 )
 
@@ -28,6 +29,7 @@ type Server struct {
 	svc                   *tdx.Service
 	historyDB             *history.Store
 	watchlistDB           *watchlist.Store
+	tradingDB             *trading.Store
 	stockSearchIndexCache stockSearchIndexCache
 	tdxMu                 sync.Mutex
 }
@@ -62,11 +64,12 @@ func isStockCode(code string) bool {
 }
 
 // NewServer creates a new Server instance
-func NewServer(svc *tdx.Service, historyDB *history.Store, watchlistDB *watchlist.Store) *Server {
+func NewServer(svc *tdx.Service, historyDB *history.Store, watchlistDB *watchlist.Store, tradingDB *trading.Store) *Server {
 	return &Server{
 		svc:                   svc,
 		historyDB:             historyDB,
 		watchlistDB:           watchlistDB,
+		tradingDB:             tradingDB,
 		stockSearchIndexCache: stockSearchIndexCache{},
 	}
 }
@@ -452,6 +455,12 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 		// Settings
 		api.GET("/settings/indicator", s.handleIndicatorSettings)
 		api.PUT("/settings/indicator", s.handleSaveIndicatorSettings)
+
+		// Trading (Paper Trading)
+		api.POST("/trades", s.handleTradeCreate)
+		api.GET("/trades", s.handleTradeList)
+		api.GET("/trades/positions", s.handleTradePositions)
+		api.DELETE("/trades/:id", s.handleTradeDelete)
 	}
 }
 
@@ -1654,7 +1663,18 @@ func (s *Server) handleScreen(c *gin.Context) {
 			result := ta.Calculate(inputs, params)
 
 			// Detect signals
-			signals := signal.Detect(code, inputs, result, signal.DefaultDetectOptions())
+			allSignals := signal.Detect(code, inputs, result, signal.DefaultDetectOptions())
+
+			// Filter to only signals from the latest K-line (today)
+			var signals []signal.Signal
+			if len(inputs) > 0 {
+				latestTime := inputs[len(inputs)-1].Time
+				for _, s := range allSignals {
+					if s.Date.Equal(latestTime) {
+						signals = append(signals, s)
+					}
+				}
+			}
 
 			// Detect cycles
 			cycles := signal.DetectAllCycles(code, inputs, result)
@@ -2742,6 +2762,114 @@ func (s *Server) fetchCompanyBlockContent(code, block string) (string, error) {
 		return content, err
 	}
 	return "", fmt.Errorf("未找到块: %s", block)
+}
+
+func (s *Server) handleTradeCreate(c *gin.Context) {
+	var req struct {
+		Code   string  `json:"code" binding:"required"`
+		Name   string  `json:"name"`
+		Action string  `json:"action" binding:"required,oneof=buy sell"`
+		Price  float64 `json:"price" binding:"required,min=0"`
+		Signal string  `json:"signal"`
+		Ktype  string  `json:"ktype"`
+		Reason string  `json:"reason"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if s.tradingDB == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "trading store not initialized"})
+		return
+	}
+
+	ktype := req.Ktype
+	if ktype == "" {
+		ktype = "day"
+	}
+
+	trade := trading.Trade{
+		Code:   req.Code,
+		Name:   req.Name,
+		Action: trading.TradeAction(req.Action),
+		Price:  req.Price,
+		Signal: req.Signal,
+		Ktype:  ktype,
+		Reason: req.Reason,
+	}
+
+	id, err := s.tradingDB.Create(trade)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"id": id, "code": req.Code, "action": req.Action})
+}
+
+func (s *Server) handleTradeList(c *gin.Context) {
+	if s.tradingDB == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "trading store not initialized"})
+		return
+	}
+
+	codes := c.Query("codes")
+	if codes != "" {
+		codeList := strings.Split(codes, ",")
+		for i := range codeList {
+			codeList[i] = strings.TrimSpace(codeList[i])
+		}
+		trades, err := s.tradingDB.GetLatestByCodes(codeList)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, trades)
+		return
+	}
+
+	trades, err := s.tradingDB.GetAll()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"trades": trades})
+}
+
+func (s *Server) handleTradePositions(c *gin.Context) {
+	if s.tradingDB == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "trading store not initialized"})
+		return
+	}
+
+	positions, err := s.tradingDB.GetAllPositions()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"positions": positions})
+}
+
+func (s *Server) handleTradeDelete(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid trade id"})
+		return
+	}
+
+	if s.tradingDB == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "trading store not initialized"})
+		return
+	}
+
+	if err := s.tradingDB.Delete(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
 func parseMainFinanceMetricTables(content string) []financeMetricTable {
