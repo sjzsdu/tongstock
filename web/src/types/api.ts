@@ -22,6 +22,8 @@ export interface Quote {
   BVol: number;
 }
 
+export type QuoteItem = Quote;
+
 export interface MACDResult {
   DIF: number[];
   DEA: number[];

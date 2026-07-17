@@ -374,6 +374,7 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 	{
 		// Quote
 		api.GET("/quote", s.handleQuote)
+		api.GET("/quotes", s.handleQuotes)
 
 		// Codes
 		api.GET("/codes", s.handleCodes)
@@ -494,6 +495,44 @@ func (s *Server) handleQuote(c *gin.Context) {
 	}
 	quotes[0].Name = s.resolveDisplayName(code, quotes[0].Name)
 	c.JSON(http.StatusOK, quotes[0])
+}
+
+// handleQuotes handles batch quote requests
+func (s *Server) handleQuotes(c *gin.Context) {
+	codesStr := c.Query("codes")
+	if codesStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "codes is required"})
+		return
+	}
+
+	codes := strings.Split(codesStr, ",")
+	for i := range codes {
+		codes[i] = strings.TrimSpace(codes[i])
+	}
+
+	var results []*protocol.QuoteItem
+	for _, code := range codes {
+		if code == "" {
+			continue
+		}
+
+		quotes, err := withRetry(s, func() ([]*protocol.QuoteItem, error) {
+			return s.svc.Client.GetQuote(code)
+		})
+		if err != nil {
+			fallback, fallbackErr := s.fallbackQuoteFromKline(code)
+			if fallbackErr == nil {
+				results = append(results, fallback)
+			}
+			continue
+		}
+		if len(quotes) > 0 {
+			quotes[0].Name = s.resolveDisplayName(code, quotes[0].Name)
+			results = append(results, quotes[0])
+		}
+	}
+
+	c.JSON(http.StatusOK, results)
 }
 
 func (s *Server) fallbackQuoteFromKline(code string) (*protocol.QuoteItem, error) {

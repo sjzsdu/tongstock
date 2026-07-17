@@ -352,6 +352,7 @@ export default function Screen() {
   const urlSignals = searchParams.get('signals')?.split(',').filter(Boolean) || [];
 
   const STORAGE_KEY = 'tongstock_stocklist';
+  const SCREEN_CACHE_KEY = 'tongstock_screen_cache';
   const CACHE_EXPIRY = 5 * 60 * 1000;
 
   const loadStockListFromStorage = useCallback((): StockItem[] => {
@@ -370,6 +371,45 @@ export default function Screen() {
       return;
     }
   }, []);
+
+  const getScreenCacheKey = useCallback((ktypeVal: string, signalsVal: string[]) => {
+    return `${ktypeVal}_${signalsVal.sort().join('_')}`;
+  }, []);
+
+  const saveScreenResult = useCallback((resultsData: ScreenResult[], failedData: ScreenCodeStatus[], skippedData: ScreenCodeStatus[], totalData: number, ktypeVal: string, signalsVal: string[]) => {
+    try {
+      const cache = {
+        key: getScreenCacheKey(ktypeVal, signalsVal),
+        results: resultsData,
+        failed: failedData,
+        skipped: skippedData,
+        total: totalData,
+        timestamp: Date.now(),
+      };
+      localStorage.setItem(SCREEN_CACHE_KEY, JSON.stringify(cache));
+    } catch {
+      return;
+    }
+  }, [getScreenCacheKey]);
+
+  const loadScreenResult = useCallback((ktypeVal: string, signalsVal: string[]): { results: ScreenResult[]; failed: ScreenCodeStatus[]; skipped: ScreenCodeStatus[]; total: number } | null => {
+    try {
+      const stored = localStorage.getItem(SCREEN_CACHE_KEY);
+      if (!stored) return null;
+      const cache = JSON.parse(stored);
+      const expectedKey = getScreenCacheKey(ktypeVal, signalsVal);
+      if (cache.key !== expectedKey) return null;
+      if (Date.now() - cache.timestamp > CACHE_EXPIRY * 2) return null;
+      return {
+        results: cache.results || [],
+        failed: cache.failed || [],
+        skipped: cache.skipped || [],
+        total: cache.total || 0,
+      };
+    } catch {
+      return null;
+    }
+  }, [getScreenCacheKey]);
 
   const [codesCache, setCodesCache] = useState<Record<string, CodesCacheEntry>>({});
   const [sourceTab, setSourceTab] = useState<SourceTab>('watchlist');
@@ -615,6 +655,21 @@ export default function Screen() {
     const codes = (retryCodes ?? resolvedCodes).trim();
     if (!codes) return;
 
+    if (!retryCodes) {
+      const cached = loadScreenResult(ktype, selectedSignals);
+      if (cached && cached.results.length > 0) {
+        setResults(cached.results);
+        setTotal(cached.total);
+        setFailedCodes(cached.failed);
+        setSkippedCodes(cached.skipped);
+        setHasScreenLoaded(true);
+        if (cached.results.length > 0) {
+          void loadTrades(cached.results.map((item) => item.code));
+        }
+        return;
+      }
+    }
+
     setLoading(true);
     setError('');
     try {
@@ -626,6 +681,10 @@ export default function Screen() {
       setSkippedCodes(response.skipped ?? []);
       setCappedInfo(response.capped ? { maxCodes: response.maxCodes ?? 0, reason: response.reason ?? '' } : null);
       setHasScreenLoaded(true);
+
+      if (!retryCodes) {
+        saveScreenResult(valid, response.failed ?? [], response.skipped ?? [], response.total, ktype, selectedSignals);
+      }
 
       if (valid.length > 0) {
         void loadTrades(valid.map((item) => item.code));

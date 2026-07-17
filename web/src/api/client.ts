@@ -1,5 +1,5 @@
 import type {
-  Quote, KlineItem, IndicatorData, Finance, XdXrItem,
+  Quote, QuoteItem, KlineItem, IndicatorData, Finance, XdXrItem,
   CompanyCategory, MinuteItem, TradeItem, AuctionItem,
   BlockItem, CodeItem, IndexBar, ScreenResponse, SignalAnalysis,
   StockSearchResponse,
@@ -36,6 +36,9 @@ async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   quote: (code: string) =>
     fetchJSON<Quote>(`/api/quote?code=${code}`),
+
+  quotes: (codes: string) =>
+    fetchJSON<QuoteItem[]>(`/api/quotes?codes=${codes}`),
 
   codes: (exchange = 'sz') =>
     fetchJSON<CodeItem[]>(`/api/codes?exchange=${exchange}`),
