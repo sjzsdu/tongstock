@@ -687,6 +687,26 @@ export default function StockDetail() {
             >
               AI 分析
             </Button>
+            <Button
+              icon={<RobotOutlined />}
+              onClick={async () => {
+                try {
+                  message.loading({ content: '正在挖掘范式...', key: 'paradigm', duration: 0 });
+                  const result = await api.paradigmAnalyze(code, quote?.Name);
+                  if (result.error) {
+                    message.error({ content: result.error, key: 'paradigm' });
+                  } else if (result.paradigm) {
+                    message.success({ content: `范式已保存: ${result.paradigm.name}`, key: 'paradigm', duration: 3 });
+                  } else {
+                    message.warning({ content: '未能从分析中提取结构化范式', key: 'paradigm', duration: 3 });
+                  }
+                } catch (err) {
+                  message.error({ content: String(err), key: 'paradigm' });
+                }
+              }}
+            >
+              范式挖掘
+            </Button>
           </Flex>
         </Card>
 

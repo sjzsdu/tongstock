@@ -467,6 +467,9 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 
 	// Agent routes
 	s.SetupAgentRoutes(api)
+
+	// Paradigm routes
+	s.SetupParadigmRoutes(api)
 }
 
 // handleQuote handles quote requests

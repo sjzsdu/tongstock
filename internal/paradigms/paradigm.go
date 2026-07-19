@@ -1,0 +1,48 @@
+package paradigms
+
+import "time"
+
+// Paradigm represents a trading pattern with contextual conditions
+type Paradigm struct {
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	Context     Context           `json:"context"`
+	StockCode   string            `json:"stock_code,omitempty"`
+	StockName   string            `json:"stock_name,omitempty"`
+	BuyConds    []Condition       `json:"buy_conditions"`
+	SellConds   SellConditions    `json:"sell_conditions"`
+	Confirm     []string          `json:"confirmations,omitempty"`
+	Invalid     []string          `json:"invalidations,omitempty"`
+	Expectation Expectation       `json:"expectation"`
+	Rationale   string            `json:"rationale,omitempty"`
+	CreatedAt   time.Time         `json:"created_at"`
+	UpdatedAt   time.Time         `json:"updated_at"`
+	Tags        []string          `json:"tags,omitempty"`
+}
+
+type Context struct {
+	MarketCap          string `json:"market_cap"`            // small / mid / large / mega
+	ShareholderDominant string `json:"shareholder_dominant"` // retail / hot_money / foreign / institutional / state / mixed
+	Activity           string `json:"activity,omitempty"`    // active / normal / quiet
+	Trend              string `json:"trend,omitempty"`       // uptrend / downtrend / range / volatile
+}
+
+type Condition struct {
+	Indicator string `json:"indicator"` // e.g. "MACD.DIF", "RSI6", "MA20"
+	Operator  string `json:"operator"`  // cross_above, cross_below, gt, lt, between, near
+	Value     string `json:"value"`     // threshold value or range
+}
+
+type SellConditions struct {
+	TakeProfit []Condition `json:"take_profit,omitempty"`
+	StopLoss   []Condition `json:"stop_loss,omitempty"`
+}
+
+type Expectation struct {
+	HoldingPeriod  string  `json:"holding_period"`
+	ExpectedReturn string  `json:"expected_return"`
+	RiskReward     string  `json:"risk_reward_ratio"`
+	WinRate        float64 `json:"win_rate,omitempty"`
+	SampleSize     int     `json:"sample_size,omitempty"`
+	Confidence     float64 `json:"confidence"` // 0-1
+}

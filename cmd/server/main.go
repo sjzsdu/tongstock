@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sjzsdu/tongstock/internal/agents"
+	"github.com/sjzsdu/tongstock/internal/paradigms"
 	"github.com/sjzsdu/tongstock/pkg/config"
 	"github.com/sjzsdu/tongstock/pkg/history"
 	"github.com/sjzsdu/tongstock/pkg/param"
@@ -115,6 +116,15 @@ func main() {
 		} else {
 			log.Println("AI Agent initialized successfully")
 		}
+	}
+
+	// Initialize paradigm store
+	paradigmStore, err := paradigms.NewStore("")
+	if err != nil {
+		log.Printf("Warning: Failed to initialize paradigm store: %v", err)
+	} else {
+		server.ParadigmStore = paradigmStore
+		log.Printf("Paradigm store initialized: %d paradigms loaded", paradigmStore.Count())
 	}
 
 	// Setup Gin router

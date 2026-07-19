@@ -465,3 +465,48 @@ export interface AgentDebateResponse {
   summary?: string;
   error?: string;
 }
+
+// Paradigm types
+export interface ParadigmItem {
+  id: string;
+  name: string;
+  context: {
+    market_cap: string;
+    shareholder_dominant: string;
+    activity?: string;
+    trend?: string;
+  };
+  stock_code?: string;
+  stock_name?: string;
+  buy_conditions: { indicator: string; operator: string; value: string }[];
+  sell_conditions: {
+    take_profit?: { indicator: string; operator: string; value: string }[];
+    stop_loss?: { indicator: string; operator: string; value: string }[];
+  };
+  confirmations?: string[];
+  invalidations?: string[];
+  expectation: {
+    holding_period: string;
+    expected_return: string;
+    risk_reward_ratio: string;
+    win_rate?: number;
+    sample_size?: number;
+    confidence: number;
+  };
+  rationale?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ParadigmAnalyzeResponse {
+  stock_code: string;
+  stock_name?: string;
+  paradigm?: ParadigmItem;
+  agent_text: string;
+  error?: string;
+}
+
+export interface ParadigmListResponse {
+  paradigms: ParadigmItem[];
+  total: number;
+}

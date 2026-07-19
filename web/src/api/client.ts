@@ -262,6 +262,27 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ stock_code: stockCode, stock_name: stockName, topic, agents }),
     }),
+
+  // Paradigm APIs
+  paradigmAnalyze: (stockCode: string, stockName?: string, days?: number) =>
+    fetchJSON<ParadigmAnalyzeResponse>('/api/paradigm/analyze', {
+      method: 'POST',
+      body: JSON.stringify({ stock_code: stockCode, stock_name: stockName, days }),
+    }),
+
+  paradigmList: (marketCap?: string, shareholder?: string) => {
+    const params = new URLSearchParams();
+    if (marketCap) params.set('market_cap', marketCap);
+    if (shareholder) params.set('shareholder', shareholder);
+    const q = params.toString();
+    return fetchJSON<ParadigmListResponse>(`/api/paradigm/list${q ? '?' + q : ''}`);
+  },
+
+  paradigmGet: (id: string) =>
+    fetchJSON<ParadigmItem>(`/api/paradigm/${id}`),
+
+  paradigmDelete: (id: string) =>
+    fetchJSON<{ message: string }>(`/api/paradigm/${id}`, { method: 'DELETE' }),
 };
 
 export interface TradeInfo {
