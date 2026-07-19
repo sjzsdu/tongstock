@@ -4,6 +4,7 @@ import {
   AreaChartOutlined,
   BarChartOutlined,
   ClockCircleOutlined,
+  FundOutlined,
 } from '@ant-design/icons';
 import {
   Card,
@@ -12,13 +13,16 @@ import {
   Flex,
   Progress,
   Row,
+  Skeleton,
   Space,
   Statistic,
   Tabs,
   Tag,
   Typography,
   Spin,
+  Table,
 } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 import { api } from '../../api/client';
 import type { IndexBar, MinuteItem } from '../../types/api';
 import CandlestickChart from '../../components/charts/CandlestickChart';
@@ -26,7 +30,7 @@ import ChartToolbar from '../../components/charts/ChartToolbar';
 import MinuteChart from '../../components/charts/MinuteChart';
 import { formatShortDate } from '../../lib/datetime';
 
-type Tab = 'chart' | 'intraday' | 'stats';
+type Tab = 'chart' | 'intraday' | 'stats' | 'components';
 type DetailStatus = 'loading' | 'ready' | 'not_found';
 
 const INDICES: Record<string, string> = {
@@ -40,6 +44,7 @@ const TAB_ITEMS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: 'chart', label: 'K线+指标', icon: <AreaChartOutlined /> },
   { key: 'intraday', label: '分时', icon: <ClockCircleOutlined /> },
   { key: 'stats', label: '涨跌统计', icon: <BarChartOutlined /> },
+  { key: 'components', label: '成分股', icon: <FundOutlined /> },
 ];
 
 function getValueColor(value: number) {
@@ -74,6 +79,8 @@ export default function IndexDetail() {
   const [minuteData, setMinuteData] = useState<MinuteItem[]>([]);
   const [minuteDate, setMinuteDate] = useState<string>('');
   const [minuteLoading, setMinuteLoading] = useState(false);
+  const [components, setComponents] = useState<{ code: string; name: string; price: number; change: number }[]>([]);
+  const [componentsLoading, setComponentsLoading] = useState(false);
   const [detailStatus, setDetailStatus] = useState<DetailStatus>('loading');
   const [chartLoading, setChartLoading] = useState(false);
 
@@ -277,6 +284,26 @@ export default function IndexDetail() {
     }
   }, [code, tab, detailStatus]);
 
+  useEffect(() => {
+    if (!code || detailStatus !== 'ready') return;
+    if (tab === 'components') {
+      setComponentsLoading(true);
+      api.quotes('600036,600519,601318,000858,000001,000002,600030,601398').then(results => {
+        const items = results.map(q => ({
+          code: q.Code,
+          name: q.Name,
+          price: q.Price,
+          change: q.LastClose > 0 ? ((q.Price - q.LastClose) / q.LastClose) * 100 : 0,
+        }));
+        items.sort((a, b) => b.change - a.change);
+        setComponents(items);
+        setComponentsLoading(false);
+      }).catch(() => {
+        setComponents([]);
+        setComponentsLoading(false);
+      });
+    }
+  }, [code, tab, detailStatus]);
   const pct = useMemo(() => {
     if (klines.length >= 2) {
       const last = klines[klines.length - 1];
@@ -293,6 +320,26 @@ export default function IndexDetail() {
   const lastBar = klines.length > 0 ? klines[klines.length - 1] : null;
   const prevBar = klines.length > 1 ? klines[klines.length - 2] : null;
 
+  const componentsColumns: ColumnsType<{ code: string; name: string; price: number; change: number }> = [
+    { title: '代码', dataIndex: 'code', width: 80 },
+    { title: '名称', dataIndex: 'name', width: 100 },
+    {
+      title: '现价',
+      dataIndex: 'price',
+      align: 'right',
+      render: (value: number) => value.toFixed(2),
+    },
+    {
+      title: '涨跌幅',
+      dataIndex: 'change',
+      align: 'right',
+      render: (value: number) => (
+        <span className={value >= 0 ? 'price-up' : 'price-down'}>
+          {formatSignedPercent(value)}
+        </span>
+      ),
+    },
+  ];
   return (
     <Space direction="vertical" size={16} style={{ display: 'flex' }}>
       <Card bordered={false} style={{ background: 'linear-gradient(135deg, rgba(30,41,59,0.95), rgba(15,23,42,0.92))' }}>
@@ -550,6 +597,26 @@ export default function IndexDetail() {
             </Row>
           </Card>
         </Space>
+      )}
+      {showTabs && tab === 'components' && (
+        componentsLoading ? (
+          <Skeleton active paragraph={{ rows: 8 }} title={false} />
+        ) : components.length > 0 ? (
+          <Card title={<Space><FundOutlined />成分股（示例）</Space>}>
+            <Table
+              size="small"
+              pagination={{ pageSize: 20 }}
+              rowKey={(row) => row.code}
+              dataSource={components}
+              columns={componentsColumns}
+            />
+            <Typography.Text type="secondary" style={{ marginTop: 12, display: 'block' }}>
+              注：当前显示热门股票作为示例。完整成分股数据需要后端 API 支持。
+            </Typography.Text>
+          </Card>
+        ) : (
+          <Empty description="暂无成分股数据" />
+        )
       )}
     </Space>
   );
