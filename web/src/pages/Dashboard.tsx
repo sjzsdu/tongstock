@@ -221,7 +221,7 @@ export default function Dashboard() {
             const color = getValueColor(idx.change);
             return (
               <Col xs={24} sm={12} lg={6} key={idx.code}>
-                <Card hoverable onClick={() => navigate(`/stock/${idx.code}`)}>
+                <Card hoverable onClick={() => navigate(`/index/${idx.code}`)}>
                   {loadingIndices && !idx.last ? (
                     <Skeleton active paragraph={{ rows: 2 }} title={false} />
                   ) : idx.last ? (

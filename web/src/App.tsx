@@ -13,6 +13,7 @@ const Blocks = lazy(() => import('./pages/Blocks'));
 const Watchlist = lazy(() => import('./pages/Watchlist'));
 const Portfolio = lazy(() => import('./pages/Portfolio'));
 const SettingsPage = lazy(() => import('./pages/settings/SettingsPage'));
+const IndexDetail = lazy(() => import('./pages/index/IndexDetail'));
 
 const { Header, Content, Sider } = Layout;
 
@@ -46,17 +47,19 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const selectedKey = location.pathname.startsWith('/stock')
     ? '/stock/choose'
-    : location.pathname.startsWith('/screen')
-      ? '/screen'
-      : location.pathname.startsWith('/portfolio')
-        ? '/portfolio'
-        : location.pathname.startsWith('/blocks')
-          ? '/blocks'
-          : location.pathname.startsWith('/watchlist')
-            ? '/watchlist'
-            : location.pathname.startsWith('/settings')
-              ? '/settings'
-              : '/';
+    : location.pathname.startsWith('/index')
+      ? '/'
+      : location.pathname.startsWith('/screen')
+        ? '/screen'
+        : location.pathname.startsWith('/portfolio')
+          ? '/portfolio'
+          : location.pathname.startsWith('/blocks')
+            ? '/blocks'
+            : location.pathname.startsWith('/watchlist')
+              ? '/watchlist'
+              : location.pathname.startsWith('/settings')
+                ? '/settings'
+                : '/';
 
   const menuItems: MenuProps['items'] = [
     { key: '/', icon: <DashboardOutlined />, label: <Link to="/">市场总览</Link> },
@@ -139,6 +142,8 @@ export default function App() {
           <Route path="/portfolio" element={<Portfolio />} />
           <Route path="/blocks" element={<Blocks />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/index/:code" element={<IndexDetail />} />
+          <Route path="/index/:code/:tab" element={<IndexDetail />} />
         </Routes>
       </AppLayout>
     </BrowserRouter>
@@ -168,6 +173,9 @@ function buildBreadcrumbs(pathname: string) {
     company: '公司',
     dividend: '分红',
     intraday: '分时',
+    index: '指数详情',
+    stats: '涨跌统计',
+    components: '成分股',
   };
 
   let current = '';
