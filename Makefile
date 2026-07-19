@@ -1,4 +1,4 @@
-.PHONY: all web cli server install clean
+.PHONY: all web cli server install clean run
 
 BINDIR ?= $(if $(GOBIN),$(GOBIN),$(shell go env GOPATH)/bin)
 CLI_BIN := tongstock
@@ -16,6 +16,9 @@ cli:
 
 server: web
 	go build -o $(SERVER_BIN) ./cmd/server
+
+run: server
+	./$(SERVER_BIN)
 
 install: server cli
 	mkdir -p $(BINDIR)
