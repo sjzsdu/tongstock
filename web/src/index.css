@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "github-markdown-css/github-markdown-dark.css";
 
 html,
 body,
@@ -154,4 +155,52 @@ body {
   border: none;
   border-top: 1px solid #334155;
   margin: 0.75rem 0;
+}
+
+/* Markdown renderer overrides for dark theme */
+.markdown-body {
+  color: #e0e0e0;
+  background-color: transparent;
+}
+.markdown-body h1, .markdown-body h2, .markdown-body h3,
+.markdown-body h4, .markdown-body h5, .markdown-body h6 {
+  color: #f0f0f0;
+  border-bottom-color: #333;
+}
+.markdown-body code {
+  background-color: rgba(255,255,255,0.08);
+  color: #e0a0ff;
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+.markdown-body pre {
+  background-color: #0d1117;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 14px;
+}
+.markdown-body pre code {
+  background: transparent;
+  color: #e0e0e0;
+  padding: 0;
+}
+.markdown-body table th {
+  background-color: rgba(255,255,255,0.05);
+}
+.markdown-body table td, .markdown-body table th {
+  border-color: #333;
+}
+.markdown-body blockquote {
+  border-left-color: #555;
+  color: #aaa;
+}
+.markdown-body a {
+  color: #58a6ff;
+}
+.markdown-body hr {
+  border-bottom-color: #333;
+}
+.markdown-body ul li::marker {
+  color: #666;
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	pcwrap "github.com/sjzsdu/tongstock/internal/picoclaw"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
+	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
 )
 
 // ParadigmStore is set from main.go to avoid import cycles
@@ -27,6 +28,8 @@ type paradigmAnalyzeResponse struct {
 	StockCode string            `json:"stock_code"`
 	StockName string            `json:"stock_name,omitempty"`
 	Paradigm  *paradigms.Paradigm `json:"paradigm,omitempty"`
+	EvaluatedConfirm []paradigms.EvaluatedItem `json:"evaluated_confirm,omitempty"`
+	EvaluatedInvalid []paradigms.EvaluatedItem `json:"evaluated_invalid,omitempty"`
 	AgentText string            `json:"agent_text"`
 	Error     string            `json:"error,omitempty"`
 }
@@ -71,11 +74,14 @@ func (s *Server) handleParadigmAnalyze(c *gin.Context) {
 
 	// Check cache: return existing paradigm for this stock if available
 	if existing := ParadigmStore.GetByStockCode(req.StockCode); existing != nil {
+		evalConfirm, evalInvalid := s.evaluateConditions(req.StockCode, existing)
 		c.JSON(http.StatusOK, paradigmAnalyzeResponse{
-			StockCode: req.StockCode,
-			StockName: req.StockName,
-			Paradigm:  existing,
-			AgentText: "(cached)",
+			StockCode:       req.StockCode,
+			StockName:       req.StockName,
+			Paradigm:        existing,
+			EvaluatedConfirm: evalConfirm,
+			EvaluatedInvalid: evalInvalid,
+			AgentText:       existing.AgentText,
 		})
 		return
 	}
@@ -116,14 +122,20 @@ func (s *Server) handleParadigmAnalyze(c *gin.Context) {
 	// Try to extract paradigm from agent response
 	paradigm := extractParadigm(agentResp, req.StockCode, req.StockName)
 	if paradigm != nil {
+		paradigm.AgentText = agentResp
 		ParadigmStore.Save(paradigm)
 	}
 
+	// Evaluate confirmations and invalidations against current data
+	evalConfirm, evalInvalid := s.evaluateConditions(req.StockCode, paradigm)
+
 	c.JSON(http.StatusOK, paradigmAnalyzeResponse{
-		StockCode: req.StockCode,
-		StockName: req.StockName,
-		Paradigm:  paradigm,
-		AgentText: agentResp,
+		StockCode:       req.StockCode,
+		StockName:       req.StockName,
+		Paradigm:        paradigm,
+		EvaluatedConfirm: evalConfirm,
+		EvaluatedInvalid: evalInvalid,
+		AgentText:       agentResp,
 	})
 }
 
@@ -304,6 +316,9 @@ func extractParadigm(text, stockCode, stockName string) *paradigms.Paradigm {
 
 	// Extract buy conditions - look for lines with indicators
 	p.BuyConds = extractConditions(text, "buy_conditions", "买入条件")
+	if len(p.BuyConds) == 0 {
+		p.BuyConds = extractConditionsFromSection(text, "买入条件", "卖出条件")
+	}
 
 	// Extract sell conditions
 	if tp := extractConditions(text, "take_profit", "止盈"); len(tp) > 0 {
@@ -311,6 +326,11 @@ func extractParadigm(text, stockCode, stockName string) *paradigms.Paradigm {
 	}
 	if sl := extractConditions(text, "stop_loss", "止损"); len(sl) > 0 {
 		p.SellConds.StopLoss = sl
+	}
+	if len(p.SellConds.TakeProfit) == 0 && len(p.SellConds.StopLoss) == 0 {
+		// Try to extract from numbered/bulleted list
+		p.SellConds.TakeProfit = extractConditionsFromSection(text, "止盈", "止损")
+		p.SellConds.StopLoss = extractConditionsFromSection(text, "止损", "确认")
 	}
 
 	// Extract confirmations and invalidations
@@ -365,16 +385,20 @@ func extractConditions(text, yamlKey, cnKey string) []paradigms.Condition {
 		}
 		if inBlock && strings.HasPrefix(trimmed, "- ") {
 			cond := paradigms.Condition{}
-			parts := trimmed[2:]
-			// Parse "indicator: X operator: Y value: Z" or "X上穿Y"
+			parts := strings.TrimSpace(trimmed[2:])
+			// Parse "indicator: X operator: Y value: Z" or plain text like "MA20 > MA10"
 			if idx := strings.Index(parts, "indicator:"); idx >= 0 {
 				cond.Indicator = extractInline(parts[idx+10:])
-			}
-			if idx := strings.Index(parts, "operator:"); idx >= 0 {
-				cond.Operator = extractInline(parts[idx+9:])
-			}
-			if idx := strings.Index(parts, "value:"); idx >= 0 {
-				cond.Value = extractInline(parts[idx+6:])
+				if oidx := strings.Index(parts, "operator:"); oidx >= 0 {
+					cond.Operator = extractInline(parts[oidx+9:])
+				}
+				if vidx := strings.Index(parts, "value:"); vidx >= 0 {
+					cond.Value = extractInline(parts[vidx+6:])
+				}
+			} else {
+				// Plain text condition like "MA20 > MA10 (多头排列)"
+				cond.Indicator = parts
+				cond.Operator = "describe"
 			}
 			if cond.Indicator != "" {
 				conds = append(conds, cond)
@@ -391,6 +415,31 @@ func extractInline(s string) string {
 		s = s[:nl]
 	}
 	return s
+}
+
+func extractConditionsFromSection(text, startKey, endKey string) []paradigms.Condition {
+	var conds []paradigms.Condition
+	lines := strings.Split(text, "\n")
+	inBlock := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(trimmed, startKey) && (strings.HasSuffix(trimmed, ":") || strings.HasSuffix(trimmed, "：") || strings.HasSuffix(trimmed, "\n")) {
+			inBlock = true
+			continue
+		}
+		if inBlock && endKey != "" && strings.Contains(trimmed, endKey) {
+			break
+		}
+		if inBlock && trimmed == "" {
+			continue
+		}
+		if inBlock && (strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") || strings.HasPrefix(trimmed, "· ")) {
+			item := strings.TrimSpace(trimmed[2:])
+			cond := paradigms.Condition{Indicator: item, Operator: "describe", Value: ""}
+			conds = append(conds, cond)
+		}
+	}
+	return conds
 }
 
 func extractList(text, yamlKey, cnKey string) []string {
@@ -459,18 +508,251 @@ func extractExpectation(text string) paradigms.Expectation {
 }
 
 func extractNumberRange(text, keyword string) string {
-	// Look for patterns like "期望收益 2-5%" or "预期收益 3%~8%"
-	lines := strings.Split(text, "\n")
-	for _, line := range lines {
-		if strings.Contains(line, keyword) {
-			// Extract percentage range
-			rest := line[strings.Index(line, keyword):]
-			// Find percentage pattern
-			for _, pattern := range []string{"%s: %s", "%s：%s", "%s: %s%%", "%s：%s%%"} {
-				_ = pattern
-			}
-			_ = rest
+	return ""
+}
+
+// evaluateConditions checks confirmations and invalidations against current stock data
+func (s *Server) evaluateConditions(stockCode string, p *paradigms.Paradigm) ([]paradigms.EvaluatedItem, []paradigms.EvaluatedItem) {
+	if p == nil {
+		return nil, nil
+	}
+
+	// Fetch current indicator data for evaluation
+	indicator := s.fetchCurrentIndicator(stockCode)
+
+	evalConfirm := make([]paradigms.EvaluatedItem, 0, len(p.Confirm))
+	for _, c := range p.Confirm {
+		item := paradigms.EvaluatedItem{Text: c, Status: "unknown"}
+		evalConfirm = append(evalConfirm, item)
+	}
+
+	evalInvalid := make([]paradigms.EvaluatedItem, 0, len(p.Invalid))
+	for _, rule := range p.Invalid {
+		item := paradigms.EvaluatedItem{Text: rule, Status: "unknown"}
+		// Try to evaluate invalidation rules against indicator data
+		if indicator != nil {
+			s.evaluateSingleInvalidation(&item, rule, indicator)
+		}
+		evalInvalid = append(evalInvalid, item)
+	}
+
+	return evalConfirm, evalInvalid
+}
+
+func (s *Server) fetchCurrentIndicator(stockCode string) map[string]float64 {
+	klines, err := s.svc.FetchKlineAll(stockCode, 0)
+	if err != nil || len(klines) < 20 {
+		return nil
+	}
+
+	result := make(map[string]float64)
+	last := klines[len(klines)-1]
+	result["close"] = last.Close
+	result["volume"] = last.Volume
+
+	// Calculate simple MA60
+	if len(klines) >= 60 {
+		sum := 0.0
+		for i := len(klines) - 60; i < len(klines); i++ {
+			sum += klines[i].Close
+		}
+		result["ma60"] = sum / 60
+	}
+
+	// Calculate 20-day average volume
+	if len(klines) >= 20 {
+		volSum := 0.0
+		for i := len(klines) - 20; i < len(klines); i++ {
+			volSum += klines[i].Volume
+		}
+		result["avg_volume_20"] = volSum / 20
+	}
+
+	// Simple MACD approximation (for validation only)
+	if len(klines) >= 26 {
+		ema12 := calcEMA(klines, 12)
+		ema26 := calcEMA(klines, 26)
+		if ema12 > 0 && ema26 > 0 {
+			result["macd_dif"] = ema12 - ema26
 		}
 	}
-	return ""
+
+	// Simple RSI14 calculation
+	if len(klines) >= 15 {
+		result["rsi14"] = calcRSI(klines, 14)
+	}
+
+	return result
+}
+
+func calcEMA(klines []*protocol.Kline, period int) float64 {
+	if len(klines) < period {
+		return 0
+	}
+	sum := 0.0
+	for i := 0; i < period; i++ {
+		sum += klines[i].Close
+	}
+	ema := sum / float64(period)
+	multiplier := 2.0 / float64(period+1)
+	for i := period; i < len(klines); i++ {
+		ema = (klines[i].Close-ema)*multiplier + ema
+	}
+	return ema
+}
+
+func calcRSI(klines []*protocol.Kline, period int) float64 {
+	if len(klines) < period+1 {
+		return 50
+	}
+	gainSum := 0.0
+	lossSum := 0.0
+	for i := len(klines) - period; i < len(klines); i++ {
+		change := klines[i].Close - klines[i-1].Close
+		if change > 0 {
+			gainSum += change
+		} else {
+			lossSum -= change
+		}
+	}
+	if lossSum == 0 {
+		return 100
+	}
+	rs := gainSum / lossSum
+	return 100 - (100 / (1 + rs))
+}
+
+func (s *Server) evaluateSingleInvalidation(item *paradigms.EvaluatedItem, rule string, indicator map[string]float64) {
+	ruleLower := strings.ToLower(rule)
+	close, hasClose := indicator["close"]
+
+	// Check "跌破XXX.XX" — generic price level
+	if strings.Contains(ruleLower, "跌破") {
+		if price := extractPrice(rule); price > 0 && hasClose {
+			if close < price {
+				item.Status = "met"
+				item.Reason = fmt.Sprintf("当前价 %.2f < %.2f", close, price)
+			} else {
+				item.Status = "not_met"
+				item.Reason = fmt.Sprintf("当前价 %.2f >= %.2f", close, price)
+			}
+			return
+		}
+	}
+
+	// Check "突破XXX.XX" — generic price level
+	if strings.Contains(ruleLower, "突破") {
+		if price := extractPrice(rule); price > 0 && hasClose {
+			if close > price {
+				item.Status = "met"
+				item.Reason = fmt.Sprintf("当前价 %.2f > %.2f", close, price)
+			} else {
+				item.Status = "not_met"
+				item.Reason = fmt.Sprintf("当前价 %.2f <= %.2f", close, price)
+			}
+			return
+		}
+	}
+
+	// Check "收盘价跌破 MA60"
+	if strings.Contains(ruleLower, "ma60") || strings.Contains(ruleLower, "ma 60") {
+		if hasClose {
+			if ma60, ok := indicator["ma60"]; ok {
+				if close < ma60 {
+					item.Status = "met"
+					item.Reason = fmt.Sprintf("当前价 %.2f < MA60 %.2f", close, ma60)
+				} else {
+					item.Status = "not_met"
+					item.Reason = fmt.Sprintf("当前价 %.2f >= MA60 %.2f", close, ma60)
+				}
+				return
+			}
+		}
+	}
+
+	// Check "MACD 继续死叉" or "DIF ≤ DEA"
+	if strings.Contains(ruleLower, "macd") && (strings.Contains(ruleLower, "死叉") || strings.Contains(ruleLower, "dif")) {
+		if dif, ok := indicator["macd_dif"]; ok {
+			if dif < 0 {
+				item.Status = "met"
+				item.Reason = fmt.Sprintf("MACD DIF=%.4f < 0 (死叉状态)", dif)
+			} else {
+				item.Status = "not_met"
+				item.Reason = fmt.Sprintf("MACD DIF=%.4f >= 0 (非死叉)", dif)
+			}
+			return
+		}
+	}
+
+	// Check "RSI" rules like "RSI14 > 70"
+	if strings.Contains(ruleLower, "rsi") {
+		if rsi, ok := indicator["rsi14"]; ok {
+			// Extract threshold from rule
+			threshold := 70.0
+			if strings.Contains(ruleLower, "> 70") || strings.Contains(ruleLower, ">70") {
+				threshold = 70
+			} else if strings.Contains(ruleLower, "< 30") || strings.Contains(ruleLower, "<30") {
+				threshold = 30
+			}
+			if strings.Contains(ruleLower, ">") || strings.Contains(ruleLower, "超买") {
+				if rsi > threshold {
+					item.Status = "met"
+					item.Reason = fmt.Sprintf("RSI14=%.1f > %.0f (超买)", rsi, threshold)
+				} else {
+					item.Status = "not_met"
+					item.Reason = fmt.Sprintf("RSI14=%.1f <= %.0f", rsi, threshold)
+				}
+				return
+			}
+			if strings.Contains(ruleLower, "<") || strings.Contains(ruleLower, "超卖") {
+				if rsi < threshold {
+					item.Status = "met"
+					item.Reason = fmt.Sprintf("RSI14=%.1f < %.0f (超卖)", rsi, threshold)
+				} else {
+					item.Status = "not_met"
+					item.Reason = fmt.Sprintf("RSI14=%.1f >= %.0f", rsi, threshold)
+				}
+				return
+			}
+		}
+		item.Status = "unknown"
+		item.Reason = "RSI 数据不足"
+		return
+	}
+
+	// Check "KDJ" rules
+	if strings.Contains(ruleLower, "kdj") || strings.Contains(ruleLower, "k值") || strings.Contains(ruleLower, "j值") {
+		item.Status = "unknown"
+		item.Reason = "KDJ 需要完整K线序列计算"
+		return
+	}
+
+	// Check "成交量" related rules
+	if strings.Contains(ruleLower, "成交量") || strings.Contains(ruleLower, "净卖出") {
+		item.Status = "unknown"
+		item.Reason = "需要实时交易数据判断"
+		return
+	}
+
+	// Default: can't evaluate
+	item.Status = "unknown"
+	item.Reason = "无法自动判断"
+}
+
+// extractPrice extracts a numeric price from text like "跌破40.00" or "突破50.84"
+func extractPrice(text string) float64 {
+	// Find digits with optional decimal point
+	for i := 0; i < len(text); i++ {
+		if text[i] >= '0' && text[i] <= '9' {
+			j := i
+			for j < len(text) && ((text[j] >= '0' && text[j] <= '9') || text[j] == '.') {
+				j++
+			}
+			var price float64
+			if _, err := fmt.Sscanf(text[i:j], "%f", &price); err == nil && price > 0 {
+				return price
+			}
+		}
+	}
+	return 0
 }

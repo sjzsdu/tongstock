@@ -15,6 +15,7 @@ type Paradigm struct {
 	Invalid     []string          `json:"invalidations,omitempty"`
 	Expectation Expectation       `json:"expectation"`
 	Rationale   string            `json:"rationale,omitempty"`
+	AgentText   string            `json:"agent_text,omitempty"`
 	CreatedAt   time.Time         `json:"created_at"`
 	UpdatedAt   time.Time         `json:"updated_at"`
 	Tags        []string          `json:"tags,omitempty"`
@@ -45,4 +46,11 @@ type Expectation struct {
 	WinRate        float64 `json:"win_rate,omitempty"`
 	SampleSize     int     `json:"sample_size,omitempty"`
 	Confidence     float64 `json:"confidence"` // 0-1
+}
+
+// EvaluatedItem is a condition with its current status
+type EvaluatedItem struct {
+	Text   string `json:"text"`
+	Status string `json:"status"` // met / not_met / unknown
+	Reason string `json:"reason,omitempty"`
 }

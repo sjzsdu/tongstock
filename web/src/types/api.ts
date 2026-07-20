@@ -499,10 +499,18 @@ export interface ParadigmItem {
   updated_at: string;
 }
 
+export interface EvaluatedItem {
+  text: string;
+  status: 'met' | 'not_met' | 'unknown';
+  reason?: string;
+}
+
 export interface ParadigmAnalyzeResponse {
   stock_code: string;
   stock_name?: string;
   paradigm?: ParadigmItem;
+  evaluated_confirm?: EvaluatedItem[];
+  evaluated_invalid?: EvaluatedItem[];
   agent_text: string;
   error?: string;
 }

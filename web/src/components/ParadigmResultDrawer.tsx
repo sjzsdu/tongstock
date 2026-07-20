@@ -1,13 +1,16 @@
-import { Drawer, Typography, Tag, Descriptions, Spin, Empty, Space, Alert } from 'antd';
-import Markdown from 'react-markdown';
-import rehypeSanitize from 'rehype-sanitize';
-import type { ParadigmItem } from '../types/api';
+import { Typography, Tag, Descriptions, Spin, Empty, Space, Alert, Tooltip } from 'antd';
+import { CheckCircleFilled, CloseCircleFilled, QuestionCircleFilled } from '@ant-design/icons';
+import MarkdownRenderer from './MarkdownRenderer';
+import ResizableDrawer from './ResizableDrawer';
+import type { ParadigmItem, EvaluatedItem } from '../types/api';
 
 interface ParadigmResultDrawerProps {
   open: boolean;
   onClose: () => void;
   loading: boolean;
   paradigm: ParadigmItem | null;
+  evaluatedConfirm?: EvaluatedItem[];
+  evaluatedInvalid?: EvaluatedItem[];
   agentText: string;
   stockCode: string;
   stockName?: string;
@@ -30,6 +33,7 @@ const shareholderColors: Record<string, string> = {
 };
 
 function formatCondition(c: { indicator: string; operator: string; value: string }) {
+  if (c.operator === 'describe' || !c.value) return c.indicator;
   const opMap: Record<string, string> = {
     cross_above: '上穿',
     cross_below: '下穿',
@@ -41,14 +45,55 @@ function formatCondition(c: { indicator: string; operator: string; value: string
   return `${c.indicator} ${opMap[c.operator] || c.operator} ${c.value}`;
 }
 
+const statusIcon: Record<string, React.ReactNode> = {
+  met: <CheckCircleFilled style={{ color: '#22c55e' }} />,
+  not_met: <CloseCircleFilled style={{ color: '#ef4444' }} />,
+  unknown: <QuestionCircleFilled style={{ color: '#888' }} />,
+};
+
+const statusLabel: Record<string, string> = {
+  met: '已满足',
+  not_met: '未满足',
+  unknown: '需人工确认',
+};
+
+function EvaluatedList({ items, type }: { items: EvaluatedItem[]; type: 'confirm' | 'invalid' }) {
+  if (!items || items.length === 0) return null;
+  return (
+    <ul style={{ margin: '4px 0', paddingLeft: 0, listStyle: 'none' }}>
+      {items.map((item, i) => (
+        <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
+          <Tooltip title={item.reason || statusLabel[item.status]}>
+            <span style={{ marginTop: 2 }}>{statusIcon[item.status]}</span>
+          </Tooltip>
+          <span style={{
+            color: type === 'invalid'
+              ? (item.status === 'met' ? '#ef4444' : item.status === 'not_met' ? '#22c55e' : '#888')
+              : (item.status === 'met' ? '#22c55e' : '#e0e0e0'),
+          }}>
+            {item.text}
+            {item.reason && (
+              <Typography.Text type="secondary" style={{ fontSize: 11, marginLeft: 6 }}>
+                ({item.reason})
+              </Typography.Text>
+            )}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export default function ParadigmResultDrawer({
-  open, onClose, loading, paradigm, agentText, stockCode, stockName,
+  open, onClose, loading, paradigm, evaluatedConfirm, evaluatedInvalid, agentText, stockCode, stockName,
 }: ParadigmResultDrawerProps) {
   return (
-    <Drawer
+    <ResizableDrawer
       title={`范式挖掘结果 — ${stockName || stockCode}`}
       placement="right"
-      width={640}
+      defaultWidth={640}
+      minWidth={360}
+      maxWidth={1000}
       open={open}
       onClose={onClose}
     >
@@ -66,8 +111,8 @@ export default function ParadigmResultDrawer({
             description="Agent 返回了分析文本，但未生成标准范式。以下是原始分析："
             style={{ marginBottom: 16 }}
           />
-          <div style={{ background: '#1a1a1a', padding: 16, borderRadius: 8, maxHeight: 500, overflow: 'auto', fontSize: 13, lineHeight: 1.6 }}>
-            <Markdown rehypePlugins={[[rehypeSanitize]]}>{agentText}</Markdown>
+          <div style={{ background: '#1a1a1a', padding: 16, borderRadius: 8, maxHeight: 500, overflow: 'auto' }}>
+            <MarkdownRenderer content={agentText} />
           </div>
         </div>
       )}
@@ -124,45 +169,40 @@ export default function ParadigmResultDrawer({
           {(paradigm.sell_conditions?.take_profit?.length || paradigm.sell_conditions?.stop_loss?.length) && (
             <div>
               <Typography.Text strong>止盈止损：</Typography.Text>
-              {paradigm.sell_conditions.take_profit?.map((c, i) => (
-                <div key={`tp-${i}`} style={{ marginLeft: 12, color: '#22c55e' }}>↑ {formatCondition(c)}</div>
-              ))}
-              {paradigm.sell_conditions.stop_loss?.map((c, i) => (
-                <div key={`sl-${i}`} style={{ marginLeft: 12, color: '#ef4444' }}>↓ {formatCondition(c)}</div>
-              ))}
+              <div style={{ marginTop: 4 }}>
+                {paradigm.sell_conditions.take_profit?.map((c, i) => (
+                  <div key={`tp-${i}`} style={{ marginLeft: 12, color: '#22c55e' }}>↑ {formatCondition(c)}</div>
+                ))}
+                {paradigm.sell_conditions.stop_loss?.map((c, i) => (
+                  <div key={`sl-${i}`} style={{ marginLeft: 12, color: '#ef4444' }}>↓ {formatCondition(c)}</div>
+                ))}
+              </div>
             </div>
           )}
 
           {/* Confirmations */}
-          {paradigm.confirmations && paradigm.confirmations.length > 0 && (
+          {evaluatedConfirm && evaluatedConfirm.length > 0 && (
             <div>
               <Typography.Text strong>确认项：</Typography.Text>
-              <ul style={{ margin: '4px 0', paddingLeft: 20 }}>
-                {paradigm.confirmations.map((c, i) => (
-                  <li key={i}><Typography.Text type="secondary">{c}</Typography.Text></li>
-                ))}
-              </ul>
+              <EvaluatedList items={evaluatedConfirm} type="confirm" />
             </div>
           )}
 
           {/* Invalidations */}
-          {paradigm.invalidations && paradigm.invalidations.length > 0 && (
+          {evaluatedInvalid && evaluatedInvalid.length > 0 && (
             <div>
               <Typography.Text strong>失效规则：</Typography.Text>
-              <ul style={{ margin: '4px 0', paddingLeft: 20 }}>
-                {paradigm.invalidations.map((c, i) => (
-                  <li key={i}><Typography.Text type="danger">{c}</Typography.Text></li>
-                ))}
-              </ul>
+              <EvaluatedList items={evaluatedInvalid} type="invalid" />
             </div>
           )}
 
           {/* Expectation */}
+          {(paradigm.expectation.holding_period || paradigm.expectation.expected_return || paradigm.expectation.risk_reward_ratio || paradigm.expectation.confidence > 0) && (
           <Descriptions bordered column={2} size="small">
-            <Descriptions.Item label="持仓周期">{paradigm.expectation.holding_period}</Descriptions.Item>
-            <Descriptions.Item label="预期收益">{paradigm.expectation.expected_return}</Descriptions.Item>
-            <Descriptions.Item label="盈亏比">{paradigm.expectation.risk_reward_ratio}</Descriptions.Item>
-            <Descriptions.Item label="置信度">{(paradigm.expectation.confidence * 100).toFixed(0)}%</Descriptions.Item>
+            {paradigm.expectation.holding_period && <Descriptions.Item label="持仓周期">{paradigm.expectation.holding_period}</Descriptions.Item>}
+            {paradigm.expectation.expected_return && <Descriptions.Item label="预期收益">{paradigm.expectation.expected_return}</Descriptions.Item>}
+            {paradigm.expectation.risk_reward_ratio && <Descriptions.Item label="盈亏比">{paradigm.expectation.risk_reward_ratio}</Descriptions.Item>}
+            {paradigm.expectation.confidence > 0 && <Descriptions.Item label="置信度">{(paradigm.expectation.confidence * 100).toFixed(0)}%</Descriptions.Item>}
             {paradigm.expectation.win_rate != null && paradigm.expectation.win_rate > 0 && (
               <Descriptions.Item label="胜率">{(paradigm.expectation.win_rate * 100).toFixed(0)}%</Descriptions.Item>
             )}
@@ -170,6 +210,7 @@ export default function ParadigmResultDrawer({
               <Descriptions.Item label="样本量">{paradigm.expectation.sample_size}</Descriptions.Item>
             )}
           </Descriptions>
+          )}
 
           {/* Rationale */}
           {paradigm.rationale && (
@@ -181,12 +222,12 @@ export default function ParadigmResultDrawer({
             <summary style={{ cursor: 'pointer', color: '#888', fontSize: 12 }}>
               查看原始分析文本
             </summary>
-            <div style={{ background: '#1a1a1a', padding: 16, borderRadius: 8, maxHeight: 400, overflow: 'auto', fontSize: 12, lineHeight: 1.6, marginTop: 8 }}>
-              <Markdown rehypePlugins={[[rehypeSanitize]]}>{agentText}</Markdown>
+            <div style={{ background: '#1a1a1a', padding: 16, borderRadius: 8, maxHeight: 400, overflow: 'auto', marginTop: 8 }}>
+              <MarkdownRenderer content={agentText} />
             </div>
           </details>
         </Space>
       )}
-    </Drawer>
+    </ResizableDrawer>
   );
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Drawer, Select, Space, Spin, Typography } from 'antd';
+import { Button, Select, Space, Spin, Typography } from 'antd';
+import ResizableDrawer from './ResizableDrawer';
 import { RobotOutlined, SendOutlined } from '@ant-design/icons';
 import AgentChatMessage from './AgentChatMessage';
 import { api } from '../api/client';
@@ -102,7 +103,7 @@ export default function AgentChatPanel({ stockCode, stockName, open, onClose }: 
   };
 
   return (
-    <Drawer
+    <ResizableDrawer
       title={
         <Space>
           <RobotOutlined />
@@ -111,7 +112,7 @@ export default function AgentChatPanel({ stockCode, stockName, open, onClose }: 
         </Space>
       }
       placement="right"
-      width={480}
+      defaultWidth={480}
       open={open}
       onClose={onClose}
       styles={{ body: { padding: 0, display: 'flex', flexDirection: 'column', height: '100%' } }}
@@ -167,6 +168,6 @@ export default function AgentChatPanel({ stockCode, stockName, open, onClose }: 
         </div>
         {busy && <div style={{ textAlign: 'center', padding: 4 }}><Spin size="small" /></div>}
       </div>
-    </Drawer>
+    </ResizableDrawer>
   );
 }

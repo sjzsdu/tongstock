@@ -1,7 +1,6 @@
 import { memo } from 'react';
 import { Typography } from 'antd';
-import Markdown from 'react-markdown';
-import rehypeSanitize from 'rehype-sanitize';
+import MarkdownRenderer from './MarkdownRenderer';
 
 type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 
@@ -23,16 +22,6 @@ const roleStyles: Record<MessageRole, { bg: string; align: React.CSSProperties['
   system: { bg: '#1a1a2e', align: 'center', border: '1px solid #2a2a4a' },
   tool: { bg: '#1a1a1a', align: 'flex-start', border: '1px solid #404040' },
 };
-
-function MarkdownContent({ content }: { content: string }) {
-  return (
-    <div className="agent-chat-markdown" style={{ fontSize: 13, lineHeight: 1.6 }}>
-      <Markdown rehypePlugins={[rehypeSanitize]}>{content}</Markdown>
-    </div>
-  );
-}
-
-const MemoizedMarkdown = memo(MarkdownContent);
 
 function AgentChatMessageInner({ role, content, error }: AgentChatMessageProps) {
   const normalizedRole = normalizeRole(role);
@@ -65,7 +54,7 @@ function AgentChatMessageInner({ role, content, error }: AgentChatMessageProps) 
         ) : normalizedRole === 'user' ? (
           <div style={{ fontSize: 13, lineHeight: 1.6 }}>{content}</div>
         ) : (
-          <MemoizedMarkdown content={content} />
+          <MarkdownRenderer content={content} />
         )}
       </div>
     </div>

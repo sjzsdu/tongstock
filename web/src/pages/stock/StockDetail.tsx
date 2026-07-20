@@ -265,6 +265,8 @@ export default function StockDetail() {
 	const [paradigmDrawerOpen, setParadigmDrawerOpen] = useState(false);
 	const [paradigmLoading, setParadigmLoading] = useState(false);
 	const [paradigmResult, setParadigmResult] = useState<ParadigmItem | null>(null);
+	const [paradigmEvalConfirm, setParadigmEvalConfirm] = useState<any[]>([]);
+	const [paradigmEvalInvalid, setParadigmEvalInvalid] = useState<any[]>([]);
 	const [paradigmAgentText, setParadigmAgentText] = useState('');
 
   useEffect(() => {
@@ -706,6 +708,8 @@ export default function StockDetail() {
                     setParadigmAgentText(result.error);
                   } else {
                     setParadigmResult(result.paradigm || null);
+                    setParadigmEvalConfirm(result.evaluated_confirm || []);
+                    setParadigmEvalInvalid(result.evaluated_invalid || []);
                     setParadigmAgentText(result.agent_text || '');
                   }
                 } catch (err) {
@@ -1204,6 +1208,8 @@ export default function StockDetail() {
           onClose={() => setParadigmDrawerOpen(false)}
           loading={paradigmLoading}
           paradigm={paradigmResult}
+          evaluatedConfirm={paradigmEvalConfirm}
+          evaluatedInvalid={paradigmEvalInvalid}
           agentText={paradigmAgentText}
         />
       </Space>
