@@ -138,3 +138,14 @@ func (s *Store) Count() int {
 	defer s.mu.RUnlock()
 	return len(s.paradigms)
 }
+
+func (s *Store) GetByStockCode(code string) *Paradigm {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, p := range s.paradigms {
+		if p.StockCode == code {
+			return p
+		}
+	}
+	return nil
+}

@@ -61,6 +61,8 @@ import MinuteChart from '../../components/charts/MinuteChart';
 import SignalInterpretationCard from '../../components/SignalInterpretationCard';
 import StockCompareView from '../../components/StockCompareView';
 import AgentChatPanel from '../../components/AgentChatPanel';
+import ParadigmResultDrawer from '../../components/ParadigmResultDrawer';
+import type { ParadigmItem } from '../../types/api';
 import TabContent from '../../components/TabContent';
 import TdxContent from '../../components/TdxContent';
 import { formatDate, formatShortDate, formatTdxDate, formatTime } from '../../lib/datetime';
@@ -260,6 +262,10 @@ export default function StockDetail() {
 	const [detailError, setDetailError] = useState('');
 	const [syncState, setSyncState] = useState<KlineSyncState | null>(null);
 	const [agentPanelOpen, setAgentPanelOpen] = useState(false);
+	const [paradigmDrawerOpen, setParadigmDrawerOpen] = useState(false);
+	const [paradigmLoading, setParadigmLoading] = useState(false);
+	const [paradigmResult, setParadigmResult] = useState<ParadigmItem | null>(null);
+	const [paradigmAgentText, setParadigmAgentText] = useState('');
 
   useEffect(() => {
     if (!paramCode) {
@@ -690,18 +696,22 @@ export default function StockDetail() {
             <Button
               icon={<RobotOutlined />}
               onClick={async () => {
+                setParadigmDrawerOpen(true);
+                setParadigmLoading(true);
+                setParadigmResult(null);
+                setParadigmAgentText('');
                 try {
-                  message.loading({ content: '正在挖掘范式...', key: 'paradigm', duration: 0 });
                   const result = await api.paradigmAnalyze(code, quote?.Name);
                   if (result.error) {
-                    message.error({ content: result.error, key: 'paradigm' });
-                  } else if (result.paradigm) {
-                    message.success({ content: `范式已保存: ${result.paradigm.name}`, key: 'paradigm', duration: 3 });
+                    setParadigmAgentText(result.error);
                   } else {
-                    message.warning({ content: '未能从分析中提取结构化范式', key: 'paradigm', duration: 3 });
+                    setParadigmResult(result.paradigm || null);
+                    setParadigmAgentText(result.agent_text || '');
                   }
                 } catch (err) {
-                  message.error({ content: String(err), key: 'paradigm' });
+                  setParadigmAgentText(String(err));
+                } finally {
+                  setParadigmLoading(false);
                 }
               }}
             >
@@ -1185,6 +1195,16 @@ export default function StockDetail() {
           stockName={quote?.Name}
           open={agentPanelOpen}
           onClose={() => setAgentPanelOpen(false)}
+        />
+
+        <ParadigmResultDrawer
+          stockCode={code}
+          stockName={quote?.Name}
+          open={paradigmDrawerOpen}
+          onClose={() => setParadigmDrawerOpen(false)}
+          loading={paradigmLoading}
+          paradigm={paradigmResult}
+          agentText={paradigmAgentText}
         />
       </Space>
     </div>

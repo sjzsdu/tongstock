@@ -412,6 +412,7 @@ export interface AgentState {
     model: string;
     session: string;
     debug: boolean;
+    stock_agent?: string;
   };
   agents: AgentInfo[];
 }

@@ -69,6 +69,17 @@ func (s *Server) handleParadigmAnalyze(c *gin.Context) {
 		req.Days = 120
 	}
 
+	// Check cache: return existing paradigm for this stock if available
+	if existing := ParadigmStore.GetByStockCode(req.StockCode); existing != nil {
+		c.JSON(http.StatusOK, paradigmAnalyzeResponse{
+			StockCode: req.StockCode,
+			StockName: req.StockName,
+			Paradigm:  existing,
+			AgentText: "(cached)",
+		})
+		return
+	}
+
 	// Build data prompt from existing APIs
 	prompt := s.buildParadigmPrompt(req.StockCode, req.StockName, req.Days)
 
@@ -249,14 +260,12 @@ func formatFinanceForPrompt(data map[string]any) string {
 	return string(b) + "\n"
 }
 
-// extractParadigm tries to parse a YAML paradigm from agent text output
+// extractParadigm parses a paradigm from agent text output
 func extractParadigm(text, stockCode, stockName string) *paradigms.Paradigm {
-	// Look for paradigm block in agent output
-	if !strings.Contains(text, "paradigm:") && !strings.Contains(text, "id:") {
+	if text == "" {
 		return nil
 	}
 
-	// Simple extraction: look for key fields
 	p := &paradigms.Paradigm{
 		StockCode: stockCode,
 		StockName: stockName,
@@ -269,30 +278,52 @@ func extractParadigm(text, stockCode, stockName string) *paradigms.Paradigm {
 		p.ID = fmt.Sprintf("paradigm-%s-%d", stockCode, time.Now().UnixMilli())
 	}
 
-	// Extract name
+	// Extract name - try several patterns
 	if name := extractField(text, "name:"); name != "" {
 		p.Name = name
+	} else if name := extractField(text, "范式名称:"); name != "" {
+		p.Name = name
 	} else {
-		p.Name = fmt.Sprintf("%s 范式", stockCode)
+		p.Name = fmt.Sprintf("%s 范式", stockName)
 	}
 
-	// Extract market_cap
+	// Extract context
 	p.Context.MarketCap = extractField(text, "market_cap:")
+	if p.Context.MarketCap == "" {
+		p.Context.MarketCap = extractField(text, "市值:")
+	}
 	p.Context.ShareholderDominant = extractField(text, "shareholder_dominant:")
+	if p.Context.ShareholderDominant == "" {
+		p.Context.ShareholderDominant = extractField(text, "股东:")
+	}
+	p.Context.Trend = extractField(text, "trend:")
+	if p.Context.Trend == "" {
+		p.Context.Trend = extractField(text, "趋势:")
+	}
+	p.Context.Activity = extractField(text, "activity:")
 
-	// Extract confidence
-	if conf := extractField(text, "confidence:"); conf != "" {
-		fmt.Sscanf(conf, "%f", &p.Expectation.Confidence)
+	// Extract buy conditions - look for lines with indicators
+	p.BuyConds = extractConditions(text, "buy_conditions", "买入条件")
+
+	// Extract sell conditions
+	if tp := extractConditions(text, "take_profit", "止盈"); len(tp) > 0 {
+		p.SellConds.TakeProfit = tp
+	}
+	if sl := extractConditions(text, "stop_loss", "止损"); len(sl) > 0 {
+		p.SellConds.StopLoss = sl
 	}
 
-	// Extract win_rate
-	if wr := extractField(text, "win_rate:"); wr != "" {
-		fmt.Sscanf(wr, "%f", &p.Expectation.WinRate)
-	}
+	// Extract confirmations and invalidations
+	p.Confirm = extractList(text, "confirmations", "确认项")
+	p.Invalid = extractList(text, "invalidations", "失效规则")
+
+	// Extract expectation fields with flexible patterns
+	p.Expectation = extractExpectation(text)
 
 	// Extract rationale
-	if rat := extractBlock(text, "rationale:"); rat != "" {
-		p.Rationale = rat
+	p.Rationale = extractField(text, "rationale:")
+	if p.Rationale == "" {
+		p.Rationale = extractField(text, "范式逻辑:")
 	}
 
 	return p
@@ -301,38 +332,145 @@ func extractParadigm(text, stockCode, stockName string) *paradigms.Paradigm {
 func extractField(text, field string) string {
 	lines := strings.Split(text, "\n")
 	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, field) {
-			val := strings.TrimSpace(strings.TrimPrefix(line, field))
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(trimmed, field) {
+			idx := strings.Index(trimmed, field)
+			val := strings.TrimSpace(trimmed[idx+len(field):])
 			val = strings.Trim(val, "\"'")
-			return val
+			// Take only the first line if multi-line
+			if nl := strings.IndexAny(val, "\n\r"); nl > 0 {
+				val = val[:nl]
+			}
+			if val != "" && val != "|" && val != ">" {
+				return val
+			}
 		}
 	}
 	return ""
 }
 
-func extractBlock(text, field string) string {
-	idx := strings.Index(text, field)
-	if idx < 0 {
-		return ""
-	}
-	rest := text[idx+len(field):]
-	// Find next line that starts with a top-level field (no indentation or different key)
-	lines := strings.Split(rest, "\n")
-	var block []string
-	for i, line := range lines {
-		if i == 0 {
-			trimmed := strings.TrimSpace(line)
-			if trimmed == "|" || trimmed == ">" {
-				continue
-			}
-			block = append(block, trimmed)
+func extractConditions(text, yamlKey, cnKey string) []paradigms.Condition {
+	var conds []paradigms.Condition
+	// Look for lines like "- indicator: MACD.DIF" or "- indicator: xxx, operator: xxx, value: xxx"
+	lines := strings.Split(text, "\n")
+	inBlock := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(trimmed, yamlKey+":") || strings.Contains(trimmed, cnKey+"：") {
+			inBlock = true
 			continue
 		}
-		if len(line) > 0 && line[0] != ' ' && line[0] != '\t' && strings.Contains(line, ":") {
+		if inBlock && trimmed == "" {
 			break
 		}
-		block = append(block, strings.TrimSpace(line))
+		if inBlock && strings.HasPrefix(trimmed, "- ") {
+			cond := paradigms.Condition{}
+			parts := trimmed[2:]
+			// Parse "indicator: X operator: Y value: Z" or "X上穿Y"
+			if idx := strings.Index(parts, "indicator:"); idx >= 0 {
+				cond.Indicator = extractInline(parts[idx+10:])
+			}
+			if idx := strings.Index(parts, "operator:"); idx >= 0 {
+				cond.Operator = extractInline(parts[idx+9:])
+			}
+			if idx := strings.Index(parts, "value:"); idx >= 0 {
+				cond.Value = extractInline(parts[idx+6:])
+			}
+			if cond.Indicator != "" {
+				conds = append(conds, cond)
+			}
+		}
 	}
-	return strings.TrimSpace(strings.Join(block, "\n"))
+	return conds
+}
+
+func extractInline(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.Trim(s, "\"'")
+	if nl := strings.IndexAny(s, "\n\r"); nl > 0 {
+		s = s[:nl]
+	}
+	return s
+}
+
+func extractList(text, yamlKey, cnKey string) []string {
+	var items []string
+	lines := strings.Split(text, "\n")
+	inBlock := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(trimmed, yamlKey+":") || strings.Contains(trimmed, cnKey+"：") {
+			inBlock = true
+			continue
+		}
+		if inBlock && trimmed == "" {
+			break
+		}
+		if inBlock && strings.HasPrefix(trimmed, "- ") {
+			items = append(items, strings.TrimSpace(trimmed[2:]))
+		}
+	}
+	return items
+}
+
+func extractExpectation(text string) paradigms.Expectation {
+	e := paradigms.Expectation{}
+
+	// Try multiple patterns for each field
+	if v := extractField(text, "holding_period:"); v != "" {
+		e.HoldingPeriod = v
+	} else if v := extractField(text, "持仓周期:"); v != "" {
+		e.HoldingPeriod = v
+	}
+
+	if v := extractField(text, "expected_return:"); v != "" {
+		e.ExpectedReturn = v
+	} else if v := extractField(text, "预期收益:"); v != "" {
+		e.ExpectedReturn = v
+	} else if v := extractNumberRange(text, "期望收益"); v != "" {
+		e.ExpectedReturn = v
+	}
+
+	if v := extractField(text, "risk_reward_ratio:"); v != "" {
+		e.RiskReward = v
+	} else if v := extractField(text, "盈亏比:"); v != "" {
+		e.RiskReward = v
+	}
+
+	if v := extractField(text, "confidence:"); v != "" {
+		fmt.Sscanf(v, "%f", &e.Confidence)
+	} else if v := extractField(text, "置信度:"); v != "" {
+		fmt.Sscanf(v, "%f", &e.Confidence)
+	}
+
+	if v := extractField(text, "win_rate:"); v != "" {
+		fmt.Sscanf(v, "%f", &e.WinRate)
+	} else if v := extractField(text, "胜率:"); v != "" {
+		fmt.Sscanf(v, "%f", &e.WinRate)
+	}
+
+	if v := extractField(text, "sample_size:"); v != "" {
+		fmt.Sscanf(v, "%d", &e.SampleSize)
+	} else if v := extractField(text, "样本量:"); v != "" {
+		fmt.Sscanf(v, "%d", &e.SampleSize)
+	}
+
+	return e
+}
+
+func extractNumberRange(text, keyword string) string {
+	// Look for patterns like "期望收益 2-5%" or "预期收益 3%~8%"
+	lines := strings.Split(text, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, keyword) {
+			// Extract percentage range
+			rest := line[strings.Index(line, keyword):]
+			// Find percentage pattern
+			for _, pattern := range []string{"%s: %s", "%s：%s", "%s: %s%%", "%s：%s%%"} {
+				_ = pattern
+			}
+			_ = rest
+		}
+	}
+	return ""
 }
