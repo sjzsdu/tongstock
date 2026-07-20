@@ -41,12 +41,13 @@ type DatabaseConfig struct {
 
 // AgentConfig AI Agent 配置
 type AgentConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	Home    string `yaml:"home"`
-	Config  string `yaml:"config"`
-	Model   string `yaml:"model"`
-	Agent   string `yaml:"agent"`
-	Session string `yaml:"session"`
+	Enabled     bool   `yaml:"enabled"`
+	Home        string `yaml:"home"`
+	Config      string `yaml:"config"`
+	Model       string `yaml:"model"`
+	Agent       string `yaml:"agent"`
+	Session     string `yaml:"session"`
+	StockAgent  string `yaml:"stock_agent"`  // default agent for stock analysis panel
 }
 
 // DefaultConfig 返回一个包含默认值的 Config 实例
@@ -97,6 +98,7 @@ database:
 #   model: ""
 #   agent: ""
 #   session: ""
+#   stock_agent: "stock-analyst"  # 个股分析面板默认 agent
 `
 }
 
@@ -164,6 +166,9 @@ func Load() (*Config, error) {
 	}
 	if tmp.Agent.Session != "" {
 		merged.Agent.Session = tmp.Agent.Session
+	}
+	if tmp.Agent.StockAgent != "" {
+		merged.Agent.StockAgent = tmp.Agent.StockAgent
 	}
 
 	return merged, nil

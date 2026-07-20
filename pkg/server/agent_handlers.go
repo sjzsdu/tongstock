@@ -32,10 +32,11 @@ type AgentState struct {
 }
 
 type AgentDefaults struct {
-	Agent   string `json:"agent"`
-	Model   string `json:"model"`
-	Session string `json:"session"`
-	Debug   bool   `json:"debug"`
+	Agent      string `json:"agent"`
+	Model      string `json:"model"`
+	Session    string `json:"session"`
+	Debug      bool   `json:"debug"`
+	StockAgent string `json:"stock_agent,omitempty"`
 }
 
 type agentStateResponse struct {
@@ -102,7 +103,7 @@ type agentSessionsResponse struct {
 const maxTranscriptBytes = 256 * 1024
 
 // InitAgentState initializes the picoclaw runtime and runner
-func (s *Server) InitAgentState(home, configPath, model, agentID, workspace string) error {
+func (s *Server) InitAgentState(home, configPath, model, agentID, stockAgent, workspace string) error {
 	if workspace == "" {
 		workspace, _ = os.Getwd()
 	}
@@ -142,9 +143,10 @@ func (s *Server) InitAgentState(home, configPath, model, agentID, workspace stri
 		workspace: workspace,
 		started:   time.Now(),
 		defaults: AgentDefaults{
-			Agent:   agentID,
-			Model:   model,
-			Session: "tongstock:default",
+			Agent:      agentID,
+			Model:      model,
+			Session:    "tongstock:default",
+			StockAgent: stockAgent,
 		},
 	}
 	return nil
@@ -172,8 +174,9 @@ func (s *Server) SetupAgentRoutes(api *gin.RouterGroup) {
 
 func (s *Server) handleAgentState(c *gin.Context) {
 	if s.agentState == nil {
-		c.JSON(http.StatusOK, agentStateResponse{
-			Agents: []agentInfo{},
+		c.JSON(http.StatusServiceUnavailable, agentStateResponse{
+			Agents:  []agentInfo{},
+			Defaults: AgentDefaults{},
 		})
 		return
 	}
@@ -202,7 +205,9 @@ func (s *Server) handleAgentState(c *gin.Context) {
 
 func (s *Server) handleAgentChat(c *gin.Context) {
 	if s.agentState == nil {
-		c.JSON(http.StatusInternalServerError, agentChatResponse{Error: "agent not initialized"})
+		c.JSON(http.StatusServiceUnavailable, agentChatResponse{
+			Error: "Agent 未初始化。请在 ~/.tongstock/config.yaml 中配置 agent.enabled: true 并确保 picoclaw 已正确配置。",
+		})
 		return
 	}
 
@@ -265,7 +270,9 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 
 func (s *Server) handleAgentChatStream(c *gin.Context) {
 	if s.agentState == nil {
-		c.JSON(http.StatusInternalServerError, agentStreamEvent{Type: "error", Error: "agent not initialized"})
+		c.JSON(http.StatusServiceUnavailable, agentStreamEvent{
+			Type: "error", Error: "Agent 未初始化。请在 ~/.tongstock/config.yaml 中配置 agent.enabled: true 并确保 picoclaw 已正确配置。",
+		})
 		return
 	}
 

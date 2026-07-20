@@ -14,6 +14,7 @@ import (
 	"github.com/sjzsdu/tongstock/internal/agents"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
 	"github.com/sjzsdu/tongstock/pkg/config"
+	"path/filepath"
 	"github.com/sjzsdu/tongstock/pkg/history"
 	"github.com/sjzsdu/tongstock/pkg/param"
 	"github.com/sjzsdu/tongstock/pkg/server"
@@ -111,7 +112,20 @@ func main() {
 			return result, nil
 		}
 		server.RegisterAgentLister(agentLister)
-		if err := httpServer.InitAgentState(cfg.Agent.Home, cfg.Agent.Config, cfg.Agent.Model, cfg.Agent.Agent, ""); err != nil {
+		// Expand ~ in home and config paths
+		agentHome := cfg.Agent.Home
+		if strings.HasPrefix(agentHome, "~") {
+			if home, err := os.UserHomeDir(); err == nil {
+				agentHome = filepath.Join(home, strings.TrimPrefix(agentHome, "~"))
+			}
+		}
+		agentConfig := cfg.Agent.Config
+		if strings.HasPrefix(agentConfig, "~") {
+			if home, err := os.UserHomeDir(); err == nil {
+				agentConfig = filepath.Join(home, strings.TrimPrefix(agentConfig, "~"))
+			}
+		}
+		if err := httpServer.InitAgentState(agentHome, agentConfig, cfg.Agent.Model, cfg.Agent.Agent, cfg.Agent.StockAgent, ""); err != nil {
 			log.Printf("Warning: Failed to initialize agent: %v", err)
 		} else {
 			log.Println("AI Agent initialized successfully")

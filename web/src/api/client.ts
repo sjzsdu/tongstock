@@ -17,6 +17,9 @@ import type {
   AgentSessionsResponse,
   AgentTranscriptResponse,
   AgentDebateResponse,
+  ParadigmAnalyzeResponse,
+  ParadigmListResponse,
+  ParadigmItem,
 } from '../types/api';
 
 const BASE = '';

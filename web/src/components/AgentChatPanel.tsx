@@ -33,8 +33,15 @@ export default function AgentChatPanel({ stockCode, stockName, open, onClose }: 
     if (open) {
       api.agentState().then(state => {
         setAgents(state.agents || []);
-        if (state.defaults?.agent) setSelectedAgent(state.defaults.agent);
-      }).catch(() => {});
+        // Prefer stock_agent for stock detail panel, fallback to default agent
+        const defaultAgent = state.defaults?.stock_agent || state.defaults?.agent || '';
+        setSelectedAgent(defaultAgent);
+        if (!state.agents?.length) {
+          setMessages([{ role: 'system', content: 'Agent 未配置。请在 ~/.tongstock/config.yaml 中设置 agent.enabled: true 并配置 picoclaw。' }]);
+        }
+      }).catch(() => {
+        setMessages([{ role: 'system', content: '无法连接到 Agent 服务。请确保后端已启动且 agent 功能已启用。' }]);
+      });
     }
   }, [open]);
 
@@ -66,7 +73,10 @@ export default function AgentChatPanel({ stockCode, stockName, open, onClose }: 
           session: `web:${stockCode}`,
         }),
       });
-      if (!res.ok || !res.body) throw new Error(res.statusText || 'stream request failed');
+      if (!res.ok || !res.body) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(errText || res.statusText || 'Agent 服务不可用，请检查配置');
+      }
       await readSSE(res, event => {
         if (event.type === 'delta') {
           acc += event.delta || '';
@@ -79,9 +89,12 @@ export default function AgentChatPanel({ stockCode, stockName, open, onClose }: 
           ));
         }
       });
-    } catch (err) {
+    } catch (err: any) {
+      const msg = err?.message?.includes('Failed to fetch')
+        ? '无法连接到后端服务，请确保服务器已启动'
+        : String(err);
       setMessages(prev => prev.map((item, idx) =>
-        idx === pendingIndex ? { role: 'assistant', content: String(err), error: true } : item
+        idx === pendingIndex ? { role: 'assistant', content: msg, error: true } : item
       ));
     } finally {
       setBusy(false);
