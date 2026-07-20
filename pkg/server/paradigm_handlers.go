@@ -5,17 +5,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	pcwrap "github.com/sjzsdu/tongstock/internal/picoclaw"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
+	pcwrap "github.com/sjzsdu/tongstock/internal/picoclaw"
 	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
 )
 
 // ParadigmStore is set from main.go to avoid import cycles
 var ParadigmStore *paradigms.Store
+
+var numberRangeRe = regexp.MustCompile(`(\d+(?:\.\d+)?)\s*[-~至到]\s*(\d+(?:\.\d+)?)\s*%?`)
 
 type paradigmAnalyzeRequest struct {
 	StockCode string `json:"stock_code"`
@@ -25,13 +28,13 @@ type paradigmAnalyzeRequest struct {
 }
 
 type paradigmAnalyzeResponse struct {
-	StockCode string            `json:"stock_code"`
-	StockName string            `json:"stock_name,omitempty"`
-	Paradigm  *paradigms.Paradigm `json:"paradigm,omitempty"`
+	StockCode        string                    `json:"stock_code"`
+	StockName        string                    `json:"stock_name,omitempty"`
+	Paradigm         *paradigms.Paradigm       `json:"paradigm,omitempty"`
 	EvaluatedConfirm []paradigms.EvaluatedItem `json:"evaluated_confirm,omitempty"`
 	EvaluatedInvalid []paradigms.EvaluatedItem `json:"evaluated_invalid,omitempty"`
-	AgentText string            `json:"agent_text"`
-	Error     string            `json:"error,omitempty"`
+	AgentText        string                    `json:"agent_text"`
+	Error            string                    `json:"error,omitempty"`
 }
 
 type paradigmListResponse struct {
@@ -76,12 +79,12 @@ func (s *Server) handleParadigmAnalyze(c *gin.Context) {
 	if existing := ParadigmStore.GetByStockCode(req.StockCode); existing != nil {
 		evalConfirm, evalInvalid := s.evaluateConditions(req.StockCode, existing)
 		c.JSON(http.StatusOK, paradigmAnalyzeResponse{
-			StockCode:       req.StockCode,
-			StockName:       req.StockName,
-			Paradigm:        existing,
+			StockCode:        req.StockCode,
+			StockName:        req.StockName,
+			Paradigm:         existing,
 			EvaluatedConfirm: evalConfirm,
 			EvaluatedInvalid: evalInvalid,
-			AgentText:       existing.AgentText,
+			AgentText:        existing.AgentText,
 		})
 		return
 	}
@@ -130,12 +133,12 @@ func (s *Server) handleParadigmAnalyze(c *gin.Context) {
 	evalConfirm, evalInvalid := s.evaluateConditions(req.StockCode, paradigm)
 
 	c.JSON(http.StatusOK, paradigmAnalyzeResponse{
-		StockCode:       req.StockCode,
-		StockName:       req.StockName,
-		Paradigm:        paradigm,
+		StockCode:        req.StockCode,
+		StockName:        req.StockName,
+		Paradigm:         paradigm,
 		EvaluatedConfirm: evalConfirm,
 		EvaluatedInvalid: evalInvalid,
-		AgentText:       agentResp,
+		AgentText:        agentResp,
 	})
 }
 
@@ -151,7 +154,7 @@ func (s *Server) handleParadigmList(c *gin.Context) {
 	var list []*paradigms.Paradigm
 	if marketCap != "" || shareholder != "" {
 		list = ParadigmStore.ListByContext(paradigms.Context{
-			MarketCap:          marketCap,
+			MarketCap:           marketCap,
 			ShareholderDominant: shareholder,
 		})
 	} else {
@@ -231,7 +234,7 @@ func (s *Server) fetchIndicator(code, ktype string) (map[string]any, error) {
 
 	// Return raw klines for the prompt
 	result := map[string]any{
-		"code":       code,
+		"code":        code,
 		"kline_count": len(klines),
 	}
 	if len(klines) > 0 {
@@ -250,14 +253,14 @@ func (s *Server) fetchFinance(code string) (map[string]any, error) {
 		return nil, err
 	}
 	result := map[string]any{
-		"zong_gu_ben":    info.ZongGuBen,
-		"liu_tong_gu_ben": info.LiuTongGuBen,
-		"zong_zi_chan":    info.ZongZiChan,
-		"jing_zi_chan":    info.JingZiChan,
+		"zong_gu_ben":      info.ZongGuBen,
+		"liu_tong_gu_ben":  info.LiuTongGuBen,
+		"zong_zi_chan":     info.ZongZiChan,
+		"jing_zi_chan":     info.JingZiChan,
 		"zhu_ying_shou_ru": info.ZhuYingShouRu,
-		"jing_li_run":    info.JingLiRun,
-		"mei_gu_jing_zi": info.MeiGuJingZiChan,
-		"gu_dong_ren_shu": info.GuDongRenShu,
+		"jing_li_run":      info.JingLiRun,
+		"mei_gu_jing_zi":   info.MeiGuJingZiChan,
+		"gu_dong_ren_shu":  info.GuDongRenShu,
 	}
 	return result, nil
 }
@@ -508,6 +511,19 @@ func extractExpectation(text string) paradigms.Expectation {
 }
 
 func extractNumberRange(text, keyword string) string {
+	lines := strings.Split(text, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(trimmed, keyword) {
+			if match := numberRangeRe.FindStringSubmatch(trimmed); len(match) >= 3 {
+				rangeStr := match[1] + "-" + match[2]
+				if strings.Contains(trimmed, "%") {
+					rangeStr += "%"
+				}
+				return rangeStr
+			}
+		}
+	}
 	return ""
 }
 

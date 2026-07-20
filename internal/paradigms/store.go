@@ -3,6 +3,7 @@ package paradigms
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -12,8 +13,8 @@ import (
 )
 
 type Store struct {
-	dir      string
-	mu       sync.RWMutex
+	dir       string
+	mu        sync.RWMutex
 	paradigms map[string]*Paradigm
 }
 
@@ -43,10 +44,12 @@ func (s *Store) loadAll() error {
 		}
 		data, err := os.ReadFile(filepath.Join(s.dir, entry.Name()))
 		if err != nil {
+			log.Printf("warn: read paradigm file %s failed: %v", entry.Name(), err)
 			continue
 		}
 		var p Paradigm
 		if err := json.Unmarshal(data, &p); err != nil {
+			log.Printf("warn: parse paradigm file %s failed: %v", entry.Name(), err)
 			continue
 		}
 		s.paradigms[p.ID] = &p
@@ -96,7 +99,9 @@ func (s *Store) Delete(id string) error {
 		return fmt.Errorf("paradigm %q not found", id)
 	}
 	path := filepath.Join(s.dir, id+".json")
-	os.Remove(path)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
 	delete(s.paradigms, id)
 	return nil
 }
