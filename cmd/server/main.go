@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -14,7 +15,6 @@ import (
 	"github.com/sjzsdu/tongstock/internal/agents"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
 	"github.com/sjzsdu/tongstock/pkg/config"
-	"path/filepath"
 	"github.com/sjzsdu/tongstock/pkg/history"
 	"github.com/sjzsdu/tongstock/pkg/param"
 	"github.com/sjzsdu/tongstock/pkg/server"
@@ -142,7 +142,7 @@ func main() {
 	}
 
 	// Initialize paradigm store
-	paradigmStore, err := paradigms.NewStore("")
+	paradigmStore, err := paradigms.NewStoreWithStorage("", s)
 	if err != nil {
 		log.Printf("Warning: Failed to initialize paradigm store: %v", err)
 	} else {

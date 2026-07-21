@@ -51,12 +51,111 @@ func (s *Server) SetupParadigmRoutes(api *gin.RouterGroup) {
 		p.POST("/analyze", s.handleParadigmAnalyze)
 		p.POST("/evaluate", s.handleParadigmEvaluate)
 		p.GET("/list", s.handleParadigmList)
+		p.GET("/alerts", s.handleParadigmAlerts)
+		p.GET("/stats", s.handleParadigmStats)
 		p.GET("/stock/:code", s.handleParadigmByStock)
 		p.GET("/history", s.handleParadigmHistory)
 		p.GET("/:id", s.handleParadigmGet)
 		p.PUT("/:id/review", s.handleParadigmReview)
 		p.DELETE("/:id", s.handleParadigmDelete)
 	}
+}
+
+type paradigmAlert struct {
+	ParadigmID string `json:"paradigm_id"`
+	StockCode  string `json:"stock_code"`
+	StockName  string `json:"stock_name,omitempty"`
+	Side       string `json:"side"`
+	Type       string `json:"type"`
+	Condition  string `json:"condition"`
+	Status     string `json:"status"`
+	Value      string `json:"value,omitempty"`
+	Severity   string `json:"severity"`
+}
+
+func (s *Server) handleParadigmAlerts(c *gin.Context) {
+	if ParadigmStore == nil {
+		c.JSON(http.StatusOK, gin.H{"alerts": []paradigmAlert{}, "total": 0})
+		return
+	}
+	code := c.Query("stock_code")
+	var list []*paradigms.Paradigm
+	if code != "" {
+		list = ParadigmStore.ListByStockCode(code)
+	} else {
+		list = ParadigmStore.List()
+	}
+	alerts := make([]paradigmAlert, 0)
+	for _, p := range list {
+		conds := s.evaluateParadigmConditions(p.StockCode, p)
+		for _, ec := range conds {
+			if ec.Status != "met" {
+				continue
+			}
+			severity := "info"
+			if ec.Type == "stop_loss" {
+				severity = "critical"
+			} else if ec.Type == "take_profit" {
+				severity = "warning"
+			}
+			alerts = append(alerts, paradigmAlert{ParadigmID: p.ID, StockCode: p.StockCode, StockName: p.StockName, Side: p.Side, Type: ec.Type, Condition: ec.Condition, Status: ec.Status, Value: ec.Value, Severity: severity})
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"alerts": alerts, "total": len(alerts)})
+}
+
+type paradigmStatsResponse struct {
+	Total           int     `json:"total"`
+	Reviewed        int     `json:"reviewed"`
+	Verified        int     `json:"verified"`
+	Rejected        int     `json:"rejected"`
+	WinRate         float64 `json:"win_rate"`
+	AverageReturn   float64 `json:"average_return"`
+	AverageRating   float64 `json:"average_rating"`
+	HighReliability int     `json:"high_reliability"`
+}
+
+func (s *Server) handleParadigmStats(c *gin.Context) {
+	if ParadigmStore == nil {
+		c.JSON(http.StatusOK, paradigmStatsResponse{})
+		return
+	}
+	list := ParadigmStore.List()
+	resp := paradigmStatsResponse{Total: len(list)}
+	var retSum, ratingSum float64
+	var retN, ratingN, wins int
+	for _, p := range list {
+		switch p.ReviewStatus {
+		case "reviewed":
+			resp.Reviewed++
+		case "verified":
+			resp.Verified++
+		case "rejected":
+			resp.Rejected++
+		}
+		if p.Validation.ReliabilityLabel == "high" {
+			resp.HighReliability++
+		}
+		if p.ActualReturn != nil {
+			retSum += *p.ActualReturn
+			retN++
+			if *p.ActualReturn > 0 {
+				wins++
+			}
+		}
+		if p.ReviewRating > 0 {
+			ratingSum += float64(p.ReviewRating)
+			ratingN++
+		}
+	}
+	if retN > 0 {
+		resp.AverageReturn = retSum / float64(retN)
+		resp.WinRate = float64(wins) / float64(retN)
+	}
+	if ratingN > 0 {
+		resp.AverageRating = ratingSum / float64(ratingN)
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 type paradigmEvaluateRequest struct {
@@ -911,17 +1010,19 @@ func (s *Server) fetchCurrentIndicator(stockCode string) map[string]float64 {
 
 	result := make(map[string]float64)
 	last := klines[len(klines)-1]
+	prev := klines[len(klines)-2]
 	result["close"] = last.Close
+	result["prev_close"] = prev.Close
 	result["volume"] = last.Volume
+	result["prev_volume"] = prev.Volume
 
 	// Calculate simple MA60
 	for _, period := range []int{5, 10, 20, 60} {
 		if len(klines) >= period {
-			sum := 0.0
-			for i := len(klines) - period; i < len(klines); i++ {
-				sum += klines[i].Close
-			}
-			result[fmt.Sprintf("ma%d", period)] = sum / float64(period)
+			result[fmt.Sprintf("ma%d", period)] = calcSMA(klines, period, len(klines)-1)
+		}
+		if len(klines) >= period+1 {
+			result[fmt.Sprintf("prev_ma%d", period)] = calcSMA(klines, period, len(klines)-2)
 		}
 	}
 
@@ -950,6 +1051,11 @@ func (s *Server) fetchCurrentIndicator(stockCode string) map[string]float64 {
 		if ema12 > 0 && ema26 > 0 {
 			result["macd_dif"] = ema12 - ema26
 		}
+		prevEMA12 := calcEMA(klines[:len(klines)-1], 12)
+		prevEMA26 := calcEMA(klines[:len(klines)-1], 26)
+		if prevEMA12 > 0 && prevEMA26 > 0 {
+			result["prev_macd_dif"] = prevEMA12 - prevEMA26
+		}
 	}
 
 	// Simple RSI14 calculation
@@ -958,6 +1064,17 @@ func (s *Server) fetchCurrentIndicator(stockCode string) map[string]float64 {
 	}
 
 	return result
+}
+
+func calcSMA(klines []*protocol.Kline, period, end int) float64 {
+	if end < 0 || end >= len(klines) || end-period+1 < 0 {
+		return 0
+	}
+	sum := 0.0
+	for i := end - period + 1; i <= end; i++ {
+		sum += klines[i].Close
+	}
+	return sum / float64(period)
 }
 
 func calcEMA(klines []*protocol.Kline, period int) float64 {

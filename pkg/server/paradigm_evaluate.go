@@ -226,13 +226,36 @@ func evaluateStructuredCondition(ec *EvaluatedCondition, c paradigms.Condition, 
 		ec.Value = fmt.Sprintf("%s=%.4f, range=%.4f-%.4f", leftName, left, lo, hi)
 		ec.Status = boolStatus(left >= lo && left <= hi)
 	case "cross_above":
-		ec.Status = boolStatus(left > right)
+		prevLeft, prevRight, ok := resolvePreviousPair(leftName, c.Value, indicator)
+		if !ok {
+			return false
+		}
+		ec.Value = fmt.Sprintf("%s prev=%.4f now=%.4f, %s prev=%.4f now=%.4f", leftName, prevLeft, left, rightLabel, prevRight, right)
+		ec.Status = boolStatus(prevLeft <= prevRight && left > right)
 	case "cross_below":
-		ec.Status = boolStatus(left < right)
+		prevLeft, prevRight, ok := resolvePreviousPair(leftName, c.Value, indicator)
+		if !ok {
+			return false
+		}
+		ec.Value = fmt.Sprintf("%s prev=%.4f now=%.4f, %s prev=%.4f now=%.4f", leftName, prevLeft, left, rightLabel, prevRight, right)
+		ec.Status = boolStatus(prevLeft >= prevRight && left < right)
 	default:
 		return false
 	}
 	return true
+}
+
+func resolvePreviousPair(leftName, rightRaw string, indicator map[string]float64) (float64, float64, bool) {
+	prevLeft, ok := indicator["prev_"+leftName]
+	if !ok {
+		return 0, 0, false
+	}
+	rightName := normalizeIndicator(rightRaw)
+	if prevRight, ok := indicator["prev_"+rightName]; ok {
+		return prevLeft, prevRight, true
+	}
+	right, _, ok := resolveConditionValue(rightRaw, indicator)
+	return prevLeft, right, ok
 }
 
 func normalizeIndicator(s string) string {

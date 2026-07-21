@@ -568,6 +568,34 @@ export interface ParadigmEvaluateResponse {
   error?: string;
 }
 
+export interface ParadigmAlertItem {
+  paradigm_id: string;
+  stock_code: string;
+  stock_name?: string;
+  side: string;
+  type: string;
+  condition: string;
+  status: string;
+  value?: string;
+  severity: 'info' | 'warning' | 'critical' | string;
+}
+
+export interface ParadigmAlertsResponse {
+  alerts: ParadigmAlertItem[];
+  total: number;
+}
+
+export interface ParadigmStatsResponse {
+  total: number;
+  reviewed: number;
+  verified: number;
+  rejected: number;
+  win_rate: number;
+  average_return: number;
+  average_rating: number;
+  high_reliability: number;
+}
+
 export interface ChatSessionInfo {
   id: string;
   stock_code: string;

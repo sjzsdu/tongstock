@@ -22,6 +22,8 @@ import type {
   ParadigmListResponse,
   ParadigmItem,
   ParadigmEvaluateResponse,
+  ParadigmAlertsResponse,
+  ParadigmStatsResponse,
   ChatSessionInfo,
 } from '../types/api';
 
@@ -298,6 +300,12 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ stock_code: stockCode }),
     }),
+
+  paradigmAlerts: (stockCode?: string) =>
+    fetchJSON<ParadigmAlertsResponse>(`/api/paradigm/alerts${stockCode ? `?stock_code=${encodeURIComponent(stockCode)}` : ''}`),
+
+  paradigmStats: () =>
+    fetchJSON<ParadigmStatsResponse>('/api/paradigm/stats'),
 
   paradigmHistory: () =>
     fetchJSON<ParadigmListResponse>('/api/paradigm/history'),

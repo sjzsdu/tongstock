@@ -4,7 +4,7 @@ import { CheckCircleFilled, CloseCircleFilled, QuestionCircleFilled, QuestionCir
 import MarkdownRenderer from './MarkdownRenderer';
 import ResizableDrawer from './ResizableDrawer';
 import { api } from '../api/client';
-import type { ParadigmItem, EvaluatedItem, EvaluatedCondition } from '../types/api';
+import type { ParadigmItem, EvaluatedItem, EvaluatedCondition, ParadigmAlertItem, ParadigmStatsResponse } from '../types/api';
 
 interface ParadigmResultDrawerProps {
   open: boolean;
@@ -299,6 +299,54 @@ function ReviewTab({ paradigm }: { paradigm: ParadigmItem }) {
   );
 }
 
+function OpsTab({ stockCode }: { stockCode: string }) {
+  const [alerts, setAlerts] = useState<ParadigmAlertItem[]>([]);
+  const [stats, setStats] = useState<ParadigmStatsResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!stockCode) return;
+    setLoading(true);
+    Promise.all([api.paradigmAlerts(stockCode), api.paradigmStats()])
+      .then(([a, s]) => { setAlerts(a.alerts || []); setStats(s); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [stockCode]);
+
+  return (
+    <Space direction="vertical" size={16} style={{ display: 'flex' }}>
+      {loading && <Spin size="small" />}
+      {stats && (
+        <Descriptions bordered size="small" column={2}>
+          <Descriptions.Item label="范式总数">{stats.total}</Descriptions.Item>
+          <Descriptions.Item label="高可靠">{stats.high_reliability}</Descriptions.Item>
+          <Descriptions.Item label="胜率">{(stats.win_rate * 100).toFixed(1)}%</Descriptions.Item>
+          <Descriptions.Item label="平均收益">{stats.average_return.toFixed(2)}%</Descriptions.Item>
+          <Descriptions.Item label="平均评分">{stats.average_rating.toFixed(2)}</Descriptions.Item>
+          <Descriptions.Item label="已验证/无效">{stats.verified}/{stats.rejected}</Descriptions.Item>
+        </Descriptions>
+      )}
+      <div>
+        <Typography.Text strong>当前触发提醒</Typography.Text>
+        {alerts.length === 0 ? <Empty description="暂无触发条件" image={Empty.PRESENTED_IMAGE_SIMPLE} /> : (
+          <Table
+            size="small"
+            pagination={false}
+            rowKey={(r, i) => `${r.paradigm_id}-${r.type}-${i}`}
+            dataSource={alerts}
+            columns={[
+              { title: '级别', dataIndex: 'severity', width: 80, render: v => <Tag color={v === 'critical' ? 'red' : v === 'warning' ? 'orange' : 'blue'}>{v}</Tag> },
+              { title: '类型', dataIndex: 'type', width: 90 },
+              { title: '条件', dataIndex: 'condition' },
+              { title: '当前值', dataIndex: 'value' },
+            ]}
+          />
+        )}
+      </div>
+    </Space>
+  );
+}
+
 function SideContent({ paradigm, evaluatedConfirm, evaluatedInvalid, agentText, stockCode, stockName, side }: {
   paradigm: ParadigmItem | null;
   evaluatedConfirm?: EvaluatedItem[];
@@ -372,6 +420,10 @@ function SideContent({ paradigm, evaluatedConfirm, evaluatedInvalid, agentText, 
           key: 'review',
           label: '复盘',
           children: <ReviewTab paradigm={paradigm} />,
+        }, {
+          key: 'ops',
+          label: '监控',
+          children: <OpsTab stockCode={stockCode} />,
         }] : []),
       ]}
     />
