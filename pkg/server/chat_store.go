@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/sjzsdu/tongstock/pkg/storage"
 )
 
 type ChatMessage struct {
@@ -32,6 +34,7 @@ type ChatStore struct {
 	dir      string
 	mu       sync.RWMutex
 	sessions map[string]*ChatSession
+	db       *storage.Storage
 }
 
 func NewChatStore(dir string) (*ChatStore, error) {
@@ -45,6 +48,104 @@ func NewChatStore(dir string) (*ChatStore, error) {
 	s := &ChatStore{dir: dir, sessions: make(map[string]*ChatSession)}
 	s.loadAll()
 	return s, nil
+}
+
+func NewChatStoreWithStorage(dir string, db *storage.Storage) (*ChatStore, error) {
+	s, err := NewChatStore(dir)
+	if err != nil {
+		return nil, err
+	}
+	s.db = db
+	if db != nil {
+		if err := s.initDB(); err != nil {
+			return nil, err
+		}
+		if err := s.importJSONToDB(); err != nil {
+			return nil, err
+		}
+		if err := s.loadAllDB(); err != nil {
+			return nil, err
+		}
+	}
+	return s, nil
+}
+
+func (s *ChatStore) initDB() error {
+	_, err := s.db.DB().Exec(`CREATE TABLE IF NOT EXISTS chat_sessions (
+		id TEXT PRIMARY KEY,
+		stock_code TEXT NOT NULL DEFAULT '',
+		agent TEXT NOT NULL DEFAULT '',
+		updated_at BIGINT NOT NULL,
+		data TEXT NOT NULL
+	)`)
+	if err != nil {
+		return err
+	}
+	_, _ = s.db.DB().Exec(`CREATE INDEX IF NOT EXISTS idx_chat_sessions_stock_code ON chat_sessions(stock_code)`)
+	return nil
+}
+
+func (s *ChatStore) importJSONToDB() error {
+	for _, sess := range s.sessions {
+		if err := s.saveDB(sess); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *ChatStore) loadAllDB() error {
+	rows, err := s.db.DB().Query(`SELECT data FROM chat_sessions`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	loaded := map[string]*ChatSession{}
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return err
+		}
+		var sess ChatSession
+		if err := json.Unmarshal([]byte(raw), &sess); err != nil {
+			log.Printf("warn: parse chat session from db failed: %v", err)
+			continue
+		}
+		loaded[sess.ID] = &sess
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.sessions = loaded
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *ChatStore) saveDB(session *ChatSession) error {
+	if s.db == nil {
+		return nil
+	}
+	data, err := json.Marshal(session)
+	if err != nil {
+		return err
+	}
+	updated := session.UpdatedAt.Unix()
+	if updated == 0 {
+		updated = time.Now().Unix()
+	}
+	switch s.db.Dialect() {
+	case storage.Postgres:
+		_, err = s.db.DB().Exec(`INSERT INTO chat_sessions (id, stock_code, agent, updated_at, data) VALUES ($1,$2,$3,$4,$5)
+			ON CONFLICT(id) DO UPDATE SET stock_code=$2, agent=$3, updated_at=$4, data=$5`, session.ID, session.StockCode, session.Agent, updated, string(data))
+	case storage.MySQL:
+		_, err = s.db.DB().Exec(`INSERT INTO chat_sessions (id, stock_code, agent, updated_at, data) VALUES (?,?,?,?,?)
+			ON DUPLICATE KEY UPDATE stock_code=VALUES(stock_code), agent=VALUES(agent), updated_at=VALUES(updated_at), data=VALUES(data)`, session.ID, session.StockCode, session.Agent, updated, string(data))
+	default:
+		_, err = s.db.DB().Exec(`INSERT INTO chat_sessions (id, stock_code, agent, updated_at, data) VALUES (?,?,?,?,?)
+			ON CONFLICT(id) DO UPDATE SET stock_code=excluded.stock_code, agent=excluded.agent, updated_at=excluded.updated_at, data=excluded.data`, session.ID, session.StockCode, session.Agent, updated, string(data))
+	}
+	return err
 }
 
 func (s *ChatStore) loadAll() {
@@ -87,7 +188,7 @@ func (s *ChatStore) Save(session *ChatSession) error {
 		return err
 	}
 	s.sessions[session.ID] = session
-	return nil
+	return s.saveDB(session)
 }
 
 func (s *ChatStore) Get(id string) (*ChatSession, error) {

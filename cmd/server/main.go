@@ -133,7 +133,7 @@ func main() {
 	}
 
 	// Initialize chat store for session persistence
-	chatStore, err := server.NewChatStore("")
+	chatStore, err := server.NewChatStoreWithStorage("", s)
 	if err != nil {
 		log.Printf("Warning: Failed to initialize chat store: %v", err)
 	} else {
