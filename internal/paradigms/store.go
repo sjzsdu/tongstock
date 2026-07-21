@@ -4,10 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -15,38 +12,19 @@ import (
 )
 
 type Store struct {
-	dir       string
 	mu        sync.RWMutex
 	paradigms map[string]*Paradigm
 	db        *storage.Storage
 }
 
 func NewStore(dir string) (*Store, error) {
-	if dir == "" {
-		home, _ := os.UserHomeDir()
-		dir = filepath.Join(home, ".tongstock", "paradigms")
-	}
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("create paradigms dir: %w", err)
-	}
-	s := &Store{dir: dir, paradigms: make(map[string]*Paradigm)}
-	if err := s.loadAll(); err != nil {
-		return nil, err
-	}
-	return s, nil
+	return &Store{paradigms: make(map[string]*Paradigm)}, nil
 }
 
 func NewStoreWithStorage(dir string, db *storage.Storage) (*Store, error) {
-	s, err := NewStore(dir)
-	if err != nil {
-		return nil, err
-	}
-	s.db = db
+	s := &Store{paradigms: make(map[string]*Paradigm), db: db}
 	if db != nil {
 		if err := s.initDB(); err != nil {
-			return nil, err
-		}
-		if err := s.importJSONToDB(); err != nil {
 			return nil, err
 		}
 		if err := s.loadAllDB(); err != nil {
@@ -70,15 +48,6 @@ func (s *Store) initDB() error {
 	}
 	_, _ = s.db.DB().Exec(`CREATE INDEX IF NOT EXISTS idx_paradigms_stock_code ON paradigms(stock_code)`)
 	_, _ = s.db.DB().Exec(`CREATE INDEX IF NOT EXISTS idx_paradigms_cache_key ON paradigms(cache_key)`)
-	return nil
-}
-
-func (s *Store) importJSONToDB() error {
-	for _, p := range s.paradigms {
-		if err := s.saveDB(p); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
@@ -137,30 +106,6 @@ func (s *Store) saveDB(p *Paradigm) error {
 	return err
 }
 
-func (s *Store) loadAll() error {
-	entries, err := os.ReadDir(s.dir)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(s.dir, entry.Name()))
-		if err != nil {
-			log.Printf("warn: read paradigm file %s failed: %v", entry.Name(), err)
-			continue
-		}
-		var p Paradigm
-		if err := json.Unmarshal(data, &p); err != nil {
-			log.Printf("warn: parse paradigm file %s failed: %v", entry.Name(), err)
-			continue
-		}
-		s.paradigms[p.ID] = &p
-	}
-	return nil
-}
-
 func (s *Store) Save(p *Paradigm) error {
 	if p == nil || p.ID == "" {
 		return fmt.Errorf("paradigm id required")
@@ -174,14 +119,6 @@ func (s *Store) Save(p *Paradigm) error {
 	}
 	p.UpdatedAt = now
 
-	data, err := json.MarshalIndent(p, "", "  ")
-	if err != nil {
-		return err
-	}
-	path := filepath.Join(s.dir, p.ID+".json")
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		return err
-	}
 	s.paradigms[p.ID] = p
 	return s.saveDB(p)
 }
@@ -201,10 +138,6 @@ func (s *Store) Delete(id string) error {
 	defer s.mu.Unlock()
 	if _, ok := s.paradigms[id]; !ok {
 		return fmt.Errorf("paradigm %q not found", id)
-	}
-	path := filepath.Join(s.dir, id+".json")
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return err
 	}
 	delete(s.paradigms, id)
 	if s.db != nil {

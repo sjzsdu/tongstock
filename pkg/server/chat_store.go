@@ -4,10 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -31,36 +28,19 @@ type ChatSession struct {
 }
 
 type ChatStore struct {
-	dir      string
 	mu       sync.RWMutex
 	sessions map[string]*ChatSession
 	db       *storage.Storage
 }
 
 func NewChatStore(dir string) (*ChatStore, error) {
-	if dir == "" {
-		home, _ := os.UserHomeDir()
-		dir = filepath.Join(home, ".tongstock", "chat-sessions")
-	}
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("create chat sessions dir: %w", err)
-	}
-	s := &ChatStore{dir: dir, sessions: make(map[string]*ChatSession)}
-	s.loadAll()
-	return s, nil
+	return &ChatStore{sessions: make(map[string]*ChatSession)}, nil
 }
 
 func NewChatStoreWithStorage(dir string, db *storage.Storage) (*ChatStore, error) {
-	s, err := NewChatStore(dir)
-	if err != nil {
-		return nil, err
-	}
-	s.db = db
+	s := &ChatStore{sessions: make(map[string]*ChatSession), db: db}
 	if db != nil {
 		if err := s.initDB(); err != nil {
-			return nil, err
-		}
-		if err := s.importJSONToDB(); err != nil {
 			return nil, err
 		}
 		if err := s.loadAllDB(); err != nil {
@@ -82,15 +62,6 @@ func (s *ChatStore) initDB() error {
 		return err
 	}
 	_, _ = s.db.DB().Exec(`CREATE INDEX IF NOT EXISTS idx_chat_sessions_stock_code ON chat_sessions(stock_code)`)
-	return nil
-}
-
-func (s *ChatStore) importJSONToDB() error {
-	for _, sess := range s.sessions {
-		if err := s.saveDB(sess); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
@@ -148,29 +119,6 @@ func (s *ChatStore) saveDB(session *ChatSession) error {
 	return err
 }
 
-func (s *ChatStore) loadAll() {
-	entries, err := os.ReadDir(s.dir)
-	if err != nil {
-		return
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(s.dir, entry.Name()))
-		if err != nil {
-			log.Printf("warn: read chat session file %s failed: %v", entry.Name(), err)
-			continue
-		}
-		var sess ChatSession
-		if err := json.Unmarshal(data, &sess); err != nil {
-			log.Printf("warn: parse chat session file %s failed: %v", entry.Name(), err)
-			continue
-		}
-		s.sessions[sess.ID] = &sess
-	}
-}
-
 func (s *ChatStore) Save(session *ChatSession) error {
 	if session == nil || session.ID == "" {
 		return fmt.Errorf("session id required")
@@ -179,14 +127,6 @@ func (s *ChatStore) Save(session *ChatSession) error {
 	defer s.mu.Unlock()
 
 	session.UpdatedAt = time.Now()
-	data, err := json.MarshalIndent(session, "", "  ")
-	if err != nil {
-		return err
-	}
-	path := filepath.Join(s.dir, session.ID+".json")
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		return err
-	}
 	s.sessions[session.ID] = session
 	return s.saveDB(session)
 }
