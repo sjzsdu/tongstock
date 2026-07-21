@@ -154,3 +154,26 @@ func (s *Store) GetByStockCode(code string) *Paradigm {
 	}
 	return nil
 }
+
+func (s *Store) GetByStockCodeAndSide(code, side string) *Paradigm {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, p := range s.paradigms {
+		if p.StockCode == code && p.Side == side {
+			return p
+		}
+	}
+	return nil
+}
+
+func (s *Store) ListByStockCode(code string) []*Paradigm {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []*Paradigm
+	for _, p := range s.paradigms {
+		if p.StockCode == code {
+			out = append(out, p)
+		}
+	}
+	return out
+}

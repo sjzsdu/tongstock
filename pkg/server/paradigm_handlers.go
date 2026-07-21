@@ -46,10 +46,53 @@ func (s *Server) SetupParadigmRoutes(api *gin.RouterGroup) {
 	p := api.Group("/paradigm")
 	{
 		p.POST("/analyze", s.handleParadigmAnalyze)
+		p.POST("/evaluate", s.handleParadigmEvaluate)
 		p.GET("/list", s.handleParadigmList)
+		p.GET("/stock/:code", s.handleParadigmByStock)
+		p.GET("/history", s.handleParadigmHistory)
 		p.GET("/:id", s.handleParadigmGet)
+		p.PUT("/:id/review", s.handleParadigmReview)
 		p.DELETE("/:id", s.handleParadigmDelete)
 	}
+}
+
+type paradigmEvaluateRequest struct {
+	StockCode string `json:"stock_code"`
+}
+
+type paradigmEvaluateResponse struct {
+	StockCode  string               `json:"stock_code"`
+	Conditions []EvaluatedCondition `json:"conditions"`
+	Error      string               `json:"error,omitempty"`
+}
+
+func (s *Server) handleParadigmEvaluate(c *gin.Context) {
+	if ParadigmStore == nil {
+		c.JSON(http.StatusInternalServerError, paradigmEvaluateResponse{Error: "paradigm store not initialized"})
+		return
+	}
+
+	var req paradigmEvaluateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, paradigmEvaluateResponse{Error: "invalid request: " + err.Error()})
+		return
+	}
+	if req.StockCode == "" {
+		c.JSON(http.StatusBadRequest, paradigmEvaluateResponse{Error: "stock_code is required"})
+		return
+	}
+
+	existing := ParadigmStore.GetByStockCode(req.StockCode)
+	if existing == nil {
+		c.JSON(http.StatusOK, paradigmEvaluateResponse{StockCode: req.StockCode, Conditions: []EvaluatedCondition{}})
+		return
+	}
+
+	conditions := s.evaluateParadigmConditions(req.StockCode, existing)
+	c.JSON(http.StatusOK, paradigmEvaluateResponse{
+		StockCode:  req.StockCode,
+		Conditions: conditions,
+	})
 }
 
 func (s *Server) handleParadigmAnalyze(c *gin.Context) {
@@ -178,6 +221,71 @@ func (s *Server) handleParadigmGet(c *gin.Context) {
 	c.JSON(http.StatusOK, p)
 }
 
+func (s *Server) handleParadigmByStock(c *gin.Context) {
+	if ParadigmStore == nil {
+		c.JSON(http.StatusOK, paradigmListResponse{Paradigms: []*paradigms.Paradigm{}, Total: 0})
+		return
+	}
+	code := c.Param("code")
+	list := ParadigmStore.ListByStockCode(code)
+	c.JSON(http.StatusOK, paradigmListResponse{Paradigms: list, Total: len(list)})
+}
+
+func (s *Server) handleParadigmHistory(c *gin.Context) {
+	if ParadigmStore == nil {
+		c.JSON(http.StatusOK, paradigmListResponse{Paradigms: []*paradigms.Paradigm{}, Total: 0})
+		return
+	}
+	list := ParadigmStore.List()
+	c.JSON(http.StatusOK, paradigmListResponse{Paradigms: list, Total: len(list)})
+}
+
+type paradigmReviewRequest struct {
+	ReviewStatus string   `json:"review_status"` // pending / reviewed / verified / rejected
+	ReviewNote   string   `json:"review_note,omitempty"`
+	ReviewRating int      `json:"review_rating,omitempty"` // 1-5
+	ActualReturn *float64 `json:"actual_return,omitempty"`
+}
+
+func (s *Server) handleParadigmReview(c *gin.Context) {
+	if ParadigmStore == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "paradigm store not initialized"})
+		return
+	}
+	id := c.Param("id")
+	p, err := ParadigmStore.Get(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	var req paradigmReviewRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	pCopy := *p
+	if req.ReviewStatus != "" {
+		pCopy.ReviewStatus = req.ReviewStatus
+	}
+	if req.ReviewNote != "" {
+		pCopy.ReviewNote = req.ReviewNote
+	}
+	if req.ReviewRating >= 1 && req.ReviewRating <= 5 {
+		pCopy.ReviewRating = req.ReviewRating
+	}
+	if req.ActualReturn != nil {
+		pCopy.ActualReturn = req.ActualReturn
+	}
+
+	if err := ParadigmStore.Save(&pCopy); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, &pCopy)
+}
+
 func (s *Server) handleParadigmDelete(c *gin.Context) {
 	if ParadigmStore == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "paradigm store not initialized"})
@@ -217,7 +325,90 @@ func (s *Server) buildParadigmPrompt(code, name string, days int) string {
 		b.WriteString(fmt.Sprintf("（获取财务数据失败: %v）\n", err))
 	}
 
+	// Shareholder profile analysis
+	b.WriteString("\n## 股东结构画像\n")
+	profile := s.buildShareholderProfile(code)
+	b.WriteString(profile)
+
 	b.WriteString("\n请按照你的标准分析流程，输出完整的条件范式。")
+	return b.String()
+}
+
+func (s *Server) buildShareholderProfile(code string) string {
+	var b strings.Builder
+
+	// Get finance data
+	info, err := s.svc.FetchFinance(code)
+	if err != nil {
+		return "（无法获取股东结构数据）\n"
+	}
+
+	// Calculate per-capita holdings
+	perCapita := 0.0
+	if info.GuDongRenShu > 0 && info.LiuTongGuBen > 0 {
+		// 流通市值 ≈ 流通股本 × 最新价（近似）
+		// 这里用流通股本作为近似指标
+		perCapita = info.LiuTongGuBen / float64(info.GuDongRenShu)
+	}
+
+	// Estimate market cap band
+	marketCapDesc := "unknown"
+	if info.ZongGuBen > 0 {
+		// 粗略估算市值（万元单位的总股本 × 假设均价10元）
+		// 更准确的方式需要最新价，这里用总股本做粗分类
+		totalShares := info.ZongGuBen // 万股
+		if totalShares < 50000 {
+			marketCapDesc = "small(<50亿)"
+		} else if totalShares < 200000 {
+			marketCapDesc = "mid(50-200亿)"
+		} else if totalShares < 1000000 {
+			marketCapDesc = "large(200-1000亿)"
+		} else {
+			marketCapDesc = "mega(>1000亿)"
+		}
+	}
+
+	b.WriteString(fmt.Sprintf("- 股东人数: %.0f 人\n", info.GuDongRenShu))
+	b.WriteString(fmt.Sprintf("- 总股本: %.0f 万股\n", info.ZongGuBen))
+	b.WriteString(fmt.Sprintf("- 流通股本: %.0f 万股\n", info.LiuTongGuBen))
+	b.WriteString(fmt.Sprintf("- 估算市值规模: %s\n", marketCapDesc))
+
+	if perCapita > 0 {
+		b.WriteString(fmt.Sprintf("- 人均持股(万股): %.2f\n", perCapita))
+		if perCapita < 1 {
+			b.WriteString("- 画像推断: 散户主导（人均持股低，股东人数多）\n")
+		} else if perCapita < 5 {
+			b.WriteString("- 画像推断: 散户+游资混合\n")
+		} else if perCapita < 20 {
+			b.WriteString("- 画像推断: 机构参与度中等\n")
+		} else {
+			b.WriteString("- 画像推断: 机构/主力主导（人均持股高）\n")
+		}
+	}
+
+	// Turnover rate analysis
+	klines, err := s.svc.FetchKlineAll(code, 0)
+	if err == nil && len(klines) >= 20 {
+		avgTurnover := 0.0
+		for i := len(klines) - 20; i < len(klines); i++ {
+			avgTurnover += klines[i].Volume
+		}
+		avgTurnover = avgTurnover / 20
+		if info.LiuTongGuBen > 0 {
+			avgTurnoverRate := avgTurnover / info.LiuTongGuBen * 100
+			b.WriteString(fmt.Sprintf("- 近20日平均换手率: %.2f%%\n", avgTurnoverRate))
+			if avgTurnoverRate > 5 {
+				b.WriteString("- 活跃度: 非常活跃（散户游资频繁交易）\n")
+			} else if avgTurnoverRate > 2 {
+				b.WriteString("- 活跃度: 活跃\n")
+			} else if avgTurnoverRate > 0.5 {
+				b.WriteString("- 活跃度: 正常\n")
+			} else {
+				b.WriteString("- 活跃度: 低（机构控盘或冷门股）\n")
+			}
+		}
+	}
+
 	return b.String()
 }
 
@@ -300,6 +491,33 @@ func extractParadigm(text, stockCode, stockName string) *paradigms.Paradigm {
 		p.Name = name
 	} else {
 		p.Name = fmt.Sprintf("%s 范式", stockName)
+	}
+
+	// Extract side (buy/sell) — check field, then ID, then name, then buy_conditions comment
+	p.Side = extractField(text, "side:")
+	if p.Side == "" {
+		// Check ID
+		idLower := strings.ToLower(p.ID)
+		if strings.Contains(idLower, "sell") || strings.Contains(idLower, "short") || strings.Contains(idLower, "bearish") {
+			p.Side = "sell"
+		}
+	}
+	if p.Side == "" {
+		// Check name
+		nameLower := strings.ToLower(p.Name)
+		if strings.Contains(nameLower, "卖出") || strings.Contains(nameLower, "做空") || strings.Contains(nameLower, "空头") || strings.Contains(nameLower, "减仓") || strings.Contains(nameLower, "sell") || strings.Contains(nameLower, "short") {
+			p.Side = "sell"
+		}
+	}
+	if p.Side == "" {
+		// Check buy_conditions comment for "做空" or "卖出"
+		bcComment := extractField(text, "buy_conditions:")
+		if strings.Contains(bcComment, "做空") || strings.Contains(bcComment, "卖出") || strings.Contains(bcComment, "空仓") {
+			p.Side = "sell"
+		}
+	}
+	if p.Side == "" {
+		p.Side = "buy"
 	}
 
 	// Extract context

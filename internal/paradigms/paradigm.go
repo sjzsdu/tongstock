@@ -6,6 +6,7 @@ import "time"
 type Paradigm struct {
 	ID          string            `json:"id"`
 	Name        string            `json:"name"`
+	Side        string            `json:"side"`            // buy / sell
 	Context     Context           `json:"context"`
 	StockCode   string            `json:"stock_code,omitempty"`
 	StockName   string            `json:"stock_name,omitempty"`
@@ -19,6 +20,11 @@ type Paradigm struct {
 	CreatedAt   time.Time         `json:"created_at"`
 	UpdatedAt   time.Time         `json:"updated_at"`
 	Tags        []string          `json:"tags,omitempty"`
+	// Review fields
+	ReviewStatus string   `json:"review_status,omitempty"` // pending / reviewed / verified / rejected
+	ReviewNote   string   `json:"review_note,omitempty"`
+	ReviewRating int      `json:"review_rating,omitempty"` // 1-5
+	ActualReturn *float64 `json:"actual_return,omitempty"` // actual return after the paradigm was created
 }
 
 type Context struct {

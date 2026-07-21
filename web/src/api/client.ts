@@ -20,6 +20,8 @@ import type {
   ParadigmAnalyzeResponse,
   ParadigmListResponse,
   ParadigmItem,
+  ParadigmEvaluateResponse,
+  ChatSessionInfo,
 } from '../types/api';
 
 const BASE = '';
@@ -273,6 +275,9 @@ export const api = {
       body: JSON.stringify({ stock_code: stockCode, stock_name: stockName, days }),
     }),
 
+  paradigmListByStock: (code: string) =>
+    fetchJSON<ParadigmListResponse>(`/api/paradigm/stock/${code}`),
+
   paradigmList: (marketCap?: string, shareholder?: string) => {
     const params = new URLSearchParams();
     if (marketCap) params.set('market_cap', marketCap);
@@ -283,6 +288,36 @@ export const api = {
 
   paradigmGet: (id: string) =>
     fetchJSON<ParadigmItem>(`/api/paradigm/${id}`),
+
+  paradigmEvaluate: (stockCode: string) =>
+    fetchJSON<ParadigmEvaluateResponse>('/api/paradigm/evaluate', {
+      method: 'POST',
+      body: JSON.stringify({ stock_code: stockCode }),
+    }),
+
+  paradigmHistory: () =>
+    fetchJSON<ParadigmListResponse>('/api/paradigm/history'),
+
+  paradigmReview: (id: string, review: { review_status: string; review_note?: string; review_rating?: number; actual_return?: number }) =>
+    fetchJSON<ParadigmItem>(`/api/paradigm/${id}/review`, {
+      method: 'PUT',
+      body: JSON.stringify(review),
+    }),
+
+  // Chat session persistence
+  chatSave: (id: string, stockCode: string, stockName: string, agent: string, messages: { role: string; content: string }[]) =>
+    fetchJSON<{ id: string }>('/api/agent/chat/session/save', {
+      method: 'POST',
+      body: JSON.stringify({ id, stock_code: stockCode, stock_name: stockName, agent, messages }),
+    }),
+
+  chatList: (stockCode?: string) => {
+    const params = stockCode ? `?stock_code=${stockCode}` : '';
+    return fetchJSON<{ sessions: ChatSessionInfo[] }>(`/api/agent/chat/session/list${params}`);
+  },
+
+  chatGet: (id: string) =>
+    fetchJSON<ChatSessionInfo>(`/api/agent/chat/session/${id}`),
 
   paradigmDelete: (id: string) =>
     fetchJSON<{ message: string }>(`/api/paradigm/${id}`, { method: 'DELETE' }),

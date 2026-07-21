@@ -471,6 +471,8 @@ export interface AgentDebateResponse {
 export interface ParadigmItem {
   id: string;
   name: string;
+  side: 'buy' | 'sell';
+  agent_text?: string;
   context: {
     market_cap: string;
     shareholder_dominant: string;
@@ -518,4 +520,27 @@ export interface ParadigmAnalyzeResponse {
 export interface ParadigmListResponse {
   paradigms: ParadigmItem[];
   total: number;
+}
+
+export interface EvaluatedCondition {
+  condition: string;
+  type: 'buy' | 'take_profit' | 'stop_loss';
+  status: 'met' | 'not_met' | 'unknown';
+  value?: string;
+}
+
+export interface ParadigmEvaluateResponse {
+  stock_code: string;
+  conditions: EvaluatedCondition[];
+  error?: string;
+}
+
+export interface ChatSessionInfo {
+  id: string;
+  stock_code: string;
+  stock_name?: string;
+  agent?: string;
+  messages: { role: string; content: string; timestamp?: string }[];
+  created_at: string;
+  updated_at: string;
 }

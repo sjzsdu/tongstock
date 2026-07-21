@@ -22,6 +22,22 @@ export default function AgentChatPanel({ stockCode, stockName, open, onClose }: 
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const messageEndRef = useRef<HTMLDivElement>(null);
+  const sessionIdRef = useRef(`chat:${stockCode}:${Date.now()}`);
+
+  // Auto-save when drawer closes with meaningful messages
+  const prevOpen = useRef(open);
+  useEffect(() => {
+    if (prevOpen.current && !open && messages.length > 1) {
+      const userMsgs = messages.filter(m => m.role === 'user' || m.role === 'assistant');
+      if (userMsgs.length > 0) {
+        api.chatSave(sessionIdRef.current, stockCode, stockName || '', selectedAgent, userMsgs).catch(() => {});
+      }
+    }
+    prevOpen.current = open;
+    if (open) {
+      sessionIdRef.current = `chat:${stockCode}:${Date.now()}`;
+    }
+  }, [open]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const scrollToBottom = useCallback(() => {
@@ -132,6 +148,33 @@ export default function AgentChatPanel({ stockCode, stockName, open, onClose }: 
       }
     >
       <div style={{ flex: 1, overflow: 'auto', paddingBottom: 8 }}>
+        {messages.length <= 1 && (
+          <div style={{ padding: '16px 12px 8px' }}>
+            <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+              常见问题：
+            </Typography.Text>
+            <Space wrap size={[6, 6]}>
+              {[
+                '公司的经营情况怎么样？',
+                '公司的主营业务包含哪些？',
+                '公司的股东情况和控股子公司？',
+                '当前的技术面信号有哪些？',
+                '这个位置可以买入吗？有什么风险？',
+                '和同行业公司相比估值如何？',
+              ].map(q => (
+                <Button
+                  key={q}
+                  size="small"
+                  type="default"
+                  style={{ fontSize: 12, height: 28, borderRadius: 14 }}
+                  onClick={() => { setInput(q); setTimeout(() => inputRef.current?.focus(), 0); }}
+                >
+                  {q}
+                </Button>
+              ))}
+            </Space>
+          </div>
+        )}
         {messages.map((msg, idx) => (
           <AgentChatMessage key={idx} role={msg.role} content={msg.content} error={msg.error} />
         ))}

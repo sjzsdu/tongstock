@@ -22,13 +22,14 @@ type EmbeddedAgent = pcwrap.EmbeddedAgent
 
 // AgentState holds the picoclaw runtime state for the server
 type AgentState struct {
-	mu       sync.Mutex
-	rt       *pcwrap.Runtime
-	runner   *pcwrap.DirectRunner
-	embedded []pcwrap.EmbeddedAgent
+	mu        sync.Mutex
+	rt        *pcwrap.Runtime
+	runner    *pcwrap.DirectRunner
+	embedded  []pcwrap.EmbeddedAgent
 	workspace string
-	started  time.Time
-	defaults AgentDefaults
+	started   time.Time
+	defaults  AgentDefaults
+	chatStore *ChatStore
 }
 
 type AgentDefaults struct {
@@ -169,7 +170,71 @@ func (s *Server) SetupAgentRoutes(api *gin.RouterGroup) {
 		agent.POST("/debate", s.handleAgentDebate)
 		agent.GET("/transcript", s.handleAgentTranscript)
 		agent.GET("/sessions", s.handleAgentSessions)
+		// Chat session persistence
+		agent.POST("/chat/session/save", s.handleChatSave)
+		agent.GET("/chat/session/list", s.handleChatList)
+		agent.GET("/chat/session/:id", s.handleChatGet)
 	}
+}
+
+type chatSaveRequest struct {
+	ID        string        `json:"id"`
+	StockCode string        `json:"stock_code"`
+	StockName string        `json:"stock_name,omitempty"`
+	Agent     string        `json:"agent,omitempty"`
+	Messages  []ChatMessage `json:"messages"`
+}
+
+func (s *Server) handleChatSave(c *gin.Context) {
+	if s.agentState == nil || s.agentState.chatStore == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "chat store not available"})
+		return
+	}
+	var req chatSaveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.ID == "" {
+		req.ID = fmt.Sprintf("chat:%s:%d", req.StockCode, time.Now().UnixMilli())
+	}
+	sess := &ChatSession{
+		ID:        req.ID,
+		StockCode: req.StockCode,
+		StockName: req.StockName,
+		Agent:     req.Agent,
+		Messages:  req.Messages,
+		CreatedAt: time.Now(),
+	}
+	if err := s.agentState.chatStore.Save(sess); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"id": sess.ID, "message": "saved"})
+}
+
+func (s *Server) handleChatList(c *gin.Context) {
+	if s.agentState == nil || s.agentState.chatStore == nil {
+		c.JSON(http.StatusOK, gin.H{"sessions": []ChatSession{}})
+		return
+	}
+	code := c.Query("stock_code")
+	list := s.agentState.chatStore.ListByStock(code)
+	c.JSON(http.StatusOK, gin.H{"sessions": list})
+}
+
+func (s *Server) handleChatGet(c *gin.Context) {
+	if s.agentState == nil || s.agentState.chatStore == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "chat store not available"})
+		return
+	}
+	id := c.Param("id")
+	sess, err := s.agentState.chatStore.Get(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, sess)
 }
 
 func (s *Server) handleAgentState(c *gin.Context) {
@@ -254,8 +319,11 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	}
 	defer runner.Close()
 
+	// Enrich message with stock data if a stock code is detected
+	enrichedMsg := s.enrichMessageWithData(req.Message)
+
 	response, err := runner.ProcessDirectContext(ctx, pcwrap.RunOptions{
-		Message:   req.Message,
+		Message:   enrichedMsg,
 		Agent:     req.Agent,
 		Session:   req.Session,
 		Workspace: s.agentState.workspace,
@@ -342,8 +410,11 @@ func (s *Server) handleAgentChatStream(c *gin.Context) {
 	}
 	defer streamRunner.Close()
 
+	// Enrich message with stock data if a stock code is detected
+	enrichedMsg := s.enrichMessageWithData(req.Message)
+
 	response, err := streamRunner.ProcessDirectContext(ctx, pcwrap.RunOptions{
-		Message:   req.Message,
+		Message:   enrichedMsg,
 		Agent:     req.Agent,
 		Session:   req.Session,
 		Workspace: s.agentState.workspace,
@@ -420,6 +491,89 @@ func (s *Server) isValidAgent(agentID string) bool {
 }
 
 // Helper functions
+
+// enrichMessageWithData detects stock codes in the message and prepends relevant data
+func (s *Server) enrichMessageWithData(msg string) string {
+	code := extractStockCode(msg)
+	if code == "" {
+		return msg
+	}
+
+	var data strings.Builder
+	data.WriteString(fmt.Sprintf("以下是股票 %s 的当前数据，请基于这些数据回答问题。\n\n", code))
+
+	// Fetch quote
+	if quote, err := s.fetchQuoteForAgent(code); err == nil {
+		data.WriteString("## 实时行情\n")
+		data.WriteString(quote)
+		data.WriteString("\n\n")
+	}
+
+	// Fetch indicator
+	if indicator, err := s.fetchIndicator(code, "day"); err == nil {
+		data.WriteString("## 技术指标\n")
+		data.WriteString(formatIndicatorForPrompt(indicator))
+		data.WriteString("\n\n")
+	}
+
+	// Fetch finance
+	if finance, err := s.fetchFinance(code); err == nil {
+		data.WriteString("## 基本面数据\n")
+		data.WriteString(formatFinanceForPrompt(finance))
+		data.WriteString("\n\n")
+	}
+
+	// Fetch shareholder profile
+	data.WriteString("## 股东结构画像\n")
+	data.WriteString(s.buildShareholderProfile(code))
+	data.WriteString("\n\n")
+
+	data.WriteString("## 用户问题\n")
+	data.WriteString(msg)
+
+	return data.String()
+}
+
+// extractStockCode extracts a 6-digit stock code from the message
+func extractStockCode(msg string) string {
+	// Look for patterns like "(300418)" or "300418" or "002074"
+	words := strings.FieldsFunc(msg, func(r rune) bool {
+		return r == ' ' || r == '(' || r == ')' || r == '（' || r == '）' || r == ',' || r == '，'
+	})
+	for _, w := range words {
+		if len(w) == 6 {
+			allDigit := true
+			for _, c := range w {
+				if c < '0' || c > '9' {
+					allDigit = false
+					break
+				}
+			}
+			if allDigit && isStockCode(w) {
+				return w
+			}
+		}
+	}
+	return ""
+}
+
+func (s *Server) fetchQuoteForAgent(code string) (string, error) {
+	quotes, err := s.svc.Client.GetQuote(code)
+	if err != nil {
+		return "", err
+	}
+	if len(quotes) == 0 {
+		return "", fmt.Errorf("no quote")
+	}
+	q := quotes[0]
+	change := q.Price - q.LastClose
+	changePct := 0.0
+	if q.LastClose > 0 {
+		changePct = change / q.LastClose * 100
+	}
+	return fmt.Sprintf("代码: %s | 名称: %s | 现价: %.2f | 涨跌: %.2f (%.2f%%) | 开盘: %.2f | 最高: %.2f | 最低: %.2f | 昨收: %.2f | 成交量: %.0f万手 | 成交额: %.0f万",
+		q.Code, q.Name, q.Price, change, changePct, q.Open, q.High, q.Low, q.LastClose, q.Volume/10000, q.Amount/10000), nil
+}
 
 func writeSSE(w io.Writer, flusher http.Flusher, event agentStreamEvent) {
 	payload, _ := json.Marshal(event)

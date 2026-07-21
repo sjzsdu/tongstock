@@ -75,6 +75,13 @@ func NewServer(svc *tdx.Service, historyDB *history.Store, watchlistDB *watchlis
 	}
 }
 
+func (s *Server) SetChatStore(store *ChatStore) {
+	if s.agentState == nil {
+		s.agentState = &AgentState{}
+	}
+	s.agentState.chatStore = store
+}
+
 // Stock search types
 type stockSearchMatch struct {
 	Code      string `json:"code"`
