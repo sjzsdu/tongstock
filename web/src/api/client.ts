@@ -13,6 +13,7 @@ import type {
   KlineSyncState,
   StockCompareResponse,
   AgentState,
+  AgentDiagnosticResponse,
   AgentChatResponse,
   AgentSessionsResponse,
   AgentTranscriptResponse,
@@ -247,6 +248,9 @@ export const api = {
   agentState: () =>
     fetchJSON<AgentState>('/api/agent/state'),
 
+  agentDiagnose: () =>
+    fetchJSON<AgentDiagnosticResponse>('/api/agent/diagnose'),
+
   agentChat: (message: string, agent?: string, session?: string) =>
     fetchJSON<AgentChatResponse>('/api/agent/chat', {
       method: 'POST',
@@ -269,10 +273,10 @@ export const api = {
     }),
 
   // Paradigm APIs
-  paradigmAnalyze: (stockCode: string, stockName?: string, days?: number) =>
+  paradigmAnalyze: (stockCode: string, stockName?: string, days?: number, forceRefresh = false) =>
     fetchJSON<ParadigmAnalyzeResponse>('/api/paradigm/analyze', {
       method: 'POST',
-      body: JSON.stringify({ stock_code: stockCode, stock_name: stockName, days }),
+      body: JSON.stringify({ stock_code: stockCode, stock_name: stockName, days, force_refresh: forceRefresh }),
     }),
 
   paradigmListByStock: (code: string) =>

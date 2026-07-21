@@ -417,6 +417,14 @@ export interface AgentState {
   agents: AgentInfo[];
 }
 
+export interface AgentDiagnosticResponse {
+  enabled: boolean;
+  ready: boolean;
+  checks: string[];
+  errors?: string[];
+  hints?: string[];
+}
+
 export interface AgentInfo {
   id: string;
   name: string;
@@ -497,6 +505,29 @@ export interface ParadigmItem {
     confidence: number;
   };
   rationale?: string;
+  source?: {
+    agent_version?: string;
+    model?: string;
+    kline_type?: string;
+    days?: number;
+    generated_at?: string;
+    data_window?: string;
+    cache_key?: string;
+  };
+  validation?: {
+    valid: boolean;
+    errors?: string[];
+    warnings?: string[];
+    auto_evaluable: number;
+    total_conditions: number;
+    auto_evaluable_ratio: number;
+    data_completeness: number;
+    reliability_label?: string;
+  };
+  review_status?: string;
+  review_note?: string;
+  review_rating?: number;
+  actual_return?: number;
   created_at: string;
   updated_at: string;
 }
@@ -514,6 +545,8 @@ export interface ParadigmAnalyzeResponse {
   evaluated_confirm?: EvaluatedItem[];
   evaluated_invalid?: EvaluatedItem[];
   agent_text: string;
+  cached?: boolean;
+  message?: string;
   error?: string;
 }
 

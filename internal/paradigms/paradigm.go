@@ -6,7 +6,7 @@ import "time"
 type Paradigm struct {
 	ID          string            `json:"id"`
 	Name        string            `json:"name"`
-	Side        string            `json:"side"`            // buy / sell
+	Side        string            `json:"side"` // buy / sell
 	Context     Context           `json:"context"`
 	StockCode   string            `json:"stock_code,omitempty"`
 	StockName   string            `json:"stock_name,omitempty"`
@@ -17,6 +17,8 @@ type Paradigm struct {
 	Expectation Expectation       `json:"expectation"`
 	Rationale   string            `json:"rationale,omitempty"`
 	AgentText   string            `json:"agent_text,omitempty"`
+	Source      ParadigmSource    `json:"source,omitempty"`
+	Validation  ValidationSummary `json:"validation,omitempty"`
 	CreatedAt   time.Time         `json:"created_at"`
 	UpdatedAt   time.Time         `json:"updated_at"`
 	Tags        []string          `json:"tags,omitempty"`
@@ -27,11 +29,32 @@ type Paradigm struct {
 	ActualReturn *float64 `json:"actual_return,omitempty"` // actual return after the paradigm was created
 }
 
+type ParadigmSource struct {
+	AgentVersion string `json:"agent_version,omitempty"`
+	Model        string `json:"model,omitempty"`
+	KlineType    string `json:"kline_type,omitempty"`
+	Days         int    `json:"days,omitempty"`
+	GeneratedAt  string `json:"generated_at,omitempty"`
+	DataWindow   string `json:"data_window,omitempty"`
+	CacheKey     string `json:"cache_key,omitempty"`
+}
+
+type ValidationSummary struct {
+	Valid              bool     `json:"valid"`
+	Errors             []string `json:"errors,omitempty"`
+	Warnings           []string `json:"warnings,omitempty"`
+	AutoEvaluable      int      `json:"auto_evaluable"`
+	TotalConditions    int      `json:"total_conditions"`
+	AutoEvaluableRatio float64  `json:"auto_evaluable_ratio"`
+	DataCompleteness   float64  `json:"data_completeness"`
+	ReliabilityLabel   string   `json:"reliability_label,omitempty"`
+}
+
 type Context struct {
-	MarketCap          string `json:"market_cap"`            // small / mid / large / mega
+	MarketCap           string `json:"market_cap"`           // small / mid / large / mega
 	ShareholderDominant string `json:"shareholder_dominant"` // retail / hot_money / foreign / institutional / state / mixed
-	Activity           string `json:"activity,omitempty"`    // active / normal / quiet
-	Trend              string `json:"trend,omitempty"`       // uptrend / downtrend / range / volatile
+	Activity            string `json:"activity,omitempty"`   // active / normal / quiet
+	Trend               string `json:"trend,omitempty"`      // uptrend / downtrend / range / volatile
 }
 
 type Condition struct {

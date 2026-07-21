@@ -155,6 +155,20 @@ func (s *Store) GetByStockCode(code string) *Paradigm {
 	return nil
 }
 
+func (s *Store) GetByCacheKey(cacheKey string) *Paradigm {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if cacheKey == "" {
+		return nil
+	}
+	for _, p := range s.paradigms {
+		if p.Source.CacheKey == cacheKey {
+			return p
+		}
+	}
+	return nil
+}
+
 func (s *Store) GetByStockCodeAndSide(code, side string) *Paradigm {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

@@ -41,10 +41,10 @@ type AgentDefaults struct {
 }
 
 type agentStateResponse struct {
-	StartedAt string         `json:"started_at"`
-	Workspace string         `json:"workspace"`
-	Defaults  AgentDefaults  `json:"defaults"`
-	Agents    []agentInfo    `json:"agents"`
+	StartedAt string        `json:"started_at"`
+	Workspace string        `json:"workspace"`
+	Defaults  AgentDefaults `json:"defaults"`
+	Agents    []agentInfo   `json:"agents"`
 }
 
 type agentInfo struct {
@@ -79,12 +79,12 @@ type agentTranscriptMessage struct {
 }
 
 type agentTranscriptResponse struct {
-	Session  string                      `json:"session"`
-	Agent    string                      `json:"agent,omitempty"`
-	Path     string                      `json:"path,omitempty"`
-	Messages []agentTranscriptMessage    `json:"messages,omitempty"`
-	Missing  bool                        `json:"missing,omitempty"`
-	Message  string                      `json:"message,omitempty"`
+	Session  string                   `json:"session"`
+	Agent    string                   `json:"agent,omitempty"`
+	Path     string                   `json:"path,omitempty"`
+	Messages []agentTranscriptMessage `json:"messages,omitempty"`
+	Missing  bool                     `json:"missing,omitempty"`
+	Message  string                   `json:"message,omitempty"`
 }
 
 type agentSessionInfo struct {
@@ -165,6 +165,7 @@ func (s *Server) SetupAgentRoutes(api *gin.RouterGroup) {
 	agent := api.Group("/agent")
 	{
 		agent.GET("/state", s.handleAgentState)
+		agent.GET("/diagnose", s.handleAgentDiagnose)
 		agent.POST("/chat", s.handleAgentChat)
 		agent.POST("/chat/stream", s.handleAgentChatStream)
 		agent.POST("/debate", s.handleAgentDebate)
@@ -175,6 +176,43 @@ func (s *Server) SetupAgentRoutes(api *gin.RouterGroup) {
 		agent.GET("/chat/session/list", s.handleChatList)
 		agent.GET("/chat/session/:id", s.handleChatGet)
 	}
+}
+
+type agentDiagnosticResponse struct {
+	Enabled bool     `json:"enabled"`
+	Ready   bool     `json:"ready"`
+	Checks  []string `json:"checks"`
+	Errors  []string `json:"errors,omitempty"`
+	Hints   []string `json:"hints,omitempty"`
+}
+
+func (s *Server) handleAgentDiagnose(c *gin.Context) {
+	resp := agentDiagnosticResponse{Enabled: s.agentState != nil, Ready: s.agentState != nil && s.agentState.runner != nil}
+	if s.agentState == nil {
+		resp.Errors = append(resp.Errors, "agent service is not initialized")
+		resp.Hints = append(resp.Hints, "在 ~/.tongstock/config.yaml 中启用 agent.enabled，并配置 picoclaw home/config/model")
+		c.JSON(http.StatusOK, resp)
+		return
+	}
+	resp.Checks = append(resp.Checks, "agent runtime initialized")
+	if s.agentState.workspace != "" {
+		resp.Checks = append(resp.Checks, "workspace: "+s.agentState.workspace)
+	}
+	if s.agentState.defaults.Model == "" {
+		resp.Hints = append(resp.Hints, "未显式配置模型，将使用 picoclaw 默认模型")
+	} else {
+		resp.Checks = append(resp.Checks, "model: "+s.agentState.defaults.Model)
+	}
+	if len(s.agentState.embedded) == 0 {
+		resp.Errors = append(resp.Errors, "no embedded stock agents loaded")
+		resp.Ready = false
+	} else {
+		resp.Checks = append(resp.Checks, fmt.Sprintf("embedded agents: %d", len(s.agentState.embedded)))
+	}
+	if s.agentState.chatStore == nil {
+		resp.Hints = append(resp.Hints, "chat session persistence is unavailable")
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 type chatSaveRequest struct {
@@ -240,7 +278,7 @@ func (s *Server) handleChatGet(c *gin.Context) {
 func (s *Server) handleAgentState(c *gin.Context) {
 	if s.agentState == nil {
 		c.JSON(http.StatusServiceUnavailable, agentStateResponse{
-			Agents:  []agentInfo{},
+			Agents:   []agentInfo{},
 			Defaults: AgentDefaults{},
 		})
 		return
@@ -799,27 +837,27 @@ func readFileTail(path string, maxBytes int64) (string, error) {
 // Debate types and handler
 
 type agentDebateRequest struct {
-	StockCode string `json:"stock_code"`
-	StockName string `json:"stock_name,omitempty"`
-	Topic     string `json:"topic,omitempty"`
+	StockCode string   `json:"stock_code"`
+	StockName string   `json:"stock_name,omitempty"`
+	Topic     string   `json:"topic,omitempty"`
 	Agents    []string `json:"agents,omitempty"`
 	Session   string   `json:"session,omitempty"`
 }
 
 type agentDebateParticipant struct {
-	Agent    string `json:"agent"`
+	Agent     string `json:"agent"`
 	AgentName string `json:"agent_name"`
-	Response string `json:"response"`
-	Error    string `json:"error,omitempty"`
+	Response  string `json:"response"`
+	Error     string `json:"error,omitempty"`
 }
 
 type agentDebateResponse struct {
-	StockCode   string                   `json:"stock_code"`
-	StockName   string                   `json:"stock_name,omitempty"`
-	Topic       string                   `json:"topic"`
+	StockCode    string                   `json:"stock_code"`
+	StockName    string                   `json:"stock_name,omitempty"`
+	Topic        string                   `json:"topic"`
 	Participants []agentDebateParticipant `json:"participants"`
-	Summary     string                   `json:"summary,omitempty"`
-	Error       string                   `json:"error,omitempty"`
+	Summary      string                   `json:"summary,omitempty"`
+	Error        string                   `json:"error,omitempty"`
 }
 
 func (s *Server) handleAgentDebate(c *gin.Context) {

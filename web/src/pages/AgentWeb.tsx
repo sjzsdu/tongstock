@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
+  Alert,
   Empty,
   Layout,
   Select,
@@ -13,6 +14,7 @@ import AgentChatMessage from '../components/AgentChatMessage';
 import { api } from '../api/client';
 import { readSSE } from '../lib/sse';
 import type { AgentInfo, AgentSessionInfo } from '../types/api';
+import type { AgentDiagnosticResponse } from '../types/api';
 
 type ChatMessage = { role: string; content: string; error?: boolean };
 
@@ -34,6 +36,7 @@ export default function AgentWeb() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [diagnostic, setDiagnostic] = useState<AgentDiagnosticResponse | null>(null);
   const messageEndRef = useRef<HTMLDivElement>(null);
 
   const filteredSessions = useMemo(
@@ -48,6 +51,10 @@ export default function AgentWeb() {
 
   useEffect(() => {
     (async () => {
+      try {
+        const diag = await api.agentDiagnose();
+        setDiagnostic(diag);
+      } catch {}
       try {
         const state = await api.agentState();
         setAgents(state.agents || []);
@@ -182,6 +189,15 @@ export default function AgentWeb() {
       </Sider>
 
       <Content style={{ display: 'flex', flexDirection: 'column', background: '#0b0f19' }}>
+        {diagnostic && !diagnostic.ready && (
+          <Alert
+            type="warning"
+            showIcon
+            message="Agent 服务未完全就绪"
+            description={[...(diagnostic.errors || []), ...(diagnostic.hints || [])].join('；')}
+            style={{ margin: 12 }}
+          />
+        )}
         <div style={{ flex: 1, overflow: 'auto', padding: '16px 0' }}>
           {messages.length === 0 && (
             <Empty description="开始一段新对话" style={{ marginTop: 80 }} />

@@ -21,10 +21,11 @@ var ParadigmStore *paradigms.Store
 var numberRangeRe = regexp.MustCompile(`(\d+(?:\.\d+)?)\s*[-~至到]\s*(\d+(?:\.\d+)?)\s*%?`)
 
 type paradigmAnalyzeRequest struct {
-	StockCode string `json:"stock_code"`
-	StockName string `json:"stock_name,omitempty"`
-	KlineType string `json:"kline_type,omitempty"` // day, week, etc.
-	Days      int    `json:"days,omitempty"`       // how many days of data to analyze
+	StockCode    string `json:"stock_code"`
+	StockName    string `json:"stock_name,omitempty"`
+	KlineType    string `json:"kline_type,omitempty"` // day, week, etc.
+	Days         int    `json:"days,omitempty"`       // how many days of data to analyze
+	ForceRefresh bool   `json:"force_refresh,omitempty"`
 }
 
 type paradigmAnalyzeResponse struct {
@@ -34,6 +35,8 @@ type paradigmAnalyzeResponse struct {
 	EvaluatedConfirm []paradigms.EvaluatedItem `json:"evaluated_confirm,omitempty"`
 	EvaluatedInvalid []paradigms.EvaluatedItem `json:"evaluated_invalid,omitempty"`
 	AgentText        string                    `json:"agent_text"`
+	Cached           bool                      `json:"cached,omitempty"`
+	Message          string                    `json:"message,omitempty"`
 	Error            string                    `json:"error,omitempty"`
 }
 
@@ -117,19 +120,31 @@ func (s *Server) handleParadigmAnalyze(c *gin.Context) {
 	if req.Days == 0 {
 		req.Days = 120
 	}
+	if req.KlineType == "" {
+		req.KlineType = "day"
+	}
+	cacheKey := paradigmCacheKey(req.StockCode, req.KlineType, req.Days, "stock-paradigm-miner")
 
 	// Check cache: return existing paradigm for this stock if available
-	if existing := ParadigmStore.GetByStockCode(req.StockCode); existing != nil {
-		evalConfirm, evalInvalid := s.evaluateConditions(req.StockCode, existing)
-		c.JSON(http.StatusOK, paradigmAnalyzeResponse{
-			StockCode:        req.StockCode,
-			StockName:        req.StockName,
-			Paradigm:         existing,
-			EvaluatedConfirm: evalConfirm,
-			EvaluatedInvalid: evalInvalid,
-			AgentText:        existing.AgentText,
-		})
-		return
+	if !req.ForceRefresh {
+		existing := ParadigmStore.GetByCacheKey(cacheKey)
+		if existing == nil {
+			existing = ParadigmStore.GetByStockCode(req.StockCode)
+		}
+		if existing != nil {
+			evalConfirm, evalInvalid := s.evaluateConditions(req.StockCode, existing)
+			c.JSON(http.StatusOK, paradigmAnalyzeResponse{
+				StockCode:        req.StockCode,
+				StockName:        req.StockName,
+				Paradigm:         existing,
+				EvaluatedConfirm: evalConfirm,
+				EvaluatedInvalid: evalInvalid,
+				AgentText:        existing.AgentText,
+				Cached:           true,
+				Message:          "返回缓存范式。传 force_refresh=true 可重新分析。",
+			})
+			return
+		}
 	}
 
 	// Build data prompt from existing APIs
@@ -169,7 +184,13 @@ func (s *Server) handleParadigmAnalyze(c *gin.Context) {
 	paradigm := extractParadigm(agentResp, req.StockCode, req.StockName)
 	if paradigm != nil {
 		paradigm.AgentText = agentResp
-		ParadigmStore.Save(paradigm)
+		paradigm.Source = paradigms.ParadigmSource{AgentVersion: "stock-paradigm-miner", Model: s.agentState.defaults.Model, KlineType: req.KlineType, Days: req.Days, GeneratedAt: time.Now().Format(time.RFC3339), CacheKey: cacheKey}
+		paradigm.Validation = validateParadigm(paradigm)
+		if !paradigm.Validation.Valid {
+			c.JSON(http.StatusOK, paradigmAnalyzeResponse{StockCode: req.StockCode, StockName: req.StockName, Paradigm: paradigm, AgentText: agentResp, Error: strings.Join(paradigm.Validation.Errors, "; ")})
+			return
+		}
+		_ = ParadigmStore.Save(paradigm)
 	}
 
 	// Evaluate confirmations and invalidations against current data
@@ -330,8 +351,30 @@ func (s *Server) buildParadigmPrompt(code, name string, days int) string {
 	profile := s.buildShareholderProfile(code)
 	b.WriteString(profile)
 
-	b.WriteString("\n请按照你的标准分析流程，输出完整的条件范式。")
+	b.WriteString(`
+请先输出完整分析，然后必须在最后输出一个可机器解析的 JSON 代码块，格式如下：
+
+` + "```json" + `
+{
+  "id": "paradigm-股票代码-短名称",
+  "name": "范式名称",
+  "side": "buy",
+  "context": {"market_cap":"small|mid|large|mega", "shareholder_dominant":"retail|hot_money|foreign|institutional|state|mixed", "activity":"active|normal|quiet", "trend":"uptrend|downtrend|range|volatile"},
+  "buy_conditions": [{"indicator":"close", "operator":"gt", "value":"MA20"}],
+  "sell_conditions": {"take_profit":[{"indicator":"close", "operator":"gt", "value":"12.30"}], "stop_loss":[{"indicator":"close", "operator":"lt", "value":"MA60"}]},
+  "confirmations": ["确认项"],
+  "invalidations": ["失效规则"],
+  "expectation": {"holding_period":"2-6周", "expected_return":"8-15%", "risk_reward_ratio":"2:1", "win_rate":0, "sample_size":0, "confidence":0.6},
+  "rationale": "范式逻辑"
+}
+` + "```" + `
+
+要求：JSON 中条件必须尽量结构化。operator 只使用 gt、lt、between、near、cross_above、cross_below、describe。不要输出投资建议承诺。`)
 	return b.String()
+}
+
+func paradigmCacheKey(stockCode, klineType string, days int, agentVersion string) string {
+	return fmt.Sprintf("%s:%s:%d:%s", stockCode, klineType, days, agentVersion)
 }
 
 func (s *Server) buildShareholderProfile(code string) string {
@@ -471,6 +514,9 @@ func extractParadigm(text, stockCode, stockName string) *paradigms.Paradigm {
 	if text == "" {
 		return nil
 	}
+	if p := extractParadigmJSON(text, stockCode, stockName); p != nil {
+		return p
+	}
 
 	p := &paradigms.Paradigm{
 		StockCode: stockCode,
@@ -568,6 +614,90 @@ func extractParadigm(text, stockCode, stockName string) *paradigms.Paradigm {
 	}
 
 	return p
+}
+
+func extractParadigmJSON(text, stockCode, stockName string) *paradigms.Paradigm {
+	blocks := regexp.MustCompile("(?s)```(?:json)?\\s*(\\{.*?\\})\\s*```").FindAllStringSubmatch(text, -1)
+	try := make([]string, 0, len(blocks)+1)
+	for _, b := range blocks {
+		if len(b) > 1 {
+			try = append(try, b[1])
+		}
+	}
+	if start := strings.LastIndex(text, "{"); start >= 0 {
+		try = append(try, text[start:])
+	}
+	for _, raw := range try {
+		var p paradigms.Paradigm
+		if err := json.Unmarshal([]byte(raw), &p); err != nil {
+			continue
+		}
+		if p.ID == "" {
+			p.ID = fmt.Sprintf("paradigm-%s-%d", stockCode, time.Now().UnixMilli())
+		}
+		if p.Name == "" {
+			p.Name = fmt.Sprintf("%s 范式", stockName)
+		}
+		p.StockCode = stockCode
+		p.StockName = stockName
+		if p.Side == "" {
+			p.Side = "buy"
+		}
+		return &p
+	}
+	return nil
+}
+
+func validateParadigm(p *paradigms.Paradigm) paradigms.ValidationSummary {
+	s := paradigms.ValidationSummary{Valid: true, DataCompleteness: 1}
+	if p == nil {
+		return paradigms.ValidationSummary{Valid: false, Errors: []string{"empty paradigm"}}
+	}
+	if p.ID == "" {
+		s.Errors = append(s.Errors, "id is required")
+	}
+	if p.Name == "" {
+		s.Errors = append(s.Errors, "name is required")
+	}
+	if p.Side != "buy" && p.Side != "sell" {
+		s.Errors = append(s.Errors, "side must be buy or sell")
+	}
+	if len(p.BuyConds) == 0 {
+		s.Warnings = append(s.Warnings, "buy_conditions is empty")
+	}
+	conds := append([]paradigms.Condition{}, p.BuyConds...)
+	conds = append(conds, p.SellConds.TakeProfit...)
+	conds = append(conds, p.SellConds.StopLoss...)
+	s.TotalConditions = len(conds)
+	for _, c := range conds {
+		if c.Indicator == "" {
+			s.Warnings = append(s.Warnings, "condition indicator is empty")
+			continue
+		}
+		if isAutoEvaluableCondition(c) {
+			s.AutoEvaluable++
+		}
+	}
+	if s.TotalConditions > 0 {
+		s.AutoEvaluableRatio = float64(s.AutoEvaluable) / float64(s.TotalConditions)
+	}
+	if len(s.Errors) > 0 {
+		s.Valid = false
+	}
+	s.ReliabilityLabel = "low"
+	if s.Valid && s.AutoEvaluableRatio >= 0.7 {
+		s.ReliabilityLabel = "high"
+	} else if s.Valid && s.AutoEvaluableRatio >= 0.4 {
+		s.ReliabilityLabel = "medium"
+	}
+	return s
+}
+
+func isAutoEvaluableCondition(c paradigms.Condition) bool {
+	ind := normalizeIndicator(c.Indicator)
+	val := normalizeIndicator(c.Value)
+	supported := map[string]bool{"close": true, "volume": true, "ma5": true, "ma10": true, "ma20": true, "ma60": true, "rsi14": true, "macd_dif": true}
+	return supported[ind] || supported[val] || c.Operator == "describe"
 }
 
 func extractField(text, field string) string {
@@ -785,6 +915,17 @@ func (s *Server) fetchCurrentIndicator(stockCode string) map[string]float64 {
 	result["volume"] = last.Volume
 
 	// Calculate simple MA60
+	for _, period := range []int{5, 10, 20, 60} {
+		if len(klines) >= period {
+			sum := 0.0
+			for i := len(klines) - period; i < len(klines); i++ {
+				sum += klines[i].Close
+			}
+			result[fmt.Sprintf("ma%d", period)] = sum / float64(period)
+		}
+	}
+
+	// Backward-compatible explicit MA60 key
 	if len(klines) >= 60 {
 		sum := 0.0
 		for i := len(klines) - 60; i < len(klines); i++ {

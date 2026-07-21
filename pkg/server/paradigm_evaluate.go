@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/sjzsdu/tongstock/internal/paradigms"
@@ -9,10 +10,10 @@ import (
 
 // EvaluatedCondition is a paradigm condition evaluated against stock data
 type EvaluatedCondition struct {
-	Condition string `json:"condition"`   // e.g. "MA20 > MA10"
-	Type      string `json:"type"`        // buy / take_profit / stop_loss
-	Status    string `json:"status"`      // met / not_met / unknown
-	Value     string `json:"value,omitempty"`  // current stock value, e.g. "MA20=12.34, MA10=12.28"
+	Condition string `json:"condition"`       // e.g. "MA20 > MA10"
+	Type      string `json:"type"`            // buy / take_profit / stop_loss
+	Status    string `json:"status"`          // met / not_met / unknown
+	Value     string `json:"value,omitempty"` // current stock value, e.g. "MA20=12.34, MA10=12.28"
 }
 
 // evaluateParadigmConditions evaluates all paradigm conditions against current stock data
@@ -60,6 +61,9 @@ func formatConditionText(c paradigms.Condition) string {
 }
 
 func evaluateSingleCondition(ec *EvaluatedCondition, c paradigms.Condition, indicator map[string]float64) {
+	if evaluateStructuredCondition(ec, c, indicator) {
+		return
+	}
 	text := strings.ToLower(ec.Condition)
 	close, hasClose := indicator["close"]
 
@@ -185,4 +189,110 @@ func evaluateSingleCondition(ec *EvaluatedCondition, c paradigms.Condition, indi
 
 	ec.Status = "unknown"
 	ec.Value = "无法自动匹配"
+}
+
+func evaluateStructuredCondition(ec *EvaluatedCondition, c paradigms.Condition, indicator map[string]float64) bool {
+	op := strings.ToLower(strings.TrimSpace(c.Operator))
+	if op == "" || op == "describe" {
+		return false
+	}
+	leftName := normalizeIndicator(c.Indicator)
+	left, ok := indicator[leftName]
+	if !ok {
+		return false
+	}
+	right, rightLabel, ok := resolveConditionValue(c.Value, indicator)
+	if !ok && op != "between" {
+		return false
+	}
+	ec.Value = fmt.Sprintf("%s=%.4f, %s=%.4f", leftName, left, rightLabel, right)
+	switch op {
+	case "gt", ">":
+		ec.Status = boolStatus(left > right)
+	case "lt", "<":
+		ec.Status = boolStatus(left < right)
+	case "near":
+		tolerance := 0.03
+		if right != 0 && absFloat(left-right)/absFloat(right) <= tolerance {
+			ec.Status = "met"
+		} else {
+			ec.Status = "not_met"
+		}
+	case "between":
+		lo, hi, ok := parseRange(c.Value)
+		if !ok {
+			return false
+		}
+		ec.Value = fmt.Sprintf("%s=%.4f, range=%.4f-%.4f", leftName, left, lo, hi)
+		ec.Status = boolStatus(left >= lo && left <= hi)
+	case "cross_above":
+		ec.Status = boolStatus(left > right)
+	case "cross_below":
+		ec.Status = boolStatus(left < right)
+	default:
+		return false
+	}
+	return true
+}
+
+func normalizeIndicator(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.ReplaceAll(s, ".", "_")
+	s = strings.ReplaceAll(s, " ", "")
+	s = strings.Trim(s, "\"'`：:")
+	switch s {
+	case "price", "current", "当前价", "收盘价", "closeprice":
+		return "close"
+	case "成交量", "vol":
+		return "volume"
+	case "dif", "macd.dif", "macd_dif":
+		return "macd_dif"
+	case "rsi", "rsi6", "rsi14":
+		return "rsi14"
+	}
+	return s
+}
+
+func resolveConditionValue(v string, indicator map[string]float64) (float64, string, bool) {
+	label := normalizeIndicator(v)
+	if val, ok := indicator[label]; ok {
+		return val, label, true
+	}
+	v = strings.Trim(strings.TrimSpace(v), "%")
+	f, err := strconv.ParseFloat(v, 64)
+	if err == nil {
+		return f, v, true
+	}
+	return 0, label, false
+}
+
+func parseRange(v string) (float64, float64, bool) {
+	v = strings.ReplaceAll(v, "至", "-")
+	v = strings.ReplaceAll(v, "~", "-")
+	parts := strings.Split(v, "-")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	a, err1 := strconv.ParseFloat(strings.TrimSpace(strings.Trim(parts[0], "%")), 64)
+	b, err2 := strconv.ParseFloat(strings.TrimSpace(strings.Trim(parts[1], "%")), 64)
+	if err1 != nil || err2 != nil {
+		return 0, 0, false
+	}
+	if a > b {
+		a, b = b, a
+	}
+	return a, b, true
+}
+
+func boolStatus(v bool) string {
+	if v {
+		return "met"
+	}
+	return "not_met"
+}
+func absFloat(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }

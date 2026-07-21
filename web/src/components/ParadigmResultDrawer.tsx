@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Typography, Tag, Descriptions, Spin, Empty, Space, Alert, Tooltip, Tabs, Table } from 'antd';
+import { Typography, Tag, Descriptions, Spin, Empty, Space, Alert, Tooltip, Tabs, Table, Button, Input, InputNumber, Select, message } from 'antd';
 import { CheckCircleFilled, CloseCircleFilled, QuestionCircleFilled, QuestionCircleOutlined } from '@ant-design/icons';
 import MarkdownRenderer from './MarkdownRenderer';
 import ResizableDrawer from './ResizableDrawer';
@@ -87,8 +87,16 @@ function EvaluatedList({ items, type }: { items: EvaluatedItem[]; type: 'confirm
 }
 
 function ParadigmInfo({ paradigm }: { paradigm: ParadigmItem }) {
+  const reliability = paradigm.validation?.reliability_label || 'unknown';
+  const reliabilityColor: Record<string, string> = { high: 'green', medium: 'orange', low: 'red', unknown: 'default' };
   return (
     <Space direction="vertical" size={12} style={{ display: 'flex' }}>
+      <Alert
+        type="warning"
+        showIcon
+        message="仅供研究，不构成投资建议"
+        description="AI 范式需要结合数据完整性、可自动验证比例和人工复盘结果使用。市场有风险，交易需自担风险。"
+      />
       <Descriptions bordered column={1} size="small">
         <Descriptions.Item label="范式名称">{paradigm.name}</Descriptions.Item>
         <Descriptions.Item label="范式 ID">
@@ -97,7 +105,29 @@ function ParadigmInfo({ paradigm }: { paradigm: ParadigmItem }) {
         <Descriptions.Item label="股票">
           {paradigm.stock_name}（{paradigm.stock_code}）
         </Descriptions.Item>
+        <Descriptions.Item label="生成信息">
+          <Space wrap>
+            {paradigm.source?.agent_version && <Tag>{paradigm.source.agent_version}</Tag>}
+            {paradigm.source?.kline_type && <Tag>K线: {paradigm.source.kline_type}</Tag>}
+            {paradigm.source?.days && <Tag>窗口: {paradigm.source.days}日</Tag>}
+            {paradigm.source?.generated_at && <Tag>生成: {new Date(paradigm.source.generated_at).toLocaleString()}</Tag>}
+          </Space>
+        </Descriptions.Item>
+        <Descriptions.Item label="可靠性">
+          <Space wrap>
+            <Tag color={reliabilityColor[reliability]}>{reliability}</Tag>
+            {paradigm.validation && (
+              <Tag>自动可验: {paradigm.validation.auto_evaluable}/{paradigm.validation.total_conditions} ({(paradigm.validation.auto_evaluable_ratio * 100).toFixed(0)}%)</Tag>
+            )}
+            {paradigm.review_status && <Tag>复盘: {paradigm.review_status}</Tag>}
+            {typeof paradigm.actual_return === 'number' && <Tag color={paradigm.actual_return >= 0 ? 'red' : 'green'}>实际收益: {paradigm.actual_return.toFixed(2)}%</Tag>}
+          </Space>
+        </Descriptions.Item>
       </Descriptions>
+
+      {paradigm.validation?.warnings && paradigm.validation.warnings.length > 0 && (
+        <Alert type="info" message="校验提示" description={paradigm.validation.warnings.join('；')} />
+      )}
 
       <div>
         <Typography.Text strong style={{ marginRight: 8 }}>适用上下文：</Typography.Text>
@@ -219,6 +249,56 @@ function AnalysisTab({ agentText, stockCode, stockName }: { agentText: string; s
   );
 }
 
+function ReviewTab({ paradigm }: { paradigm: ParadigmItem }) {
+  const [status, setStatus] = useState(paradigm.review_status || 'pending');
+  const [note, setNote] = useState(paradigm.review_note || '');
+  const [rating, setRating] = useState<number | null>(paradigm.review_rating || null);
+  const [actualReturn, setActualReturn] = useState<number | null>(typeof paradigm.actual_return === 'number' ? paradigm.actual_return : null);
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.paradigmReview(paradigm.id, {
+        review_status: status,
+        review_note: note,
+        review_rating: rating || undefined,
+        actual_return: actualReturn ?? undefined,
+      });
+      message.success('复盘已保存');
+    } catch (err) {
+      message.error(String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Space direction="vertical" size={12} style={{ display: 'flex' }}>
+      <Alert type="info" showIcon message="复盘闭环" description="记录实际收益和主观评分后，可以逐步统计范式质量。" />
+      <Select
+        value={status}
+        onChange={setStatus}
+        options={[
+          { value: 'pending', label: '待复盘' },
+          { value: 'reviewed', label: '已复盘' },
+          { value: 'verified', label: '验证有效' },
+          { value: 'rejected', label: '验证无效' },
+        ]}
+        style={{ width: 180 }}
+      />
+      <Space>
+        <span>评分</span>
+        <InputNumber min={1} max={5} value={rating} onChange={v => setRating(v)} />
+        <span>实际收益%</span>
+        <InputNumber value={actualReturn} precision={2} onChange={v => setActualReturn(v)} />
+      </Space>
+      <Input.TextArea rows={4} value={note} onChange={e => setNote(e.target.value)} placeholder="记录买卖点、执行偏差、有效/失效原因..." />
+      <Button type="primary" loading={saving} onClick={save}>保存复盘</Button>
+    </Space>
+  );
+}
+
 function SideContent({ paradigm, evaluatedConfirm, evaluatedInvalid, agentText, stockCode, stockName, side }: {
   paradigm: ParadigmItem | null;
   evaluatedConfirm?: EvaluatedItem[];
@@ -288,6 +368,11 @@ function SideContent({ paradigm, evaluatedConfirm, evaluatedInvalid, agentText, 
           label: '对照',
           children: <AnalysisTab agentText={agentText} stockCode={stockCode} stockName={stockName} />,
         },
+        ...(paradigm ? [{
+          key: 'review',
+          label: '复盘',
+          children: <ReviewTab paradigm={paradigm} />,
+        }] : []),
       ]}
     />
   );

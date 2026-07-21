@@ -13,6 +13,7 @@ import {
   FundOutlined,
   GiftOutlined,
   InfoCircleOutlined,
+  SyncOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
 import {
@@ -720,6 +721,32 @@ export default function StockDetail() {
               }}
             >
               范式挖掘
+            </Button>
+            <Button
+              icon={<SyncOutlined />}
+              onClick={async () => {
+                setParadigmDrawerOpen(true);
+                setParadigmLoading(true);
+                setParadigmResult(null);
+                setParadigmAgentText('正在绕过缓存重新分析...');
+                try {
+                  const result = await api.paradigmAnalyze(code, quote?.Name, undefined, true);
+                  if (result.error) {
+                    setParadigmAgentText(result.error);
+                  } else {
+                    setParadigmResult(result.paradigm || null);
+                    setParadigmEvalConfirm(result.evaluated_confirm || []);
+                    setParadigmEvalInvalid(result.evaluated_invalid || []);
+                    setParadigmAgentText(result.agent_text || '');
+                  }
+                } catch (err) {
+                  setParadigmAgentText(String(err));
+                } finally {
+                  setParadigmLoading(false);
+                }
+              }}
+            >
+              重新挖掘
             </Button>
           </Flex>
         </Card>
