@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -50,6 +51,7 @@ func (s *Server) SetupParadigmRoutes(api *gin.RouterGroup) {
 	{
 		p.POST("/analyze", s.handleParadigmAnalyze)
 		p.POST("/evaluate", s.handleParadigmEvaluate)
+		p.GET("/backtest", s.handleParadigmBacktest)
 		p.GET("/list", s.handleParadigmList)
 		p.GET("/alerts", s.handleParadigmAlerts)
 		p.GET("/stats", s.handleParadigmStats)
@@ -73,12 +75,32 @@ type paradigmAlert struct {
 	Severity   string `json:"severity"`
 }
 
-func (s *Server) handleParadigmAlerts(c *gin.Context) {
-	if ParadigmStore == nil {
-		c.JSON(http.StatusOK, gin.H{"alerts": []paradigmAlert{}, "total": 0})
-		return
+func (s *Server) StartParadigmAlertScanner(interval time.Duration) {
+	if interval <= 0 {
+		interval = 5 * time.Minute
 	}
-	code := c.Query("stock_code")
+	go func() {
+		s.refreshParadigmAlertCache()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			s.refreshParadigmAlertCache()
+		}
+	}()
+}
+
+func (s *Server) refreshParadigmAlertCache() {
+	alerts := s.collectParadigmAlerts("")
+	s.paradigmAlertMu.Lock()
+	s.paradigmAlertCache = alerts
+	s.paradigmAlertLastScan = time.Now()
+	s.paradigmAlertMu.Unlock()
+}
+
+func (s *Server) collectParadigmAlerts(code string) []paradigmAlert {
+	if ParadigmStore == nil {
+		return []paradigmAlert{}
+	}
 	var list []*paradigms.Paradigm
 	if code != "" {
 		list = ParadigmStore.ListByStockCode(code)
@@ -101,7 +123,23 @@ func (s *Server) handleParadigmAlerts(c *gin.Context) {
 			alerts = append(alerts, paradigmAlert{ParadigmID: p.ID, StockCode: p.StockCode, StockName: p.StockName, Side: p.Side, Type: ec.Type, Condition: ec.Condition, Status: ec.Status, Value: ec.Value, Severity: severity})
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"alerts": alerts, "total": len(alerts)})
+	return alerts
+}
+
+func (s *Server) handleParadigmAlerts(c *gin.Context) {
+	code := c.Query("stock_code")
+	if code == "" {
+		s.paradigmAlertMu.RLock()
+		cached := append([]paradigmAlert{}, s.paradigmAlertCache...)
+		lastScan := s.paradigmAlertLastScan
+		s.paradigmAlertMu.RUnlock()
+		if !lastScan.IsZero() && c.Query("live") != "true" {
+			c.JSON(http.StatusOK, gin.H{"alerts": cached, "total": len(cached), "last_scan": lastScan.Format(time.RFC3339), "cached": true})
+			return
+		}
+	}
+	alerts := s.collectParadigmAlerts(code)
+	c.JSON(http.StatusOK, gin.H{"alerts": alerts, "total": len(alerts), "cached": false})
 }
 
 type paradigmStatsResponse struct {
@@ -113,6 +151,149 @@ type paradigmStatsResponse struct {
 	AverageReturn   float64 `json:"average_return"`
 	AverageRating   float64 `json:"average_rating"`
 	HighReliability int     `json:"high_reliability"`
+}
+
+type paradigmBacktestResponse struct {
+	ParadigmID  string  `json:"paradigm_id"`
+	StockCode   string  `json:"stock_code"`
+	SampleSize  int     `json:"sample_size"`
+	WinRate5    float64 `json:"win_rate_5"`
+	WinRate10   float64 `json:"win_rate_10"`
+	WinRate20   float64 `json:"win_rate_20"`
+	AvgReturn5  float64 `json:"avg_return_5"`
+	AvgReturn10 float64 `json:"avg_return_10"`
+	AvgReturn20 float64 `json:"avg_return_20"`
+	MaxDrawdown float64 `json:"max_drawdown"`
+	Error       string  `json:"error,omitempty"`
+}
+
+func (s *Server) handleParadigmBacktest(c *gin.Context) {
+	if ParadigmStore == nil {
+		c.JSON(http.StatusOK, []paradigmBacktestResponse{})
+		return
+	}
+	id := c.Query("id")
+	stockCode := c.Query("stock_code")
+	var list []*paradigms.Paradigm
+	if id != "" {
+		p, err := ParadigmStore.Get(id)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		list = []*paradigms.Paradigm{p}
+	} else if stockCode != "" {
+		list = ParadigmStore.ListByStockCode(stockCode)
+	} else {
+		list = ParadigmStore.List()
+	}
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if len(list) > limit {
+		list = list[:limit]
+	}
+	out := make([]paradigmBacktestResponse, 0, len(list))
+	for _, p := range list {
+		out = append(out, s.backtestParadigm(p))
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+func (s *Server) backtestParadigm(p *paradigms.Paradigm) paradigmBacktestResponse {
+	resp := paradigmBacktestResponse{ParadigmID: p.ID, StockCode: p.StockCode}
+	klines, err := s.svc.FetchKlineAll(p.StockCode, 0)
+	if err != nil || len(klines) < 80 {
+		resp.Error = fmt.Sprintf("kline data unavailable: %v", err)
+		return resp
+	}
+	start := 60
+	var sum5, sum10, sum20 float64
+	var wins5, wins10, wins20 int
+	maxDD := 0.0
+	for i := start; i < len(klines)-20; i++ {
+		ind := indicatorAt(klines, i)
+		matched := len(p.BuyConds) > 0
+		for _, cond := range p.BuyConds {
+			ec := EvaluatedCondition{Condition: formatConditionText(cond), Type: "buy"}
+			evaluateSingleCondition(&ec, cond, ind)
+			if ec.Status != "met" {
+				matched = false
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		entry := klines[i].Close
+		ret5 := percentReturn(entry, klines[i+5].Close)
+		ret10 := percentReturn(entry, klines[i+10].Close)
+		ret20 := percentReturn(entry, klines[i+20].Close)
+		sum5 += ret5
+		sum10 += ret10
+		sum20 += ret20
+		if ret5 > 0 {
+			wins5++
+		}
+		if ret10 > 0 {
+			wins10++
+		}
+		if ret20 > 0 {
+			wins20++
+		}
+		for j := i + 1; j <= i+20; j++ {
+			dd := percentReturn(entry, klines[j].Low)
+			if dd < maxDD {
+				maxDD = dd
+			}
+		}
+		resp.SampleSize++
+	}
+	if resp.SampleSize > 0 {
+		n := float64(resp.SampleSize)
+		resp.AvgReturn5 = sum5 / n
+		resp.AvgReturn10 = sum10 / n
+		resp.AvgReturn20 = sum20 / n
+		resp.WinRate5 = float64(wins5) / n
+		resp.WinRate10 = float64(wins10) / n
+		resp.WinRate20 = float64(wins20) / n
+		resp.MaxDrawdown = maxDD
+	}
+	return resp
+}
+
+func indicatorAt(klines []*protocol.Kline, idx int) map[string]float64 {
+	ind := map[string]float64{"close": klines[idx].Close, "volume": klines[idx].Volume}
+	if idx > 0 {
+		ind["prev_close"] = klines[idx-1].Close
+		ind["prev_volume"] = klines[idx-1].Volume
+	}
+	for _, period := range []int{5, 10, 20, 60} {
+		if idx+1 >= period {
+			ind[fmt.Sprintf("ma%d", period)] = calcSMA(klines, period, idx)
+		}
+		if idx >= period {
+			ind[fmt.Sprintf("prev_ma%d", period)] = calcSMA(klines, period, idx-1)
+		}
+	}
+	if idx+1 >= 26 {
+		ind["macd_dif"] = calcEMA(klines[:idx+1], 12) - calcEMA(klines[:idx+1], 26)
+	}
+	if idx >= 26 {
+		ind["prev_macd_dif"] = calcEMA(klines[:idx], 12) - calcEMA(klines[:idx], 26)
+	}
+	if idx+1 >= 15 {
+		ind["rsi14"] = calcRSI(klines[:idx+1], 14)
+	}
+	return ind
+}
+
+func percentReturn(entry, exit float64) float64 {
+	if entry == 0 {
+		return 0
+	}
+	return (exit - entry) / entry * 100
 }
 
 func (s *Server) handleParadigmStats(c *gin.Context) {
@@ -310,21 +491,64 @@ func (s *Server) handleParadigmList(c *gin.Context) {
 		c.JSON(http.StatusOK, paradigmListResponse{Paradigms: []*paradigms.Paradigm{}, Total: 0})
 		return
 	}
-
-	marketCap := c.Query("market_cap")
-	shareholder := c.Query("shareholder")
-
-	var list []*paradigms.Paradigm
-	if marketCap != "" || shareholder != "" {
-		list = ParadigmStore.ListByContext(paradigms.Context{
-			MarketCap:           marketCap,
-			ShareholderDominant: shareholder,
-		})
-	} else {
-		list = ParadigmStore.List()
+	list := filterParadigms(ParadigmStore.List(), c)
+	total := len(list)
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "0"))
+	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	if offset < 0 {
+		offset = 0
 	}
+	if limit > 0 {
+		end := offset + limit
+		if offset > len(list) {
+			list = []*paradigms.Paradigm{}
+		} else {
+			if end > len(list) {
+				end = len(list)
+			}
+			list = list[offset:end]
+		}
+	}
+	c.JSON(http.StatusOK, paradigmListResponse{Paradigms: list, Total: total})
+}
 
-	c.JSON(http.StatusOK, paradigmListResponse{Paradigms: list, Total: len(list)})
+func filterParadigms(list []*paradigms.Paradigm, c *gin.Context) []*paradigms.Paradigm {
+	stockCode := strings.TrimSpace(c.Query("stock_code"))
+	side := strings.TrimSpace(c.Query("side"))
+	marketCap := strings.TrimSpace(c.Query("market_cap"))
+	shareholder := strings.TrimSpace(c.Query("shareholder"))
+	reviewStatus := strings.TrimSpace(c.Query("review_status"))
+	reliability := strings.TrimSpace(c.Query("reliability"))
+	query := strings.ToLower(strings.TrimSpace(c.Query("q")))
+	out := make([]*paradigms.Paradigm, 0, len(list))
+	for _, p := range list {
+		if stockCode != "" && p.StockCode != stockCode {
+			continue
+		}
+		if side != "" && p.Side != side {
+			continue
+		}
+		if marketCap != "" && p.Context.MarketCap != marketCap {
+			continue
+		}
+		if shareholder != "" && p.Context.ShareholderDominant != shareholder {
+			continue
+		}
+		if reviewStatus != "" && p.ReviewStatus != reviewStatus {
+			continue
+		}
+		if reliability != "" && p.Validation.ReliabilityLabel != reliability {
+			continue
+		}
+		if query != "" {
+			hay := strings.ToLower(p.ID + " " + p.Name + " " + p.StockCode + " " + p.StockName)
+			if !strings.Contains(hay, query) {
+				continue
+			}
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 func (s *Server) handleParadigmGet(c *gin.Context) {

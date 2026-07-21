@@ -596,6 +596,20 @@ export interface ParadigmStatsResponse {
   high_reliability: number;
 }
 
+export interface ParadigmBacktestItem {
+  paradigm_id: string;
+  stock_code: string;
+  sample_size: number;
+  win_rate_5: number;
+  win_rate_10: number;
+  win_rate_20: number;
+  avg_return_5: number;
+  avg_return_10: number;
+  avg_return_20: number;
+  max_drawdown: number;
+  error?: string;
+}
+
 export interface ChatSessionInfo {
   id: string;
   stock_code: string;

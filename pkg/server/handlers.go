@@ -33,6 +33,9 @@ type Server struct {
 	stockSearchIndexCache stockSearchIndexCache
 	tdxMu                 sync.Mutex
 	agentState            *AgentState
+	paradigmAlertMu       sync.RWMutex
+	paradigmAlertCache    []paradigmAlert
+	paradigmAlertLastScan time.Time
 }
 
 const (

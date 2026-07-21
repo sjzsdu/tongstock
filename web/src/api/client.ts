@@ -24,6 +24,7 @@ import type {
   ParadigmEvaluateResponse,
   ParadigmAlertsResponse,
   ParadigmStatsResponse,
+  ParadigmBacktestItem,
   ChatSessionInfo,
 } from '../types/api';
 
@@ -284,10 +285,11 @@ export const api = {
   paradigmListByStock: (code: string) =>
     fetchJSON<ParadigmListResponse>(`/api/paradigm/stock/${code}`),
 
-  paradigmList: (marketCap?: string, shareholder?: string) => {
+  paradigmList: (marketCap?: string, shareholder?: string, extra?: Record<string, string | number | undefined>) => {
     const params = new URLSearchParams();
     if (marketCap) params.set('market_cap', marketCap);
     if (shareholder) params.set('shareholder', shareholder);
+    if (extra) Object.entries(extra).forEach(([k, v]) => { if (v !== undefined && v !== '') params.set(k, String(v)); });
     const q = params.toString();
     return fetchJSON<ParadigmListResponse>(`/api/paradigm/list${q ? '?' + q : ''}`);
   },
@@ -306,6 +308,14 @@ export const api = {
 
   paradigmStats: () =>
     fetchJSON<ParadigmStatsResponse>('/api/paradigm/stats'),
+
+  paradigmBacktest: (id?: string, stockCode?: string) => {
+    const params = new URLSearchParams();
+    if (id) params.set('id', id);
+    if (stockCode) params.set('stock_code', stockCode);
+    const q = params.toString();
+    return fetchJSON<ParadigmBacktestItem[]>(`/api/paradigm/backtest${q ? `?${q}` : ''}`);
+  },
 
   paradigmHistory: () =>
     fetchJSON<ParadigmListResponse>('/api/paradigm/history'),

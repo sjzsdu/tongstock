@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sjzsdu/tongstock/internal/agents"
@@ -148,6 +149,7 @@ func main() {
 	} else {
 		server.ParadigmStore = paradigmStore
 		log.Printf("Paradigm store initialized: %d paradigms loaded", paradigmStore.Count())
+		httpServer.StartParadigmAlertScanner(5 * time.Minute)
 	}
 
 	// Setup Gin router
