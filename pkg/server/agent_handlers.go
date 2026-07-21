@@ -371,6 +371,7 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, agentChatResponse{Error: err.Error()})
 		return
 	}
+	s.saveAgentChatSession(req.Session, req.Agent, req.Message, response)
 	c.JSON(http.StatusOK, agentChatResponse{Response: response})
 }
 
@@ -473,6 +474,7 @@ func (s *Server) handleAgentChatStream(c *gin.Context) {
 		writeSSE(c.Writer, flusher, agentStreamEvent{Type: "delta", Delta: strings.TrimPrefix(response, streamedText)})
 		flusher.Flush()
 	}
+	s.saveAgentChatSession(req.Session, req.Agent, req.Message, response)
 	writeSSE(c.Writer, flusher, agentStreamEvent{Type: "done"})
 	flusher.Flush()
 }
@@ -493,6 +495,18 @@ func (s *Server) handleAgentTranscript(c *gin.Context) {
 		agent = s.agentState.defaults.Agent
 	}
 
+	if s.agentState.chatStore != nil {
+		if sess, err := s.agentState.chatStore.Get(session); err == nil {
+			messages := make([]agentTranscriptMessage, 0, len(sess.Messages))
+			for _, msg := range sess.Messages {
+				messages = append(messages, agentTranscriptMessage{Role: msg.Role, Content: msg.Content})
+			}
+			returnPath := "chat_store:" + sess.ID
+			c.JSON(http.StatusOK, agentTranscriptResponse{Session: session, Agent: sess.Agent, Path: returnPath, Messages: messages})
+			return
+		}
+	}
+
 	path, content, err := readTranscript(s.agentState.workspace, session, agent)
 	if err != nil {
 		c.JSON(http.StatusOK, agentTranscriptResponse{Session: session, Agent: agent, Missing: true, Message: err.Error()})
@@ -510,10 +524,73 @@ func (s *Server) handleAgentSessions(c *gin.Context) {
 
 	sessions, err := listSessions(s.agentState.workspace)
 	if err != nil {
+		sessions = nil
+	}
+	if s.agentState.chatStore != nil {
+		sessions = mergeStoredAgentSessions(sessions, s.agentState.chatStore.List())
+	}
+	if len(sessions) == 0 && err != nil {
 		c.JSON(http.StatusOK, agentSessionsResponse{Missing: true, Message: err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, agentSessionsResponse{Sessions: sessions})
+}
+
+func (s *Server) saveAgentChatSession(session, agent, userMessage, assistantMessage string) {
+	if s.agentState == nil || s.agentState.chatStore == nil || strings.TrimSpace(session) == "" {
+		return
+	}
+	stockCode := extractStockCode(userMessage)
+	if err := s.agentState.chatStore.AppendMessages(session, stockCode, "", agent,
+		ChatMessage{Role: "user", Content: userMessage},
+		ChatMessage{Role: "assistant", Content: assistantMessage},
+	); err != nil {
+		// Do not fail the chat response because persistence is best-effort for the user interaction.
+		fmt.Printf("warn: save agent chat session failed: %v\n", err)
+	}
+}
+
+func mergeStoredAgentSessions(existing []agentSessionInfo, stored []*ChatSession) []agentSessionInfo {
+	seen := make(map[string]int, len(existing)+len(stored))
+	merged := append([]agentSessionInfo{}, existing...)
+	for i, sess := range merged {
+		seen[sess.Session] = i
+	}
+	for _, sess := range stored {
+		if sess == nil || sess.ID == "" {
+			continue
+		}
+		info := agentSessionInfo{
+			Session:   sess.ID,
+			Agent:     sess.Agent,
+			Path:      "chat_store:" + sess.ID,
+			UpdatedAt: sess.UpdatedAt.Format(time.RFC3339),
+			Size:      chatSessionContentSize(sess),
+		}
+		if idx, ok := seen[sess.ID]; ok {
+			if merged[idx].UpdatedAt == "" || sess.UpdatedAt.Format(time.RFC3339) > merged[idx].UpdatedAt {
+				merged[idx] = info
+			}
+			continue
+		}
+		seen[sess.ID] = len(merged)
+		merged = append(merged, info)
+	}
+	sort.SliceStable(merged, func(i, j int) bool {
+		return merged[i].UpdatedAt > merged[j].UpdatedAt
+	})
+	return merged
+}
+
+func chatSessionContentSize(sess *ChatSession) int64 {
+	if sess == nil {
+		return 0
+	}
+	var size int64
+	for _, msg := range sess.Messages {
+		size += int64(len(msg.Role) + len(msg.Content))
+	}
+	return size
 }
 
 func (s *Server) isValidAgent(agentID string) bool {

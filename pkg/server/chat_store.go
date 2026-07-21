@@ -125,10 +125,51 @@ func (s *ChatStore) Save(session *ChatSession) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if existing, ok := s.sessions[session.ID]; ok && !existing.CreatedAt.IsZero() && session.CreatedAt.IsZero() {
+		session.CreatedAt = existing.CreatedAt
+	}
+	if session.CreatedAt.IsZero() {
+		session.CreatedAt = time.Now()
+	}
 
 	session.UpdatedAt = time.Now()
 	s.sessions[session.ID] = session
 	return s.saveDB(session)
+}
+
+func (s *ChatStore) AppendMessages(id, stockCode, stockName, agent string, messages ...ChatMessage) error {
+	if id == "" {
+		return fmt.Errorf("session id required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
+	sess, ok := s.sessions[id]
+	if !ok {
+		sess = &ChatSession{ID: id, CreatedAt: now}
+		s.sessions[id] = sess
+	}
+	if sess.CreatedAt.IsZero() {
+		sess.CreatedAt = now
+	}
+	if stockCode != "" {
+		sess.StockCode = stockCode
+	}
+	if stockName != "" {
+		sess.StockName = stockName
+	}
+	if agent != "" {
+		sess.Agent = agent
+	}
+	for _, msg := range messages {
+		if msg.Timestamp.IsZero() {
+			msg.Timestamp = now
+		}
+		sess.Messages = append(sess.Messages, msg)
+	}
+	sess.UpdatedAt = now
+	return s.saveDB(sess)
 }
 
 func (s *ChatStore) Get(id string) (*ChatSession, error) {
