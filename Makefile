@@ -1,10 +1,11 @@
-.PHONY: all web cli server install clean run
+.PHONY: all web cli server menubar install clean run
 
 BINDIR ?= $(if $(GOBIN),$(GOBIN),$(shell go env GOPATH)/bin)
 CLI_BIN := tongstock
 SERVER_BIN := tongstock-server
+MENUBAR_BIN := tongstock-menubar
 
-all: web cli server
+all: web cli server menubar
 
 web:
 	cd web && pnpm build
@@ -17,14 +18,18 @@ cli:
 server: web
 	go build -o $(SERVER_BIN) ./cmd/server
 
+menubar:
+	go build -o $(MENUBAR_BIN) ./cmd/menubar
+
 run: server
 	./$(SERVER_BIN)
 
-install: server cli
+install: cli server menubar
 	mkdir -p $(BINDIR)
 	install -m 755 $(CLI_BIN) $(BINDIR)/$(CLI_BIN)
 	install -m 755 $(SERVER_BIN) $(BINDIR)/$(SERVER_BIN)
+	install -m 755 $(MENUBAR_BIN) $(BINDIR)/$(MENUBAR_BIN)
 
 clean:
-	rm -f $(CLI_BIN) $(SERVER_BIN)
+	rm -f $(CLI_BIN) $(SERVER_BIN) $(MENUBAR_BIN)
 	rm -rf pkg/web/dist
