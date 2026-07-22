@@ -202,34 +202,33 @@ func findServerBinary() string {
 
 func restartService(statusItem *systray.MenuItem) {
 	statusItem.SetTitle("Restarting...")
-	statusItem.Disable()
 
-	// Find and restart the tongstock server
-	exe, err := os.Executable()
-	if err != nil {
-		statusItem.SetTitle(fmt.Sprintf("Restart failed: %v", err))
+	// Kill existing server process
+	killExistingProcess()
+
+	// Find the server binary
+	serverBin := findServerBinary()
+	if serverBin == "" {
+		statusItem.SetTitle("Server binary not found")
+		statusItem.Enable()
 		return
 	}
 
-	// Kill existing process if running
-	killExistingProcess()
-
-	// Start new process
-	cmd := exec.Command(exe, "server")
+	// Start new server process
+	cmd := exec.Command(serverBin)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
-		statusItem.SetTitle(fmt.Sprintf("Restart failed: %v", err))
+		statusItem.SetTitle("Restart failed")
+		statusItem.Enable()
 		return
 	}
 
 	pid := cmd.Process.Pid
-	statusItem.SetTitle(fmt.Sprintf("Service Running · PID %d", pid))
-	statusItem.Enable()
-
-	// Write PID file
 	pidFile := filepath.Join(os.Getenv("HOME"), ".tongstock", "server.pid")
 	os.MkdirAll(filepath.Dir(pidFile), 0755)
 	os.WriteFile(pidFile, []byte(strconv.Itoa(pid)), 0644)
+	statusItem.SetTitle(fmt.Sprintf("Service Running · PID %d", pid))
+	statusItem.Enable()
 }
 
 func killExistingProcess() {
