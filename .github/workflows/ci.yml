@@ -16,12 +16,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: tongstock
+
+      - name: Checkout picoclaw sibling module
+        uses: actions/checkout@v4
+        with:
+          repository: sjzsdu/picoclaw
+          path: picoclaw
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.x'
-          cache: true
+          go-version-file: tongstock/go.mod
+          cache-dependency-path: tongstock/go.sum
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -33,28 +41,32 @@ jobs:
         with:
           node-version: '22'
           cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+          cache-dependency-path: tongstock/web/pnpm-lock.yaml
 
       - name: Install web dependencies
-        working-directory: web
+        working-directory: tongstock/web
         run: pnpm install --frozen-lockfile
 
       - name: Build web
-        working-directory: web
+        working-directory: tongstock/web
         run: pnpm build
 
       - name: Prepare embedded web assets
+        working-directory: tongstock
         run: |
           rm -rf pkg/web/dist
           cp -r web/dist pkg/web/dist
 
       - name: Download Go dependencies
+        working-directory: tongstock
         run: go mod download
 
       - name: Run Go tests
+        working-directory: tongstock
         run: go test -v ./...
 
       - name: Build Linux artifacts
+        working-directory: tongstock
         run: |
           mkdir -p dist
           go build -trimpath -ldflags="-s -w" -o dist/tongstock ./cmd/cli
@@ -62,6 +74,7 @@ jobs:
           tar -C dist -czf tongstock-linux-amd64.tar.gz tongstock tongstock-server
 
       - name: Smoke test server
+        working-directory: tongstock
         run: |
           ./dist/tongstock-server > server.log 2>&1 &
           echo $! > server.pid
@@ -80,12 +93,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tongstock-linux-amd64
-          path: tongstock-linux-amd64.tar.gz
+          path: tongstock/tongstock-linux-amd64.tar.gz
           if-no-files-found: error
 
       - name: Upload web dist artifact
         uses: actions/upload-artifact@v4
         with:
           name: tongstock-web-dist
-          path: web/dist
+          path: tongstock/web/dist
           if-no-files-found: error

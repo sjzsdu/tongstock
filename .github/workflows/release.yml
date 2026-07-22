@@ -34,12 +34,20 @@ jobs:
             goarch: amd64
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: tongstock
+
+      - name: Checkout picoclaw sibling module
+        uses: actions/checkout@v4
+        with:
+          repository: sjzsdu/picoclaw
+          path: picoclaw
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.x'
-          cache: true
+          go-version-file: tongstock/go.mod
+          cache-dependency-path: tongstock/go.sum
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -51,7 +59,7 @@ jobs:
         with:
           node-version: '22'
           cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+          cache-dependency-path: tongstock/web/pnpm-lock.yaml
 
       - name: Resolve version
         id: version
@@ -64,19 +72,21 @@ jobs:
           fi
 
       - name: Install web dependencies
-        working-directory: web
+        working-directory: tongstock/web
         run: pnpm install --frozen-lockfile
 
       - name: Build web
-        working-directory: web
+        working-directory: tongstock/web
         run: pnpm build
 
       - name: Prepare embedded web assets
+        working-directory: tongstock
         run: |
           rm -rf pkg/web/dist
           cp -r web/dist pkg/web/dist
 
       - name: Build package
+        working-directory: tongstock
         shell: bash
         env:
           CGO_ENABLED: 1
@@ -103,8 +113,8 @@ jobs:
         with:
           name: tongstock-${{ steps.version.outputs.value }}-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
-            dist/*.tar.gz
-            dist/*.zip
+            tongstock/dist/*.tar.gz
+            tongstock/dist/*.zip
           if-no-files-found: error
 
   release:
