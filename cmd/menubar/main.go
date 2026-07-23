@@ -341,22 +341,38 @@ func restartService(statusItem *systray.MenuItem, startStopItem *systray.MenuIte
 }
 
 func killExistingProcess() {
+	// First try: PID file method (for processes started via menubar)
 	pidFile := filepath.Join(os.Getenv("HOME"), ".tongstock", "server.pid")
-	data, err := os.ReadFile(pidFile)
-	if err != nil {
-		return
+	if data, err := os.ReadFile(pidFile); err == nil {
+		pidStr := strings.TrimSpace(string(data))
+		if pid, err := strconv.Atoi(pidStr); err == nil {
+			if proc, err := os.FindProcess(pid); err == nil {
+				proc.Signal(syscall.SIGTERM)
+				time.Sleep(500 * time.Millisecond)
+				os.Remove(pidFile)
+				return
+			}
+		}
+		// If we get here, PID file existed but was invalid; fall through to cleanup
+		os.Remove(pidFile) // Remove stale PID file
 	}
-	pidStr := strings.TrimSpace(string(data))
-	pid, err := strconv.Atoi(pidStr)
-	if err != nil {
-		return
+
+	// Fallback: Direct process search (for manually started or orphaned processes)
+	cmd := exec.Command("pgrep", "tongstock-server")
+	if out, err := cmd.CombinedOutput(); err == nil {
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			if line == "" {
+				continue
+			}
+			if pid, err := strconv.Atoi(line); err == nil {
+				if proc, err := os.FindProcess(pid); err == nil {
+					proc.Signal(syscall.SIGTERM)
+					time.Sleep(500 * time.Millisecond)
+				}
+			}
+		}
 	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return
-	}
-	proc.Signal(syscall.SIGTERM)
-	time.Sleep(500 * time.Millisecond)
+	// Clean up PID file after fallback attempt
 	os.Remove(pidFile)
 }
 

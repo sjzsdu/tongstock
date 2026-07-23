@@ -660,7 +660,7 @@ func (s *Server) handleCodesList(c *gin.Context) {
 	})
 }
 
-// handleCodesMarket handles market-wide stock codes with deduplication and market cap filtering
+// handleCodesMarket handles market-wide stock codes with deduplication
 func (s *Server) handleCodesMarket(c *gin.Context) {
 	exchanges := []struct {
 		name string
@@ -670,16 +670,6 @@ func (s *Server) handleCodesMarket(c *gin.Context) {
 		{"sh", protocol.ExchangeSH},
 		{"bj", protocol.ExchangeBJ},
 	}
-
-	// Parse market cap filter params
-	var minMarketCap, maxMarketCap float64
-	if minStr := c.Query("minMarketCap"); minStr != "" {
-		fmt.Sscanf(minStr, "%f", &minMarketCap)
-	}
-	if maxStr := c.Query("maxMarketCap"); maxStr != "" {
-		fmt.Sscanf(maxStr, "%f", &maxMarketCap)
-	}
-	filterByMarketCap := minMarketCap > 0 || maxMarketCap > 0
 
 	// Use map for deduplication by code
 	codesMap := make(map[string]gin.H)
@@ -693,21 +683,6 @@ func (s *Server) handleCodesMarket(c *gin.Context) {
 			// Filter: only valid A-share stock codes
 			if !isStockCode(code.Code) {
 				continue
-			}
-
-			// Market cap filtering
-			if filterByMarketCap {
-				fullCode := item.name + code.Code
-				quotes, _ := s.svc.Client.GetQuote(fullCode)
-				finance, _ := s.svc.FetchFinance(fullCode)
-				if len(quotes) > 0 && finance != nil && quotes[0].Price > 0 && finance.LiuTongGuBen > 0 {
-					mktCap := finance.LiuTongGuBen * quotes[0].Price / 100000000 // 流通市值(亿)
-					if (minMarketCap > 0 && mktCap < minMarketCap) || (maxMarketCap > 0 && mktCap > maxMarketCap) {
-						continue
-					}
-				} else {
-					continue // Skip if data not available
-				}
 			}
 
 			if _, exists := codesMap[code.Code]; !exists {
@@ -3653,15 +3628,15 @@ func (s *Server) handleOvernightArbitrage(c *gin.Context) {
 
 	if len(stage1Passed) == 0 {
 		c.JSON(http.StatusOK, gin.H{
-			"total":            len(codes),
-			"stage1_passed":    0,
-			"stage1_failed":    len(stage1Failed),
-			"stage2_passed":    0,
-			"stage3_passed":    0,
-			"stage4_passed":    0,
-			"final_candidates": []*strategy.OvernightCandidate{},
-			"failed":           stage1Failed,
-			"current_time":     time.Now().Format("15:04"),
+			"total":             len(codes),
+			"stage1_passed":     0,
+			"stage1_failed":     len(stage1Failed),
+			"stage2_passed":     0,
+			"stage3_passed":     0,
+			"stage4_passed":     0,
+			"final_candidates":  []*strategy.OvernightCandidate{},
+			"failed":            stage1Failed,
+			"current_time":      time.Now().Format("15:04"),
 			"is_overnight_time": strategy.IsOvernightTime(time.Now()),
 		})
 		return
@@ -3721,15 +3696,15 @@ func (s *Server) handleOvernightArbitrage(c *gin.Context) {
 
 	if len(stage2Passed) == 0 {
 		c.JSON(http.StatusOK, gin.H{
-			"total":            len(codes),
-			"stage1_passed":    len(stage1Passed),
-			"stage1_failed":    len(stage1Failed),
-			"stage2_passed":    0,
-			"stage3_passed":    0,
-			"stage4_passed":    0,
-			"final_candidates": []*strategy.OvernightCandidate{},
-			"failed":           append(stage1Failed, stage2Failed...),
-			"current_time":     time.Now().Format("15:04"),
+			"total":             len(codes),
+			"stage1_passed":     len(stage1Passed),
+			"stage1_failed":     len(stage1Failed),
+			"stage2_passed":     0,
+			"stage3_passed":     0,
+			"stage4_passed":     0,
+			"final_candidates":  []*strategy.OvernightCandidate{},
+			"failed":            append(stage1Failed, stage2Failed...),
+			"current_time":      time.Now().Format("15:04"),
 			"is_overnight_time": strategy.IsOvernightTime(time.Now()),
 		})
 		return
@@ -3837,16 +3812,16 @@ func (s *Server) handleOvernightArbitrage(c *gin.Context) {
 
 	if len(stage3Passed) == 0 {
 		c.JSON(http.StatusOK, gin.H{
-			"total":            len(codes),
-			"stage1_passed":    len(stage1Passed),
-			"stage1_failed":    len(stage1Failed),
-			"stage2_passed":    len(stage2Passed),
-			"stage2_failed":    len(stage2Failed),
-			"stage3_passed":    0,
-			"stage4_passed":    0,
-			"final_candidates": []*strategy.OvernightCandidate{},
-			"failed":           append(append(stage1Failed, stage2Failed...), stage3Failed...),
-			"current_time":     time.Now().Format("15:04"),
+			"total":             len(codes),
+			"stage1_passed":     len(stage1Passed),
+			"stage1_failed":     len(stage1Failed),
+			"stage2_passed":     len(stage2Passed),
+			"stage2_failed":     len(stage2Failed),
+			"stage3_passed":     0,
+			"stage4_passed":     0,
+			"final_candidates":  []*strategy.OvernightCandidate{},
+			"failed":            append(append(stage1Failed, stage2Failed...), stage3Failed...),
+			"current_time":      time.Now().Format("15:04"),
 			"is_overnight_time": strategy.IsOvernightTime(time.Now()),
 		})
 		return

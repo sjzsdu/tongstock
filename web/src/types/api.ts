@@ -475,6 +475,37 @@ export interface AgentDebateResponse {
   error?: string;
 }
 
+// Custom stock pool types
+export type FilterField = 'marketCap' | 'price' | 'turnoverRate' | 'changePct' | 'volumeRatio' | 'exchange' | 'board' | 'excludeST';
+export type FilterOperator = 'between' | 'gt' | 'gte' | 'lt' | 'lte' | 'eq' | 'in';
+
+export interface StockPoolFilter {
+  field: FilterField;
+  operator: FilterOperator;
+  value: (number | string | boolean)[];
+  label?: string;
+}
+
+export interface CustomStockPool {
+  id: string;
+  name: string;
+  description?: string;
+  filters: StockPoolFilter[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MarketCodeItem {
+  code: string;
+  name: string;
+  exchange: string;
+}
+
+export interface MarketCodesResponse {
+  total: number;
+  codes: MarketCodeItem[];
+}
+
 // Paradigm types
 export interface ParadigmItem {
   id: string;
