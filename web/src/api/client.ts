@@ -142,9 +142,12 @@ export const api = {
     return fetchJSON<{ stats: { exchange: string; name: string; total: number; categories: Record<string, number> }[] }>(`/api/codes/stats?${params}`);
   },
 
-  // Market-wide stock codes with deduplication
-  codesMarket: () => {
-    return fetchJSON<{ total: number; codes: { code: string; name: string; exchange: string }[] }>('/api/codes/market');
+  // Market-wide stock codes with deduplication and market cap filtering
+  codesMarket: (minMarketCap?: number, maxMarketCap?: number) => {
+    const params = new URLSearchParams();
+    if (minMarketCap != null && minMarketCap > 0) params.set('minMarketCap', String(minMarketCap));
+    if (maxMarketCap != null && maxMarketCap > 0) params.set('maxMarketCap', String(maxMarketCap));
+    return fetchJSON<{ total: number; codes: { code: string; name: string; exchange: string }[] }>(`/api/codes/market?${params}`);
   },
 
   screen: (codes: string, type = 'day', signals?: string[]) => {
@@ -350,10 +353,10 @@ export const api = {
 	fetchJSON<{ message: string }>(`/api/paradigm/${id}`, { method: 'DELETE' }),
 
 	// Strategy APIs
-	overnightArbitrage: (codes: string[]) =>
+	overnightArbitrage: (codes: string[], minMarketCap?: number, maxMarketCap?: number) =>
 		fetchJSON<OvernightArbitrageResponse>('/api/strategy/overnight', {
 			method: 'POST',
-			body: JSON.stringify({ codes }),
+			body: JSON.stringify({ codes, minMarketCap, maxMarketCap }),
 		}),
 };
 

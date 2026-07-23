@@ -660,7 +660,7 @@ func (s *Server) handleCodesList(c *gin.Context) {
 	})
 }
 
-// handleCodesMarket handles market-wide stock codes with deduplication
+// handleCodesMarket handles market-wide stock codes with deduplication and market cap filtering
 func (s *Server) handleCodesMarket(c *gin.Context) {
 	exchanges := []struct {
 		name string
@@ -670,6 +670,16 @@ func (s *Server) handleCodesMarket(c *gin.Context) {
 		{"sh", protocol.ExchangeSH},
 		{"bj", protocol.ExchangeBJ},
 	}
+
+	// Parse market cap filter params
+	var minMarketCap, maxMarketCap float64
+	if minStr := c.Query("minMarketCap"); minStr != "" {
+		fmt.Sscanf(minStr, "%f", &minMarketCap)
+	}
+	if maxStr := c.Query("maxMarketCap"); maxStr != "" {
+		fmt.Sscanf(maxStr, "%f", &maxMarketCap)
+	}
+	filterByMarketCap := minMarketCap > 0 || maxMarketCap > 0
 
 	// Use map for deduplication by code
 	codesMap := make(map[string]gin.H)
@@ -681,13 +691,30 @@ func (s *Server) handleCodesMarket(c *gin.Context) {
 		}
 		for _, code := range codes {
 			// Filter: only valid A-share stock codes
-			if isStockCode(code.Code) {
-				if _, exists := codesMap[code.Code]; !exists {
-					codesMap[code.Code] = gin.H{
-						"code":     code.Code,
-						"name":     code.Name,
-						"exchange": item.name,
+			if !isStockCode(code.Code) {
+				continue
+			}
+
+			// Market cap filtering
+			if filterByMarketCap {
+				fullCode := item.name + code.Code
+				quotes, _ := s.svc.Client.GetQuote(fullCode)
+				finance, _ := s.svc.FetchFinance(fullCode)
+				if len(quotes) > 0 && finance != nil && quotes[0].Price > 0 && finance.LiuTongGuBen > 0 {
+					mktCap := finance.LiuTongGuBen * quotes[0].Price / 100000000 // 流通市值(亿)
+					if (minMarketCap > 0 && mktCap < minMarketCap) || (maxMarketCap > 0 && mktCap > maxMarketCap) {
+						continue
 					}
+				} else {
+					continue // Skip if data not available
+				}
+			}
+
+			if _, exists := codesMap[code.Code]; !exists {
+				codesMap[code.Code] = gin.H{
+					"code":     code.Code,
+					"name":     code.Name,
+					"exchange": item.name,
 				}
 			}
 		}
@@ -3551,7 +3578,9 @@ func containsAny(value string, needles []string) bool {
 // handleOvernightArbitrage handles overnight arbitrage strategy screening
 func (s *Server) handleOvernightArbitrage(c *gin.Context) {
 	var req struct {
-		Codes []string `json:"codes"`
+		Codes        []string `json:"codes"`
+		MinMarketCap float64  `json:"minMarketCap"`
+		MaxMarketCap float64  `json:"maxMarketCap"`
 	}
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -3566,6 +3595,13 @@ func (s *Server) handleOvernightArbitrage(c *gin.Context) {
 	}
 
 	params := strategy.DefaultOvernightParams()
+	// Override with custom market cap range if provided
+	if req.MinMarketCap > 0 {
+		params.MinMarketCap = req.MinMarketCap
+	}
+	if req.MaxMarketCap > 0 {
+		params.MaxMarketCap = req.MaxMarketCap
+	}
 
 	// Stage 1: Batch fetch quotes and filter by change percentage (3%-5%)
 	// This is the cheapest filter that eliminates ~90% of candidates
@@ -3625,6 +3661,8 @@ func (s *Server) handleOvernightArbitrage(c *gin.Context) {
 			"stage4_passed":    0,
 			"final_candidates": []*strategy.OvernightCandidate{},
 			"failed":           stage1Failed,
+			"current_time":     time.Now().Format("15:04"),
+			"is_overnight_time": strategy.IsOvernightTime(time.Now()),
 		})
 		return
 	}
@@ -3691,6 +3729,8 @@ func (s *Server) handleOvernightArbitrage(c *gin.Context) {
 			"stage4_passed":    0,
 			"final_candidates": []*strategy.OvernightCandidate{},
 			"failed":           append(stage1Failed, stage2Failed...),
+			"current_time":     time.Now().Format("15:04"),
+			"is_overnight_time": strategy.IsOvernightTime(time.Now()),
 		})
 		return
 	}
@@ -3806,6 +3846,8 @@ func (s *Server) handleOvernightArbitrage(c *gin.Context) {
 			"stage4_passed":    0,
 			"final_candidates": []*strategy.OvernightCandidate{},
 			"failed":           append(append(stage1Failed, stage2Failed...), stage3Failed...),
+			"current_time":     time.Now().Format("15:04"),
+			"is_overnight_time": strategy.IsOvernightTime(time.Now()),
 		})
 		return
 	}

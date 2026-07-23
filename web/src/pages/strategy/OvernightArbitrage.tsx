@@ -22,7 +22,9 @@ import {
 	Input,
 	List,
 	Modal,
+	Pagination,
 	Segmented,
+	Select,
 	Space,
 	Spin,
 	Statistic,
@@ -289,10 +291,35 @@ export default function OvernightArbitrage() {
 
 	const [marketCodes, setMarketCodes] = useState<{ code: string; name: string }[]>([]);
 	const [marketLoading, setMarketLoading] = useState(false);
-	const [customMarketCapMin, setCustomMarketCapMin] = useState(50);
-	const [customMarketCapMax, setCustomMarketCapMax] = useState(200);
-	const [customCodes, setCustomCodes] = useState<{ code: string; name: string }[]>([]);
-	const [customLoading, setCustomLoading] = useState(false);
+
+	// Custom stock pool management
+	interface CustomPool {
+		id: string;
+		name: string;
+		minMarketCap: number;
+		maxMarketCap: number;
+	}
+	const [customPools, setCustomPools] = useState<CustomPool[]>(() => {
+		const saved = localStorage.getItem('overnight_custom_pools');
+		return saved ? JSON.parse(saved) : [
+			{ id: '1', name: '杨永兴池(50-200亿)', minMarketCap: 50, maxMarketCap: 200 },
+		];
+	});
+	const [currentCustomPoolId, setCurrentCustomPoolId] = useState(customPools[0]?.id || '');
+	const [customPoolName, setCustomPoolName] = useState('');
+	const [customPage, setCustomPage] = useState(1);
+	const [customPageSize] = useState(20);
+
+	const currentCustomPool = customPools.find(p => p.id === currentCustomPoolId);
+	const customMarketCapMin = currentCustomPool?.minMarketCap || 50;
+	const customMarketCapMax = currentCustomPool?.maxMarketCap || 200;
+
+	// Save custom pools to localStorage
+	useEffect(() => {
+		if (customPools.length > 0) {
+			localStorage.setItem('overnight_custom_pools', JSON.stringify(customPools));
+		}
+	}, [customPools]);
 
 	const [trades, setTrades] = useState<Record<string, TradeInfo>>({});
 	const [tradingLoading, setTradingLoading] = useState(false);
@@ -470,7 +497,11 @@ export default function OvernightArbitrage() {
 	const loadMarketCodes = useCallback(async () => {
 		setMarketLoading(true);
 		try {
-			const result = await api.codesMarket();
+			// Custom mode: pass market cap filter
+			const currentPool = customPools.find(p => p.id === currentCustomPoolId);
+			const minCap = sourceTab === 'custom' && currentPool ? currentPool.minMarketCap : undefined;
+			const maxCap = sourceTab === 'custom' && currentPool ? currentPool.maxMarketCap : undefined;
+			const result = await api.codesMarket(minCap, maxCap);
 			if (result.codes) {
 				setMarketCodes(result.codes.map((item) => ({ code: item.code, name: item.name })));
 			}
@@ -479,44 +510,54 @@ export default function OvernightArbitrage() {
 		} finally {
 			setMarketLoading(false);
 		}
-	}, []);
+	}, [sourceTab, currentCustomPoolId, customPools]);
 
-	const loadCustomCodes = useCallback(async () => {
-		setCustomLoading(true);
-		try {
-			const result = await api.codesMarket();
-			if (result.codes) {
-				setCustomCodes(result.codes.map((item) => ({ code: item.code, name: item.name })));
-			}
-		} catch {
-			setCustomCodes([]);
-		} finally {
-			setCustomLoading(false);
+	// Custom pool management functions
+	const addCustomPool = () => {
+		if (!customPoolName.trim()) {
+			messageApi.warning('请输入股票池名称');
+			return;
 		}
-	}, []);
+		const newPool: CustomPool = {
+			id: Date.now().toString(),
+			name: customPoolName.trim(),
+			minMarketCap: 50,
+			maxMarketCap: 200,
+		};
+		setCustomPools(prev => [...prev, newPool]);
+		setCurrentCustomPoolId(newPool.id);
+		setCustomPoolName('');
+	};
+
+	const deleteCustomPool = (poolId: string) => {
+		if (customPools.length <= 1) {
+			messageApi.warning('至少保留一个股票池');
+			return;
+		}
+		setCustomPools(prev => prev.filter(p => p.id !== poolId));
+		if (currentCustomPoolId === poolId) {
+			const remaining = customPools.filter(p => p.id !== poolId);
+			setCurrentCustomPoolId(remaining[0]?.id || '');
+		}
+	};
 
 	useEffect(() => {
 		if (sourceTab === 'block') {
 			void loadBlocks(blockFile, ['block_zs.dat', 'block_fg.dat', 'block_gn.dat'].find((item) => item === blockFile) ? '' : undefined);
-		} else if (sourceTab === 'market') {
+		} else if (sourceTab === 'market' || sourceTab === 'custom') {
 			void loadMarketCodes();
-		} else if (sourceTab === 'custom') {
-			void loadCustomCodes();
 		}
-	}, [sourceTab, blockFile, loadBlocks, loadMarketCodes, loadCustomCodes]);
+	}, [sourceTab, blockFile, loadBlocks, loadMarketCodes]);
 
 	const resolvedCodes = useMemo(() => {
 		if (sourceTab === 'block' && selectedBlock?.stocks) {
 			return selectedBlock.stocks.join(',');
 		}
-		if (sourceTab === 'market') {
+		if (sourceTab === 'market' || sourceTab === 'custom') {
 			return marketCodes.map((item) => item.code).join(',');
 		}
-		if (sourceTab === 'custom') {
-			return customCodes.map((item) => item.code).join(',');
-		}
 		return stockList.map((stock) => stock.code).join(',');
-	}, [selectedBlock, sourceTab, stockList, marketCodes, customCodes]);
+	}, [selectedBlock, sourceTab, stockList, marketCodes]);
 
 	const doScreen = async () => {
 		const codes = resolvedCodes.trim();
@@ -529,7 +570,10 @@ export default function OvernightArbitrage() {
 		setError('');
 		try {
 			const codeArray = codes.split(',');
-			const response = await api.overnightArbitrage(codeArray);
+			const currentPool = customPools.find(p => p.id === currentCustomPoolId);
+			const minCap = sourceTab === 'custom' && currentPool ? currentPool.minMarketCap : undefined;
+			const maxCap = sourceTab === 'custom' && currentPool ? currentPool.maxMarketCap : undefined;
+			const response = await api.overnightArbitrage(codeArray, minCap, maxCap);
 			setResults(response.final_candidates);
 			setTotal(response.total);
 			setFailedCodes(response.failed ?? []);
@@ -757,7 +801,7 @@ export default function OvernightArbitrage() {
 							) : sourceTab === 'market' ? (
 								<Text strong>全市场（{marketLoading ? '加载中...' : `${marketCodes.length}只`}）</Text>
 							) : sourceTab === 'custom' ? (
-								<Text strong>自定义（{customMarketCapMin}-{customMarketCapMax}亿，{customLoading ? '加载中...' : `${customCodes.length}只`}）</Text>
+								<Text strong>自定义（{customMarketCapMin}-{customMarketCapMax}亿，{marketLoading ? '加载中...' : `${marketCodes.length}只`}）</Text>
 							) : (
 								<Text type="secondary">未选择股票来源</Text>
 							)}
@@ -1121,13 +1165,44 @@ export default function OvernightArbitrage() {
 							message="自定义股票池"
 							description="根据流通市值范围筛选股票，适合杨永兴策略的50-200亿市值要求。"
 						/>
+						{/* Custom pool selector */}
+						<Flex justify="space-between" align="center" style={{ marginBottom: 12 }}>
+							<Select
+								value={currentCustomPoolId}
+								onChange={(value) => { setCurrentCustomPoolId(value); setCustomPage(1); }}
+								style={{ width: 200 }}
+								options={customPools.map(p => ({ value: p.id, label: p.name }))}
+							/>
+							<Space>
+								<Input
+									style={{ width: 150 }}
+									placeholder="新股票池名称"
+									value={customPoolName}
+									onChange={(e) => setCustomPoolName(e.target.value)}
+									prefix={<PlusOutlined />}
+									onPressEnter={addCustomPool}
+								/>
+								<Button type="primary" size="small" onClick={addCustomPool}>添加</Button>
+								<Button
+									size="small"
+									danger
+									onClick={() => currentCustomPoolId && deleteCustomPool(currentCustomPoolId)}
+									disabled={customPools.length <= 1}
+								>删除</Button>
+							</Space>
+						</Flex>
 						<Flex gap={16}>
 							<Space direction="vertical" style={{ flex: 1 }}>
 								<Text type="secondary">最小流通市值（亿）</Text>
 								<Input
 									type="number"
 									value={customMarketCapMin}
-									onChange={(e) => setCustomMarketCapMin(Number(e.target.value) || 0)}
+									onChange={(e) => {
+										const val = Number(e.target.value) || 0;
+										setCustomPools(prev => prev.map(p =>
+											p.id === currentCustomPoolId ? { ...p, minMarketCap: val } : p
+										));
+									}}
 									min={0}
 									max={10000}
 								/>
@@ -1137,32 +1212,43 @@ export default function OvernightArbitrage() {
 								<Input
 									type="number"
 									value={customMarketCapMax}
-									onChange={(e) => setCustomMarketCapMax(Number(e.target.value) || 0)}
+									onChange={(e) => {
+										const val = Number(e.target.value) || 0;
+										setCustomPools(prev => prev.map(p =>
+											p.id === currentCustomPoolId ? { ...p, maxMarketCap: val } : p
+										));
+									}}
 									min={0}
 									max={10000}
 								/>
 							</Space>
 						</Flex>
-						<Button type="primary" size="small" onClick={() => void loadCustomCodes()} loading={customLoading}>
-							{customLoading ? '刷新中...' : '刷新股票列表'}
+						<Button type="primary" size="small" onClick={() => void loadMarketCodes()} loading={marketLoading}>
+							{marketLoading ? '刷新中...' : '刷新股票列表'}
 						</Button>
-						{customLoading ? (
+						{marketLoading ? (
 							<Flex justify="center" align="center" style={{ minHeight: 150 }}><Spin tip="正在获取股票列表..." /></Flex>
 						) : (
-							<List
-								size="small"
-								dataSource={customCodes.slice(0, 50)}
-								renderItem={(item) => (
-									<List.Item>
-										<Space><Text code>{item.code}</Text><Text>{item.name}</Text></Space>
-									</List.Item>
+							<>
+								<List
+									size="small"
+									dataSource={marketCodes.slice((customPage - 1) * customPageSize, customPage * customPageSize)}
+									renderItem={(item) => (
+										<List.Item>
+											<Space><Text code>{item.code}</Text><Text>{item.name}</Text></Space>
+										</List.Item>
+									)}
+								/>
+								{marketCodes.length > customPageSize && (
+									<Pagination
+										current={customPage}
+										pageSize={customPageSize}
+										total={marketCodes.length}
+										onChange={(page) => setCustomPage(page)}
+										style={{ marginTop: 12, textAlign: 'center' }}
+									/>
 								)}
-							/>
-						)}
-						{customCodes.length > 50 && (
-							<Text type="secondary" style={{ fontSize: 12, textAlign: 'center', display: 'block' }}>
-								仅显示前50只，共{customCodes.length}只
-							</Text>
+							</>
 						)}
 					</Space>
 				) : null}
