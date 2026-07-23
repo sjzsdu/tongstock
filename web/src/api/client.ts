@@ -342,8 +342,54 @@ export const api = {
     fetchJSON<ChatSessionInfo>(`/api/agent/chat/session/${id}`),
 
   paradigmDelete: (id: string) =>
-    fetchJSON<{ message: string }>(`/api/paradigm/${id}`, { method: 'DELETE' }),
+	fetchJSON<{ message: string }>(`/api/paradigm/${id}`, { method: 'DELETE' }),
+
+	// Strategy APIs
+	overnightArbitrage: (codes: string[]) =>
+		fetchJSON<OvernightArbitrageResponse>('/api/strategy/overnight', {
+			method: 'POST',
+			body: JSON.stringify({ codes }),
+		}),
 };
+
+export interface OvernightCriteria {
+	change_pct: boolean;
+	volume_ratio: boolean;
+	turnover_rate: boolean;
+	market_cap: boolean;
+	limit_up_history: boolean;
+	ma_multiple: boolean;
+	above_vwap: boolean;
+}
+
+export interface OvernightCandidate {
+	code: string;
+	name: string;
+	price: number;
+	change_pct: number;
+	volume_ratio: number;
+	turnover_rate: number;
+	market_cap: number;
+	criteria: OvernightCriteria;
+	passed: boolean;
+	fail_reason: string;
+}
+
+export interface OvernightArbitrageResponse {
+	total: number;
+	stage1_passed: number;
+	stage1_failed: number;
+	stage2_passed: number;
+	stage2_failed: number;
+	stage3_passed: number;
+	stage3_failed: number;
+	stage4_passed: number;
+	stage4_failed: number;
+	final_candidates: OvernightCandidate[];
+	failed: { code: string; reason: string }[];
+	current_time: string;
+	is_overnight_time: boolean;
+}
 
 export interface TradeInfo {
   id: number;

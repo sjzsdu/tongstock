@@ -16,6 +16,7 @@ const SettingsPage = lazy(() => import('./pages/settings/SettingsPage'));
 const IndexDetail = lazy(() => import('./pages/index/IndexDetail'));
 const AgentWeb = lazy(() => import('./pages/AgentWeb'));
 const Paradigms = lazy(() => import('./pages/Paradigms'));
+const OvernightArbitrage = lazy(() => import('./pages/strategy/OvernightArbitrage'));
 
 const { Header, Content, Sider } = Layout;
 
@@ -65,7 +66,9 @@ function AppLayout({ children }: { children: React.ReactNode }) {
                   ? '/agent'
                   : location.pathname.startsWith('/paradigms')
                     ? '/paradigms'
-                  : '/';
+                    : location.pathname.startsWith('/strategy')
+                      ? '/strategy/overnight'
+                      : '/';
 
   const menuItems: MenuProps['items'] = [
     { key: '/', icon: <DashboardOutlined />, label: <Link to="/">市场总览</Link> },
@@ -77,6 +80,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
     { key: '/settings', icon: <SettingOutlined />, label: <Link to="/settings">配置</Link> },
     { key: '/agent', icon: <RobotOutlined />, label: <Link to="/agent">AI 助手</Link> },
     { key: '/paradigms', icon: <RadarChartOutlined />, label: <Link to="/paradigms">范式管理</Link> },
+    { key: '/strategy/overnight', icon: <SearchOutlined />, label: <Link to="/strategy/overnight">隔夜套利</Link> },
   ];
 
   const breadcrumbItems = buildBreadcrumbs(location.pathname);
@@ -154,6 +158,7 @@ export default function App() {
           <Route path="/index/:code/:tab" element={<IndexDetail />} />
           <Route path="/agent" element={<AgentWeb />} />
           <Route path="/paradigms" element={<Paradigms />} />
+          <Route path="/strategy/overnight" element={<OvernightArbitrage />} />
         </Routes>
       </AppLayout>
     </BrowserRouter>
@@ -178,6 +183,8 @@ function buildBreadcrumbs(pathname: string) {
     blocks: '板块热点',
     settings: '配置',
     paradigms: '范式管理',
+    strategy: '策略',
+    overnight: '隔夜套利',
     chart: 'K线+指标',
     signal: '信号',
     finance: '财务',
