@@ -36,6 +36,7 @@ import {
   Typography,
   Alert,
   Switch,
+  message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { api } from '../api/client';
@@ -92,29 +93,14 @@ export default function Blocks() {
   const [loadingBlockStocks, setLoadingBlockStocks] = useState(false);
 
   // === Custom Pool Tab State ===
-  const [customPools, setCustomPools] = useState<CustomStockPool[]>(() => {
-    const saved = localStorage.getItem('custom_stock_pools');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch { /* ignore */ }
-    }
-    return [
-      {
-        id: '1',
-        name: '杨永兴池(50-200亿)',
-        description: '适合杨永兴策略的市值范围',
-        filters: [{ field: 'marketCap', operator: 'between', value: [50, 200] }],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-    ];
-  });
-  const [currentPoolId, setCurrentPoolId] = useState(customPools[0]?.id || '');
-  const [poolStocks, setPoolStocks] = useState<MarketCodeItem[]>([]);
+  const [customPools, setCustomPools] = useState<CustomStockPool[]>([]);
+  const [currentPoolId, setCurrentPoolId] = useState('');
   const [allMarketCodes, setAllMarketCodes] = useState<MarketCodeItem[]>([]);
   const [poolPage, setPoolPage] = useState(1);
   const [poolPageSize] = useState(20);
+
+  const [stockCache, setStockCache] = useState<Record<string, { codes: MarketCodeItem[]; timestamp: number }>>({});
+  const [cacheDuration] = useState(5 * 60 * 1000); // 5 minutes cache
 
   // === Modal States ===
   const [showAddModal, setShowAddModal] = useState(false);
@@ -123,12 +109,47 @@ export default function Blocks() {
   const [poolForm] = Form.useForm();
   const [currentFilters, setCurrentFilters] = useState<StockPoolFilter[]>([]);
 
-  // Save custom pools to localStorage
+  // Load stock pools from backend
   useEffect(() => {
-    if (customPools.length > 0) {
-      localStorage.setItem('custom_stock_pools', JSON.stringify(customPools));
-    }
-  }, [customPools]);
+    const loadPools = async () => {
+      try {
+        const result = await api.stockpoolList();
+        let pools = result.pools;
+        // If no pools exist, create a default one
+        if (pools.length === 0) {
+          const defaultPool: CustomStockPool = {
+            id: 'default',
+            name: '杨永兴池(50-200亿)',
+            description: '适合杨永兴策略的市值范围',
+            filters: [{ field: 'marketCap', operator: 'between', value: [50, 200] }],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          await api.stockpoolUpsert(defaultPool);
+          pools = [defaultPool];
+        }
+        setCustomPools(pools);
+        if (pools.length > 0) {
+          setCurrentPoolId(pools[0].id);
+        }
+      } catch {
+        // Fallback to default pool if API fails
+        const defaultPool: CustomStockPool = {
+          id: 'default',
+          name: '杨永兴池(50-200亿)',
+          description: '适合杨永兴策略的市值范围',
+          filters: [{ field: 'marketCap', operator: 'between', value: [50, 200] }],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        setCustomPools([defaultPool]);
+        setCurrentPoolId('default');
+      } finally {
+        // Loading complete
+      }
+    };
+    void loadPools();
+  }, []);
 
   // === TDX Block Functions ===
   const loadFiles = async () => {
@@ -195,39 +216,82 @@ export default function Blocks() {
     return codes;
   };
 
-  // Load all market codes once on mount
+  // Generate cache key based on pool filters
+  const getCacheKey = (pool: CustomStockPool): string => {
+    return pool.id + '-' + JSON.stringify(pool.filters);
+  };
+
+  // Load market codes based on current pool filters with caching
   useEffect(() => {
+    if (!currentPool) {
+      setAllMarketCodes([]);
+      return;
+    }
+
+    const cacheKey = getCacheKey(currentPool);
+    const cached = stockCache[cacheKey];
+    
+    // Use cache if available and not expired
+    if (cached && Date.now() - cached.timestamp < cacheDuration) {
+      setAllMarketCodes(cached.codes);
+      return;
+    }
+
     let mounted = true;
-    const loadAllCodes = async () => {
+    
+    const loadCodes = async () => {
       try {
-        const result = await api.codesMarket();
-        if (mounted && result.codes) {
-          setAllMarketCodes(result.codes);
+        // Check if there are market cap filters
+        const marketCapFilter = currentPool.filters.find((f) => f.field === 'marketCap');
+        
+        let codes: MarketCodeItem[] = [];
+        if (marketCapFilter && marketCapFilter.operator === 'between') {
+          const minCap = marketCapFilter.value[0] as number;
+          const maxCap = marketCapFilter.value[1] as number;
+          const result = await api.codesWithMarketCap(minCap, maxCap);
+          if (result.codes) {
+            codes = result.codes;
+          }
+        } else {
+          const result = await api.codesMarket();
+          if (result.codes) {
+            codes = result.codes;
+          }
+        }
+        
+        if (mounted) {
+          setAllMarketCodes(codes);
+          // Cache the result
+          setStockCache((prev) => ({
+            ...prev,
+            [cacheKey]: { codes, timestamp: Date.now() },
+          }));
         }
       } catch {
-        // ignore
+        setAllMarketCodes([]);
       }
     };
-    void loadAllCodes();
+    void loadCodes();
     return () => { mounted = false; };
-  }, []);
+  }, [currentPool]);
 
-  // Apply filters to all market codes
+  // Apply non-market-cap filters to market codes
   const filteredPoolStocks = useMemo(() => {
     if (!currentPool || allMarketCodes.length === 0) return [];
     
     let filtered = [...allMarketCodes];
     for (const filter of currentPool.filters) {
+      // Skip marketCap filter since it's already applied by backend
+      if (filter.field === 'marketCap') continue;
       filtered = applyFilter(filtered, filter);
     }
     return filtered;
   }, [currentPool, allMarketCodes]);
 
-  // When pool changes, reset page and update stocks
+  // When pool changes, reset page
   useEffect(() => {
     setPoolPage(1);
-    setPoolStocks(filteredPoolStocks);
-  }, [currentPoolId, filteredPoolStocks]);
+  }, [currentPoolId]);
 
   const addCustomPool = () => {
     poolForm.resetFields();
@@ -252,38 +316,52 @@ export default function Blocks() {
       content: '确定要删除这个股票池吗？',
       okText: '删除',
       okType: 'danger',
-      onOk: () => {
-        const newPools = customPools.filter(p => p.id !== poolId);
-        setCustomPools(newPools);
-        if (currentPoolId === poolId) {
-          setCurrentPoolId(newPools[0]?.id || '');
+      onOk: async () => {
+        try {
+          await api.stockpoolDelete(poolId);
+          const newPools = customPools.filter(p => p.id !== poolId);
+          setCustomPools(newPools);
+          if (currentPoolId === poolId) {
+            setCurrentPoolId(newPools[0]?.id || '');
+          }
+        } catch {
+          message.error('删除失败');
         }
       },
     });
   };
 
-  const savePool = () => {
+  const savePool = async () => {
     const values = poolForm.getFieldsValue();
     const now = new Date().toISOString();
-    if (editingPool) {
-      setCustomPools(prev => prev.map(p =>
-        p.id === editingPool.id
-          ? { ...p, name: values.name, description: values.description, filters: currentFilters, updatedAt: now }
-          : p
-      ));
-      setShowEditModal(false);
-    } else {
-      const newPool: CustomStockPool = {
-        id: Date.now().toString(),
-        name: values.name,
-        description: values.description,
-        filters: currentFilters,
-        createdAt: now,
-        updatedAt: now,
-      };
-      setCustomPools(prev => [...prev, newPool]);
-      setCurrentPoolId(newPool.id);
-      setShowAddModal(false);
+    try {
+      if (editingPool) {
+        const updatedPool: CustomStockPool = {
+          ...editingPool,
+          name: values.name,
+          description: values.description,
+          filters: currentFilters,
+          updatedAt: now,
+        };
+        await api.stockpoolUpsert(updatedPool);
+        setCustomPools(prev => prev.map(p => p.id === editingPool.id ? updatedPool : p));
+        setShowEditModal(false);
+      } else {
+        const newPool: CustomStockPool = {
+          id: Date.now().toString(),
+          name: values.name,
+          description: values.description,
+          filters: currentFilters,
+          createdAt: now,
+          updatedAt: now,
+        };
+        await api.stockpoolUpsert(newPool);
+        setCustomPools(prev => [...prev, newPool]);
+        setCurrentPoolId(newPool.id);
+        setShowAddModal(false);
+      }
+    } catch {
+      message.error('保存失败');
     }
   };
 
@@ -476,8 +554,8 @@ export default function Blocks() {
 
   const paginatedPoolStocks = useMemo(() => {
     const start = (poolPage - 1) * poolPageSize;
-    return poolStocks.slice(start, start + poolPageSize);
-  }, [poolStocks, poolPage, poolPageSize]);
+    return filteredPoolStocks.slice(start, start + poolPageSize);
+  }, [filteredPoolStocks, poolPage, poolPageSize]);
 
   return (
     <Space direction="vertical" size={24} style={{ display: 'flex' }}>
@@ -692,14 +770,14 @@ export default function Blocks() {
                           <Space>
                             <SearchOutlined />
                             <span>股票列表</span>
-                            <Typography.Text type="secondary">共 {poolStocks.length} 只</Typography.Text>
+                            <Typography.Text type="secondary">共 {filteredPoolStocks.length} 只</Typography.Text>
                           </Space>
                         }
                         bodyStyle={{ padding: '16px' }}
                       >
                         {allMarketCodes.length === 0 ? (
                           <Skeleton active paragraph={{ rows: 4 }} title={false} />
-                        ) : poolStocks.length === 0 ? (
+                        ) : filteredPoolStocks.length === 0 ? (
                           <Empty description="该股票池暂无符合条件的股票" image={Empty.PRESENTED_IMAGE_SIMPLE} />
                         ) : (
                           <>
@@ -714,7 +792,7 @@ export default function Blocks() {
                             <Pagination
                               current={poolPage}
                               pageSize={poolPageSize}
-                              total={poolStocks.length}
+                              total={filteredPoolStocks.length}
                               onChange={setPoolPage}
                               style={{ marginTop: 12, textAlign: 'center' }}
                             />

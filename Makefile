@@ -5,14 +5,14 @@ CLI_BIN := tongstock
 SERVER_BIN := tongstock-server
 MENUBAR_BIN := tongstock-menubar
 
-all: web cli server menubar
+all: cli
 
 web:
 	cd web && pnpm build
 	rm -rf pkg/web/dist
 	cp -r web/dist pkg/web/dist
 
-cli:
+cli: web
 	go build -o $(CLI_BIN) ./cmd/cli
 
 server: web
@@ -21,14 +21,12 @@ server: web
 menubar:
 	go build -o $(MENUBAR_BIN) ./cmd/menubar
 
-run: server
-	./$(SERVER_BIN)
+run: cli
+	./$(CLI_BIN) server
 
-install: cli server menubar
+install: cli
 	mkdir -p $(BINDIR)
 	install -m 755 $(CLI_BIN) $(BINDIR)/$(CLI_BIN)
-	install -m 755 $(SERVER_BIN) $(BINDIR)/$(SERVER_BIN)
-	install -m 755 $(MENUBAR_BIN) $(BINDIR)/$(MENUBAR_BIN)
 
 clean:
 	rm -f $(CLI_BIN) $(SERVER_BIN) $(MENUBAR_BIN)

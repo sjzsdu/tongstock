@@ -501,7 +501,9 @@ export default function OvernightArbitrage() {
 			const currentPool = customPools.find(p => p.id === currentCustomPoolId);
 			const minCap = sourceTab === 'custom' && currentPool ? currentPool.minMarketCap : undefined;
 			const maxCap = sourceTab === 'custom' && currentPool ? currentPool.maxMarketCap : undefined;
-			const result = await api.codesMarket(minCap, maxCap);
+			const result = minCap != null || maxCap != null 
+				? await api.codesWithMarketCap(minCap, maxCap)
+				: await api.codesMarket();
 			if (result.codes) {
 				setMarketCodes(result.codes.map((item) => ({ code: item.code, name: item.name })));
 			}

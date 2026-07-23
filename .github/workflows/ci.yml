@@ -70,13 +70,12 @@ jobs:
         run: |
           mkdir -p dist
           go build -trimpath -ldflags="-s -w" -o dist/tongstock ./cmd/cli
-          go build -trimpath -ldflags="-s -w" -o dist/tongstock-server ./cmd/server
-          tar -C dist -czf tongstock-linux-amd64.tar.gz tongstock tongstock-server
+          tar -C dist -czf tongstock-linux-amd64.tar.gz tongstock
 
       - name: Smoke test server
         working-directory: tongstock
         run: |
-          ./dist/tongstock-server > server.log 2>&1 &
+          ./dist/tongstock server > server.log 2>&1 &
           echo $! > server.pid
           for i in {1..30}; do
             if curl -fsS http://127.0.0.1:8080/health; then

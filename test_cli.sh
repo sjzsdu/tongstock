@@ -3,12 +3,11 @@
 # TongStock CLI 测试脚本
 # 用于验证所有 CLI 命令的运行结果
 
-CLI="tongstock-cli"
-SERVER="tongstock-server"
+CLI="tongstock"
 
 # 检查 CLI 是否存在（先检查当前目录，再检查 ~/.local/bin）
 if [ ! -f "$CLI" ] && [ ! -f "$HOME/.local/bin/$CLI" ]; then
-    echo "错误: 未找到 tongstock-cli，请先编译"
+    echo "错误: 未找到 tongstock，请先编译"
     echo "运行: bash setup.sh"
     exit 1
 fi

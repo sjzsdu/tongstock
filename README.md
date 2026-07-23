@@ -32,10 +32,15 @@ cd tongstock
 # 一键安装（需要 Go 1.24+ 和 pnpm）
 bash setup.sh
 
-# 或手动构建
+# 或手动构建（生成单个 tongstock 二进制）
 pnpm install
-make server
 make cli
+
+# 启动 HTTP 服务
+./tongstock server
+
+# macOS 启动菜单栏
+./tongstock menubar
 ```
 
 ## Skill 使用（推荐）
@@ -53,7 +58,7 @@ npx skills add sjzsdu/tongstock
 - 板块分类与成分股查询
 - 股票代码批量操作
 
-**提示**：首次使用需确保 TongStock 服务已启动（`./tongstock-server`），默认服务地址 `http://localhost:8080`
+**提示**：首次使用需确保 TongStock 服务已启动（`./tongstock server`），默认服务地址 `http://localhost:8080`
 
 ## Web UI
 
@@ -80,7 +85,7 @@ npm run dev        # 启动开发服务器，默认代理到 localhost:8080
 ### 查询行情
 
 ```bash
-./tongstock-cli quote 000001
+./tongstock quote 000001
 ```
 
 输出示例：
@@ -96,25 +101,25 @@ npm run dev        # 启动开发服务器，默认代理到 localhost:8080
 
 ```bash
 # 默认列出深圳市场所有证券
-./tongstock-cli codes list
+./tongstock codes list
 
 # 上海市场
-./tongstock-cli codes list -e sh
+./tongstock codes list -e sh
 
 # 北京市场
-./tongstock-cli codes list -e bj
+./tongstock codes list -e bj
 
 # 按分类过滤 - 只显示股票
-./tongstock-cli codes list -e sz -c stock
+./tongstock codes list -e sz -c stock
 
 # 按分类过滤 - 只显示ETF
-./tongstock-cli codes list -e sz -c etf
+./tongstock codes list -e sz -c etf
 
 # 查看各分类统计信息
-./tongstock-cli codes stats
+./tongstock codes stats
 
 # 查看所有交易所统计
-./tongstock-cli codes stats --all
+./tongstock codes stats --all
 ```
 
 **支持的分类：**
@@ -130,131 +135,131 @@ npm run dev        # 启动开发服务器，默认代理到 localhost:8080
 
 ```bash
 # 日K
-./tongstock-cli kline --code 000001 --type day
+./tongstock kline --code 000001 --type day
 
 # 周K
-./tongstock-cli kline --code 000001 --type week
+./tongstock kline --code 000001 --type week
 
 # 月K
-./tongstock-cli kline --code 000001 --type month
+./tongstock kline --code 000001 --type month
 
 # 1分钟K
-./tongstock-cli kline --code 000001 --type 1m
+./tongstock kline --code 000001 --type 1m
 
 # 5分钟K
-./tongstock-cli kline --code 000001 --type 5m
+./tongstock kline --code 000001 --type 5m
 
 # 季K
-./tongstock-cli kline --code 000001 --type quarter
+./tongstock kline --code 000001 --type quarter
 
 # 年K
-./tongstock-cli kline --code 000001 --type year
+./tongstock kline --code 000001 --type year
 
 # 获取全部历史K线
-./tongstock-cli kline --code 000001 --type day --all
+./tongstock kline --code 000001 --type day --all
 ```
 
 ### 查询分时数据
 
 ```bash
 # 查询当日分时数据
-./tongstock-cli minute 000001
+./tongstock minute 000001
 
 # 查询历史分时数据 (需要指定日期)
-./tongstock-cli minute 000001 --history --date 20250314
+./tongstock minute 000001 --history --date 20250314
 ```
 
 ### 查询证券数量
 
 ```bash
 # 深圳市场 (默认)
-./tongstock-cli count
+./tongstock count
 
 # 上海市场
-./tongstock-cli count --exchange sh
+./tongstock count --exchange sh
 
 # 北京市场
-./tongstock-cli count --exchange bj
+./tongstock count --exchange bj
 ```
 
 ### 查询集合竞价
 
 ```bash
 # 查询集合竞价数据
-./tongstock-cli auction 000001
+./tongstock auction 000001
 ```
 
 ### 查询分笔成交
 
 ```bash
 # 查询当日分笔成交
-./tongstock-cli trade 000001
+./tongstock trade 000001
 
 # 查询历史分笔成交 (需要指定日期)
-./tongstock-cli trade 000001 --history --date 20240315
+./tongstock trade 000001 --history --date 20240315
 ```
 
 ### 查询除权除息
 
 ```bash
-./tongstock-cli xdxr 000001
+./tongstock xdxr 000001
 ```
 
 ### 查询财务数据
 
 ```bash
-./tongstock-cli finance 000001
+./tongstock finance 000001
 ```
 
 ### 查询指数K线
 
 ```bash
 # 上证指数日K
-./tongstock-cli index --code 999999 --type day
+./tongstock index --code 999999 --type day
 
 # 沪深300 5分钟K
-./tongstock-cli index --code 399300 --type 5m
+./tongstock index --code 399300 --type 5m
 ```
 
 ### 查询公司信息(F10)
 
 ```bash
 # 查询公司信息目录
-./tongstock-cli company 000001
+./tongstock company 000001
 
 # 查询公司信息具体内容
-./tongstock-cli company-content 000001
+./tongstock company-content 000001
 
 # 通过块名称查询特定内容
-./tongstock-cli company-content 000001 --block "公司概况"
+./tongstock company-content 000001 --block "公司概况"
 
 # 指定起始位置和长度
-./tongstock-cli company-content 000001 --start 30744 --length 9560
+./tongstock company-content 000001 --start 30744 --length 9560
 ```
 
 ### 查询板块分类
 
 ```bash
 # 列出所有板块文件
-./tongstock-cli block files
+./tongstock block files
 
 # 列出指数板块
-./tongstock-cli block list -f block_zs.dat
+./tongstock block list -f block_zs.dat
 
 # 按Type过滤（2=标准板块）
-./tongstock-cli block list -f block.dat -t 2
+./tongstock block list -f block.dat -t 2
 
 # 按成分股数量排序
-./tongstock-cli block list -f block_fg.dat -s
+./tongstock block list -f block_fg.dat -s
 
 # 显示板块成分股
-./tongstock-cli block show "沪深300" -f block_zs.dat
+./tongstock block show "沪深300" -f block_zs.dat
 
 # 模糊搜索板块
-./tongstock-cli block show "银行" -f block_fg.dat
+./tongstock block show "银行" -f block_fg.dat
 
 # 按股票代码查询所属板块
-./tongstock-cli block show --code 600519
+./tongstock block show --code 600519
 ```
 
 **板块文件：**
@@ -269,22 +274,22 @@ npm run dev        # 启动开发服务器，默认代理到 localhost:8080
 
 ```bash
 # 单股指标分析（默认参数，表格输出）
-./tongstock-cli indicator --code 000001 --type day
+./tongstock indicator --code 000001 --type day
 
 # JSON格式输出（默认返回最新一天）
-./tongstock-cli indicator --code 000001 --type day --json
+./tongstock indicator --code 000001 --type day --json
 
 # JSON格式输出，返回最近5天数据
-./tongstock-cli indicator --code 000001 --type day --json --days 5
+./tongstock indicator --code 000001 --type day --json --days 5
 
 # 获取全部历史K线计算指标
-./tongstock-cli indicator --code 000001 --type day --all
+./tongstock indicator --code 000001 --type day --all
 
 # 指定K线数量
-./tongstock-cli indicator --code 000001 --type day --count 500
+./tongstock indicator --code 000001 --type day --count 500
 
 # 使用自定义参数配置文件
-./tongstock-cli indicator --code 000001 --type day --config configs/params.yaml
+./tongstock indicator --code 000001 --type day --config configs/params.yaml
 ```
 
 **输出包含：**
@@ -331,13 +336,13 @@ npm run dev        # 启动开发服务器，默认代理到 localhost:8080
 
 ```bash
 # 指定股票列表筛选
-./tongstock-cli screen --codes "000001,600519,000858" --type day --signal golden_cross
+./tongstock screen --codes "000001,600519,000858" --type day --signal golden_cross
 
 # 从文件读取股票代码（每行一个）
-./tongstock-cli screen --file codes.txt --type day --signal oversold
+./tongstock screen --file codes.txt --type day --signal oversold
 
 # 设置并发池大小（默认10）
-./tongstock-cli screen --codes "000001,600519" --pool 5
+./tongstock screen --codes "000001,600519" --pool 5
 
 # 可用信号类型: golden_cross, death_cross, overbought, oversold
 ```
@@ -347,7 +352,7 @@ npm run dev        # 启动开发服务器，默认代理到 localhost:8080
 ### 启动服务
 
 ```bash
-./tongstock-server
+./tongstock server
 ```
 
 服务默认监听 `http://localhost:8080`

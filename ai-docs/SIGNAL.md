@@ -347,4 +347,4 @@ signal.DetectAllCycles() ── 检测交易周期
 
 - 指标计算: `pkg/ta/`
 - 信号检测: `pkg/signal/`
-- 服务器处理: `cmd/server/main.go`
+- 服务器处理: `internal/serverapp/app.go`（入口：`tongstock server`）

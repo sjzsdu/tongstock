@@ -17,6 +17,7 @@ import (
 	"github.com/sjzsdu/tongstock/pkg/history"
 	"github.com/sjzsdu/tongstock/pkg/param"
 	"github.com/sjzsdu/tongstock/pkg/signal"
+	"github.com/sjzsdu/tongstock/pkg/stockpool"
 	"github.com/sjzsdu/tongstock/pkg/strategy"
 	"github.com/sjzsdu/tongstock/pkg/ta"
 	"github.com/sjzsdu/tongstock/pkg/tdx"
@@ -31,6 +32,7 @@ type Server struct {
 	historyDB             *history.Store
 	watchlistDB           *watchlist.Store
 	tradingDB             *trading.Store
+	stockpoolDB           *stockpool.Store
 	stockSearchIndexCache stockSearchIndexCache
 	tdxMu                 sync.Mutex
 	agentState            *AgentState
@@ -51,7 +53,7 @@ func isStockCode(code string) bool {
 	}
 	// Check prefix for valid A-share stock codes
 	switch code[:3] {
-	case "000", "001", "002", "003": // Shenzhen: main board, SME board
+	case "001", "002", "003": // Shenzhen: SME board, new main board
 		return true
 	case "300", "301": // Shenzhen: ChiNext
 		return true
@@ -61,17 +63,26 @@ func isStockCode(code string) bool {
 		return true
 	case "920": // Beijing exchange (920xxx)
 		return true
+	case "000": // Shenzhen: main board (excluding indices)
+		// 000001-000050 are indices (Shanghai/Shenzhen indices)
+		// Valid stocks start from 000051
+		codeNum, err := strconv.Atoi(code)
+		if err != nil {
+			return false
+		}
+		return codeNum >= 51
 	}
 	return false
 }
 
 // NewServer creates a new Server instance
-func NewServer(svc *tdx.Service, historyDB *history.Store, watchlistDB *watchlist.Store, tradingDB *trading.Store) *Server {
+func NewServer(svc *tdx.Service, historyDB *history.Store, watchlistDB *watchlist.Store, tradingDB *trading.Store, stockpoolDB *stockpool.Store) *Server {
 	return &Server{
 		svc:                   svc,
 		historyDB:             historyDB,
 		watchlistDB:           watchlistDB,
 		tradingDB:             tradingDB,
+		stockpoolDB:           stockpoolDB,
 		stockSearchIndexCache: stockSearchIndexCache{},
 	}
 }
@@ -389,6 +400,7 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 		api.GET("/codes", s.handleCodes)
 		api.GET("/codes/list", s.handleCodesList)
 		api.GET("/codes/market", s.handleCodesMarket)
+		api.GET("/codes/marketcap", s.handleCodesWithMarketCap)
 		api.GET("/codes/stats", s.handleCodesStats)
 
 		// Kline
@@ -455,6 +467,11 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 		api.PUT("/watchlist/:code/note", s.handleWatchlistUpdateNote)
 		api.PUT("/watchlist/:code/group", s.handleWatchlistUpdateGroup)
 		api.GET("/watchlist/groups", s.handleWatchlistGroups)
+
+		// Stockpool
+		api.GET("/stockpool", s.handleStockpoolList)
+		api.POST("/stockpool", s.handleStockpoolUpsert)
+		api.DELETE("/stockpool/:id", s.handleStockpoolDelete)
 
 		// Sync
 		api.POST("/sync/daily", s.handleSyncDaily)
@@ -696,6 +713,86 @@ func (s *Server) handleCodesMarket(c *gin.Context) {
 	}
 
 	// Convert map to slice
+	var result []gin.H
+	for _, v := range codesMap {
+		result = append(result, v)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"total": len(result),
+		"codes": result,
+	})
+}
+
+// handleCodesWithMarketCap returns stock codes with market cap information
+func (s *Server) handleCodesWithMarketCap(c *gin.Context) {
+	var minMarketCap, maxMarketCap float64
+	if minStr := c.Query("minMarketCap"); minStr != "" {
+		fmt.Sscanf(minStr, "%f", &minMarketCap)
+	}
+	if maxStr := c.Query("maxMarketCap"); maxStr != "" {
+		fmt.Sscanf(maxStr, "%f", &maxMarketCap)
+	}
+
+	exchanges := []struct {
+		name string
+		ex   protocol.Exchange
+	}{
+		{"sz", protocol.ExchangeSZ},
+		{"sh", protocol.ExchangeSH},
+		{"bj", protocol.ExchangeBJ},
+	}
+
+	codesMap := make(map[string]gin.H)
+	processed := 0
+	maxProcess := 500 // Limit to avoid timeout
+
+	for _, item := range exchanges {
+		codes, err := s.svc.FetchCodes(item.ex)
+		if err != nil {
+			continue
+		}
+		for _, code := range codes {
+			if !isStockCode(code.Code) {
+				continue
+			}
+			if processed >= maxProcess {
+				break
+			}
+
+			fullCode := item.name + code.Code
+			quotes, _ := s.svc.Client.GetQuote(fullCode)
+			finance, _ := s.svc.FetchFinance(fullCode)
+
+			var marketCap float64
+			var price float64
+			if len(quotes) > 0 && finance != nil && quotes[0].Price > 0 && finance.LiuTongGuBen > 0 {
+				price = quotes[0].Price
+				marketCap = finance.LiuTongGuBen * price / 100000000 // 流通市值(亿)
+			}
+
+			// Apply market cap filter
+			if (minMarketCap > 0 && marketCap > 0 && marketCap < minMarketCap) ||
+				(maxMarketCap > 0 && marketCap > 0 && marketCap > maxMarketCap) {
+				continue
+			}
+
+			if _, exists := codesMap[code.Code]; !exists {
+				codesMap[code.Code] = gin.H{
+					"code":      code.Code,
+					"name":      code.Name,
+					"exchange":  item.name,
+					"marketCap": marketCap,
+					"price":     price,
+				}
+				processed++
+			}
+		}
+		if processed >= maxProcess {
+			break
+		}
+	}
+
 	var result []gin.H
 	for _, v := range codesMap {
 		result = append(result, v)
@@ -2265,6 +2362,63 @@ func (s *Server) handleWatchlistGroups(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"groups": data})
+}
+
+// handleStockpoolList handles stockpool list requests
+func (s *Server) handleStockpoolList(c *gin.Context) {
+	pools, err := s.stockpoolDB.GetAll()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"pools": pools})
+}
+
+// handleStockpoolUpsert handles stockpool insert/update requests
+func (s *Server) handleStockpoolUpsert(c *gin.Context) {
+	var req struct {
+		ID          string                      `json:"id"`
+		Name        string                      `json:"name"`
+		Description string                      `json:"description,omitempty"`
+		Filters     []stockpool.StockPoolFilter `json:"filters"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.ID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+		return
+	}
+	if req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		return
+	}
+
+	pool := stockpool.StockPool{
+		ID:          req.ID,
+		Name:        req.Name,
+		Description: req.Description,
+		Filters:     req.Filters,
+	}
+
+	if err := s.stockpoolDB.Upsert(pool); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// handleStockpoolDelete handles stockpool delete requests
+func (s *Server) handleStockpoolDelete(c *gin.Context) {
+	id := c.Param("id")
+	if err := s.stockpoolDB.Delete(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
 // normalizeCodeList 标准化代码列表

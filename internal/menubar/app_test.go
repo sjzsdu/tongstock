@@ -1,4 +1,4 @@
-package main
+package menubar
 
 import (
 	"errors"
@@ -23,6 +23,7 @@ func TestPIDRecordRoundTripAndLegacyCompatibility(t *testing.T) {
 	record := serverPIDRecord{
 		PID:        12345,
 		Executable: "/tmp/tongstock-server",
+		Args:       []string{"server"},
 		StartedAt:  time.Now().Truncate(time.Second),
 	}
 
@@ -33,7 +34,7 @@ func TestPIDRecordRoundTripAndLegacyCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatalf("readPIDRecord() error = %v", err)
 	}
-	if got.PID != record.PID || got.Executable != record.Executable || !got.StartedAt.Equal(record.StartedAt) {
+	if got.PID != record.PID || got.Executable != record.Executable || len(got.Args) != 1 || got.Args[0] != "server" || !got.StartedAt.Equal(record.StartedAt) {
 		t.Fatalf("readPIDRecord() = %#v, want %#v", got, record)
 	}
 
@@ -47,6 +48,20 @@ func TestPIDRecordRoundTripAndLegacyCompatibility(t *testing.T) {
 	}
 	if got.PID != legacyPID || got.Executable != "" {
 		t.Fatalf("readPIDRecord() legacy = %#v, want PID %d", got, legacyPID)
+	}
+}
+
+func TestUnifiedServerCommandUsesSameExecutable(t *testing.T) {
+	command := unifiedServerCommand("/Applications/TongStock/tongstock")
+	if command.Executable != "/Applications/TongStock/tongstock" {
+		t.Fatalf("Executable = %q", command.Executable)
+	}
+	if len(command.Args) != 1 || command.Args[0] != "server" {
+		t.Fatalf("Args = %#v, want [server]", command.Args)
+	}
+
+	if command := unifiedServerCommand("/Applications/TongStock/tongstock-menubar"); command.Executable != "" {
+		t.Fatalf("legacy executable unexpectedly selected unified mode: %#v", command)
 	}
 }
 
@@ -110,7 +125,7 @@ func TestManagedServerStartRestartStopLifecycle(t *testing.T) {
 	}
 
 	previousFinder := serverFinder
-	serverFinder = func() string { return serverPath }
+	serverFinder = func() serverCommand { return serverCommand{Executable: serverPath} }
 	defer func() {
 		serverFinder = previousFinder
 		_ = stopManagedServer()

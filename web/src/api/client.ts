@@ -18,6 +18,7 @@ import type {
   AgentSessionsResponse,
   AgentTranscriptResponse,
   AgentDebateResponse,
+  CustomStockPool,
   ParadigmAnalyzeResponse,
   ParadigmListResponse,
   ParadigmItem,
@@ -142,12 +143,17 @@ export const api = {
     return fetchJSON<{ stats: { exchange: string; name: string; total: number; categories: Record<string, number> }[] }>(`/api/codes/stats?${params}`);
   },
 
-  // Market-wide stock codes with deduplication and market cap filtering
-  codesMarket: (minMarketCap?: number, maxMarketCap?: number) => {
+  // Market-wide stock codes with deduplication
+  codesMarket: () => {
+    return fetchJSON<{ total: number; codes: { code: string; name: string; exchange: string }[] }>('/api/codes/market');
+  },
+
+  // Market-wide stock codes with market cap info and filtering
+  codesWithMarketCap: (minMarketCap?: number, maxMarketCap?: number) => {
     const params = new URLSearchParams();
     if (minMarketCap != null && minMarketCap > 0) params.set('minMarketCap', String(minMarketCap));
     if (maxMarketCap != null && maxMarketCap > 0) params.set('maxMarketCap', String(maxMarketCap));
-    return fetchJSON<{ total: number; codes: { code: string; name: string; exchange: string }[] }>(`/api/codes/market?${params}`);
+    return fetchJSON<{ total: number; codes: { code: string; name: string; exchange: string; marketCap: number; price: number }[] }>(`/api/codes/marketcap?${params}`);
   },
 
   screen: (codes: string, type = 'day', signals?: string[]) => {
@@ -213,6 +219,21 @@ export const api = {
 
   watchlistGroups: () =>
     fetchJSON<{ groups: { name: string; count: number }[] }>('/api/watchlist/groups'),
+
+  // Stockpool APIs
+  stockpoolList: () =>
+    fetchJSON<{ pools: CustomStockPool[] }>('/api/stockpool'),
+
+  stockpoolUpsert: (pool: CustomStockPool) =>
+    fetchJSON<{ success: boolean }>('/api/stockpool', {
+      method: 'POST',
+      body: JSON.stringify(pool),
+    }),
+
+  stockpoolDelete: (id: string) =>
+    fetchJSON<{ success: boolean }>(`/api/stockpool/${id}`, {
+      method: 'DELETE',
+    }),
 
   saveScreenResults: (results: { code: string; name?: string }[]) =>
     Promise.all(results.map((item) => api.watchlistAdd(item.code, item.name))),

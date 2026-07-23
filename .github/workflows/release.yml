@@ -100,7 +100,6 @@ jobs:
           ext=""
           if [[ "${GOOS}" == "windows" ]]; then ext=".exe"; fi
           go build -trimpath -ldflags="-s -w" -o "dist/${package}/tongstock${ext}" ./cmd/cli
-          go build -trimpath -ldflags="-s -w" -o "dist/${package}/tongstock-server${ext}" ./cmd/server
           cp README.md "dist/${package}/" || true
           if [[ "${GOOS}" == "windows" ]]; then
             (cd dist && 7z a "${package}.zip" "${package}")

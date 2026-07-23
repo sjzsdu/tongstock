@@ -3,18 +3,18 @@
 # TongStock Server API 测试脚本
 # 用于验证所有 HTTP API 是否正常工作
 
-SERVER="tongstock-server"
+CLI="tongstock"
 URL="http://localhost:8080"
 
-if [ ! -f "$SERVER" ] && [ ! -f "$HOME/.local/bin/$SERVER" ]; then
-    echo "错误: 未找到 tongstock-server，请先编译"
+if [ ! -f "$CLI" ] && [ ! -f "$HOME/.local/bin/$CLI" ]; then
+    echo "错误: 未找到 tongstock，请先编译"
     exit 1
 fi
 
-if [ -f "$SERVER" ]; then
-    SERVER_PATH="./$SERVER"
+if [ -f "$CLI" ]; then
+    CLI_PATH="./$CLI"
 else
-    SERVER_PATH="$HOME/.local/bin/$SERVER"
+    CLI_PATH="$HOME/.local/bin/$CLI"
 fi
 
 echo "========================================"
@@ -22,11 +22,11 @@ echo "TongStock Server API 测试"
 echo "========================================"
 echo ""
 
-$SERVER_PATH &
+"$CLI_PATH" server &
 SERVER_PID=$!
 sleep 2
 
-trap "kill $SERVER_PID 2>/dev/null" EXIT
+trap 'kill "$SERVER_PID" 2>/dev/null' EXIT
 
 test_api() {
     local name="$1"
