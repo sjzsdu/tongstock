@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -20,6 +21,12 @@ import (
 //go:embed icon.png
 var iconData []byte
 
+var (
+	serviceRunning bool
+	servicePID     int
+	mu             sync.Mutex
+)
+
 func main() {
 	systray.Run(onReady, onExit)
 }
@@ -27,12 +34,10 @@ func main() {
 func onReady() {
 	systray.SetTooltip("TongStock 股票分析工作台")
 
-	// Try to load icon
-setIcon()
+	setIcon()
 
 	// Status item
-	pid := os.Getpid()
-	statusItem := systray.AddMenuItem(fmt.Sprintf("Service Running · PID %d", pid), "")
+	statusItem := systray.AddMenuItem("Service Stopped", "")
 	statusItem.Disable()
 
 	systray.AddSeparator()
@@ -45,8 +50,14 @@ setIcon()
 
 	systray.AddSeparator()
 
+	// Start/Stop Service (dynamically updated)
+	startStopItem := systray.AddMenuItem("Start Service", "启动服务")
+
 	// Restart Service
 	restartItem := systray.AddMenuItem("Restart Service", "重启服务")
+	restartItem.Disable()
+
+	systray.AddSeparator()
 
 	// Quit
 	quitItem := systray.AddMenuItem("Quit Menu Bar", "退出菜单栏")
@@ -56,13 +67,22 @@ setIcon()
 		for {
 			select {
 			case <-openConsole.ClickedCh:
-				ensureServerRunning(statusItem)
+				ensureServerRunning(statusItem, startStopItem, restartItem)
 				waitForServer("http://localhost:8080/health", 10)
 				openBrowser("http://localhost:8080")
 			case <-aboutItem.ClickedCh:
 				openBrowser("https://github.com/sjzsdu/tongstock")
+			case <-startStopItem.ClickedCh:
+				mu.Lock()
+				running := serviceRunning
+				mu.Unlock()
+				if running {
+					stopService(statusItem, startStopItem, restartItem)
+				} else {
+					startService(statusItem, startStopItem, restartItem)
+				}
 			case <-restartItem.ClickedCh:
-				restartService(statusItem)
+				restartService(statusItem, startStopItem, restartItem)
 			case <-quitItem.ClickedCh:
 				systray.Quit()
 				os.Exit(0)
@@ -71,7 +91,7 @@ setIcon()
 	}()
 
 	// Monitor service health
-	go monitorService(statusItem)
+	go monitorService(statusItem, startStopItem, restartItem)
 }
 
 func onExit() {}
@@ -81,7 +101,6 @@ func setIcon() {
 		systray.SetIcon(iconData)
 		return
 	}
-	// Fallback: try loading from file
 	iconPaths := []string{
 		"assets/icon.png",
 		filepath.Join(os.Getenv("HOME"), ".tongstock/icon.png"),
@@ -92,12 +111,6 @@ func setIcon() {
 			return
 		}
 	}
-}
-
-func getDefaultIcon() []byte {
-	// Minimal 16x16 PNG icon (a simple "T" letter)
-	// This is a placeholder - replace with actual icon
-	return nil
 }
 
 func openBrowser(rawURL string) {
@@ -127,22 +140,52 @@ func waitForServer(url string, maxSeconds int) {
 	}
 }
 
-func ensureServerRunning(statusItem *systray.MenuItem) {
-	// Check if server is already running via PID file
+func isServerRunning() (bool, int) {
 	pidFile := filepath.Join(os.Getenv("HOME"), ".tongstock", "server.pid")
 	data, err := os.ReadFile(pidFile)
-	if err == nil {
-		pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-		if err == nil {
-			proc, err := os.FindProcess(pid)
-			if err == nil && proc.Signal(syscall.Signal(0)) == nil {
-				statusItem.SetTitle(fmt.Sprintf("Service Running · PID %d", pid))
-				return // already running
-			}
-		}
+	if err != nil {
+		return false, 0
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return false, 0
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false, 0
+	}
+	if err := proc.Signal(syscall.Signal(0)); err != nil {
+		return false, 0
+	}
+	return true, pid
+}
+
+func updateMenuItems(statusItem *systray.MenuItem, startStopItem *systray.MenuItem, restartItem *systray.MenuItem) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if serviceRunning {
+		statusItem.SetTitle(fmt.Sprintf("Service Running · PID %d", servicePID))
+		startStopItem.SetTitle("Stop Service")
+		startStopItem.SetTooltip("停止服务")
+		restartItem.Enable()
+	} else {
+		statusItem.SetTitle("Service Stopped")
+		startStopItem.SetTitle("Start Service")
+		startStopItem.SetTooltip("启动服务")
+		restartItem.Disable()
+	}
+}
+
+func ensureServerRunning(statusItem *systray.MenuItem, startStopItem *systray.MenuItem, restartItem *systray.MenuItem) {
+	mu.Lock()
+	running := servicePID
+	mu.Unlock()
+
+	if running > 0 {
+		return
 	}
 
-	// Try to find tongstock-server in PATH or known locations
 	serverBin := findServerBinary()
 	if serverBin == "" {
 		statusItem.SetTitle("Server not found")
@@ -157,10 +200,60 @@ func ensureServerRunning(statusItem *systray.MenuItem) {
 		statusItem.SetTitle("Start failed")
 		return
 	}
+
 	pid := cmd.Process.Pid
+	pidFile := filepath.Join(os.Getenv("HOME"), ".tongstock", "server.pid")
 	os.MkdirAll(filepath.Dir(pidFile), 0755)
 	os.WriteFile(pidFile, []byte(strconv.Itoa(pid)), 0644)
-	statusItem.SetTitle(fmt.Sprintf("Service Running · PID %d", pid))
+
+	mu.Lock()
+	serviceRunning = true
+	servicePID = pid
+	mu.Unlock()
+
+	updateMenuItems(statusItem, startStopItem, restartItem)
+}
+
+func startService(statusItem *systray.MenuItem, startStopItem *systray.MenuItem, restartItem *systray.MenuItem) {
+	statusItem.SetTitle("Starting...")
+
+	serverBin := findServerBinary()
+	if serverBin == "" {
+		statusItem.SetTitle("Server binary not found")
+		return
+	}
+
+	cmd := exec.Command(serverBin)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		statusItem.SetTitle("Start failed")
+		return
+	}
+
+	pid := cmd.Process.Pid
+	pidFile := filepath.Join(os.Getenv("HOME"), ".tongstock", "server.pid")
+	os.MkdirAll(filepath.Dir(pidFile), 0755)
+	os.WriteFile(pidFile, []byte(strconv.Itoa(pid)), 0644)
+
+	mu.Lock()
+	serviceRunning = true
+	servicePID = pid
+	mu.Unlock()
+
+	updateMenuItems(statusItem, startStopItem, restartItem)
+}
+
+func stopService(statusItem *systray.MenuItem, startStopItem *systray.MenuItem, restartItem *systray.MenuItem) {
+	statusItem.SetTitle("Stopping...")
+
+	killExistingProcess()
+
+	mu.Lock()
+	serviceRunning = false
+	servicePID = 0
+	mu.Unlock()
+
+	updateMenuItems(statusItem, startStopItem, restartItem)
 }
 
 func findServerBinary() string {
@@ -191,8 +284,14 @@ func findServerBinary() string {
 		return path
 	}
 
-	// 5. Look in project source directory (common dev location)
-	candidate = filepath.Join(home, "Codes", "gos", "tongstock-worktree", "tongstock-server")
+	// 5. Look in go/bin (where make install puts it)
+	candidate = filepath.Join(home, "go", "bin", "tongstock-server")
+	if _, err := os.Stat(candidate); err == nil {
+		return candidate
+	}
+
+	// 6. Look in project source directory (common dev location)
+	candidate = filepath.Join(home, "Codes", "gos", "tongstock", "tongstock-server")
 	if _, err := os.Stat(candidate); err == nil {
 		return candidate
 	}
@@ -200,26 +299,31 @@ func findServerBinary() string {
 	return ""
 }
 
-func restartService(statusItem *systray.MenuItem) {
+func restartService(statusItem *systray.MenuItem, startStopItem *systray.MenuItem, restartItem *systray.MenuItem) {
 	statusItem.SetTitle("Restarting...")
 
-	// Kill existing server process
 	killExistingProcess()
 
-	// Find the server binary
 	serverBin := findServerBinary()
 	if serverBin == "" {
 		statusItem.SetTitle("Server binary not found")
-		statusItem.Enable()
+		mu.Lock()
+		serviceRunning = false
+		servicePID = 0
+		mu.Unlock()
+		updateMenuItems(statusItem, startStopItem, restartItem)
 		return
 	}
 
-	// Start new server process
 	cmd := exec.Command(serverBin)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		statusItem.SetTitle("Restart failed")
-		statusItem.Enable()
+		mu.Lock()
+		serviceRunning = false
+		servicePID = 0
+		mu.Unlock()
+		updateMenuItems(statusItem, startStopItem, restartItem)
 		return
 	}
 
@@ -227,8 +331,13 @@ func restartService(statusItem *systray.MenuItem) {
 	pidFile := filepath.Join(os.Getenv("HOME"), ".tongstock", "server.pid")
 	os.MkdirAll(filepath.Dir(pidFile), 0755)
 	os.WriteFile(pidFile, []byte(strconv.Itoa(pid)), 0644)
-	statusItem.SetTitle(fmt.Sprintf("Service Running · PID %d", pid))
-	statusItem.Enable()
+
+	mu.Lock()
+	serviceRunning = true
+	servicePID = pid
+	mu.Unlock()
+
+	updateMenuItems(statusItem, startStopItem, restartItem)
 }
 
 func killExistingProcess() {
@@ -251,32 +360,18 @@ func killExistingProcess() {
 	os.Remove(pidFile)
 }
 
-func monitorService(statusItem *systray.MenuItem) {
-	pidFile := filepath.Join(os.Getenv("HOME"), ".tongstock", "server.pid")
+func monitorService(statusItem *systray.MenuItem, startStopItem *systray.MenuItem, restartItem *systray.MenuItem) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		data, err := os.ReadFile(pidFile)
-		if err != nil {
-			continue
-		}
-		pidStr := strings.TrimSpace(string(data))
-		pid, err := strconv.Atoi(pidStr)
-		if err != nil {
-			continue
-		}
-		// Check if process is alive
-		proc, err := os.FindProcess(pid)
-		if err != nil {
-			statusItem.SetTitle("Service Stopped")
-			continue
-		}
-		// On macOS, FindProcess always succeeds, need to check with kill -0
-		if err := proc.Signal(syscall.Signal(0)); err != nil {
-			statusItem.SetTitle("Service Stopped")
-		} else {
-			statusItem.SetTitle(fmt.Sprintf("Service Running · PID %d", pid))
-		}
+		running, pid := isServerRunning()
+
+		mu.Lock()
+		serviceRunning = running
+		servicePID = pid
+		mu.Unlock()
+
+		updateMenuItems(statusItem, startStopItem, restartItem)
 	}
 }

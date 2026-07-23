@@ -6,6 +6,7 @@
 /bin/
 tongstock-cli
 tongstock-server
+tongstock-menubar
 /server
 pkg/web/dist
 tmp

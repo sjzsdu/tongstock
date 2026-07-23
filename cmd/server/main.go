@@ -44,7 +44,7 @@ func main() {
 		hosts = tdx.DefaultHosts
 	}
 	pool, err := tdx.NewPool(func() (*tdx.Client, error) {
-		return tdx.DialHosts(hosts)
+		return tdx.DialHosts(hosts, tdx.WithRedial(true))
 	}, 3)
 	if err != nil {
 		log.Fatalf("创建连接池失败: %v", err)

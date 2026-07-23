@@ -46,26 +46,23 @@ const (
 )
 
 func isStockCode(code string) bool {
-	switch {
-	case strings.HasPrefix(code, "688"):
-		return true
-	case strings.HasPrefix(code, "6"):
-		return true
-	case strings.HasPrefix(code, "300"), strings.HasPrefix(code, "301"):
-		return true
-	case strings.HasPrefix(code, "399"):
-		return true
-	case strings.HasPrefix(code, "000"), strings.HasPrefix(code, "001"):
-		return true
-	case strings.HasPrefix(code, "002"):
-		return true
-	case strings.HasPrefix(code, "8"):
-		return true
-	case strings.HasPrefix(code, "5"):
-		return true
-	default:
+	if len(code) != 6 {
 		return false
 	}
+	// Check prefix for valid A-share stock codes
+	switch code[:3] {
+	case "000", "001", "002", "003": // Shenzhen: main board, SME board
+		return true
+	case "300", "301": // Shenzhen: ChiNext
+		return true
+	case "600", "601", "603", "605": // Shanghai: main board
+		return true
+	case "688", "689": // Shanghai: STAR Market
+		return true
+	case "920": // Beijing exchange (920xxx)
+		return true
+	}
+	return false
 }
 
 // NewServer creates a new Server instance
@@ -391,6 +388,7 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 		// Codes
 		api.GET("/codes", s.handleCodes)
 		api.GET("/codes/list", s.handleCodesList)
+		api.GET("/codes/market", s.handleCodesMarket)
 		api.GET("/codes/stats", s.handleCodesStats)
 
 		// Kline
@@ -659,6 +657,51 @@ func (s *Server) handleCodesList(c *gin.Context) {
 		"exchange": exchange,
 		"total":    len(filtered),
 		"codes":    filtered,
+	})
+}
+
+// handleCodesMarket handles market-wide stock codes with deduplication
+func (s *Server) handleCodesMarket(c *gin.Context) {
+	exchanges := []struct {
+		name string
+		ex   protocol.Exchange
+	}{
+		{"sz", protocol.ExchangeSZ},
+		{"sh", protocol.ExchangeSH},
+		{"bj", protocol.ExchangeBJ},
+	}
+
+	// Use map for deduplication by code
+	codesMap := make(map[string]gin.H)
+
+	for _, item := range exchanges {
+		codes, err := s.svc.FetchCodes(item.ex)
+		if err != nil {
+			continue
+		}
+		for _, code := range codes {
+			// Filter: only valid A-share stock codes
+			if isStockCode(code.Code) {
+				if _, exists := codesMap[code.Code]; !exists {
+					codesMap[code.Code] = gin.H{
+						"code":     code.Code,
+						"name":     code.Name,
+						"exchange": item.name,
+					}
+				}
+			}
+		}
+	}
+
+	// Convert map to slice
+	var result []gin.H
+	for _, v := range codesMap {
+		result = append(result, v)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"total": len(result),
+		"codes": result,
 	})
 }
 

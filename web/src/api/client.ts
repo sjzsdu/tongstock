@@ -142,6 +142,11 @@ export const api = {
     return fetchJSON<{ stats: { exchange: string; name: string; total: number; categories: Record<string, number> }[] }>(`/api/codes/stats?${params}`);
   },
 
+  // Market-wide stock codes with deduplication
+  codesMarket: () => {
+    return fetchJSON<{ total: number; codes: { code: string; name: string; exchange: string }[] }>('/api/codes/market');
+  },
+
   screen: (codes: string, type = 'day', signals?: string[]) => {
     const p = new URLSearchParams({ codes, type });
     if (signals && signals.length > 0) {

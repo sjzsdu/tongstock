@@ -36,7 +36,7 @@ const { Paragraph, Text, Title } = Typography;
 
 const ROW_HEIGHT = 48;
 
-type SourceTab = 'watchlist' | 'block';
+type SourceTab = 'watchlist' | 'block' | 'market' | 'custom';
 type SortKey = 'code' | 'name' | 'price' | 'change_pct';
 
 interface StockItem {
@@ -287,6 +287,13 @@ export default function OvernightArbitrage() {
 	const [isOvernightTime, setIsOvernightTime] = useState(false);
 	const [currentTime, setCurrentTime] = useState('');
 
+	const [marketCodes, setMarketCodes] = useState<{ code: string; name: string }[]>([]);
+	const [marketLoading, setMarketLoading] = useState(false);
+	const [customMarketCapMin, setCustomMarketCapMin] = useState(50);
+	const [customMarketCapMax, setCustomMarketCapMax] = useState(200);
+	const [customCodes, setCustomCodes] = useState<{ code: string; name: string }[]>([]);
+	const [customLoading, setCustomLoading] = useState(false);
+
 	const [trades, setTrades] = useState<Record<string, TradeInfo>>({});
 	const [tradingLoading, setTradingLoading] = useState(false);
 	const [showTradeModal, setShowTradeModal] = useState(false);
@@ -460,18 +467,56 @@ export default function OvernightArbitrage() {
 		void loadBlockStocks(block);
 	}, [loadBlockStocks, selectedBlock]);
 
+	const loadMarketCodes = useCallback(async () => {
+		setMarketLoading(true);
+		try {
+			const result = await api.codesMarket();
+			if (result.codes) {
+				setMarketCodes(result.codes.map((item) => ({ code: item.code, name: item.name })));
+			}
+		} catch {
+			setMarketCodes([]);
+		} finally {
+			setMarketLoading(false);
+		}
+	}, []);
+
+	const loadCustomCodes = useCallback(async () => {
+		setCustomLoading(true);
+		try {
+			const result = await api.codesMarket();
+			if (result.codes) {
+				setCustomCodes(result.codes.map((item) => ({ code: item.code, name: item.name })));
+			}
+		} catch {
+			setCustomCodes([]);
+		} finally {
+			setCustomLoading(false);
+		}
+	}, []);
+
 	useEffect(() => {
 		if (sourceTab === 'block') {
 			void loadBlocks(blockFile, ['block_zs.dat', 'block_fg.dat', 'block_gn.dat'].find((item) => item === blockFile) ? '' : undefined);
+		} else if (sourceTab === 'market') {
+			void loadMarketCodes();
+		} else if (sourceTab === 'custom') {
+			void loadCustomCodes();
 		}
-	}, [sourceTab, blockFile, loadBlocks]);
+	}, [sourceTab, blockFile, loadBlocks, loadMarketCodes, loadCustomCodes]);
 
 	const resolvedCodes = useMemo(() => {
 		if (sourceTab === 'block' && selectedBlock?.stocks) {
 			return selectedBlock.stocks.join(',');
 		}
+		if (sourceTab === 'market') {
+			return marketCodes.map((item) => item.code).join(',');
+		}
+		if (sourceTab === 'custom') {
+			return customCodes.map((item) => item.code).join(',');
+		}
 		return stockList.map((stock) => stock.code).join(',');
-	}, [selectedBlock, sourceTab, stockList]);
+	}, [selectedBlock, sourceTab, stockList, marketCodes, customCodes]);
 
 	const doScreen = async () => {
 		const codes = resolvedCodes.trim();
@@ -707,10 +752,14 @@ export default function OvernightArbitrage() {
 							<Text type="secondary">股票池：</Text>
 							{sourceTab === 'watchlist' ? (
 								<Text strong>{stockList.length} 只自选股</Text>
-							) : selectedBlock ? (
+							) : sourceTab === 'block' && selectedBlock ? (
 								<Text strong>{selectedBlock.name}（{selectedBlock.stocks?.length || selectedBlock.count} 只）</Text>
+							) : sourceTab === 'market' ? (
+								<Text strong>全市场（{marketLoading ? '加载中...' : `${marketCodes.length}只`}）</Text>
+							) : sourceTab === 'custom' ? (
+								<Text strong>自定义（{customMarketCapMin}-{customMarketCapMax}亿，{customLoading ? '加载中...' : `${customCodes.length}只`}）</Text>
 							) : (
-								<Text type="secondary">未选择板块</Text>
+								<Text type="secondary">未选择股票来源</Text>
 							)}
 						</Space>
 						<Button size="small" icon={<EditOutlined />}>更换</Button>
@@ -766,7 +815,7 @@ export default function OvernightArbitrage() {
 					disabled={!resolvedCodes.trim()}
 					size="large"
 				>
-					开始筛选（{stockList.length}只股票）
+					{loading ? '筛选中...' : `开始筛选（${resolvedCodes.split(',').filter(Boolean).length}只股票）`}
 				</Button>
 
 				{error && <Alert type="error" showIcon message="筛选失败" description={error} />}
@@ -917,6 +966,8 @@ export default function OvernightArbitrage() {
 					options={[
 						{ label: '自选股', value: 'watchlist' },
 						{ label: '板块', value: 'block' },
+						{ label: '全市场', value: 'market' },
+						{ label: '自定义', value: 'custom' },
 					]}
 					style={{ marginBottom: 16 }}
 				/>
@@ -971,7 +1022,7 @@ export default function OvernightArbitrage() {
 							)}
 						</div>
 					</Space>
-				) : (
+				) : sourceTab === 'block' ? (
 					<Space direction="vertical" size={12} style={{ width: '100%' }}>
 						<Segmented
 							block
@@ -1035,7 +1086,86 @@ export default function OvernightArbitrage() {
 							/>
 						)}
 					</Space>
-				)}
+				) : sourceTab === 'market' ? (
+					<Space direction="vertical" size={12} style={{ width: '100%' }}>
+						<Alert
+							type="info"
+							showIcon
+							message="全市场股票池"
+							description="包含上海、深圳、北京三大交易所的所有股票，数据量大，筛选时间较长。"
+						/>
+						{marketLoading ? (
+							<Flex justify="center" align="center" style={{ minHeight: 200 }}><Spin tip="正在获取全市场股票列表..." /></Flex>
+						) : (
+							<List
+								size="small"
+								dataSource={marketCodes.slice(0, 50)}
+								renderItem={(item) => (
+									<List.Item>
+										<Space><Text code>{item.code}</Text><Text>{item.name}</Text></Space>
+									</List.Item>
+								)}
+							/>
+						)}
+						{marketCodes.length > 50 && (
+							<Text type="secondary" style={{ fontSize: 12, textAlign: 'center', display: 'block' }}>
+								仅显示前50只，共{marketCodes.length}只
+							</Text>
+						)}
+					</Space>
+				) : sourceTab === 'custom' ? (
+					<Space direction="vertical" size={12} style={{ width: '100%' }}>
+						<Alert
+							type="info"
+							showIcon
+							message="自定义股票池"
+							description="根据流通市值范围筛选股票，适合杨永兴策略的50-200亿市值要求。"
+						/>
+						<Flex gap={16}>
+							<Space direction="vertical" style={{ flex: 1 }}>
+								<Text type="secondary">最小流通市值（亿）</Text>
+								<Input
+									type="number"
+									value={customMarketCapMin}
+									onChange={(e) => setCustomMarketCapMin(Number(e.target.value) || 0)}
+									min={0}
+									max={10000}
+								/>
+							</Space>
+							<Space direction="vertical" style={{ flex: 1 }}>
+								<Text type="secondary">最大流通市值（亿）</Text>
+								<Input
+									type="number"
+									value={customMarketCapMax}
+									onChange={(e) => setCustomMarketCapMax(Number(e.target.value) || 0)}
+									min={0}
+									max={10000}
+								/>
+							</Space>
+						</Flex>
+						<Button type="primary" size="small" onClick={() => void loadCustomCodes()} loading={customLoading}>
+							{customLoading ? '刷新中...' : '刷新股票列表'}
+						</Button>
+						{customLoading ? (
+							<Flex justify="center" align="center" style={{ minHeight: 150 }}><Spin tip="正在获取股票列表..." /></Flex>
+						) : (
+							<List
+								size="small"
+								dataSource={customCodes.slice(0, 50)}
+								renderItem={(item) => (
+									<List.Item>
+										<Space><Text code>{item.code}</Text><Text>{item.name}</Text></Space>
+									</List.Item>
+								)}
+							/>
+						)}
+						{customCodes.length > 50 && (
+							<Text type="secondary" style={{ fontSize: 12, textAlign: 'center', display: 'block' }}>
+								仅显示前50只，共{customCodes.length}只
+							</Text>
+						)}
+					</Space>
+				) : null}
 			</Modal>
 
 			<Modal
