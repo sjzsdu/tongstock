@@ -5,8 +5,12 @@ echo "=== TongStock Menu Bar 安装 ==="
 
 # 1. Build
 echo "编译中..."
+mkdir -p "$HOME/.local/bin"
 go build -o "$HOME/.local/bin/tongstock-menubar" ./cmd/menubar
-echo "编译完成: ~/.local/bin/tongstock-menubar"
+go build -o "$HOME/.local/bin/tongstock-server" ./cmd/server
+echo "编译完成:"
+echo "  ~/.local/bin/tongstock-menubar"
+echo "  ~/.local/bin/tongstock-server"
 
 # 2. Create plist
 mkdir -p "$HOME/Library/LaunchAgents"
