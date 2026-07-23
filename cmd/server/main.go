@@ -1,7 +1,13 @@
 package main
 
-import "github.com/sjzsdu/tongstock/internal/serverapp"
+import (
+	"log"
+
+	"github.com/sjzsdu/tongstock/internal/serverapp"
+)
 
 func main() {
-	serverapp.Run()
+	if err := serverapp.Run(); err != nil {
+		log.Fatal(err)
+	}
 }

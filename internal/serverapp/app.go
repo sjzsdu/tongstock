@@ -1,9 +1,12 @@
 package serverapp
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sjzsdu/tongstock/internal/agents"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
+	"github.com/sjzsdu/tongstock/internal/serviceproc"
 	"github.com/sjzsdu/tongstock/pkg/config"
 	"github.com/sjzsdu/tongstock/pkg/history"
 	"github.com/sjzsdu/tongstock/pkg/param"
@@ -28,10 +32,10 @@ import (
 )
 
 // Run starts the TongStock HTTP server and blocks until it exits.
-func Run() {
+func Run() error {
 	// Initialize config
 	if err := config.Init(); err != nil {
-		log.Fatalf("初始化配置失败: %v", err)
+		return fmt.Errorf("初始化配置失败: %w", err)
 	}
 	cfg := config.Get()
 
@@ -49,49 +53,58 @@ func Run() {
 		return tdx.DialHosts(hosts, tdx.WithRedial(true))
 	}, 3)
 	if err != nil {
-		log.Fatalf("创建连接池失败: %v", err)
+		return fmt.Errorf("创建连接池失败: %w", err)
 	}
 
 	// Get a client from pool to create service
 	client, err := pool.Get()
 	if err != nil {
-		log.Fatalf("获取连接失败: %v", err)
+		return fmt.Errorf("获取连接失败: %w", err)
 	}
 
 	// Initialize unified storage
 	s, err := storage.New(storage.Config{Driver: cfg.Database.Driver, DSN: cfg.Database.DSN})
 	if err != nil {
-		log.Fatalf("初始化存储失败: %v", err)
+		return fmt.Errorf("初始化存储失败: %w", err)
 	}
 
 	// Create service with shared storage
 	svc, err := tdx.NewService(client, s)
 	if err != nil {
-		log.Fatalf("创建服务失败: %v", err)
+		_ = s.Close()
+		return fmt.Errorf("创建服务失败: %w", err)
 	}
+	defer func() {
+		if err := svc.Close(); err != nil {
+			log.Printf("关闭服务失败: %v", err)
+		}
+		if err := s.Close(); err != nil {
+			log.Printf("关闭存储失败: %v", err)
+		}
+	}()
 
 	// Initialize history store with same storage
 	historyStore, err := history.New(s)
 	if err != nil {
-		log.Fatalf("打开历史数据库失败: %v", err)
+		return fmt.Errorf("打开历史数据库失败: %w", err)
 	}
 
 	// Initialize watchlist store with same storage
 	watchlistStore, err := watchlist.New(s)
 	if err != nil {
-		log.Fatalf("打开自选股数据库失败: %v", err)
+		return fmt.Errorf("打开自选股数据库失败: %w", err)
 	}
 
 	// Initialize trading store with same storage
 	tradingStore, err := trading.New(s)
 	if err != nil {
-		log.Fatalf("打开交易数据库失败: %v", err)
+		return fmt.Errorf("打开交易数据库失败: %w", err)
 	}
 
 	// Initialize stockpool store with same storage
 	stockpoolStore, err := stockpool.New(s)
 	if err != nil {
-		log.Fatalf("打开股票池数据库失败: %v", err)
+		return fmt.Errorf("打开股票池数据库失败: %w", err)
 	}
 
 	// Create HTTP server
@@ -225,25 +238,42 @@ func Run() {
 	addr := fmt.Sprintf(":%d", port)
 	log.Printf("TongStock server starting on %s", addr)
 
-	// Graceful shutdown
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("启动服务器失败: %w", err)
+	}
+
+	record := serviceproc.CurrentRecord()
+	if err := serviceproc.Write(record); err != nil {
+		_ = listener.Close()
+		return fmt.Errorf("记录服务进程失败: %w", err)
+	}
+	defer serviceproc.RemoveIfPID(record.PID)
+
+	httpDaemon := &http.Server{Addr: addr, Handler: r}
+	serverErr := make(chan error, 1)
 	go func() {
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-		<-sigCh
-		log.Println("Shutting down server...")
-
-		// Close resources
-		if err := svc.Close(); err != nil {
-			log.Printf("关闭服务失败: %v", err)
+		err := httpDaemon.Serve(listener)
+		if errors.Is(err, http.ErrServerClosed) {
+			err = nil
 		}
-		if err := s.Close(); err != nil {
-			log.Printf("关闭存储失败: %v", err)
-		}
-
-		os.Exit(0)
+		serverErr <- err
 	}()
 
-	if err := r.Run(addr); err != nil {
-		log.Fatalf("启动服务器失败: %v", err)
+	signalCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stopSignals()
+
+	select {
+	case err := <-serverErr:
+		return err
+	case <-signalCtx.Done():
+		log.Println("Shutting down server...")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		if err := httpDaemon.Shutdown(shutdownCtx); err != nil {
+			_ = httpDaemon.Close()
+			return fmt.Errorf("关闭 HTTP 服务失败: %w", err)
+		}
+		return <-serverErr
 	}
 }

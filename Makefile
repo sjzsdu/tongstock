@@ -8,7 +8,7 @@ MENUBAR_BIN := tongstock-menubar
 all: cli
 
 web:
-	cd web && pnpm build
+	cd web && CI=true pnpm run build
 	rm -rf pkg/web/dist
 	cp -r web/dist pkg/web/dist
 

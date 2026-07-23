@@ -11,13 +11,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/getlantern/systray"
+	"github.com/sjzsdu/tongstock/internal/serviceproc"
 	"github.com/sjzsdu/tongstock/pkg/config"
 )
 
@@ -25,11 +25,17 @@ import (
 var iconData []byte
 
 var (
-	serviceRunning bool
-	servicePID     int
-	mu             sync.Mutex
-	serviceOpMu    sync.Mutex
-	serverFinder   = findServerCommand
+	serviceRunning  bool
+	servicePID      int
+	serviceExternal bool
+	serviceConflict bool
+	mu              sync.Mutex
+	serviceOpMu     sync.Mutex
+	serverFinder    = findServerCommand
+	listenerFinder  = serviceproc.ListenerPIDs
+	processFinder   = serviceproc.RecordForPID
+	statusFinder    = serviceproc.ProcessStatus
+	healthFinder    = queryServerHealth
 )
 
 const (
@@ -37,16 +43,25 @@ const (
 	forcedStopTimeout   = 2 * time.Second
 )
 
-type serverPIDRecord struct {
-	PID        int       `json:"pid"`
-	Executable string    `json:"executable,omitempty"`
-	Args       []string  `json:"args,omitempty"`
-	StartedAt  time.Time `json:"started_at,omitempty"`
-}
+type serverPIDRecord = serviceproc.Record
 
 type serverCommand struct {
 	Executable string
 	Args       []string
+}
+
+type serviceInspection struct {
+	Running  bool
+	External bool
+	Conflict bool
+	PID      int
+	Record   serverPIDRecord
+}
+
+type serverHealth struct {
+	Status  string `json:"status"`
+	Service string `json:"service"`
+	PID     int    `json:"pid"`
 }
 
 // Run starts the TongStock menu bar application.
@@ -91,8 +106,9 @@ func onReady() {
 			select {
 			case <-openConsole.ClickedCh:
 				ensureServerRunning(statusItem, startStopItem, restartItem)
-				waitForServer("http://localhost:8080/health", 10)
-				openBrowser("http://localhost:8080")
+				baseURL := fmt.Sprintf("http://localhost:%d", configuredServerPort())
+				waitForServer(baseURL+"/health", 10)
+				openBrowser(baseURL)
 			case <-aboutItem.ClickedCh:
 				openBrowser("https://github.com/sjzsdu/tongstock")
 			case <-startStopItem.ClickedCh:
@@ -164,38 +180,117 @@ func waitForServer(url string, maxSeconds int) {
 }
 
 func isServerRunning() (bool, int) {
-	record, err := readPIDRecord()
+	inspection := inspectService()
+	return inspection.Running, inspection.PID
+}
+
+func inspectService() serviceInspection {
+	if record, err := readPIDRecord(); err == nil {
+		running, zombie := processStatus(record.PID)
+		if running && !zombie && processMatchesRecord(record) {
+			return serviceInspection{Running: true, PID: record.PID, Record: record}
+		}
+		removePIDRecord(record.PID)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		_ = os.Remove(pidFilePath())
+	}
+
+	port := configuredServerPort()
+	listenerPIDs, listenerErr := listenerFinder(port)
+	health, healthErr := healthFinder(port)
+
+	candidates := append([]int(nil), listenerPIDs...)
+	if healthErr == nil && health.Service == "tongstock" && health.PID > 0 {
+		found := false
+		for _, pid := range candidates {
+			if pid == health.PID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			candidates = append([]int{health.PID}, candidates...)
+		}
+	}
+
+	for _, pid := range candidates {
+		running, zombie := processStatus(pid)
+		if !running || zombie {
+			continue
+		}
+		record, err := processFinder(pid)
+		if err == nil {
+			return serviceInspection{
+				Running:  true,
+				External: true,
+				PID:      pid,
+				Record:   record,
+			}
+		}
+	}
+
+	if listenerErr == nil && len(listenerPIDs) > 0 {
+		return serviceInspection{Conflict: true, PID: listenerPIDs[0]}
+	}
+	return serviceInspection{}
+}
+
+func configuredServerPort() int {
+	port := config.Get().Server.Port
+	if port == 0 {
+		return 8080
+	}
+	return port
+}
+
+func queryServerHealth(port int) (serverHealth, error) {
+	client := &http.Client{Timeout: 750 * time.Millisecond}
+	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/health", port))
 	if err != nil {
-		return false, 0
+		return serverHealth{}, err
 	}
-
-	running, zombie := processStatus(record.PID)
-	if !running || zombie {
-		removePIDRecord(record.PID)
-		return false, 0
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return serverHealth{}, fmt.Errorf("health returned HTTP %d", resp.StatusCode)
 	}
-
-	if !processMatchesRecord(record) {
-		removePIDRecord(record.PID)
-		return false, 0
+	var health serverHealth
+	if err := json.NewDecoder(resp.Body).Decode(&health); err != nil {
+		return serverHealth{}, err
 	}
-
-	return true, record.PID
+	if health.Status != "ok" {
+		return serverHealth{}, fmt.Errorf("health status is %q", health.Status)
+	}
+	return health, nil
 }
 
 func updateMenuItems(statusItem *systray.MenuItem, startStopItem *systray.MenuItem, restartItem *systray.MenuItem) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	if serviceRunning {
+	switch {
+	case serviceRunning && serviceExternal:
+		statusItem.SetTitle(fmt.Sprintf("External Service Running · PID %d", servicePID))
+		startStopItem.SetTitle("Stop Service")
+		startStopItem.SetTooltip("停止已验证的 TongStock 服务")
+		startStopItem.Enable()
+		restartItem.Enable()
+	case serviceRunning:
 		statusItem.SetTitle(fmt.Sprintf("Service Running · PID %d", servicePID))
 		startStopItem.SetTitle("Stop Service")
 		startStopItem.SetTooltip("停止服务")
+		startStopItem.Enable()
 		restartItem.Enable()
-	} else {
+	case serviceConflict:
+		statusItem.SetTitle(fmt.Sprintf("Port %d Occupied · PID %d", configuredServerPort(), servicePID))
+		startStopItem.SetTitle("Start Service")
+		startStopItem.SetTooltip("端口被非 TongStock 进程占用")
+		startStopItem.Disable()
+		restartItem.Disable()
+	default:
 		statusItem.SetTitle("Service Stopped")
 		startStopItem.SetTitle("Start Service")
 		startStopItem.SetTooltip("启动服务")
+		startStopItem.Enable()
 		restartItem.Disable()
 	}
 }
@@ -215,7 +310,7 @@ func startService(statusItem *systray.MenuItem, startStopItem *systray.MenuItem,
 	statusItem.SetTitle("Starting...")
 
 	if err := startManagedServer(); err != nil {
-		setServiceState(false, 0)
+		setServiceInspection(inspectService())
 		updateMenuItems(statusItem, startStopItem, restartItem)
 		statusItem.SetTitle(fmt.Sprintf("Start failed: %v", err))
 		return
@@ -230,13 +325,12 @@ func stopService(statusItem *systray.MenuItem, startStopItem *systray.MenuItem, 
 	statusItem.SetTitle("Stopping...")
 
 	if err := stopManagedServer(); err != nil {
-		running, pid := isServerRunning()
-		setServiceState(running, pid)
+		setServiceInspection(inspectService())
 		updateMenuItems(statusItem, startStopItem, restartItem)
 		statusItem.SetTitle(fmt.Sprintf("Stop failed: %v", err))
 		return
 	}
-	setServiceState(false, 0)
+	setServiceInspection(serviceInspection{})
 	updateMenuItems(statusItem, startStopItem, restartItem)
 }
 
@@ -298,15 +392,14 @@ func restartService(statusItem *systray.MenuItem, startStopItem *systray.MenuIte
 	statusItem.SetTitle("Restarting...")
 
 	if err := stopManagedServer(); err != nil {
-		running, pid := isServerRunning()
-		setServiceState(running, pid)
+		setServiceInspection(inspectService())
 		updateMenuItems(statusItem, startStopItem, restartItem)
 		statusItem.SetTitle(fmt.Sprintf("Restart failed: %v", err))
 		return
 	}
 
 	if err := startManagedServer(); err != nil {
-		setServiceState(false, 0)
+		setServiceInspection(inspectService())
 		updateMenuItems(statusItem, startStopItem, restartItem)
 		statusItem.SetTitle(fmt.Sprintf("Restart failed: %v", err))
 		return
@@ -315,9 +408,13 @@ func restartService(statusItem *systray.MenuItem, startStopItem *systray.MenuIte
 }
 
 func startManagedServer() error {
-	if running, pid := isServerRunning(); running {
-		setServiceState(true, pid)
+	inspection := inspectService()
+	if inspection.Running {
+		setServiceInspection(inspection)
 		return nil
+	}
+	if inspection.Conflict {
+		return fmt.Errorf("port %d is occupied by non-TongStock PID %d", configuredServerPort(), inspection.PID)
 	}
 
 	serverCmd := serverFinder()
@@ -352,14 +449,14 @@ func startManagedServer() error {
 		return fmt.Errorf("write PID file: %w", err)
 	}
 
-	setServiceState(true, record.PID)
+	setServiceInspection(serviceInspection{Running: true, PID: record.PID, Record: record})
 	go reapServerProcess(cmd, record.PID)
 
 	// Catch immediate failures such as an occupied port without delaying normal starts.
 	time.Sleep(300 * time.Millisecond)
 	if running, zombie := processStatus(record.PID); !running || zombie {
 		removePIDRecord(record.PID)
-		setServiceState(false, 0)
+		setServiceInspection(serviceInspection{})
 		return fmt.Errorf("server exited immediately; see %s", serverLogPath())
 	}
 
@@ -367,23 +464,14 @@ func startManagedServer() error {
 }
 
 func stopManagedServer() error {
-	record, err := readPIDRecord()
-	if errors.Is(err, os.ErrNotExist) {
+	inspection := inspectService()
+	if inspection.Conflict {
+		return fmt.Errorf("refusing to stop non-TongStock PID %d on port %d", inspection.PID, configuredServerPort())
+	}
+	if !inspection.Running {
 		return nil
 	}
-	if err != nil {
-		return fmt.Errorf("read PID file: %w", err)
-	}
-
-	running, zombie := processStatus(record.PID)
-	if !running || zombie {
-		removePIDRecord(record.PID)
-		return nil
-	}
-	if !processMatchesRecord(record) {
-		removePIDRecord(record.PID)
-		return fmt.Errorf("PID %d is not the recorded TongStock server", record.PID)
-	}
+	record := inspection.Record
 
 	proc, err := os.FindProcess(record.PID)
 	if err != nil {
@@ -420,29 +508,20 @@ func reapServerProcess(cmd *exec.Cmd, pid int) {
 }
 
 func setServiceState(running bool, pid int) {
+	setServiceInspection(serviceInspection{Running: running, PID: pid})
+}
+
+func setServiceInspection(inspection serviceInspection) {
 	mu.Lock()
-	serviceRunning = running
-	servicePID = pid
+	serviceRunning = inspection.Running
+	servicePID = inspection.PID
+	serviceExternal = inspection.External
+	serviceConflict = inspection.Conflict
 	mu.Unlock()
 }
 
 func processStatus(pid int) (running bool, zombie bool) {
-	if pid <= 0 {
-		return false, false
-	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false, false
-	}
-	if err := proc.Signal(syscall.Signal(0)); err != nil {
-		return false, false
-	}
-
-	out, err := exec.Command("ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
-	if err == nil && strings.HasPrefix(strings.TrimSpace(string(out)), "Z") {
-		return true, true
-	}
-	return true, false
+	return statusFinder(pid)
 }
 
 func waitForProcessExit(pid int, timeout time.Duration) bool {
@@ -460,30 +539,11 @@ func waitForProcessExit(pid int, timeout time.Duration) bool {
 }
 
 func processMatchesRecord(record serverPIDRecord) bool {
-	out, err := exec.Command("ps", "-o", "command=", "-p", strconv.Itoa(record.PID)).Output()
-	if err != nil {
-		return false
-	}
-	commandLine := strings.TrimSpace(string(out))
-	if record.Executable != "" {
-		executableMatches := strings.Contains(commandLine, record.Executable) ||
-			strings.Contains(commandLine, filepath.Base(record.Executable))
-		if !executableMatches {
-			return false
-		}
-		for _, arg := range record.Args {
-			if !strings.Contains(commandLine, arg) {
-				return false
-			}
-		}
-		return true
-	}
-	return strings.Contains(commandLine, "tongstock-server") ||
-		(strings.Contains(commandLine, "tongstock") && strings.Contains(commandLine, "server"))
+	return serviceproc.Matches(record)
 }
 
 func pidFilePath() string {
-	return filepath.Join(config.HomeDir(), "server.pid")
+	return serviceproc.PIDFilePath()
 }
 
 func serverLogPath() string {
@@ -498,44 +558,15 @@ func openServerLog() (*os.File, error) {
 }
 
 func readPIDRecord() (serverPIDRecord, error) {
-	data, err := os.ReadFile(pidFilePath())
-	if err != nil {
-		return serverPIDRecord{}, err
-	}
-
-	var record serverPIDRecord
-	if err := json.Unmarshal(data, &record); err == nil && record.PID > 0 {
-		return record, nil
-	}
-
-	// Backward compatibility with the previous plain-text PID file.
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil || pid <= 0 {
-		return serverPIDRecord{}, errors.New("invalid server PID file")
-	}
-	return serverPIDRecord{PID: pid}, nil
+	return serviceproc.Read()
 }
 
 func writePIDRecord(record serverPIDRecord) error {
-	if err := os.MkdirAll(config.HomeDir(), 0755); err != nil {
-		return err
-	}
-	data, err := json.Marshal(record)
-	if err != nil {
-		return err
-	}
-	tmpPath := pidFilePath() + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
-		return err
-	}
-	return os.Rename(tmpPath, pidFilePath())
+	return serviceproc.Write(record)
 }
 
 func removePIDRecord(pid int) {
-	record, err := readPIDRecord()
-	if err == nil && record.PID == pid {
-		_ = os.Remove(pidFilePath())
-	}
+	serviceproc.RemoveIfPID(pid)
 }
 
 func monitorService(statusItem *systray.MenuItem, startStopItem *systray.MenuItem, restartItem *systray.MenuItem) {
@@ -543,8 +574,7 @@ func monitorService(statusItem *systray.MenuItem, startStopItem *systray.MenuIte
 	defer ticker.Stop()
 
 	for {
-		running, pid := isServerRunning()
-		setServiceState(running, pid)
+		setServiceInspection(inspectService())
 		updateMenuItems(statusItem, startStopItem, restartItem)
 		<-ticker.C
 	}

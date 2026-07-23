@@ -2,8 +2,10 @@ package menubar
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"syscall"
@@ -16,6 +18,37 @@ func useTemporaryHome(t *testing.T) string {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	return home
+}
+
+func isolateServiceDiscovery(t *testing.T) {
+	t.Helper()
+	oldListenerFinder := listenerFinder
+	oldHealthFinder := healthFinder
+	listenerFinder = func(port int) ([]int, error) { return nil, nil }
+	healthFinder = func(port int) (serverHealth, error) {
+		return serverHealth{}, errors.New("not running")
+	}
+	t.Cleanup(func() {
+		listenerFinder = oldListenerFinder
+		healthFinder = oldHealthFinder
+	})
+}
+
+func copyTestServerBinary(t *testing.T, dir string) string {
+	t.Helper()
+	testBinary, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable() error = %v", err)
+	}
+	serverPath := filepath.Join(dir, "tongstock-server")
+	binaryData, err := os.ReadFile(testBinary)
+	if err != nil {
+		t.Fatalf("read test binary: %v", err)
+	}
+	if err := os.WriteFile(serverPath, binaryData, 0755); err != nil {
+		t.Fatalf("write helper server: %v", err)
+	}
+	return serverPath
 }
 
 func TestPIDRecordRoundTripAndLegacyCompatibility(t *testing.T) {
@@ -88,6 +121,7 @@ func TestProcessStatusRecognizesZombieAsExited(t *testing.T) {
 
 func TestStopManagedServerWaitsAndClearsPID(t *testing.T) {
 	useTemporaryHome(t)
+	isolateServiceDiscovery(t)
 	cmd := exec.Command("/bin/sh", "-c", `trap 'exit 0' TERM; while :; do sleep 0.1; done`)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start helper: %v", err)
@@ -118,14 +152,16 @@ func TestStopManagedServerWaitsAndClearsPID(t *testing.T) {
 
 func TestManagedServerStartRestartStopLifecycle(t *testing.T) {
 	home := useTemporaryHome(t)
-	serverPath := filepath.Join(home, "tongstock-server")
-	serverScript := []byte("#!/bin/sh\ntrap 'exit 0' TERM INT\nwhile :; do sleep 0.1; done\n")
-	if err := os.WriteFile(serverPath, serverScript, 0755); err != nil {
-		t.Fatalf("write fake server: %v", err)
-	}
+	isolateServiceDiscovery(t)
+	serverPath := copyTestServerBinary(t, home)
 
 	previousFinder := serverFinder
-	serverFinder = func() serverCommand { return serverCommand{Executable: serverPath} }
+	serverFinder = func() serverCommand {
+		return serverCommand{
+			Executable: serverPath,
+			Args:       []string{"-test.run=TestTongStockServerHelper"},
+		}
+	}
 	defer func() {
 		serverFinder = previousFinder
 		_ = stopManagedServer()
@@ -168,8 +204,146 @@ func TestManagedServerStartRestartStopLifecycle(t *testing.T) {
 	}
 }
 
+func TestInspectServiceDiscoversExternalTongStock(t *testing.T) {
+	useTemporaryHome(t)
+	oldListenerFinder := listenerFinder
+	oldProcessFinder := processFinder
+	oldStatusFinder := statusFinder
+	oldHealthFinder := healthFinder
+	listenerFinder = func(port int) ([]int, error) { return []int{4242}, nil }
+	processFinder = func(pid int) (serverPIDRecord, error) {
+		return serverPIDRecord{PID: pid, Executable: "/tmp/tongstock-server"}, nil
+	}
+	statusFinder = func(pid int) (bool, bool) { return true, false }
+	healthFinder = func(port int) (serverHealth, error) {
+		return serverHealth{Status: "ok"}, nil
+	}
+	defer func() {
+		listenerFinder = oldListenerFinder
+		processFinder = oldProcessFinder
+		statusFinder = oldStatusFinder
+		healthFinder = oldHealthFinder
+	}()
+
+	inspection := inspectService()
+	if !inspection.Running || !inspection.External || inspection.Conflict || inspection.PID != 4242 {
+		t.Fatalf("inspectService() = %#v", inspection)
+	}
+}
+
+func TestInspectServiceMarksUnrelatedListenerAsConflict(t *testing.T) {
+	useTemporaryHome(t)
+	oldListenerFinder := listenerFinder
+	oldProcessFinder := processFinder
+	oldStatusFinder := statusFinder
+	oldHealthFinder := healthFinder
+	listenerFinder = func(port int) ([]int, error) { return []int{5252}, nil }
+	processFinder = func(pid int) (serverPIDRecord, error) {
+		return serverPIDRecord{}, fmt.Errorf("not TongStock")
+	}
+	statusFinder = func(pid int) (bool, bool) { return true, false }
+	healthFinder = func(port int) (serverHealth, error) {
+		return serverHealth{}, errors.New("not TongStock")
+	}
+	defer func() {
+		listenerFinder = oldListenerFinder
+		processFinder = oldProcessFinder
+		statusFinder = oldStatusFinder
+		healthFinder = oldHealthFinder
+	}()
+
+	inspection := inspectService()
+	if inspection.Running || !inspection.Conflict || inspection.PID != 5252 {
+		t.Fatalf("inspectService() = %#v", inspection)
+	}
+}
+
+func TestStopManagedServerStopsExternalTongStockProcess(t *testing.T) {
+	home := useTemporaryHome(t)
+	healthBefore := healthFinder
+	listenerBefore := listenerFinder
+	healthFinder = func(port int) (serverHealth, error) {
+		return serverHealth{}, errors.New("legacy health response")
+	}
+
+	serverPath := copyTestServerBinary(t, home)
+
+	cmd := exec.Command(serverPath, "-test.run=TestTongStockServerHelper")
+	cmd.Env = append(os.Environ(), "TONGSTOCK_TEST_SERVER_HELPER=1")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start external helper: %v", err)
+	}
+	listenerFinder = func(port int) ([]int, error) { return []int{cmd.Process.Pid}, nil }
+	defer func() {
+		listenerFinder = listenerBefore
+		healthFinder = healthBefore
+		_ = cmd.Process.Signal(syscall.SIGKILL)
+		_ = cmd.Wait()
+	}()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if inspection := inspectService(); inspection.Running && inspection.External {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("external TongStock helper was not discovered")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if err := stopManagedServer(); err != nil {
+		t.Fatalf("stopManagedServer() external error = %v", err)
+	}
+	if !waitForProcessExit(cmd.Process.Pid, time.Second) {
+		t.Fatalf("external PID %d still running after stop", cmd.Process.Pid)
+	}
+}
+
+func TestStopManagedServerNeverKillsUnrelatedListener(t *testing.T) {
+	useTemporaryHome(t)
+	cmd := exec.Command("/bin/sh", "-c", `trap 'exit 0' TERM; while :; do sleep 0.1; done`)
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start unrelated helper: %v", err)
+	}
+	defer func() {
+		_ = cmd.Process.Signal(syscall.SIGKILL)
+		_ = cmd.Wait()
+	}()
+
+	listenerBefore := listenerFinder
+	healthBefore := healthFinder
+	listenerFinder = func(port int) ([]int, error) { return []int{cmd.Process.Pid}, nil }
+	healthFinder = func(port int) (serverHealth, error) {
+		return serverHealth{}, errors.New("not TongStock")
+	}
+	defer func() {
+		listenerFinder = listenerBefore
+		healthFinder = healthBefore
+	}()
+
+	if err := stopManagedServer(); err == nil {
+		t.Fatal("stopManagedServer() unexpectedly accepted unrelated listener")
+	}
+	running, zombie := processStatus(cmd.Process.Pid)
+	if !running || zombie {
+		t.Fatalf("unrelated PID %d was stopped", cmd.Process.Pid)
+	}
+}
+
+func TestTongStockServerHelper(t *testing.T) {
+	if filepath.Base(os.Args[0]) != "tongstock-server" {
+		return
+	}
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
+	<-signals
+	os.Exit(0)
+}
+
 func TestReapServerProcessClearsOnlyMatchingState(t *testing.T) {
 	useTemporaryHome(t)
+	isolateServiceDiscovery(t)
 	cmd := exec.Command("/bin/sh", "-c", "exit 0")
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start helper: %v", err)

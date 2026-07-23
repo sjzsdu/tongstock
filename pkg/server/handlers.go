@@ -5,6 +5,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -47,23 +48,25 @@ const (
 	stockSearchIndexTTL     = 10 * time.Minute
 )
 
-func isStockCode(code string) bool {
+func isStockCode(code string, exchange string) bool {
 	if len(code) != 6 {
 		return false
 	}
 	// Check prefix for valid A-share stock codes
 	switch code[:3] {
 	case "001", "002", "003": // Shenzhen: SME board, new main board
-		return true
+		return exchange == "" || exchange == "sz"
 	case "300", "301": // Shenzhen: ChiNext
-		return true
+		return exchange == "" || exchange == "sz"
 	case "600", "601", "603", "605": // Shanghai: main board
-		return true
+		return exchange == "" || exchange == "sh"
 	case "688", "689": // Shanghai: STAR Market
-		return true
-	case "920": // Beijing exchange (920xxx)
-		return true
+		return exchange == "" || exchange == "sh"
 	case "000": // Shenzhen: main board (excluding indices)
+		// 000xxx codes are special: in Shanghai they are indices, in Shenzhen they are stocks (except 000001-000050)
+		if exchange == "sh" {
+			return false // 000xxx in Shanghai are indices
+		}
 		// 000001-000050 are indices (Shanghai/Shenzhen indices)
 		// Valid stocks start from 000051
 		codeNum, err := strconv.Atoi(code)
@@ -71,6 +74,17 @@ func isStockCode(code string) bool {
 			return false
 		}
 		return codeNum >= 51
+	case "800", "801", "802", "803", "804", "805", "806", "807", "808", "809",
+		"810", "811", "812", "813", "814", "815", "816", "817", "818", "819",
+		"820", "821", "822", "823", "824", "825", "826", "827", "828", "829",
+		"830", "831", "832", "833", "834", "835", "836", "837", "838", "839",
+		"840", "841", "842", "843", "844", "845", "846", "847", "848", "849",
+		"850", "851", "852", "853", "854", "855", "856", "857", "858", "859",
+		"860", "861", "862", "863", "864", "865", "866", "867", "868", "869",
+		"870", "871", "872", "873", "874", "875", "876", "877", "878", "879",
+		"880", "881", "882", "883", "884", "885", "886", "887", "888", "889",
+		"890", "891", "892", "893", "894", "895", "896", "897", "898", "899": // Beijing exchange
+		return exchange == "" || exchange == "bj"
 	}
 	return false
 }
@@ -328,8 +342,17 @@ func (s *Server) getStockSearchIndex() ([]stockSearchIndexItem, error) {
 		if err != nil {
 			return nil, err
 		}
+		var exchangeCode string
+		switch source.exchange {
+		case protocol.ExchangeSH:
+			exchangeCode = "sh"
+		case protocol.ExchangeSZ:
+			exchangeCode = "sz"
+		case protocol.ExchangeBJ:
+			exchangeCode = "bj"
+		}
 		for _, code := range codes {
-			if !isStockCode(code.Code) {
+			if !isStockCode(code.Code, exchangeCode) {
 				continue
 			}
 			item := stockSearchIndexItem{Code: code.Code, Name: code.Name, Exchange: source.label}
@@ -386,7 +409,12 @@ func normalizeStockCodeQuery(input string) string {
 func (s *Server) SetupRoutes(r *gin.Engine) {
 	// Health check
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "time": time.Now().Format(time.RFC3339)})
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "ok",
+			"service": "tongstock",
+			"pid":     os.Getpid(),
+			"time":    time.Now().Format(time.RFC3339),
+		})
 	})
 
 	// API group
@@ -698,7 +726,7 @@ func (s *Server) handleCodesMarket(c *gin.Context) {
 		}
 		for _, code := range codes {
 			// Filter: only valid A-share stock codes
-			if !isStockCode(code.Code) {
+			if !isStockCode(code.Code, item.name) {
 				continue
 			}
 
@@ -753,7 +781,7 @@ func (s *Server) handleCodesWithMarketCap(c *gin.Context) {
 			continue
 		}
 		for _, code := range codes {
-			if !isStockCode(code.Code) {
+			if !isStockCode(code.Code, item.name) {
 				continue
 			}
 			if processed >= maxProcess {

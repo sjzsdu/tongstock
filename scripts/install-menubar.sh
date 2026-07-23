@@ -4,9 +4,10 @@ set -e
 echo "=== TongStock Menu Bar 安装 ==="
 
 # 1. Build
-echo "编译中..."
+echo "构建 Web 与统一 CLI..."
 mkdir -p "$HOME/.local/bin"
-go build -o "$HOME/.local/bin/tongstock" ./cmd/cli
+make cli
+install -m 755 tongstock "$HOME/.local/bin/tongstock"
 echo "编译完成: ~/.local/bin/tongstock"
 
 # 2. Create plist

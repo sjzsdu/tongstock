@@ -664,7 +664,7 @@ func extractStockCode(msg string) string {
 					break
 				}
 			}
-			if allDigit && isStockCode(w) {
+			if allDigit && isStockCode(w, "") {
 				return w
 			}
 		}

@@ -9,8 +9,8 @@ var serverCmd = &cobra.Command{
 	Use:   "server",
 	Short: "启动 TongStock HTTP 服务",
 	Args:  cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		serverapp.Run()
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return serverapp.Run()
 	},
 }
 
