@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	pinyin "github.com/mozillazg/go-pinyin"
 	"github.com/sjzsdu/tongstock/pkg/history"
+	"github.com/sjzsdu/tongstock/pkg/newsfeed"
 	"github.com/sjzsdu/tongstock/pkg/param"
 	"github.com/sjzsdu/tongstock/pkg/signal"
 	"github.com/sjzsdu/tongstock/pkg/stockinfo"
@@ -42,6 +43,7 @@ type Server struct {
 	paradigmAlertMu       sync.RWMutex
 	paradigmAlertCache    []paradigmAlert
 	paradigmAlertLastScan time.Time
+	newsfeedHandler       *NewsfeedHandler
 }
 
 const (
@@ -93,7 +95,7 @@ func isStockCode(code string, exchange string) bool {
 
 // NewServer creates a new Server instance
 func NewServer(svc *tdx.Service, historyDB *history.Store, watchlistDB *watchlist.Store, tradingDB *trading.Store, stockpoolDB *stockpool.Store, stockinfoDB *stockinfo.Store) *Server {
-	return &Server{
+	s := &Server{
 		svc:                   svc,
 		historyDB:             historyDB,
 		watchlistDB:           watchlistDB,
@@ -102,6 +104,13 @@ func NewServer(svc *tdx.Service, historyDB *history.Store, watchlistDB *watchlis
 		stockinfoDB:           stockinfoDB,
 		stockSearchIndexCache: stockSearchIndexCache{},
 	}
+
+	// Initialize newsfeed handler with SQLite store
+	if newsfeedStore, err := newsfeed.NewSQLiteStore(""); err == nil {
+		s.newsfeedHandler = NewNewsfeedHandler(newsfeedStore)
+	}
+
+	return s
 }
 
 func (s *Server) SetChatStore(store *ChatStore) {
@@ -529,6 +538,11 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 
 		// Strategy
 		api.POST("/strategy/overnight", s.handleOvernightArbitrage)
+	}
+
+	// Newsfeed routes
+	if s.newsfeedHandler != nil {
+		s.newsfeedHandler.SetupRoutes(api)
 	}
 
 	// Agent routes
