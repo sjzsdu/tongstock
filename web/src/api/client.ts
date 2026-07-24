@@ -235,6 +235,27 @@ export const api = {
       method: 'DELETE',
     }),
 
+  // Stockinfo APIs
+  stockinfoList: (minMarketCap?: number, maxMarketCap?: number, exchange?: string) => {
+    const params = new URLSearchParams();
+    if (minMarketCap != null && minMarketCap > 0) params.set('minMarketCap', String(minMarketCap));
+    if (maxMarketCap != null && maxMarketCap > 0) params.set('maxMarketCap', String(maxMarketCap));
+    if (exchange) params.set('exchange', exchange);
+    return fetchJSON<{ total: number; infos: { code: string; name: string; exchange: string; price: number; marketCap: number; turnoverRate: number; changePct: number; volumeRatio: number }[] }>(`/api/stockinfo?${params}`);
+  },
+
+  stockinfoGet: (code: string) =>
+    fetchJSON<{ code: string; name: string; exchange: string; price: number; marketCap: number; turnoverRate: number; changePct: number; volumeRatio: number }>(`/api/stockinfo/${code}`),
+
+  stockinfoSync: (force = false) =>
+    fetchJSON<{ total: number; success: number; failed: number; duration: string; updated_at: number }>('/api/stockinfo/sync', {
+      method: 'POST',
+      body: JSON.stringify({ force }),
+    }),
+
+  stockinfoCount: () =>
+    fetchJSON<{ count: number }>('/api/stockinfo/count'),
+
   saveScreenResults: (results: { code: string; name?: string }[]) =>
     Promise.all(results.map((item) => api.watchlistAdd(item.code, item.name))),
 

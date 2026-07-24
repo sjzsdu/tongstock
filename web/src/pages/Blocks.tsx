@@ -102,6 +102,38 @@ export default function Blocks() {
   const [stockCache, setStockCache] = useState<Record<string, { codes: MarketCodeItem[]; timestamp: number }>>({});
   const [cacheDuration] = useState(5 * 60 * 1000); // 5 minutes cache
 
+  // === All Stocks Tab State ===
+  interface StockInfoItem {
+    code: string;
+    name: string;
+    exchange: string;
+    price: number;
+    marketCap: number;
+    turnoverRate: number;
+    changePct: number;
+    volumeRatio: number;
+  }
+  
+  const [allStocks, setAllStocks] = useState<StockInfoItem[]>([]);
+  const [allStocksPage, setAllStocksPage] = useState(1);
+  const [allStocksPageSize] = useState(20);
+  const [allStocksLoading, setAllStocksLoading] = useState(false);
+  const [allStocksTotal, setAllStocksTotal] = useState(0);
+  
+  // Filters for all stocks
+  const [allStocksFilters, setAllStocksFilters] = useState({
+    minMarketCap: undefined as number | undefined,
+    maxMarketCap: undefined as number | undefined,
+    minPrice: undefined as number | undefined,
+    maxPrice: undefined as number | undefined,
+    minTurnoverRate: undefined as number | undefined,
+    maxTurnoverRate: undefined as number | undefined,
+    exchange: '' as string,
+    excludeST: false,
+  });
+  const [showSaveAsPoolModal, setShowSaveAsPoolModal] = useState(false);
+  const [saveAsPoolName, setSaveAsPoolName] = useState('');
+
   // === Modal States ===
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -388,6 +420,117 @@ export default function Blocks() {
     }));
   };
 
+  // === All Stocks Functions ===
+  const loadAllStocks = async () => {
+    setAllStocksLoading(true);
+    try {
+      const result = await api.stockinfoList(
+        allStocksFilters.minMarketCap,
+        allStocksFilters.maxMarketCap,
+        allStocksFilters.exchange || undefined
+      );
+      let stocks = result.infos || [];
+      
+      // Apply client-side filters
+      if (allStocksFilters.minPrice != null) {
+        stocks = stocks.filter(s => s.price >= allStocksFilters.minPrice!);
+      }
+      if (allStocksFilters.maxPrice != null) {
+        stocks = stocks.filter(s => s.price <= allStocksFilters.maxPrice!);
+      }
+      if (allStocksFilters.minTurnoverRate != null) {
+        stocks = stocks.filter(s => s.turnoverRate >= allStocksFilters.minTurnoverRate!);
+      }
+      if (allStocksFilters.maxTurnoverRate != null) {
+        stocks = stocks.filter(s => s.turnoverRate <= allStocksFilters.maxTurnoverRate!);
+      }
+      if (allStocksFilters.excludeST) {
+        stocks = stocks.filter(s => !s.name.includes('ST') && !s.name.includes('*ST'));
+      }
+      
+      setAllStocks(stocks);
+      setAllStocksTotal(stocks.length);
+      setAllStocksPage(1);
+    } catch {
+      setAllStocks([]);
+      setAllStocksTotal(0);
+    } finally {
+      setAllStocksLoading(false);
+    }
+  };
+
+  const handleAllStocksFilterChange = (key: keyof typeof allStocksFilters, value: number | string | boolean | undefined) => {
+    setAllStocksFilters(prev => ({ ...prev, [key]: value }));
+  };
+
+  const resetAllStocksFilters = () => {
+    setAllStocksFilters({
+      minMarketCap: undefined,
+      maxMarketCap: undefined,
+      minPrice: undefined,
+      maxPrice: undefined,
+      minTurnoverRate: undefined,
+      maxTurnoverRate: undefined,
+      exchange: '',
+      excludeST: false,
+    });
+  };
+
+  const saveAsStockPool = async () => {
+    if (!saveAsPoolName.trim()) {
+      message.error('请输入股票池名称');
+      return;
+    }
+    
+    const filters: StockPoolFilter[] = [];
+    
+    if (allStocksFilters.minMarketCap != null || allStocksFilters.maxMarketCap != null) {
+      filters.push({
+        field: 'marketCap',
+        operator: 'between',
+        value: [allStocksFilters.minMarketCap || 0, allStocksFilters.maxMarketCap || 999999],
+      });
+    }
+    if (allStocksFilters.exchange) {
+      filters.push({
+        field: 'exchange',
+        operator: 'in',
+        value: [allStocksFilters.exchange],
+      });
+    }
+    if (allStocksFilters.excludeST) {
+      filters.push({
+        field: 'excludeST',
+        operator: 'between',
+        value: [true],
+      });
+    }
+    
+    const newPool: CustomStockPool = {
+      id: Date.now().toString(),
+      name: saveAsPoolName.trim(),
+      description: `筛选条件: ${filters.length > 0 ? filters.map(f => f.field).join(', ') : '无'}`,
+      filters,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    
+    try {
+      await api.stockpoolUpsert(newPool);
+      setCustomPools(prev => [...prev, newPool]);
+      setShowSaveAsPoolModal(false);
+      setSaveAsPoolName('');
+      message.success('股票池保存成功');
+    } catch {
+      message.error('保存失败');
+    }
+  };
+
+  const paginatedAllStocks = useMemo(() => {
+    const start = (allStocksPage - 1) * allStocksPageSize;
+    return allStocks.slice(start, start + allStocksPageSize);
+  }, [allStocks, allStocksPage, allStocksPageSize]);
+
   // === Effects ===
   useEffect(() => {
     void loadFiles();
@@ -404,6 +547,10 @@ export default function Blocks() {
       void loadBlockStocks();
     }
   }, [selectedBlock]);
+
+  useEffect(() => {
+    void loadAllStocks();
+  }, [allStocksFilters]);
 
   // === Columns ===
   const blockStockColumns: ColumnsType<BlockStock> = [
@@ -468,6 +615,72 @@ export default function Blocks() {
     },
   ];
 
+  // All Stocks columns
+  const allStockColumns: ColumnsType<StockInfoItem> = [
+    {
+      title: '代码',
+      dataIndex: 'code',
+      width: 100,
+      render: (code: string) => (
+        <Button type="link" size="small" onClick={() => navigate(`/stock/${code}`)}>
+          {code}
+        </Button>
+      ),
+    },
+    {
+      title: '名称',
+      dataIndex: 'name',
+      width: 120,
+    },
+    {
+      title: '交易所',
+      dataIndex: 'exchange',
+      width: 80,
+      render: (ex: string) => <Tag color={ex === 'sh' ? 'blue' : ex === 'sz' ? 'green' : 'orange'}>{ex.toUpperCase()}</Tag>,
+    },
+    {
+      title: '股价(元)',
+      dataIndex: 'price',
+      width: 100,
+      render: (price: number) => price.toFixed(2),
+    },
+    {
+      title: '流通市值(亿)',
+      dataIndex: 'marketCap',
+      width: 120,
+      render: (cap: number) => cap.toFixed(2),
+    },
+    {
+      title: '涨跌幅(%)',
+      dataIndex: 'changePct',
+      width: 100,
+      render: (pct: number) => (
+        <Typography.Text type={pct >= 0 ? 'success' : 'danger'}>
+          {pct >= 0 ? '+' : ''}{pct.toFixed(2)}
+        </Typography.Text>
+      ),
+    },
+    {
+      title: '换手率(%)',
+      dataIndex: 'turnoverRate',
+      width: 100,
+      render: (rate: number) => rate.toFixed(2),
+    },
+    {
+      title: '量比',
+      dataIndex: 'volumeRatio',
+      width: 80,
+      render: (ratio: number) => ratio.toFixed(2),
+    },
+    {
+      title: '操作',
+      width: 80,
+      render: (_, record) => (
+        <Button type="link" size="small" icon={<ArrowRightOutlined />} onClick={() => navigate(`/stock/${record.code}`)} />
+      ),
+    },
+  ];
+
   // === Filter Rendering ===
   const renderFilterField = (filter: StockPoolFilter, index: number) => {
     const fieldOption = filterFieldOptions.find(f => f.field === filter.field);
@@ -475,26 +688,60 @@ export default function Blocks() {
 
     switch (fieldOption.type) {
       case 'range':
-        return (
-          <Space key={index} className="filter-range">
-            <InputNumber
-              min={fieldOption.field === 'changePct' ? -100 : 0}
-              style={{ width: 80 }}
-              value={filter.value[0] as number}
-              onChange={(v) => updateFilterValue(index, 0, v || 0)}
-              placeholder="最小"
-            />
-            <span className="filter-separator">~</span>
-            <InputNumber
-              min={0}
-              style={{ width: 80 }}
-              value={filter.value[1] as number}
-              onChange={(v) => updateFilterValue(index, 1, v || 0)}
-              placeholder="最大"
-            />
-            {fieldOption.unit && <span className="filter-unit">{fieldOption.unit}</span>}
-          </Space>
-        );
+        // 根据操作符决定渲染方式
+        switch (filter.operator) {
+          case 'between':
+            return (
+              <Space key={index} className="filter-range">
+                <InputNumber
+                  min={fieldOption.field === 'changePct' ? -100 : 0}
+                  style={{ width: 80 }}
+                  value={filter.value[0] as number}
+                  onChange={(v) => updateFilterValue(index, 0, v || 0)}
+                  placeholder="最小"
+                />
+                <span className="filter-separator">~</span>
+                <InputNumber
+                  min={0}
+                  style={{ width: 80 }}
+                  value={filter.value[1] as number}
+                  onChange={(v) => updateFilterValue(index, 1, v || 0)}
+                  placeholder="最大"
+                />
+                {fieldOption.unit && <span className="filter-unit">{fieldOption.unit}</span>}
+              </Space>
+            );
+          case 'gt':
+          case 'gte':
+            return (
+              <Space key={index} className="filter-range">
+                <InputNumber
+                  min={fieldOption.field === 'changePct' ? -100 : 0}
+                  style={{ width: 120 }}
+                  value={filter.value[0] as number}
+                  onChange={(v) => updateFilterValue(index, 0, v || 0)}
+                  placeholder={filter.operator === 'gt' ? '大于' : '大于等于'}
+                />
+                {fieldOption.unit && <span className="filter-unit">{fieldOption.unit}</span>}
+              </Space>
+            );
+          case 'lt':
+          case 'lte':
+            return (
+              <Space key={index} className="filter-range">
+                <InputNumber
+                  min={fieldOption.field === 'changePct' ? -100 : 0}
+                  style={{ width: 120 }}
+                  value={filter.value[0] as number}
+                  onChange={(v) => updateFilterValue(index, 0, v || 0)}
+                  placeholder={filter.operator === 'lt' ? '小于' : '小于等于'}
+                />
+                {fieldOption.unit && <span className="filter-unit">{fieldOption.unit}</span>}
+              </Space>
+            );
+          default:
+            return null;
+        }
       case 'select':
         if (filter.field === 'exchange') {
           return (
@@ -809,8 +1056,191 @@ export default function Blocks() {
               </Row>
             ),
           },
+          {
+            key: 'allstocks',
+            label: (
+              <Space>
+                <SearchOutlined />
+                <span>全部股票</span>
+              </Space>
+            ),
+            children: (
+              <Space direction="vertical" size={16} style={{ display: 'flex', width: '100%' }}>
+                {/* Filter Panel */}
+                <Card
+                  title={
+                    <Space>
+                      <FilterOutlined />
+                      <span>筛选条件</span>
+                      <Button size="small" type="primary" icon={<SaveOutlined />} onClick={() => setShowSaveAsPoolModal(true)}>
+                        保存为股票池
+                      </Button>
+                      <Button size="small" onClick={resetAllStocksFilters}>重置</Button>
+                    </Space>
+                  }
+                  bodyStyle={{ padding: '16px' }}
+                >
+                  <Row gutter={[16, 12]}>
+                    <Col xs={24} sm={12} lg={8}>
+                      <Space direction="vertical" size={4}>
+                        <Typography.Text type="secondary">流通市值(亿)</Typography.Text>
+                        <Space>
+                          <InputNumber
+                            min={0}
+                            style={{ width: 100 }}
+                            placeholder="最小值"
+                            value={allStocksFilters.minMarketCap}
+                            onChange={(v) => handleAllStocksFilterChange('minMarketCap', v || undefined)}
+                          />
+                          <span>~</span>
+                          <InputNumber
+                            min={0}
+                            style={{ width: 100 }}
+                            placeholder="最大值"
+                            value={allStocksFilters.maxMarketCap}
+                            onChange={(v) => handleAllStocksFilterChange('maxMarketCap', v || undefined)}
+                          />
+                        </Space>
+                      </Space>
+                    </Col>
+                    <Col xs={24} sm={12} lg={8}>
+                      <Space direction="vertical" size={4}>
+                        <Typography.Text type="secondary">股价(元)</Typography.Text>
+                        <Space>
+                          <InputNumber
+                            min={0}
+                            style={{ width: 100 }}
+                            placeholder="最小值"
+                            value={allStocksFilters.minPrice}
+                            onChange={(v) => handleAllStocksFilterChange('minPrice', v || undefined)}
+                          />
+                          <span>~</span>
+                          <InputNumber
+                            min={0}
+                            style={{ width: 100 }}
+                            placeholder="最大值"
+                            value={allStocksFilters.maxPrice}
+                            onChange={(v) => handleAllStocksFilterChange('maxPrice', v || undefined)}
+                          />
+                        </Space>
+                      </Space>
+                    </Col>
+                    <Col xs={24} sm={12} lg={8}>
+                      <Space direction="vertical" size={4}>
+                        <Typography.Text type="secondary">换手率(%)</Typography.Text>
+                        <Space>
+                          <InputNumber
+                            min={0}
+                            style={{ width: 100 }}
+                            placeholder="最小值"
+                            value={allStocksFilters.minTurnoverRate}
+                            onChange={(v) => handleAllStocksFilterChange('minTurnoverRate', v || undefined)}
+                          />
+                          <span>~</span>
+                          <InputNumber
+                            min={0}
+                            style={{ width: 100 }}
+                            placeholder="最大值"
+                            value={allStocksFilters.maxTurnoverRate}
+                            onChange={(v) => handleAllStocksFilterChange('maxTurnoverRate', v || undefined)}
+                          />
+                        </Space>
+                      </Space>
+                    </Col>
+                    <Col xs={24} sm={12} lg={8}>
+                      <Space direction="vertical" size={4}>
+                        <Typography.Text type="secondary">交易所</Typography.Text>
+                        <Select
+                          value={allStocksFilters.exchange}
+                          onChange={(v) => handleAllStocksFilterChange('exchange', v)}
+                          options={[{ value: '', label: '全部' }, ...exchangeOptions]}
+                          style={{ width: 150 }}
+                          size="small"
+                        />
+                      </Space>
+                    </Col>
+                    <Col xs={24} sm={12} lg={8}>
+                      <Space direction="vertical" size={4}>
+                        <Typography.Text type="secondary">排除ST</Typography.Text>
+                        <Switch
+                          checked={allStocksFilters.excludeST}
+                          onChange={(v) => handleAllStocksFilterChange('excludeST', v)}
+                        />
+                      </Space>
+                    </Col>
+                  </Row>
+                </Card>
+
+                {/* Stock List */}
+                <Card
+                  title={
+                    <Space>
+                      <SearchOutlined />
+                      <span>股票列表</span>
+                      <Typography.Text type="secondary">共 {allStocksTotal} 只</Typography.Text>
+                    </Space>
+                  }
+                  bodyStyle={{ padding: '16px' }}
+                >
+                  {allStocksLoading ? (
+                    <Skeleton active paragraph={{ rows: 4 }} title={false} />
+                  ) : allStocks.length === 0 ? (
+                    <Empty description="暂无符合条件的股票" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                  ) : (
+                    <>
+                      <Table
+                        columns={allStockColumns}
+                        dataSource={paginatedAllStocks}
+                        rowKey="code"
+                        size="small"
+                        pagination={false}
+                        scroll={{ x: 'max-content' }}
+                      />
+                      <Pagination
+                        current={allStocksPage}
+                        pageSize={allStocksPageSize}
+                        total={allStocksTotal}
+                        onChange={setAllStocksPage}
+                        style={{ marginTop: 12, textAlign: 'center' }}
+                      />
+                    </>
+                  )}
+                </Card>
+              </Space>
+            ),
+          },
         ]}
       />
+
+      {/* Save As Stock Pool Modal */}
+      <Modal
+        title="保存为股票池"
+        open={showSaveAsPoolModal}
+        onCancel={() => { setShowSaveAsPoolModal(false); setSaveAsPoolName(''); }}
+        footer={[
+          <Button key="cancel" onClick={() => { setShowSaveAsPoolModal(false); setSaveAsPoolName(''); }}>取消</Button>,
+          <Button key="save" type="primary" onClick={saveAsStockPool} icon={<SaveOutlined />}>保存</Button>,
+        ]}
+        width={400}
+      >
+        <Form layout="vertical">
+          <Form.Item label="股票池名称" rules={[{ required: true, message: '请输入股票池名称' }]}>
+            <Input
+              value={saveAsPoolName}
+              onChange={(e) => setSaveAsPoolName(e.target.value)}
+              placeholder="输入股票池名称"
+              autoFocus
+            />
+          </Form.Item>
+        </Form>
+        <Alert
+          type="info"
+          showIcon
+          message="提示"
+          description="当前筛选条件将作为股票池的条件保存，后续可在自定义股票池中查看和编辑。"
+          style={{ marginTop: 12, fontSize: '12px' }}
+        />
+      </Modal>
 
       {/* Add/Edit Pool Modal */}
       <Modal

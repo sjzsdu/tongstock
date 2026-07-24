@@ -18,6 +18,7 @@ import (
 	"github.com/sjzsdu/tongstock/pkg/history"
 	"github.com/sjzsdu/tongstock/pkg/param"
 	"github.com/sjzsdu/tongstock/pkg/signal"
+	"github.com/sjzsdu/tongstock/pkg/stockinfo"
 	"github.com/sjzsdu/tongstock/pkg/stockpool"
 	"github.com/sjzsdu/tongstock/pkg/strategy"
 	"github.com/sjzsdu/tongstock/pkg/ta"
@@ -34,6 +35,7 @@ type Server struct {
 	watchlistDB           *watchlist.Store
 	tradingDB             *trading.Store
 	stockpoolDB           *stockpool.Store
+	stockinfoDB           *stockinfo.Store
 	stockSearchIndexCache stockSearchIndexCache
 	tdxMu                 sync.Mutex
 	agentState            *AgentState
@@ -90,13 +92,14 @@ func isStockCode(code string, exchange string) bool {
 }
 
 // NewServer creates a new Server instance
-func NewServer(svc *tdx.Service, historyDB *history.Store, watchlistDB *watchlist.Store, tradingDB *trading.Store, stockpoolDB *stockpool.Store) *Server {
+func NewServer(svc *tdx.Service, historyDB *history.Store, watchlistDB *watchlist.Store, tradingDB *trading.Store, stockpoolDB *stockpool.Store, stockinfoDB *stockinfo.Store) *Server {
 	return &Server{
 		svc:                   svc,
 		historyDB:             historyDB,
 		watchlistDB:           watchlistDB,
 		tradingDB:             tradingDB,
 		stockpoolDB:           stockpoolDB,
+		stockinfoDB:           stockinfoDB,
 		stockSearchIndexCache: stockSearchIndexCache{},
 	}
 }
@@ -501,6 +504,12 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 		api.POST("/stockpool", s.handleStockpoolUpsert)
 		api.DELETE("/stockpool/:id", s.handleStockpoolDelete)
 
+		// Stockinfo
+		api.GET("/stockinfo", s.handleStockinfoList)
+		api.GET("/stockinfo/:code", s.handleStockinfoGet)
+		api.POST("/stockinfo/sync", s.handleStockinfoSync)
+		api.GET("/stockinfo/count", s.handleStockinfoCount)
+
 		// Sync
 		api.POST("/sync/daily", s.handleSyncDaily)
 		api.GET("/sync/state", s.handleSyncState)
@@ -762,6 +771,29 @@ func (s *Server) handleCodesWithMarketCap(c *gin.Context) {
 		fmt.Sscanf(maxStr, "%f", &maxMarketCap)
 	}
 
+	// First, try to get data from stockinfo store (faster)
+	if s.stockinfoDB != nil {
+		infos, err := s.stockinfoDB.GetByMarketCap(minMarketCap, maxMarketCap)
+		if err == nil && len(infos) > 0 {
+			var result []gin.H
+			for _, info := range infos {
+				result = append(result, gin.H{
+					"code":      info.Code,
+					"name":      info.Name,
+					"exchange":  info.Exchange,
+					"marketCap": info.MarketCap,
+					"price":     info.Price,
+				})
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"total": len(result),
+				"codes": result,
+			})
+			return
+		}
+	}
+
+	// Fallback to TDX if stockinfo store not available or empty
 	exchanges := []struct {
 		name string
 		ex   protocol.Exchange
@@ -796,12 +828,18 @@ func (s *Server) handleCodesWithMarketCap(c *gin.Context) {
 			var price float64
 			if len(quotes) > 0 && finance != nil && quotes[0].Price > 0 && finance.LiuTongGuBen > 0 {
 				price = quotes[0].Price
-				marketCap = finance.LiuTongGuBen * price / 100000000 // 流通市值(亿)
+				// LiuTongGuBen unit is 万股 (10,000 shares)
+				// Market cap = LiuTongGuBen(万股) * Price(元) / 10000 = 亿元
+				marketCap = finance.LiuTongGuBen * price / 10000 // 流通市值(亿)
 			}
 
 			// Apply market cap filter
-			if (minMarketCap > 0 && marketCap > 0 && marketCap < minMarketCap) ||
-				(maxMarketCap > 0 && marketCap > 0 && marketCap > maxMarketCap) {
+			// Skip stocks with missing market cap data
+			if marketCap <= 0 {
+				continue
+			}
+			if (minMarketCap > 0 && marketCap < minMarketCap) ||
+				(maxMarketCap > 0 && marketCap > maxMarketCap) {
 				continue
 			}
 
@@ -4101,5 +4139,177 @@ func (s *Server) handleOvernightArbitrage(c *gin.Context) {
 		"failed":            allFailed,
 		"current_time":      time.Now().Format("15:04"),
 		"is_overnight_time": strategy.IsOvernightTime(time.Now()),
+	})
+}
+
+// === Stockinfo Handlers ===
+
+// handleStockinfoList returns stock info list with optional filters
+func (s *Server) handleStockinfoList(c *gin.Context) {
+	minMarketCapStr := c.Query("minMarketCap")
+	maxMarketCapStr := c.Query("maxMarketCap")
+	exchange := c.Query("exchange")
+
+	var minMarketCap, maxMarketCap float64
+	if minMarketCapStr != "" {
+		fmt.Sscanf(minMarketCapStr, "%f", &minMarketCap)
+	}
+	if maxMarketCapStr != "" {
+		fmt.Sscanf(maxMarketCapStr, "%f", &maxMarketCap)
+	}
+
+	var infos []stockinfo.StockInfo
+	var err error
+
+	if minMarketCap > 0 || maxMarketCap > 0 {
+		infos, err = s.stockinfoDB.GetByMarketCap(minMarketCap, maxMarketCap)
+	} else if exchange != "" {
+		infos, err = s.stockinfoDB.GetByExchange(exchange)
+	} else {
+		allInfos, err2 := s.stockinfoDB.GetAll()
+		if err2 != nil {
+			err = err2
+		} else {
+			// Limit result for full list
+			if len(allInfos) > 1000 {
+				infos = allInfos[:1000]
+			} else {
+				infos = allInfos
+			}
+		}
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"total": len(infos),
+		"infos": infos,
+	})
+}
+
+// handleStockinfoGet returns stock info by code
+func (s *Server) handleStockinfoGet(c *gin.Context) {
+	code := c.Param("code")
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "code is required"})
+		return
+	}
+
+	info, err := s.stockinfoDB.GetByCode(code)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "stock not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, info)
+}
+
+// handleStockinfoSync syncs stock info from TDX
+func (s *Server) handleStockinfoSync(c *gin.Context) {
+	var req struct {
+		Force bool `json:"force"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		req.Force = false
+	}
+
+	startTime := time.Now()
+	totalProcessed := 0
+	successCount := 0
+	failedCount := 0
+
+	exchanges := []struct {
+		name string
+		ex   protocol.Exchange
+	}{
+		{"sz", protocol.ExchangeSZ},
+		{"sh", protocol.ExchangeSH},
+		{"bj", protocol.ExchangeBJ},
+	}
+
+	for _, item := range exchanges {
+		codes, err := s.svc.FetchCodes(item.ex)
+		if err != nil {
+			log.Printf("获取 %s 代码列表失败: %v", item.name, err)
+			continue
+		}
+
+		for _, code := range codes {
+			if !isStockCode(code.Code, item.name) {
+				continue
+			}
+
+			totalProcessed++
+
+			// Skip if not force and data is fresh (updated in last 24 hours)
+			if !req.Force {
+				if exists, _ := s.stockinfoDB.Exists(code.Code); exists {
+					staleCodes, _ := s.stockinfoDB.GetStale(24 * 60) // 24 hours
+					isStale := false
+					for _, staleCode := range staleCodes {
+						if staleCode == code.Code {
+							isStale = true
+							break
+						}
+					}
+					if !isStale {
+						continue
+					}
+				}
+			}
+
+			fullCode := item.name + code.Code
+			quotes, err := s.svc.Client.GetQuote(fullCode)
+			if err != nil {
+				log.Printf("获取 %s 行情失败: %v", fullCode, err)
+			}
+
+			finance, err := s.svc.FetchFinance(fullCode)
+			if err != nil {
+				log.Printf("获取 %s 财务数据失败: %v", fullCode, err)
+			}
+
+			var quote *protocol.QuoteItem
+			if len(quotes) > 0 {
+				quote = quotes[0]
+			}
+
+			info := stockinfo.BuildFromQuoteAndFinance(item.name, code.Code, code.Name, quote, finance)
+			if info != nil && info.MarketCap > 0 {
+				if err := s.stockinfoDB.Upsert(*info); err != nil {
+					failedCount++
+				} else {
+					successCount++
+				}
+			} else {
+				failedCount++
+			}
+		}
+	}
+
+	duration := time.Since(startTime)
+
+	c.JSON(http.StatusOK, gin.H{
+		"total":      totalProcessed,
+		"success":    successCount,
+		"failed":     failedCount,
+		"duration":   duration.String(),
+		"updated_at": time.Now().Unix(),
+	})
+}
+
+// handleStockinfoCount returns count of stock info records
+func (s *Server) handleStockinfoCount(c *gin.Context) {
+	count, err := s.stockinfoDB.Count()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"count": count,
 	})
 }

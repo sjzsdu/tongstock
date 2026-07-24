@@ -23,6 +23,7 @@ import (
 	"github.com/sjzsdu/tongstock/pkg/history"
 	"github.com/sjzsdu/tongstock/pkg/param"
 	"github.com/sjzsdu/tongstock/pkg/server"
+	"github.com/sjzsdu/tongstock/pkg/stockinfo"
 	"github.com/sjzsdu/tongstock/pkg/stockpool"
 	"github.com/sjzsdu/tongstock/pkg/storage"
 	"github.com/sjzsdu/tongstock/pkg/tdx"
@@ -107,8 +108,14 @@ func Run() error {
 		return fmt.Errorf("打开股票池数据库失败: %w", err)
 	}
 
+	// Initialize stockinfo store with same storage
+	stockinfoStore, err := stockinfo.New(s)
+	if err != nil {
+		return fmt.Errorf("打开股票信息数据库失败: %w", err)
+	}
+
 	// Create HTTP server
-	httpServer := server.NewServer(svc, historyStore, watchlistStore, tradingStore, stockpoolStore)
+	httpServer := server.NewServer(svc, historyStore, watchlistStore, tradingStore, stockpoolStore, stockinfoStore)
 
 	// Initialize Agent (picoclaw) if enabled
 	if cfg.Agent.Enabled {
