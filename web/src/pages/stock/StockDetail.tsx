@@ -82,7 +82,7 @@ export default function StockDetail() {
       setNewsLoading(true);
       api.newsStock(code)
         .then((result) => {
-          setNewsFeed(result.items);
+          setNewsFeed(result.items || []);
         })
         .catch(() => {
           setNewsFeed([]);

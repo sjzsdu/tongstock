@@ -148,7 +148,7 @@ export default function Dashboard() {
     // 加载热点事件
     try {
       const events = await api.hotEvents({ limit: 10 });
-      setHotEvents(events.items);
+      setHotEvents(events.items || []);
     } catch {
       setHotEvents([]);
     } finally {

@@ -66,10 +66,10 @@ export default function NewsHome() {
       const result = await api.newsFeed(params);
 
       if (reset) {
-        setNewsList(result.items);
-        setTotal(result.total);
+        setNewsList(result.items || []);
+        setTotal(result.total || 0);
       } else {
-        setNewsList((prev) => [...prev, ...result.items]);
+        setNewsList((prev) => [...prev, ...(result.items || [])]);
       }
       setPage(currentPage);
     } catch {
@@ -86,7 +86,7 @@ export default function NewsHome() {
   const fetchHotEvents = async () => {
     try {
       const result = await api.hotEvents({ limit: 10 });
-      setHotEvents(result.items);
+      setHotEvents(result.items || []);
     } catch {
       setHotEvents([]);
     }
