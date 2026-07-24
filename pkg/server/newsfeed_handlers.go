@@ -13,9 +13,10 @@ import (
 
 // NewsfeedHandler 新闻聚合API处理器
 type NewsfeedHandler struct {
-	aggregator *newsfeed.SimpleAggregator
-	clusterer  *newsfeed.Clusterer
-	store      newsfeed.Store
+	aggregator   *newsfeed.SimpleAggregator
+	clusterer    *newsfeed.Clusterer
+	store        newsfeed.Store
+	sentimentSvc *newsfeed.SentimentService
 }
 
 // NewNewsfeedHandler 创建新闻聚合处理器
@@ -34,6 +35,9 @@ func NewNewsfeedHandler(store newsfeed.Store) *NewsfeedHandler {
 
 	// 创建聚类器
 	handler.clusterer = newsfeed.NewClusterer(store, newsfeed.DefaultClusterConfig())
+
+	// 创建情绪服务
+	handler.sentimentSvc = newsfeed.NewSentimentService(store)
 
 	return handler
 }
@@ -60,6 +64,12 @@ func (h *NewsfeedHandler) SetupRoutes(r *gin.RouterGroup) {
 
 		// 手动刷新数据源
 		news.POST("/fetch", h.handleFetchNews)
+
+		// 情绪分析
+		news.GET("/sentiment/market", h.handleMarketSentiment)
+		news.GET("/sentiment/trend", h.handleSentimentTrend)
+		news.GET("/sentiment/heatmap", h.handleSentimentHeatmap)
+		news.GET("/sentiment/stock/:code", h.handleStockSentiment)
 	}
 }
 
@@ -334,4 +344,92 @@ func (h *NewsfeedHandler) handleFetchNews(c *gin.Context) {
 		"count": len(news),
 		"msg":   "新闻获取成功",
 	})
+}
+
+// handleMarketSentiment 获取市场整体情绪
+func (h *NewsfeedHandler) handleMarketSentiment(c *gin.Context) {
+	hours := 24
+	if hoursStr := c.Query("hours"); hoursStr != "" {
+		if h, err := strconv.Atoi(hoursStr); err == nil {
+			hours = h
+		}
+	}
+
+	sentiment, err := h.sentimentSvc.AnalyzeMarketSentiment(c.Request.Context(), hours)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, sentiment)
+}
+
+// handleSentimentTrend 获取情绪趋势
+func (h *NewsfeedHandler) handleSentimentTrend(c *gin.Context) {
+	hours := 24
+	if hoursStr := c.Query("hours"); hoursStr != "" {
+		if h, err := strconv.Atoi(hoursStr); err == nil {
+			hours = h
+		}
+	}
+
+	intervals := 12
+	if intervalsStr := c.Query("intervals"); intervalsStr != "" {
+		if i, err := strconv.Atoi(intervalsStr); err == nil {
+			intervals = i
+		}
+	}
+
+	trend, err := h.sentimentSvc.GetSentimentTrend(c.Request.Context(), hours, intervals)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, trend)
+}
+
+// handleSentimentHeatmap 获取情绪热力图
+func (h *NewsfeedHandler) handleSentimentHeatmap(c *gin.Context) {
+	hours := 24
+	if hoursStr := c.Query("hours"); hoursStr != "" {
+		if h, err := strconv.Atoi(hoursStr); err == nil {
+			hours = h
+		}
+	}
+
+	topN := 20
+	if topNStr := c.Query("topN"); topNStr != "" {
+		if t, err := strconv.Atoi(topNStr); err == nil {
+			topN = t
+		}
+	}
+
+	heatmap, err := h.sentimentSvc.GetSentimentHeatmap(c.Request.Context(), hours, topN)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, heatmap)
+}
+
+// handleStockSentiment 获取个股情绪
+func (h *NewsfeedHandler) handleStockSentiment(c *gin.Context) {
+	code := c.Param("code")
+
+	hours := 24
+	if hoursStr := c.Query("hours"); hoursStr != "" {
+		if h, err := strconv.Atoi(hoursStr); err == nil {
+			hours = h
+		}
+	}
+
+	sentiment, err := h.sentimentSvc.GetStockSentiment(c.Request.Context(), code, hours)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, sentiment)
 }
