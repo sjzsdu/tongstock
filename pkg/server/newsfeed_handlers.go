@@ -15,12 +15,13 @@ import (
 type NewsfeedHandler struct {
 	aggregator   *newsfeed.SimpleAggregator
 	clusterer    *newsfeed.Clusterer
-	store        newsfeed.Store
+	store        *newsfeed.SQLiteStore
 	sentimentSvc *newsfeed.SentimentService
+	alertSvc     *newsfeed.AlertService
 }
 
 // NewNewsfeedHandler 创建新闻聚合处理器
-func NewNewsfeedHandler(store newsfeed.Store) *NewsfeedHandler {
+func NewNewsfeedHandler(store *newsfeed.SQLiteStore) *NewsfeedHandler {
 	handler := &NewsfeedHandler{
 		store: store,
 	}
@@ -38,6 +39,9 @@ func NewNewsfeedHandler(store newsfeed.Store) *NewsfeedHandler {
 
 	// 创建情绪服务
 	handler.sentimentSvc = newsfeed.NewSentimentService(store)
+
+	// 创建预警服务
+	handler.alertSvc = newsfeed.NewAlertService(store, handler.sentimentSvc)
 
 	return handler
 }
@@ -70,6 +74,18 @@ func (h *NewsfeedHandler) SetupRoutes(r *gin.RouterGroup) {
 		news.GET("/sentiment/trend", h.handleSentimentTrend)
 		news.GET("/sentiment/heatmap", h.handleSentimentHeatmap)
 		news.GET("/sentiment/stock/:code", h.handleStockSentiment)
+
+		// 预警推送
+		news.GET("/alerts", h.handleGetAlerts)
+		news.GET("/alerts/unread", h.handleGetUnreadAlerts)
+		news.GET("/alerts/count", h.handleGetUnreadCount)
+		news.PUT("/alerts/:id/read", h.handleMarkAlertRead)
+		news.PUT("/alerts/read-all", h.handleMarkAllAlertsRead)
+		news.POST("/alerts/rule", h.handleAddAlertRule)
+		news.GET("/alerts/rules", h.handleGetAlertRules)
+		news.PUT("/alerts/rule/:id", h.handleUpdateAlertRule)
+		news.DELETE("/alerts/rule/:id", h.handleDeleteAlertRule)
+		news.POST("/alerts/watchlist", h.handleSetWatchlist)
 	}
 }
 
@@ -432,4 +448,135 @@ func (h *NewsfeedHandler) handleStockSentiment(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, sentiment)
+}
+
+// handleGetAlerts 获取预警记录
+func (h *NewsfeedHandler) handleGetAlerts(c *gin.Context) {
+	limit := 50
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil {
+			limit = l
+		}
+	}
+
+	read := false
+	if readStr := c.Query("read"); readStr != "" {
+		if r, err := strconv.ParseBool(readStr); err == nil {
+			read = r
+		}
+	}
+
+	alerts, err := h.alertSvc.GetAlertRecords(c.Request.Context(), limit, read)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, alerts)
+}
+
+// handleGetUnreadAlerts 获取未读预警
+func (h *NewsfeedHandler) handleGetUnreadAlerts(c *gin.Context) {
+	limit := 50
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil {
+			limit = l
+		}
+	}
+
+	alerts, err := h.alertSvc.GetAlertRecords(c.Request.Context(), limit, false)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, alerts)
+}
+
+// handleGetUnreadCount 获取未读预警数量
+func (h *NewsfeedHandler) handleGetUnreadCount(c *gin.Context) {
+	count, err := h.alertSvc.GetUnreadCount(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"count": count})
+}
+
+// handleMarkAlertRead 标记预警为已读
+func (h *NewsfeedHandler) handleMarkAlertRead(c *gin.Context) {
+	id := c.Param("id")
+	if err := h.alertSvc.MarkAlertAsRead(c.Request.Context(), id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"msg": "标记成功"})
+}
+
+// handleMarkAllAlertsRead 标记所有预警为已读
+func (h *NewsfeedHandler) handleMarkAllAlertsRead(c *gin.Context) {
+	if err := h.alertSvc.MarkAllAlertsAsRead(c.Request.Context()); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"msg": "全部标记成功"})
+}
+
+// handleAddAlertRule 添加预警规则
+func (h *NewsfeedHandler) handleAddAlertRule(c *gin.Context) {
+	var rule newsfeed.AlertRule
+	if err := c.ShouldBindJSON(&rule); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	h.alertSvc.AddRule(&rule)
+	c.JSON(http.StatusOK, rule)
+}
+
+// handleGetAlertRules 获取预警规则列表
+func (h *NewsfeedHandler) handleGetAlertRules(c *gin.Context) {
+	rules := h.alertSvc.GetRules()
+	c.JSON(http.StatusOK, rules)
+}
+
+// handleUpdateAlertRule 更新预警规则
+func (h *NewsfeedHandler) handleUpdateAlertRule(c *gin.Context) {
+	id := c.Param("id")
+	var updates newsfeed.AlertRule
+	if err := c.ShouldBindJSON(&updates); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if ok := h.alertSvc.UpdateRule(id, &updates); !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "规则不存在"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"msg": "更新成功"})
+}
+
+// handleDeleteAlertRule 删除预警规则
+func (h *NewsfeedHandler) handleDeleteAlertRule(c *gin.Context) {
+	id := c.Param("id")
+	h.alertSvc.RemoveRule(id)
+	c.JSON(http.StatusOK, gin.H{"msg": "删除成功"})
+}
+
+// handleSetWatchlist 设置关注列表
+func (h *NewsfeedHandler) handleSetWatchlist(c *gin.Context) {
+	var req struct {
+		StockCodes []string `json:"stockCodes"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	h.alertSvc.SetWatchlist(req.StockCodes)
+	c.JSON(http.StatusOK, gin.H{"msg": "关注列表已更新", "count": len(req.StockCodes)})
 }

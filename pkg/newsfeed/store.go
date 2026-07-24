@@ -109,11 +109,36 @@ func createTables(db *sql.DB) error {
 	CREATE INDEX IF NOT EXISTS idx_event_updated_at ON hot_events(updated_at);
 	`
 
+	alertTable := `
+	CREATE TABLE IF NOT EXISTS alert_records (
+		id TEXT PRIMARY KEY,
+		rule_id TEXT,
+		news_id TEXT,
+		stock_code TEXT,
+		level TEXT,
+		type TEXT,
+		title TEXT,
+		summary TEXT,
+		source TEXT,
+		read BOOLEAN DEFAULT FALSE,
+		trigger_time TEXT,
+		created_at TEXT,
+		FOREIGN KEY (news_id) REFERENCES news_items(id)
+	);
+	CREATE INDEX IF NOT EXISTS idx_alert_records_read ON alert_records(read);
+	CREATE INDEX IF NOT EXISTS idx_alert_records_trigger_time ON alert_records(trigger_time);
+	CREATE INDEX IF NOT EXISTS idx_alert_records_stock_code ON alert_records(stock_code);
+	`
+
 	if _, err := db.Exec(newsTable); err != nil {
 		return err
 	}
 
 	if _, err := db.Exec(eventTable); err != nil {
+		return err
+	}
+
+	if _, err := db.Exec(alertTable); err != nil {
 		return err
 	}
 
