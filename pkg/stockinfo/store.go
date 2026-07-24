@@ -10,29 +10,29 @@ import (
 
 // StockInfo 股票基础信息
 type StockInfo struct {
-	Code            string  `json:"code"`                // 股票代码
-	Name            string  `json:"name"`                // 股票名称
-	Exchange        string  `json:"exchange"`            // 交易所(sh/sz/bj)
-	Price           float64 `json:"price"`               // 最新价格
-	Open            float64 `json:"open"`                // 开盘价
-	High            float64 `json:"high"`                // 最高价
-	Low             float64 `json:"low"`                 // 最低价
-	LastClose       float64 `json:"last_close"`          // 昨收价
-	ChangePct       float64 `json:"change_pct"`          // 涨跌幅(%)
-	Volume          float64 `json:"volume"`              // 成交量(手)
-	Amount          float64 `json:"amount"`              // 成交额(万元)
-	TurnoverRate    float64 `json:"turnover_rate"`       // 换手率(%)
-	LiuTongGuBen    float64 `json:"liu_tong_gu_ben"`     // 流通股本(万股)
-	ZongGuBen       float64 `json:"zong_gu_ben"`         // 总股本(万股)
-	MarketCap       float64 `json:"market_cap"`          // 流通市值(亿元)
-	TotalMarketCap  float64 `json:"total_market_cap"`    // 总市值(亿元)
-	JingZiChan      float64 `json:"jing_zi_chan"`        // 净资产(万元)
-	JingLiRun       float64 `json:"jing_li_run"`         // 净利润(万元)
-	MeiGuJingZiChan float64 `json:"mei_gu_jing_zi_chan"` // 每股净资产(元)
-	Province        uint16  `json:"province"`            // 省份代码
-	Industry        uint16  `json:"industry"`            // 行业代码
-	IPODate         uint32  `json:"ipo_date"`            // 上市日期
-	UpdatedAt       int64   `json:"updated_at"`          // 更新时间戳
+	Code            string  `json:"code"`              // 股票代码
+	Name            string  `json:"name"`              // 股票名称
+	Exchange        string  `json:"exchange"`          // 交易所(sh/sz/bj)
+	Price           float64 `json:"price"`             // 最新价格
+	Open            float64 `json:"open"`              // 开盘价
+	High            float64 `json:"high"`              // 最高价
+	Low             float64 `json:"low"`               // 最低价
+	LastClose       float64 `json:"lastClose"`         // 昨收价
+	ChangePct       float64 `json:"changePct"`         // 涨跌幅(%)
+	Volume          float64 `json:"volume"`            // 成交量(手)
+	Amount          float64 `json:"amount"`            // 成交额(万元)
+	TurnoverRate    float64 `json:"turnoverRate"`      // 换手率(%)
+	LiuTongGuBen    float64 `json:"liuTongGuBen"`      // 流通股本(万股)
+	ZongGuBen       float64 `json:"zongGuBen"`         // 总股本(万股)
+	MarketCap       float64 `json:"marketCap"`         // 流通市值(亿元)
+	TotalMarketCap  float64 `json:"totalMarketCap"`    // 总市值(亿元)
+	JingZiChan      float64 `json:"jingZiChan"`        // 净资产(万元)
+	JingLiRun       float64 `json:"jingLiRun"`         // 净利润(万元)
+	MeiGuJingZiChan float64 `json:"meiGuJingZiChan"`   // 每股净资产(元)
+	Province        uint16  `json:"province"`          // 省份代码
+	Industry        uint16  `json:"industry"`          // 行业代码
+	IPODate         uint32  `json:"ipoDate"`           // 上市日期
+	UpdatedAt       int64   `json:"updatedAt"`         // 更新时间戳
 }
 
 // Store 股票信息存储
