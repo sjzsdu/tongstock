@@ -11,20 +11,20 @@ type IndicatorConfig struct {
 }
 
 type MACDConfig struct {
-	Fast   int
-	Slow   int
-	Signal int
+	Fast   int `json:"fast"`
+	Slow   int `json:"slow"`
+	Signal int `json:"signal"`
 }
 
 type KDJConfig struct {
-	N  int
-	M1 int
-	M2 int
+	N  int `json:"n"`
+	M1 int `json:"m1"`
+	M2 int `json:"m2"`
 }
 
 type BOLLConfig struct {
-	N int
-	K float64
+	N int     `json:"n"`
+	K float64 `json:"k"`
 }
 
 func DefaultConfig() *IndicatorConfig {
