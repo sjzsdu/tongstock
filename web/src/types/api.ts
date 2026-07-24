@@ -650,3 +650,114 @@ export interface ChatSessionInfo {
   created_at: string;
   updated_at: string;
 }
+
+// Newsfeed types
+export interface NewsItem {
+  id: string;
+  source: string;
+  newsType: string;
+  title: string;
+  summary: string;
+  content: string;
+  publishTime: string;
+  hotScore: number;
+  tags: string[];
+  relatedStocks: string[];
+  url: string;
+  originalId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NewsSummary {
+  id: string;
+  source: string;
+  newsType: string;
+  title: string;
+  summary: string;
+  publishTime: string;
+  hotScore: number;
+  tags: string[];
+  relatedStocks: string[];
+}
+
+export interface FeedResult {
+  total: number;
+  items: NewsSummary[];
+}
+
+export interface HotEvent {
+  id: string;
+  title: string;
+  keywords: string[];
+  relatedStocks: string[];
+  hotIndex: number;
+  sourceCounts: Record<string, number>;
+  newsItemIDs: string[];
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EventResult {
+  total: number;
+  items: HotEvent[];
+}
+
+export interface SentimentResult {
+  type: string;
+  score: number;
+  confidence: number;
+}
+
+export interface MarketSentiment {
+  timestamp: string;
+  positiveCount: number;
+  negativeCount: number;
+  neutralCount: number;
+  sentimentIndex: number;
+  hotScoreAvg: number;
+  sentimentByType: Record<string, SentimentResult>;
+  sentimentBySource: Record<string, SentimentResult>;
+}
+
+export interface SentimentTrend {
+  time: string;
+  sentiment: number;
+  newsCount: number;
+}
+
+export interface SentimentHeatmapItem {
+  stockCode: string;
+  stockName: string;
+  sentiment: SentimentResult;
+  newsCount: number;
+  hotScore: number;
+}
+
+export interface AlertRecord {
+  id: string;
+  ruleID: string;
+  newsID: string;
+  stockCode: string;
+  level: string;
+  type: string;
+  title: string;
+  summary: string;
+  source: string;
+  read: boolean;
+  triggerTime: string;
+  createdAt: string;
+}
+
+export interface AlertRule {
+  id: string;
+  name: string;
+  level: string;
+  stockCodes: string[];
+  minHotScore: number;
+  sentiment: string;
+  enabled: boolean;
+  lastTrigger: string;
+  createdAt: string;
+}

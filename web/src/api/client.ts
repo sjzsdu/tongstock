@@ -27,6 +27,16 @@ import type {
   ParadigmStatsResponse,
   ParadigmBacktestItem,
   ChatSessionInfo,
+  NewsItem,
+  NewsSummary,
+  FeedResult,
+  HotEvent,
+  EventResult,
+  MarketSentiment,
+  SentimentTrend,
+  SentimentHeatmapItem,
+  AlertRecord,
+  AlertRule,
 } from '../types/api';
 
 const BASE = '';
@@ -399,6 +409,129 @@ export const api = {
 		fetchJSON<OvernightArbitrageResponse>('/api/strategy/overnight', {
 			method: 'POST',
 			body: JSON.stringify({ codes, minMarketCap, maxMarketCap }),
+		}),
+
+	// Newsfeed APIs
+	newsFeed: (params?: {
+		sources?: string;
+		types?: string;
+		startTime?: string;
+		endTime?: string;
+		hotScoreMin?: number;
+		page?: number;
+		pageSize?: number;
+		sortBy?: string;
+	}) => {
+		const p = new URLSearchParams();
+		if (params?.sources) p.set('sources', params.sources);
+		if (params?.types) p.set('types', params.types);
+		if (params?.startTime) p.set('startTime', params.startTime);
+		if (params?.endTime) p.set('endTime', params.endTime);
+		if (params?.hotScoreMin != null) p.set('hotScoreMin', String(params.hotScoreMin));
+		if (params?.page != null) p.set('page', String(params.page));
+		if (params?.pageSize != null) p.set('pageSize', String(params.pageSize));
+		if (params?.sortBy) p.set('sortBy', params.sortBy);
+		const q = p.toString();
+		return fetchJSON<FeedResult>(`/api/news/feed${q ? '?' + q : ''}`);
+	},
+
+	newsItem: (id: string) =>
+		fetchJSON<NewsItem>(`/api/news/item/${id}`),
+
+	newsStock: (code: string) =>
+		fetchJSON<FeedResult>(`/api/news/stock/${code}`),
+
+	newsSearch: (keyword: string) =>
+		fetchJSON<{ total: number; items: NewsSummary[] }>(`/api/news/search?keyword=${encodeURIComponent(keyword)}`),
+
+	newsFetch: () =>
+		fetchJSON<{ count: number; msg: string }>('/api/news/fetch', { method: 'POST' }),
+
+	// Hot events APIs
+	hotEvents: (params?: { minHotIndex?: number; status?: string; limit?: number }) => {
+		const p = new URLSearchParams();
+		if (params?.minHotIndex != null) p.set('minHotIndex', String(params.minHotIndex));
+		if (params?.status) p.set('status', params.status);
+		if (params?.limit != null) p.set('limit', String(params.limit));
+		const q = p.toString();
+		return fetchJSON<EventResult>(`/api/news/events${q ? '?' + q : ''}`);
+	},
+
+	hotEventDetail: (id: string) =>
+		fetchJSON<{ event: HotEvent; newsItems: NewsItem[] }>(`/api/news/events/${id}`),
+
+	// Sentiment APIs
+	sentimentMarket: (hours?: number) => {
+		const params = hours != null ? `?hours=${hours}` : '';
+		return fetchJSON<MarketSentiment>(`/api/news/sentiment/market${params}`);
+	},
+
+	sentimentTrend: (hours?: number, intervals?: number) => {
+		const p = new URLSearchParams();
+		if (hours != null) p.set('hours', String(hours));
+		if (intervals != null) p.set('intervals', String(intervals));
+		const q = p.toString();
+		return fetchJSON<SentimentTrend[]>(`/api/news/sentiment/trend${q ? '?' + q : ''}`);
+	},
+
+	sentimentHeatmap: (hours?: number, topN?: number) => {
+		const p = new URLSearchParams();
+		if (hours != null) p.set('hours', String(hours));
+		if (topN != null) p.set('topN', String(topN));
+		const q = p.toString();
+		return fetchJSON<SentimentHeatmapItem[]>(`/api/news/sentiment/heatmap${q ? '?' + q : ''}`);
+	},
+
+	sentimentStock: (code: string, hours?: number) => {
+		const params = hours != null ? `?hours=${hours}` : '';
+		return fetchJSON<MarketSentiment>(`/api/news/sentiment/stock/${code}${params}`);
+	},
+
+	// Alert APIs
+	alerts: (limit?: number, read?: boolean) => {
+		const p = new URLSearchParams();
+		if (limit != null) p.set('limit', String(limit));
+		if (read != null) p.set('read', String(read));
+		const q = p.toString();
+		return fetchJSON<AlertRecord[]>(`/api/news/alerts${q ? '?' + q : ''}`);
+	},
+
+	unreadAlerts: (limit?: number) => {
+		const params = limit != null ? `?limit=${limit}` : '';
+		return fetchJSON<AlertRecord[]>(`/api/news/alerts/unread${params}`);
+	},
+
+	alertUnreadCount: () =>
+		fetchJSON<{ count: number }>('/api/news/alerts/count'),
+
+	markAlertRead: (id: string) =>
+		fetchJSON<{ msg: string }>(`/api/news/alerts/${id}/read`, { method: 'PUT' }),
+
+	markAllAlertsRead: () =>
+		fetchJSON<{ msg: string }>('/api/news/alerts/read-all', { method: 'PUT' }),
+
+	alertRules: () =>
+		fetchJSON<AlertRule[]>('/api/news/alerts/rules'),
+
+	addAlertRule: (rule: Omit<AlertRule, 'id' | 'createdAt' | 'lastTrigger'>) =>
+		fetchJSON<AlertRule>('/api/news/alerts/rule', {
+			method: 'POST',
+			body: JSON.stringify(rule),
+		}),
+
+	updateAlertRule: (id: string, updates: Partial<AlertRule>) =>
+		fetchJSON<{ msg: string }>(`/api/news/alerts/rule/${id}`, {
+			method: 'PUT',
+			body: JSON.stringify(updates),
+		}),
+
+	deleteAlertRule: (id: string) =>
+		fetchJSON<{ msg: string }>(`/api/news/alerts/rule/${id}`, { method: 'DELETE' }),
+
+	setWatchlist: (stockCodes: string[]) =>
+		fetchJSON<{ msg: string; count: number }>('/api/news/alerts/watchlist', {
+			method: 'POST',
+			body: JSON.stringify({ stockCodes }),
 		}),
 };
 

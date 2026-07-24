@@ -11,6 +11,7 @@ import {
   SearchOutlined,
   StockOutlined,
   TrophyOutlined,
+
 } from '@ant-design/icons';
 import {
   Button,
@@ -27,7 +28,7 @@ import {
   message,
 } from 'antd';
 import { api } from '../api/client';
-import type { HistoryStock, Quote, WatchlistStock } from '../types/api';
+import type { HistoryStock, HotEvent, Quote, WatchlistStock } from '../types/api';
 import StockSearchInput from '../components/StockSearchInput';
 import { formatDateTime } from '../lib/datetime';
 
@@ -63,6 +64,8 @@ export default function Dashboard() {
   const [loadingIndices, setLoadingIndices] = useState(true);
   const [loadingWatchlist, setLoadingWatchlist] = useState(true);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [hotEvents, setHotEvents] = useState<HotEvent[]>([]);
+  const [loadingHotEvents, setLoadingHotEvents] = useState(true);
 
   useEffect(() => {
     void loadDashboardData();
@@ -140,6 +143,16 @@ export default function Dashboard() {
       }));
     } finally {
       setLoadingHistory(false);
+    }
+
+    // 加载热点事件
+    try {
+      const events = await api.hotEvents({ limit: 10 });
+      setHotEvents(events.items);
+    } catch {
+      setHotEvents([]);
+    } finally {
+      setLoadingHotEvents(false);
     }
   };
 
@@ -388,6 +401,51 @@ export default function Dashboard() {
           </Card>
         </Col>
       </Row>
+
+      {/* 今日热点 */}
+      <div>
+        <Typography.Title level={4} style={{ marginBottom: 12 }}>
+          <RiseOutlined style={{ marginRight: 8 }} />
+          今日热点
+        </Typography.Title>
+        <Row gutter={[16, 16]}>
+          <Col xs={24}>
+            <Card>
+              {loadingHotEvents ? (
+                <Skeleton active paragraph={{ rows: 4 }} title={false} />
+              ) : hotEvents.length === 0 ? (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无热点事件" />
+              ) : (
+                <List
+                  dataSource={hotEvents.slice(0, 10)}
+                  renderItem={(event, index) => (
+                    <List.Item
+                      actions={[
+                        <Tag color={event.hotIndex > 100 ? 'red' : 'orange'}>{event.hotIndex}</Tag>,
+                      ]}
+                    >
+                      <List.Item.Meta
+                        avatar={<Typography.Text strong style={{ fontSize: 16, color: '#1677ff' }}>{index + 1}</Typography.Text>}
+                        title={<Typography.Text strong>{event.title}</Typography.Text>}
+                        description={
+                          <Space size={4} wrap>
+                            {event.keywords && event.keywords.slice(0, 3).map((kw) => (
+                              <Tag key={kw}>{kw}</Tag>
+                            ))}
+                            {event.relatedStocks && event.relatedStocks.slice(0, 3).map((stock) => (
+                              <Tag key={stock} color="cyan">{stock}</Tag>
+                            ))}
+                          </Space>
+                        }
+                      />
+                    </List.Item>
+                  )}
+                />
+              )}
+            </Card>
+          </Col>
+        </Row>
+      </div>
     </Space>
   );
 }

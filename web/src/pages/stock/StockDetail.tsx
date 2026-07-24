@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { AreaChartOutlined, BankOutlined, BarChartOutlined, ClockCircleOutlined, DollarOutlined, GiftOutlined, ThunderboltOutlined } from '@ant-design/icons';
-import { Card, Empty, Flex, Space, Spin, Tabs, Typography } from 'antd';
+import { AreaChartOutlined, BankOutlined, BarChartOutlined, ClockCircleOutlined, DollarOutlined, FileExcelOutlined, GiftOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { Card, Empty, Flex, List, Space, Spin, Tabs, Tag, Typography } from 'antd';
+import { api } from '../../api/client';
+import type { NewsSummary, XdXrItem } from '../../types/api';
 import CandlestickChart from '../../components/charts/CandlestickChart';
 import ChartToolbar from '../../components/charts/ChartToolbar';
 import StockCompareView from '../../components/StockCompareView';
@@ -22,10 +24,8 @@ import { useStockMinute } from '../../hooks/useStockMinute';
 import { useStockCompare } from '../../hooks/useStockCompare';
 import { useParadigmAnalysis } from '../../hooks/useParadigmAnalysis';
 import { getValueColor } from '../../lib/stock-detail';
-import { api } from '../../api/client';
-import type { XdXrItem } from '../../types/api';
 
-type Tab = 'chart' | 'signal' | 'compare' | 'finance' | 'company' | 'dividend' | 'intraday';
+type Tab = 'chart' | 'signal' | 'compare' | 'finance' | 'company' | 'dividend' | 'intraday' | 'news';
 
 const TAB_ITEMS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: 'chart', label: 'K线+指标', icon: <AreaChartOutlined /> },
@@ -35,6 +35,7 @@ const TAB_ITEMS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: 'company', label: '公司', icon: <BankOutlined /> },
   { key: 'dividend', label: '分红', icon: <GiftOutlined /> },
   { key: 'intraday', label: '分时', icon: <ClockCircleOutlined /> },
+  { key: 'news', label: '资讯', icon: <FileExcelOutlined /> },
 ];
 
 export default function StockDetail() {
@@ -44,6 +45,8 @@ export default function StockDetail() {
   const [dividends, setDividends] = useState<XdXrItem[]>([]);
   const [fullscreen, setFullscreen] = useState(false);
   const [agentPanelOpen, setAgentPanelOpen] = useState(false);
+  const [newsFeed, setNewsFeed] = useState<NewsSummary[]>([]);
+  const [newsLoading, setNewsLoading] = useState(false);
 
   const { code, quote, loading, detailStatus, detailError, syncState, ktype, setKtype } = useStockDetail();
   const { klines, indicator, chartLoading, analysis, sortedSignals, sortedSignalOutcomes, latestClose, mainOverlay, setMainOverlay, subPanel, setSubPanel } = useStockChart(code, ktype, detailStatus);
@@ -71,6 +74,24 @@ export default function StockDetail() {
     setTab(nextTab);
     navigate(`/stock/${code}/${nextTab}`, { replace: true });
   };
+
+  useEffect(() => {
+    if (!code || detailStatus !== 'ready') return;
+    if (tab === 'dividend') api.xdxr(code).then((d) => setDividends([...d].reverse())).catch(() => {});
+    if (tab === 'news') {
+      setNewsLoading(true);
+      api.newsStock(code)
+        .then((result) => {
+          setNewsFeed(result.items);
+        })
+        .catch(() => {
+          setNewsFeed([]);
+        })
+        .finally(() => {
+          setNewsLoading(false);
+        });
+    }
+  }, [code, tab, detailStatus]);
 
   const pct = quote ? ((quote.Price - quote.LastClose) / quote.LastClose) * 100 : 0;
   const up = pct >= 0;
@@ -224,6 +245,42 @@ export default function StockDetail() {
           />
         )}
 
+        {showTabs && tab === 'news' && (
+          <Space direction="vertical" size={16} style={{ display: 'flex' }}>
+            {newsLoading ? (
+              <Card><Flex justify="center" align="center" style={{ minHeight: 240 }}><Spin size="large" /></Flex></Card>
+            ) : newsFeed.length === 0 ? (
+              <Card><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无关联资讯" /></Card>
+            ) : (
+              <Card title="关联资讯">
+                <List
+                  dataSource={newsFeed}
+                  renderItem={(item) => (
+                    <List.Item
+                      actions={[
+                        <Typography.Text type="secondary">{item.source}</Typography.Text>,
+                        <Typography.Text type="secondary">{new Date(item.publishTime).toLocaleString()}</Typography.Text>,
+                      ]}
+                    >
+                      <List.Item.Meta
+                        title={<Typography.Text strong>{item.title}</Typography.Text>}
+                        description={item.summary}
+                      />
+                      {item.tags && item.tags.length > 0 && (
+                        <Space size={4} wrap>
+                          {item.tags.map((tag) => (
+                            <Tag key={tag}>{tag}</Tag>
+                          ))}
+                        </Space>
+                      )}
+                    </List.Item>
+                  )}
+                  pagination={{ pageSize: 10, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
+                />
+              </Card>
+            )}
+          </Space>
+        )}
         <AgentChatPanel
           stockCode={code}
           stockName={quote?.Name}
