@@ -17,6 +17,7 @@ const IndexDetail = lazy(() => import('./pages/index/IndexDetail'));
 const AgentWeb = lazy(() => import('./pages/AgentWeb'));
 const Paradigms = lazy(() => import('./pages/Paradigms'));
 const OvernightArbitrage = lazy(() => import('./pages/strategy/OvernightArbitrage'));
+const EventDetail = lazy(() => import('./pages/news/EventDetail'));
 
 const { Header, Content, Sider } = Layout;
 
@@ -159,6 +160,7 @@ export default function App() {
           <Route path="/agent" element={<AgentWeb />} />
           <Route path="/paradigms" element={<Paradigms />} />
           <Route path="/strategy/overnight" element={<OvernightArbitrage />} />
+          <Route path="/news/event/:id" element={<EventDetail />} />
         </Routes>
       </AppLayout>
     </BrowserRouter>
@@ -194,6 +196,8 @@ function buildBreadcrumbs(pathname: string) {
     index: '指数详情',
     stats: '涨跌统计',
     components: '成分股',
+    news: '财经资讯',
+    event: '热点事件',
   };
 
   let current = '';
