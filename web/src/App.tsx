@@ -18,6 +18,7 @@ const AgentWeb = lazy(() => import('./pages/AgentWeb'));
 const Paradigms = lazy(() => import('./pages/Paradigms'));
 const OvernightArbitrage = lazy(() => import('./pages/strategy/OvernightArbitrage'));
 const EventDetail = lazy(() => import('./pages/news/EventDetail'));
+const NewsHome = lazy(() => import('./pages/news/NewsHome'));
 
 const { Header, Content, Sider } = Layout;
 
@@ -160,6 +161,7 @@ export default function App() {
           <Route path="/agent" element={<AgentWeb />} />
           <Route path="/paradigms" element={<Paradigms />} />
           <Route path="/strategy/overnight" element={<OvernightArbitrage />} />
+          <Route path="/news" element={<NewsHome />} />
           <Route path="/news/event/:id" element={<EventDetail />} />
         </Routes>
       </AppLayout>
