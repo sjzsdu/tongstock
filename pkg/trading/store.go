@@ -2,6 +2,7 @@ package trading
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/sjzsdu/tongstock/pkg/storage"
@@ -181,7 +182,7 @@ func (s *Store) GetLatestByCodes(codes []string) (map[string]Trade, error) {
 	}
 
 	query := fmt.Sprintf(`SELECT id, code, name, action, price, signal, ktype, reason, created_at FROM trades WHERE code IN (%s) ORDER BY created_at DESC`,
-		fmt.Sprintf("%s", placeholders))
+		strings.Join(placeholders, ","))
 
 	rows, err := s.s.DB().Query(query, args...)
 	if err != nil {
