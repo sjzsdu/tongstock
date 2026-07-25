@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -68,6 +69,7 @@ func (h *NewsfeedHandler) SetupRoutes(r *gin.RouterGroup) {
 
 		// 手动刷新数据源
 		news.POST("/fetch", h.handleFetchNews)
+		news.POST("/fetch/browser", h.handleFetchBrowserNews)
 
 		// 情绪分析
 		news.GET("/sentiment/market", h.handleMarketSentiment)
@@ -360,6 +362,64 @@ func (h *NewsfeedHandler) handleFetchNews(c *gin.Context) {
 		"count": len(news),
 		"msg":   "新闻获取成功",
 	})
+}
+
+// handleFetchBrowserNews 使用 ego-browser 抓取新闻
+// POST /api/news/fetch/browser?site=cailianshe|xueqiu
+func (h *NewsfeedHandler) handleFetchBrowserNews(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	site := c.DefaultQuery("site", "all")
+
+	var feeds []newsfeed.Feed
+	if site == "all" {
+		feeds = sources.NewBrowserSources()
+	} else {
+		feed := sources.NewBrowserSource(site)
+		if feed == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的数据源: " + site})
+			return
+		}
+		feeds = []newsfeed.Feed{feed}
+	}
+
+	var allNews []*newsfeed.NewsItem
+	var errors []string
+
+	for _, feed := range feeds {
+		if !feed.HealthCheck(ctx) {
+			errors = append(errors, fmt.Sprintf("%s: ego-browser 不可用", feed.Name()))
+			continue
+		}
+		news, err := feed.Fetch(ctx)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", feed.Name(), err))
+			continue
+		}
+		allNews = append(allNews, news...)
+	}
+
+	// 去重
+	allNews = h.clusterer.DeduplicateNews(allNews)
+
+	// 保存
+	if len(allNews) > 0 {
+		if err := h.aggregator.SaveNews(ctx, allNews); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	result := gin.H{
+		"count":  len(allNews),
+		"msg":    "浏览器抓取完成",
+		"errors": errors,
+	}
+	if len(errors) == 0 {
+		delete(result, "errors")
+	}
+
+	c.JSON(http.StatusOK, result)
 }
 
 // handleMarketSentiment 获取市场整体情绪

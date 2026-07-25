@@ -447,6 +447,9 @@ export const api = {
 	newsFetch: () =>
 		fetchJSON<{ count: number; msg: string }>('/api/news/fetch', { method: 'POST' }),
 
+	newsFetchBrowser: (site?: string) =>
+		fetchJSON<{ count: number; msg: string; errors?: string[] }>(`/api/news/fetch/browser${site ? '?site=' + site : ''}`, { method: 'POST' }),
+
 	// Hot events APIs
 	hotEvents: (params?: { minHotIndex?: number; status?: string; limit?: number }) => {
 		const p = new URLSearchParams();

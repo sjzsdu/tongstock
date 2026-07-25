@@ -1,6 +1,6 @@
 import { Suspense, lazy, useState } from 'react';
 import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { BarChartOutlined, DashboardOutlined, FundOutlined, HeartOutlined, RadarChartOutlined, RobotOutlined, SearchOutlined, SettingOutlined, StockOutlined, WalletOutlined } from '@ant-design/icons';
+import { BarChartOutlined, DashboardOutlined, FileTextOutlined, FundOutlined, HeartOutlined, RadarChartOutlined, RobotOutlined, SearchOutlined, SettingOutlined, StockOutlined, WalletOutlined } from '@ant-design/icons';
 import { Avatar, Breadcrumb, Layout, Menu, Skeleton, Space, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import StockSearchInput from './components/StockSearchInput';
@@ -70,10 +70,13 @@ function AppLayout({ children }: { children: React.ReactNode }) {
                     ? '/paradigms'
                     : location.pathname.startsWith('/strategy')
                       ? '/strategy/overnight'
-                      : '/';
+                      : location.pathname.startsWith('/news')
+                        ? '/news'
+                        : '/';
 
   const menuItems: MenuProps['items'] = [
     { key: '/', icon: <DashboardOutlined />, label: <Link to="/">市场总览</Link> },
+    { key: '/news', icon: <FileTextOutlined />, label: <Link to="/news">财经资讯</Link> },
     { key: '/watchlist', icon: <HeartOutlined />, label: <Link to="/watchlist">自选股</Link> },
     { key: '/stock/choose', icon: <BarChartOutlined />, label: <Link to="/stock/choose">个股分析</Link> },
     { key: '/screen', icon: <SearchOutlined />, label: <Link to="/screen">信号筛选</Link> },

@@ -1,29 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRightOutlined, ClockCircleOutlined, FilterOutlined, FireOutlined, RestOutlined, TagOutlined, WarningOutlined } from '@ant-design/icons';
-import { Card, Col, Empty, Input, List, Pagination, Row, Select, Space, Spin, Tag, Typography } from 'antd';
+import { ArrowRightOutlined, ClockCircleOutlined, FilterOutlined, FireOutlined, RestOutlined, TagOutlined, WarningOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { Card, Col, Empty, Input, List, Pagination, Row, Select, Space, Spin, Tag, Typography, message, Button } from 'antd';
 import { api } from '../../api/client';
-import type { NewsSummary, HotEvent } from '../../types/api';
+import type { NewsSummary, HotEvent, MarketSentiment } from '../../types/api';
 
 const { Search } = Input;
 const { Option } = Select;
 
 const SOURCES = [
   { value: '', label: '全部来源' },
-  { value: '东方财富', label: '东方财富' },
-  { value: '同花顺', label: '同花顺' },
-  { value: '证券时报', label: '证券时报' },
-  { value: '上海证券报', label: '上海证券报' },
-  { value: '中国证券报', label: '中国证券报' },
+  { value: '财联社', label: '财联社' },
+  { value: '雪球', label: '雪球' },
+  { value: '巨潮资讯', label: '巨潮资讯' },
 ];
 
 const NEWS_TYPES = [
   { value: '', label: '全部类型' },
-  { value: '宏观经济', label: '宏观经济' },
-  { value: '行业动态', label: '行业动态' },
-  { value: '公司公告', label: '公司公告' },
-  { value: '市场评论', label: '市场评论' },
-  { value: '政策解读', label: '政策解读' },
+  { value: '快讯', label: '快讯' },
+  { value: '公告', label: '公告' },
+  { value: '讨论', label: '讨论' },
+  { value: '研报', label: '研报' },
 ];
 
 const SORT_OPTIONS = [
@@ -38,6 +35,7 @@ export default function NewsHome() {
   const [newsList, setNewsList] = useState<NewsSummary[]>([]);
   const [hotEvents, setHotEvents] = useState<HotEvent[]>([]);
   const [total, setTotal] = useState(0);
+  const [marketSentiment, setMarketSentiment] = useState<MarketSentiment | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
 
@@ -45,6 +43,7 @@ export default function NewsHome() {
   const [source, setSource] = useState('');
   const [newsType, setNewsType] = useState('');
   const [sortBy, setSortBy] = useState('publishTime');
+  const [fetchingBrowser, setFetchingBrowser] = useState(false);
 
   const observerRef = useRef<IntersectionObserver | null>(null);
   const lastItemRef = useRef<HTMLDivElement | null>(null);
@@ -92,9 +91,19 @@ export default function NewsHome() {
     }
   };
 
+  const fetchMarketSentiment = async () => {
+    try {
+      const result = await api.sentimentMarket(24);
+      setMarketSentiment(result);
+    } catch {
+      setMarketSentiment(null);
+    }
+  };
+
   useEffect(() => {
     fetchNews(true);
     fetchHotEvents();
+    fetchMarketSentiment();
   }, []);
 
   useEffect(() => {
@@ -124,6 +133,27 @@ export default function NewsHome() {
     setPage(1);
     fetchNews(true);
   }, [source, newsType, sortBy]);
+
+  const handleFetchBrowserNews = async () => {
+    setFetchingBrowser(true);
+    try {
+      const result = await api.newsFetchBrowser('all');
+      if (result.count > 0) {
+        message.success(`抓取成功，获取到 ${result.count} 条新闻`);
+        setPage(1);
+        fetchNews(true);
+      } else {
+        message.warning('未抓取到新闻，可能 ego-browser 未启动或网站无法访问');
+      }
+      if (result.errors && result.errors.length > 0) {
+        message.warning(`部分数据源失败：${result.errors.join('；')}`);
+      }
+    } catch {
+      message.error('浏览器抓取失败');
+    } finally {
+      setFetchingBrowser(false);
+    }
+  };
 
   const formatTime = (timeStr: string) => {
     const date = new Date(timeStr);
@@ -214,6 +244,15 @@ export default function NewsHome() {
               <RestOutlined />
               重置筛选
             </button>
+            <Button
+              type="primary"
+              icon={<ThunderboltOutlined />}
+              loading={fetchingBrowser}
+              onClick={handleFetchBrowserNews}
+              size="large"
+            >
+              抓取实时新闻
+            </Button>
           </Space>
         </Card>
 
@@ -360,36 +399,53 @@ export default function NewsHome() {
             </Space>
           }
         >
-          <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', padding: '20px 0' }}>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 32, fontWeight: 'bold', color: '#22c55e' }}>65%</div>
-              <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>正面</div>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 32, fontWeight: 'bold', color: '#f59e0b' }}>25%</div>
-              <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>中性</div>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 32, fontWeight: 'bold', color: '#ef4444' }}>10%</div>
-              <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>负面</div>
-            </div>
-          </div>
-          <div style={{ height: 8, backgroundColor: '#1f2937', borderRadius: 4, overflow: 'hidden' }}>
-            <div
-              style={{
-                height: '100%',
-                background: 'linear-gradient(90deg, #22c55e 65%, #f59e0b 90%, #ef4444 100%)',
-                borderRadius: 4,
-              }}
-            />
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>今日共 {total} 条资讯</Typography.Text>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              <ClockCircleOutlined style={{ marginRight: 4 }} />
-              实时更新
-            </Typography.Text>
-          </div>
+          {marketSentiment ? (
+            <>
+              {(() => {
+                const total = marketSentiment.positiveCount + marketSentiment.negativeCount + marketSentiment.neutralCount;
+                const positivePct = total > 0 ? marketSentiment.positiveCount / total : 0;
+                const neutralPct = total > 0 ? marketSentiment.neutralCount / total : 0;
+                const negativePct = total > 0 ? marketSentiment.negativeCount / total : 0;
+                return (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', padding: '20px 0' }}>
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: 32, fontWeight: 'bold', color: '#22c55e' }}>{(positivePct * 100).toFixed(1)}%</div>
+                        <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>正面</div>
+                      </div>
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: 32, fontWeight: 'bold', color: '#f59e0b' }}>{(neutralPct * 100).toFixed(1)}%</div>
+                        <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>中性</div>
+                      </div>
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: 32, fontWeight: 'bold', color: '#ef4444' }}>{(negativePct * 100).toFixed(1)}%</div>
+                        <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>负面</div>
+                      </div>
+                    </div>
+                    <div style={{ height: 8, backgroundColor: '#1f2937', borderRadius: 4, overflow: 'hidden' }}>
+                      <div
+                        style={{
+                          height: '100%',
+                          width: '100%',
+                          background: `linear-gradient(90deg, #22c55e ${positivePct * 100}%, #f59e0b ${(positivePct + neutralPct) * 100}%, #ef4444 100%)`,
+                          borderRadius: 4,
+                        }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>今日共 {total} 条资讯</Typography.Text>
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        <ClockCircleOutlined style={{ marginRight: 4 }} />
+                        实时更新
+                      </Typography.Text>
+                    </div>
+                  </>
+                );
+              })()}
+            </>
+          ) : (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无情绪数据" />
+          )}
         </Card>
 
         {/* 快捷入口 */}

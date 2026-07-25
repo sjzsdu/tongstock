@@ -26,7 +26,7 @@ func NewSource(sourceType newsfeed.SourceType) (newsfeed.Feed, error) {
 	}
 }
 
-// NewAllSources 创建所有数据源实例
+// NewAllSources 创建所有数据源实例（不含浏览器源，浏览器源需单独注册）
 func NewAllSources() []newsfeed.Feed {
 	var feeds []newsfeed.Feed
 	types := []newsfeed.SourceType{
@@ -40,6 +40,15 @@ func NewAllSources() []newsfeed.Feed {
 		}
 	}
 	return feeds
+}
+
+// NewBrowserSources 创建所有浏览器数据源实例
+// 这些数据源使用 ego-browser CLI 抓取需要认证的网站
+func NewBrowserSources() []newsfeed.Feed {
+	return []newsfeed.Feed{
+		NewBrowserSource("cailianshe"),
+		NewBrowserSource("xueqiu"),
+	}
 }
 
 // httpClient 共享的HTTP客户端
