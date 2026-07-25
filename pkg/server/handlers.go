@@ -1049,6 +1049,12 @@ func (s *Server) handleMinute(c *gin.Context) {
 	}
 
 	if err != nil {
+		// 指数分时数据可能为空或上游无数据，不应返回500
+		// 将"数据长度不足"视为空数据返回200
+		if strings.Contains(err.Error(), "数据长度不足") {
+			c.JSON(http.StatusOK, gin.H{"List": []interface{}{}, "message": "暂无分时数据"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取分时数据失败: %v", err)})
 		return
 	}
