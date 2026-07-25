@@ -117,13 +117,15 @@ function ParamGroupCard({
   title,
   description,
   children,
+  style,
 }: {
   title: string;
   description?: string;
   children: React.ReactNode;
+  style?: React.CSSProperties;
 }) {
   return (
-    <Card size="small" title={title} extra={description ? <Text type="secondary">{description}</Text> : null}>
+    <Card size="small" title={title} extra={description ? <Text type="secondary">{description}</Text> : null} style={style}>
       {children}
     </Card>
   );
@@ -153,25 +155,25 @@ function IndicatorEditors({
         />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16 }}>
-        <ParamGroupCard title="MACD" description="快线 / 慢线 / 信号线">
-          <Space>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+        <ParamGroupCard title="MACD" description="快线 / 慢线 / 信号线" style={{ flex: '1 1 280px', minWidth: '280px' }}>
+          <Space wrap>
             <InputNumber min={1} value={params.macd.fast} onChange={(value) => value && onChange({ ...params, macd: { ...params.macd, fast: value } })} addonBefore="Fast" />
             <InputNumber min={1} value={params.macd.slow} onChange={(value) => value && onChange({ ...params, macd: { ...params.macd, slow: value } })} addonBefore="Slow" />
             <InputNumber min={1} value={params.macd.signal} onChange={(value) => value && onChange({ ...params, macd: { ...params.macd, signal: value } })} addonBefore="Signal" />
           </Space>
         </ParamGroupCard>
 
-        <ParamGroupCard title="KDJ" description="N / M1 / M2">
-          <Space>
+        <ParamGroupCard title="KDJ" description="N / M1 / M2" style={{ flex: '1 1 280px', minWidth: '280px' }}>
+          <Space wrap>
             <InputNumber min={1} value={params.kdj.n} onChange={(value) => value && onChange({ ...params, kdj: { ...params.kdj, n: value } })} addonBefore="N" />
             <InputNumber min={1} value={params.kdj.m1} onChange={(value) => value && onChange({ ...params, kdj: { ...params.kdj, m1: value } })} addonBefore="M1" />
             <InputNumber min={1} value={params.kdj.m2} onChange={(value) => value && onChange({ ...params, kdj: { ...params.kdj, m2: value } })} addonBefore="M2" />
           </Space>
         </ParamGroupCard>
 
-        <ParamGroupCard title="BOLL" description="周期 / 标准差倍数">
-          <Space>
+        <ParamGroupCard title="BOLL" description="周期 / 标准差倍数" style={{ flex: '1 1 280px', minWidth: '280px' }}>
+          <Space wrap>
             <InputNumber min={1} value={params.boll.n} onChange={(value) => value && onChange({ ...params, boll: { ...params.boll, n: value } })} addonBefore="N" />
             <InputNumber min={0.1} step={0.1} value={params.boll.k} onChange={(value) => value && onChange({ ...params, boll: { ...params.boll, k: value } })} addonBefore="K" />
           </Space>
