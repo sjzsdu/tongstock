@@ -1,7 +1,7 @@
-import { Suspense, lazy, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { BarChartOutlined, DashboardOutlined, FileTextOutlined, FundOutlined, HeartOutlined, RadarChartOutlined, RobotOutlined, SearchOutlined, SettingOutlined, StockOutlined, WalletOutlined } from '@ant-design/icons';
-import { Avatar, Breadcrumb, Layout, Menu, Skeleton, Space, Typography } from 'antd';
+import { BarChartOutlined, DashboardOutlined, FileTextOutlined, FundOutlined, HeartOutlined, MenuOutlined, RadarChartOutlined, RobotOutlined, SearchOutlined, SettingOutlined, StockOutlined, WalletOutlined } from '@ant-design/icons';
+import { Avatar, Breadcrumb, Button, Drawer, Layout, Menu, Skeleton, Space, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import StockSearchInput from './components/StockSearchInput';
 
@@ -50,6 +50,21 @@ function RouteFallback() {
 function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+      if (window.innerWidth < 768) {
+        setCollapsed(true);
+      }
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   const selectedKey = location.pathname.startsWith('/stock')
     ? '/stock/choose'
     : location.pathname.startsWith('/index')
@@ -92,55 +107,84 @@ function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <Layout>
-      <Sider
-        width={240}
-        collapsedWidth={72}
-        collapsible
-        collapsed={collapsed}
-        onCollapse={setCollapsed}
-        theme="dark"
-        style={{ borderRight: '1px solid #1f2937' }}
-      >
-        <div style={{ padding: collapsed ? '20px 12px' : 20, borderBottom: '1px solid #1f2937' }}>
-          <Space align="center" size={12}>
-            <Avatar shape="square" icon={<StockOutlined />} style={{ backgroundColor: '#1677ff' }} />
-            {!collapsed && (
-              <div>
-                <Typography.Title level={4} style={{ margin: 0, color: '#fff' }}>
-                  TongStock
-                </Typography.Title>
-                <Typography.Text type="secondary">A 股分析工作台</Typography.Text>
-              </div>
-            )}
-          </Space>
-        </div>
-        <Menu
-          mode="inline"
+      {!isMobile && (
+        <Sider
+          width={240}
+          collapsedWidth={72}
+          collapsible
+          collapsed={collapsed}
+          onCollapse={setCollapsed}
           theme="dark"
-          selectedKeys={[selectedKey]}
-          items={menuItems}
-          style={{ borderInlineEnd: 0, paddingTop: 12 }}
-        />
-      </Sider>
+          style={{ borderRight: '1px solid #1f2937' }}
+        >
+          <div style={{ padding: collapsed ? '20px 12px' : 20, borderBottom: '1px solid #1f2937' }}>
+            <Space align="center" size={12}>
+              <Avatar shape="square" icon={<StockOutlined />} style={{ backgroundColor: '#1677ff' }} />
+              {!collapsed && (
+                <div>
+                  <Typography.Title level={4} style={{ margin: 0, color: '#fff' }}>
+                    TongStock
+                  </Typography.Title>
+                  <Typography.Text type="secondary">A 股分析工作台</Typography.Text>
+                </div>
+              )}
+            </Space>
+          </div>
+          <Menu
+            mode="inline"
+            theme="dark"
+            selectedKeys={[selectedKey]}
+            items={menuItems}
+            style={{ borderInlineEnd: 0, paddingTop: 12 }}
+          />
+        </Sider>
+      )}
       <Layout>
         <Header
           style={{
-            padding: '0 24px',
+            padding: isMobile ? '8px 12px' : '0 24px',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
+            justifyContent: isMobile ? 'space-between' : 'space-between',
             borderBottom: '1px solid #1f2937',
+            flexWrap: isMobile ? 'wrap' : 'nowrap',
+            rowGap: isMobile ? '8px' : 0,
           }}
         >
-          <Breadcrumb items={breadcrumbItems} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {isMobile && (
+              <Button type="text" icon={<MenuOutlined />} onClick={() => setDrawerOpen(true)} style={{ color: '#fff' }} />
+            )}
+            <Breadcrumb items={breadcrumbItems} style={{ flexShrink: 0 }} />
+          </div>
           <GlobalSearch />
         </Header>
-        <Content style={{ padding: 24, overflow: 'auto' }}>
+        <Content style={{ padding: isMobile ? 12 : 24, overflow: 'auto' }}>
           <Suspense fallback={<RouteFallback />}>
             {children}
           </Suspense>
         </Content>
       </Layout>
+
+      {/* Mobile Drawer */}
+      <Drawer
+        title="TongStock"
+        placement="left"
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        width={240}
+        style={{ background: '#0b1220' }}
+        headerStyle={{ background: '#1f2937', color: '#fff' }}
+      >
+        <Menu
+          mode="inline"
+          theme="dark"
+          selectedKeys={[selectedKey]}
+          items={menuItems}
+          onClick={() => setDrawerOpen(false)}
+          style={{ borderInlineEnd: 0, paddingTop: 12 }}
+        />
+      </Drawer>
     </Layout>
   );
 }
