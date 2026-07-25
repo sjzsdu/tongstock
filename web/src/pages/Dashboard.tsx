@@ -4,6 +4,7 @@ import {
   ArrowRightOutlined,
   ClockCircleOutlined,
   DeleteOutlined,
+  FallOutlined,
   FundOutlined,
   HeartOutlined,
   RadarChartOutlined,
@@ -244,7 +245,7 @@ export default function Dashboard() {
                         value={idx.last.Close}
                         precision={2}
                         valueStyle={{ color }}
-                        prefix={<RiseOutlined />}
+                        prefix={idx.change > 0 ? <RiseOutlined /> : idx.change < 0 ? <FallOutlined /> : <ArrowRightOutlined />}
                       />
                       <Tag color={idx.change >= 0 ? 'red' : 'green'} style={{ width: 'fit-content' }}>
                         {formatSignedPercent(idx.change)}
