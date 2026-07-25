@@ -519,6 +519,7 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 		// Sync
 		api.POST("/sync/daily", s.handleSyncDaily)
 		api.GET("/sync/state", s.handleSyncState)
+		api.GET("/sync/freshness", s.handleSyncFreshness)
 
 		// Data cleanup
 		api.POST("/kline/clean", s.handleCleanKlines)
@@ -2577,6 +2578,89 @@ func (s *Server) handleSyncState(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, state)
+}
+
+// handleSyncFreshness handles requests to get sync freshness for multiple codes
+func (s *Server) handleSyncFreshness(c *gin.Context) {
+	codesStr := strings.TrimSpace(c.Query("codes"))
+	if codesStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "codes is required"})
+		return
+	}
+
+	codes := strings.Split(codesStr, ",")
+	ktype := tdx.ParseKlineType("day")
+
+	type FreshnessResult struct {
+		Code        string `json:"code"`
+		Status      string `json:"status"`
+		LastDate    string `json:"last_date,omitempty"`
+		LastSyncAt  string `json:"last_sync_at,omitempty"`
+		RowCount    int    `json:"row_count,omitempty"`
+		Freshness   string `json:"freshness"` // fresh, stale, outdated, unknown
+		StaleReason string `json:"stale_reason,omitempty"`
+		Error       string `json:"error,omitempty"`
+	}
+
+	results := make([]FreshnessResult, 0, len(codes))
+	for _, code := range codes {
+		code = strings.TrimSpace(code)
+		if code == "" {
+			continue
+		}
+
+		state, err := s.svc.GetSyncState(code, ktype)
+		if err != nil {
+			results = append(results, FreshnessResult{
+				Code:      code,
+				Status:    "unknown",
+				Freshness: "unknown",
+			})
+			continue
+		}
+
+		freshness, staleReason := evaluateFreshness(state)
+		results = append(results, FreshnessResult{
+			Code:        code,
+			Status:      state.Status,
+			LastDate:    state.LastDate,
+			LastSyncAt:  state.LastSyncAt.Format(time.RFC3339),
+			RowCount:    state.RowCount,
+			Freshness:   freshness,
+			StaleReason: staleReason,
+			Error:       state.Error,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"results": results})
+}
+
+// evaluateFreshness evaluates the freshness of kline data based on sync state
+func evaluateFreshness(state *tdx.KlineSyncState) (string, string) {
+	if state.Status == "failed" || state.Error != "" {
+		return "failed", state.Error
+	}
+
+	if state.LastDate == "" || state.RowCount == 0 {
+		return "empty", "无数据"
+	}
+
+	now := time.Now()
+	lastSync := state.LastSyncAt
+
+	// Check if data is from before today (non-trading days handled)
+	today := now.Format("20060102")
+	if state.LastDate < today {
+		// Check if last sync was recent
+		syncAge := now.Sub(lastSync)
+		if syncAge > 24*time.Hour {
+			return "outdated", fmt.Sprintf("数据截止至 %s，超过24小时未同步", state.LastDate)
+		}
+		return "stale", fmt.Sprintf("数据截止至 %s", state.LastDate)
+	}
+
+	// Data is current
+	return "fresh", ""
 }
 
 // handleCleanKlines handles requests to clean corrupted kline data and re-fetch.

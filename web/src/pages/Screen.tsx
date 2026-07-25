@@ -26,7 +26,7 @@ import {
   message,
 } from 'antd';
 import { api } from '../api/client';
-import type { ScreenResult, ScreenCodeStatus } from '../types/api';
+import type { ScreenResult, ScreenCodeStatus, SyncFreshnessResult } from '../types/api';
 import { KTYPE_OPTIONS, SIGNAL_OPTIONS } from '../types/screen';
 import { useCodesCache } from '../hooks/useCodesCache';
 import { useWatchlist } from '../hooks/useWatchlist';
@@ -97,6 +97,8 @@ export default function Screen() {
   const [tradeReason, setTradeReason] = useState('');
   const [blockStocksWithNames, setBlockStocksWithNames] = useState<{ code: string; name: string }[]>([]);
   const [blockStocksLoadingNames, setBlockStocksLoadingNames] = useState(false);
+  const [freshnessData, setFreshnessData] = useState<SyncFreshnessResult[]>([]);
+  const [freshnessLoading, setFreshnessLoading] = useState(false);
 
   // Resolved codes
   const resolvedCodes = useCallback(() => {
@@ -120,6 +122,28 @@ export default function Screen() {
       void loadTrades(sortedResults.map((item) => item.code));
     }
   }, [hasScreenLoaded, sortedResults, loadTrades]);
+
+  // Load freshness data after screen completes
+  useEffect(() => {
+    if (hasScreenLoaded && total > 0) {
+      const codes = sourceTab === 'block' && selectedBlock?.stocks
+        ? selectedBlock.stocks
+        : stockList.map((stock) => stock.code);
+      if (codes.length > 0) {
+        setFreshnessLoading(true);
+        api.getSyncFreshness(codes)
+          .then((result) => {
+            setFreshnessData(result.results);
+          })
+          .catch(() => {
+            // ignore freshness load failure
+          })
+          .finally(() => {
+            setFreshnessLoading(false);
+          });
+      }
+    }
+  }, [hasScreenLoaded, total, sourceTab, selectedBlock, stockList]);
 
   // Handle buy action
   const onHandleBuy = (result: ScreenResult) => {
@@ -419,6 +443,39 @@ export default function Screen() {
                     </Tag>
                   ))}
                 </Space>
+              )}
+            </Flex>
+          </Card>
+        )}
+
+        {/* Data freshness diagnostics */}
+        {hasScreenLoaded && freshnessData.length > 0 && (
+          <Card size="small" title="数据新鲜度诊断">
+            <Flex wrap="wrap" gap={16} align="center">
+              <Space size={[6, 6]} wrap>
+                {(() => {
+                  const fresh = freshnessData.filter((r) => r.freshness === 'fresh').length;
+                  const stale = freshnessData.filter((r) => r.freshness === 'stale').length;
+                  const outdated = freshnessData.filter((r) => r.freshness === 'outdated').length;
+                  const failed = freshnessData.filter((r) => r.freshness === 'failed').length;
+                  const empty = freshnessData.filter((r) => r.freshness === 'empty').length;
+                  const unknown = freshnessData.filter((r) => r.freshness === 'unknown').length;
+                  return (
+                    <>
+                      <Tag color="green">新鲜 {fresh}</Tag>
+                      <Tag color="orange">滞后 {stale}</Tag>
+                      <Tag color="red">过期 {outdated}</Tag>
+                      <Tag color="red">失败 {failed}</Tag>
+                      <Tag color="default">无数据 {empty}</Tag>
+                      <Tag color="default">未知 {unknown}</Tag>
+                    </>
+                  );
+                })()}
+              </Space>
+              {freshnessData.filter((r) => r.freshness === 'outdated' || r.freshness === 'failed').length > 0 && (
+                <Button size="small" icon={<SyncOutlined />} onClick={onSyncWatchlistDaily}>
+                  同步更新数据
+                </Button>
               )}
             </Flex>
           </Card>

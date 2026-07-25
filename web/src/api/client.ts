@@ -37,6 +37,7 @@ import type {
   SentimentHeatmapItem,
   AlertRecord,
   AlertRule,
+  SyncFreshnessResult,
 } from '../types/api';
 
 const BASE = '';
@@ -277,6 +278,9 @@ export const api = {
 
   getSyncState: (code: string, ktype = 'day') =>
     fetchJSON<KlineSyncState>(`/api/sync/state?code=${encodeURIComponent(code)}&ktype=${ktype}`),
+
+  getSyncFreshness: (codes: string[]) =>
+    fetchJSON<{ results: SyncFreshnessResult[] }>(`/api/sync/freshness?codes=${encodeURIComponent(codes.join(','))}`),
 
   indicatorSettings: () =>
     fetchJSON<IndicatorConfig>('/api/settings/indicator'),

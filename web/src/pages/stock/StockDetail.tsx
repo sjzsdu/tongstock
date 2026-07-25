@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { AreaChartOutlined, BankOutlined, BarChartOutlined, ClockCircleOutlined, DollarOutlined, FileExcelOutlined, GiftOutlined, ThunderboltOutlined } from '@ant-design/icons';
-import { Card, Empty, Flex, List, Space, Spin, Tabs, Tag, Typography } from 'antd';
+import { AreaChartOutlined, BankOutlined, BarChartOutlined, ClockCircleOutlined, DollarOutlined, FileExcelOutlined, GiftOutlined, InfoCircleOutlined, ThunderboltOutlined, WarningOutlined } from '@ant-design/icons';
+import { Button, Card, Empty, Flex, List, Space, Spin, Tabs, Tag, Tooltip, Typography } from 'antd';
 import { api } from '../../api/client';
 import type { NewsSummary, XdXrItem } from '../../types/api';
 import CandlestickChart from '../../components/charts/CandlestickChart';
@@ -127,6 +127,74 @@ export default function StockDetail() {
 
         {showTabs && quote && (
           <StockStatistics quote={quote} latestClose={latestClose} valueColor={valueColor} />
+        )}
+
+        {/* Data quality diagnostics panel */}
+        {showTabs && syncState && (
+          <Card size="small" title={<Space><InfoCircleOutlined />数据质量诊断</Space>}>
+            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+              <Flex justify="space-between" align="center" wrap="wrap" gap={12}>
+                <Space size={16}>
+                  <Tag color={syncState.status === 'ok' ? 'green' : 'red'}>
+                    同步状态: {syncState.status === 'ok' ? '正常' : '失败'}
+                  </Tag>
+                  {syncState.error && (
+                    <Tooltip title={syncState.error}>
+                      <Tag color="red" icon={<WarningOutlined />}>同步错误</Tag>
+                    </Tooltip>
+                  )}
+                </Space>
+              </Flex>
+              <Flex justify="space-between" align="center" wrap="wrap" gap={12}>
+                <Space size={16}>
+                  <Typography.Text type="secondary">
+                    数据范围: {syncState.first_date || '-'} ~ {syncState.last_date || '-'}
+                  </Typography.Text>
+                  <Typography.Text type="secondary">
+                    数据条数: {syncState.row_count || 0} 条
+                  </Typography.Text>
+                  {syncState.last_sync_at && (
+                    <Typography.Text type="secondary">
+                      最后同步: {new Date(syncState.last_sync_at).toLocaleString()}
+                    </Typography.Text>
+                  )}
+                </Space>
+                {(syncState.status !== 'ok' || !syncState.last_date) && (
+                  <Button size="small" icon={<ClockCircleOutlined />} onClick={() => void api.syncDaily([code], 'full')}>
+                    重新同步数据
+                  </Button>
+                )}
+              </Flex>
+              {/* Freshness status */}
+              {syncState.last_date && (
+                <Flex align="center" gap={8}>
+                  {(() => {
+                    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+                    const lastDate = syncState.last_date;
+                    if (lastDate >= today) {
+                      return (
+                        <Tag color="green" icon={<InfoCircleOutlined />}>数据新鲜 - 已更新至今日</Tag>
+                      );
+                    }
+                    const lastSyncDate = syncState.last_sync_at ? new Date(syncState.last_sync_at) : new Date(0);
+                    const daysAgo = Math.floor((Date.now() - lastSyncDate.getTime()) / (1000 * 60 * 60 * 24));
+                    if (daysAgo > 1) {
+                      return (
+                        <Tag color="red" icon={<WarningOutlined />}>
+                          数据过期 - 已超过{daysAgo}天未同步，数据截止至{lastDate}
+                        </Tag>
+                      );
+                    }
+                    return (
+                      <Tag color="orange" icon={<ClockCircleOutlined />}>
+                        数据滞后 - 数据截止至{lastDate}，建议同步更新
+                      </Tag>
+                    );
+                  })()}
+                </Flex>
+              )}
+            </Space>
+          </Card>
         )}
 
         {showInitialLoading && (

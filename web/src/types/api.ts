@@ -351,6 +351,17 @@ export interface KlineBatchSyncResult {
   results: KlineSyncResult[];
 }
 
+export interface SyncFreshnessResult {
+  code: string;
+  status: string;
+  last_date?: string;
+  last_sync_at?: string;
+  row_count?: number;
+  freshness: 'fresh' | 'stale' | 'outdated' | 'failed' | 'empty' | 'unknown';
+  stale_reason?: string;
+  error?: string;
+}
+
 export interface IndicatorParams {
   ma: number[];
   macd: { fast: number; slow: number; signal: number };

@@ -2,10 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRightOutlined,
+  ClockCircleOutlined,
   DeleteOutlined,
   EditOutlined,
   HeartOutlined,
+  InfoCircleOutlined,
   StockOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
 import {
   Button,
@@ -27,7 +30,7 @@ import {
   message,
 } from 'antd';
 import { api } from '../api/client';
-import type { Quote, WatchlistStock } from '../types/api';
+import type { Quote, SyncFreshnessResult, WatchlistStock } from '../types/api';
 import StockSearchInput from '../components/StockSearchInput';
 
 const { Text } = Typography;
@@ -62,6 +65,25 @@ function formatSignedPercent(value: number) {
   return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
 }
 
+function FreshnessBadge({ result }: { result: SyncFreshnessResult }) {
+  const configs: Record<string, { color: string; text: string; icon: React.ReactNode }> = {
+    fresh: { color: 'green', text: '数据新鲜', icon: <InfoCircleOutlined /> },
+    stale: { color: 'orange', text: '数据滞后', icon: <ClockCircleOutlined /> },
+    outdated: { color: 'red', text: '数据过期', icon: <WarningOutlined /> },
+    failed: { color: 'red', text: '同步失败', icon: <WarningOutlined /> },
+    empty: { color: 'default', text: '无数据', icon: <InfoCircleOutlined /> },
+    unknown: { color: 'default', text: '未知', icon: <InfoCircleOutlined /> },
+  };
+  const config = configs[result.freshness] || configs.unknown;
+  return (
+    <Tooltip title={result.stale_reason || result.error || `${config.text} - ${result.last_date || '-'}`}>
+      <Tag color={config.color} icon={config.icon} style={{ marginInlineEnd: 0 }}>
+        {config.text}
+      </Tag>
+    </Tooltip>
+  );
+}
+
 export default function Watchlist() {
   const navigate = useNavigate();
   const [watchlist, setWatchlist] = useState<WatchlistStock[]>([]);
@@ -73,6 +95,7 @@ export default function Watchlist() {
   const [noteDraft, setNoteDraft] = useState('');
   const [groupEditing, setGroupEditing] = useState<string | null>(null);
   const [groupDraft, setGroupDraft] = useState('');
+  const [freshness, setFreshness] = useState<Record<string, SyncFreshnessResult>>({});
 
   const loadGroups = useCallback(async () => {
     try {
@@ -99,6 +122,20 @@ export default function Watchlist() {
         }
       }));
       await loadGroups();
+      // Load freshness data
+      if (list.length > 0) {
+        try {
+          const codes = list.map((stock) => stock.code);
+          const result = await api.getSyncFreshness(codes);
+          const map: Record<string, SyncFreshnessResult> = {};
+          result.results.forEach((r) => {
+            map[r.code] = r;
+          });
+          setFreshness(map);
+        } catch {
+          // ignore freshness load failure
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -380,6 +417,7 @@ export default function Watchlist() {
                             <span>{item.quote?.Name || item.name || item.code}</span>
                             <Text type="secondary">{item.code}</Text>
                             <Tag color={getGroupColor(groupName)} style={{ marginInlineEnd: 0 }}>{getGroupLabel(groupName)}</Tag>
+                            {freshness[item.code] && <FreshnessBadge result={freshness[item.code]} />}
                           </Space>
                         }
                         description={
