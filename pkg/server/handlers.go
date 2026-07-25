@@ -15,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	pinyin "github.com/mozillazg/go-pinyin"
+	"github.com/sjzsdu/tongstock/pkg/config"
 	"github.com/sjzsdu/tongstock/pkg/history"
 	"github.com/sjzsdu/tongstock/pkg/newsfeed"
 	"github.com/sjzsdu/tongstock/pkg/param"
@@ -67,17 +68,13 @@ func isStockCode(code string, exchange string) bool {
 	case "688", "689": // Shanghai: STAR Market
 		return exchange == "" || exchange == "sh"
 	case "000": // Shenzhen: main board (excluding indices)
-		// 000xxx codes are special: in Shanghai they are indices, in Shenzhen they are stocks (except 000001-000050)
+		// 000xxx codes are special: in Shanghai they are indices, in Shenzhen they are stocks
 		if exchange == "sh" {
 			return false // 000xxx in Shanghai are indices
 		}
-		// 000001-000050 are indices (Shanghai/Shenzhen indices)
-		// Valid stocks start from 000051
-		codeNum, err := strconv.Atoi(code)
-		if err != nil {
-			return false
-		}
-		return codeNum >= 51
+		// In Shenzhen exchange, all 000xxx codes are valid stocks
+		// e.g., 000001 is 平安银行, 000002 is 万科A
+		return exchange == "" || exchange == "sz"
 	case "800", "801", "802", "803", "804", "805", "806", "807", "808", "809",
 		"810", "811", "812", "813", "814", "815", "816", "817", "818", "819",
 		"820", "821", "822", "823", "824", "825", "826", "827", "828", "829",
@@ -106,7 +103,7 @@ func NewServer(svc *tdx.Service, historyDB *history.Store, watchlistDB *watchlis
 	}
 
 	// Initialize newsfeed handler with SQLite store
-	if newsfeedStore, err := newsfeed.NewSQLiteStore(""); err == nil {
+	if newsfeedStore, err := newsfeed.NewSQLiteStore(config.NewsDBPath()); err == nil {
 		s.newsfeedHandler = NewNewsfeedHandler(newsfeedStore)
 	}
 

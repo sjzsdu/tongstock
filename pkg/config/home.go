@@ -34,6 +34,11 @@ func DBPath() string {
 	return filepath.Join(CacheDir(), "tongstock.db")
 }
 
+// NewsDBPath 返回新闻资讯数据库路径: ~/.tongstock/cache/news.db
+func NewsDBPath() string {
+	return filepath.Join(CacheDir(), "news.db")
+}
+
 // EnsureHomeDir 创建 ~/.tongstock/ 与 ~/.tongstock/cache/ 目录（如果不存在）
 func EnsureHomeDir() error {
 	if err := os.MkdirAll(HomeDir(), 0755); err != nil {
