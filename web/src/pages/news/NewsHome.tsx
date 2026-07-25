@@ -455,18 +455,19 @@ export default function NewsHome() {
         >
           <List
             dataSource={[
-              { label: '全部资讯', path: '/news' },
-              { label: '热点事件', path: '/news/event' },
-              { label: '市场情绪', path: '/news/sentiment' },
-              { label: '智能预警', path: '/news/alerts' },
+              { label: '全部资讯', path: '/news', available: true },
+              { label: '热点事件', path: '#', available: false },
+              { label: '市场情绪', path: '#', available: false },
+              { label: '智能预警', path: '#', available: false },
             ]}
             renderItem={(item) => (
               <List.Item
-                style={{ padding: '8px 0', cursor: 'pointer' }}
-                onClick={() => navigate(item.path)}
+                style={{ padding: '8px 0', cursor: item.available ? 'pointer' : 'not-allowed', opacity: item.available ? 1 : 0.5 }}
+                onClick={() => item.available && navigate(item.path)}
               >
                 <Typography.Text>{item.label}</Typography.Text>
-                <ArrowRightOutlined style={{ float: 'right', color: '#9ca3af' }} />
+                {item.available && <ArrowRightOutlined style={{ float: 'right', color: '#9ca3af' }} />}
+                {!item.available && <Tag color="default" style={{ float: 'right', fontSize: 10 }}>开发中</Tag>}
               </List.Item>
             )}
           />
