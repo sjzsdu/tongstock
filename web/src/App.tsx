@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { BarChartOutlined, DashboardOutlined, FileTextOutlined, FundOutlined, HeartOutlined, MenuOutlined, RadarChartOutlined, RobotOutlined, SearchOutlined, SettingOutlined, StockOutlined, WalletOutlined } from '@ant-design/icons';
-import { Avatar, Breadcrumb, Button, Drawer, Layout, Menu, Skeleton, Space, Typography, App as AntdApp } from 'antd';
+import { Avatar, Breadcrumb, Button, Drawer, Layout, Menu, Skeleton, Space, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import StockSearchInput from './components/StockSearchInput';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -193,11 +193,10 @@ function AppLayout({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
-    <AntdApp>
-      <BrowserRouter basename={import.meta.env.BASE_URL}>
-        <AppLayout>
-          <ErrorBoundary>
-            <Routes>
+    <BrowserRouter basename={import.meta.env.BASE_URL}>
+      <AppLayout>
+        <ErrorBoundary>
+          <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/watchlist" element={<Watchlist />} />
           <Route path="/stock/choose" element={<StockChoose />} />
@@ -219,7 +218,6 @@ export default function App() {
         </ErrorBoundary>
       </AppLayout>
     </BrowserRouter>
-    </AntdApp>
   );
 }
 

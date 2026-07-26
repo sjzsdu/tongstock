@@ -192,26 +192,60 @@ func mapNewsType(t string) newsfeed.NewsType {
 
 // extractJSONFromOutput 从 ego-browser 输出中提取 JSON 数据
 func extractJSONFromOutput(output string) string {
-	// 尝试找到第一个 [ 和最后一个 ] 来提取 JSON 数组
-	start := strings.Index(output, "[")
+	// 首先尝试找到第一个 [ 或 {
+	startBracket := strings.Index(output, "[")
+	startCurly := strings.Index(output, "{")
+
+	start := -1
+	if startBracket != -1 && startCurly != -1 {
+		start = min(startBracket, startCurly)
+	} else if startBracket != -1 {
+		start = startBracket
+	} else if startCurly != -1 {
+		start = startCurly
+	}
+
 	if start == -1 {
-		// 如果没有找到数组，尝试找对象 {}
-		start = strings.Index(output, "{")
-		if start == -1 {
-			return ""
+		return ""
+	}
+
+	// 使用括号匹配来找到正确的结束位置
+	nesting := 0
+	isArray := output[start] == '['
+	var endChar byte = ']'
+	if !isArray {
+		endChar = '}'
+	}
+
+	for i := start; i < len(output); i++ {
+		c := output[i]
+		if c == '[' || c == '{' {
+			nesting++
+		} else if c == ']' || c == '}' {
+			nesting--
+			if nesting == 0 && c == endChar {
+				return output[start : i+1]
+			}
+		} else if c == '"' {
+			// 跳过字符串内的内容
+			i++
+			for i < len(output) && output[i] != '"' {
+				if output[i] == '\\' {
+					i++
+				}
+				i++
+			}
 		}
 	}
-	
-	// 从最后一个 ] 开始查找（对于数组）或 }（对于对象）
-	end := strings.LastIndex(output, "]")
-	if end == -1 || end <= start {
-		end = strings.LastIndex(output, "}")
-		if end == -1 || end <= start {
-			return ""
-		}
+
+	return ""
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
 	}
-	
-	return output[start : end+1]
+	return b
 }
 
 // getFetchScript 返回抓取脚本
