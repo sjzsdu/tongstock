@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"math"
@@ -1053,7 +1054,7 @@ func (s *Server) handleMinute(c *gin.Context) {
 		// 指数分时数据可能为空或上游无数据，不应返回500
 		// 将"数据长度不足"视为空数据返回200
 		if strings.Contains(err.Error(), "数据长度不足") {
-			c.JSON(http.StatusOK, gin.H{"List": []interface{}{}, "message": "暂无分时数据"})
+			c.JSON(http.StatusOK, gin.H{"List": []interface{}{}, "message": "暂无分时数据（指数可能不支持分时查询）"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取分时数据失败: %v", err)})
@@ -1068,6 +1069,12 @@ func (s *Server) handleMinute(c *gin.Context) {
 			"Number": item.Number,
 		})
 	}
+
+	if len(items) == 0 {
+		c.JSON(http.StatusOK, gin.H{"List": []interface{}{}, "message": "暂无分时数据（非交易时段或指数不支持）"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{"List": items})
 }
 
@@ -2455,6 +2462,9 @@ func (s *Server) handleStockpoolList(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if pools == nil {
+		pools = []stockpool.StockPool{}
+	}
 	c.JSON(http.StatusOK, gin.H{"pools": pools})
 }
 
@@ -2975,6 +2985,10 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 		return
 	}
 
+	// Set a deadline for the entire compare operation
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+
 	// Get stock quote
 	quotes, err := s.svc.Client.GetQuote(code)
 	if err != nil {
@@ -2992,7 +3006,14 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 	files := []string{"block_zs.dat", "block_fg.dat", "block_gn.dat"}
 	blockComparisons := make([]gin.H, 0)
 
+	// Limit total blocks to compare to avoid excessive requests
+	const maxBlocks = 5
+	blocksCompared := 0
+
 	for _, f := range files {
+		if blocksCompared >= maxBlocks {
+			break
+		}
 		items, err := s.svc.FetchBlock(f)
 		if err != nil {
 			continue
@@ -3021,7 +3042,7 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 			}
 
 			// Cap the number of stocks to compare per block for performance
-			const maxBlockStocks = 100
+			const maxBlockStocks = 30
 			compareStocks := stockCodes
 			cappedBlock := false
 			if len(compareStocks) > maxBlockStocks {
@@ -3043,7 +3064,7 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 				cappedBlock = true
 			}
 
-			// Bounded concurrent quote fetching
+			// Bounded concurrent quote fetching with timeout
 			const quoteConcurrency = 8
 			type quoteResult struct {
 				code   string
@@ -3057,6 +3078,10 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 			qsem := make(chan struct{}, quoteConcurrency)
 
 			for i, sc := range compareStocks {
+				// Check if we still have time
+				if ctx.Err() != nil {
+					break
+				}
 				qwg.Add(1)
 				go func(idx int, stockCode string) {
 					defer qwg.Done()
@@ -3150,6 +3175,12 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 				"top_stocks":    blockQuotes[:min(5, len(blockQuotes))],
 				"bottom_stocks": blockQuotes[max(0, len(blockQuotes)-5):],
 			})
+			blocksCompared++
+		}
+
+		// Check timeout
+		if ctx.Err() != nil {
+			break
 		}
 	}
 

@@ -4,12 +4,48 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/sjzsdu/tongstock/pkg/newsfeed"
 )
+
+// findEgoBrowser looks for ego-browser in PATH and common install locations
+func findEgoBrowser() string {
+	// 1. Try PATH
+	if path, err := exec.LookPath("ego-browser"); err == nil {
+		return path
+	}
+	// 2. Try common install locations
+	home, err := os.UserHomeDir()
+	if err == nil {
+		candidates := []string{
+			filepath.Join(home, ".local", "bin", "ego-browser"),
+			filepath.Join(home, "go", "bin", "ego-browser"),
+			"/usr/local/bin/ego-browser",
+			"/opt/homebrew/bin/ego-browser",
+		}
+		for _, c := range candidates {
+			if info, err := os.Stat(c); err == nil && !info.IsDir() {
+				return c
+			}
+		}
+	}
+	return ""
+}
+
+// egoBrowserPath returns the ego-browser executable path, cached after first lookup
+var egoBrowserPathCache string
+
+func egoBrowserPath() string {
+	if egoBrowserPathCache == "" {
+		egoBrowserPathCache = findEgoBrowser()
+	}
+	return egoBrowserPathCache
+}
 
 // BrowserSource 使用 ego-browser 抓取需要认证的财经新闻网站
 type BrowserSource struct {
@@ -40,7 +76,11 @@ func (s *BrowserSource) RefreshInterval() time.Duration {
 
 // HealthCheck 检查 ego-browser 是否可用
 func (s *BrowserSource) HealthCheck(ctx context.Context) bool {
-	cmd := exec.CommandContext(ctx, "ego-browser", "help")
+	bin := egoBrowserPath()
+	if bin == "" {
+		return false
+	}
+	cmd := exec.CommandContext(ctx, bin, "help")
 	return cmd.Run() == nil
 }
 
@@ -64,7 +104,11 @@ func (s *BrowserSource) FetchByKeyword(ctx context.Context, keyword string) ([]*
 
 // runScript 执行 ego-browser 抓取脚本并解析结果
 func (s *BrowserSource) runScript(ctx context.Context, script string) ([]*newsfeed.NewsItem, error) {
-	cmd := exec.CommandContext(ctx, "ego-browser", "nodejs")
+	bin := egoBrowserPath()
+	if bin == "" {
+		return nil, fmt.Errorf("ego-browser 未安装或不在 PATH 中")
+	}
+	cmd := exec.CommandContext(ctx, bin, "nodejs")
 	cmd.Stdin = strings.NewReader(script)
 
 	output, err := cmd.Output()

@@ -98,7 +98,6 @@ export default function Screen() {
   const [blockStocksWithNames, setBlockStocksWithNames] = useState<{ code: string; name: string }[]>([]);
   const [blockStocksLoadingNames, setBlockStocksLoadingNames] = useState(false);
   const [freshnessData, setFreshnessData] = useState<SyncFreshnessResult[]>([]);
-  const [freshnessLoading, setFreshnessLoading] = useState(false);
 
   // Resolved codes
   const resolvedCodes = useCallback(() => {
@@ -130,16 +129,12 @@ export default function Screen() {
         ? selectedBlock.stocks
         : stockList.map((stock) => stock.code);
       if (codes.length > 0) {
-        setFreshnessLoading(true);
         api.getSyncFreshness(codes)
           .then((result) => {
             setFreshnessData(result.results);
           })
           .catch(() => {
             // ignore freshness load failure
-          })
-          .finally(() => {
-            setFreshnessLoading(false);
           });
       }
     }

@@ -580,6 +580,7 @@ export default function SettingsPage() {
       onOk: () => {
         setConfig(cloneIndicatorConfig(INITIAL_CONFIG));
         messageApi.info('已重置为示例配置，请确认后点击"保存配置"');
+        return Promise.resolve();
       },
     });
   };

@@ -4,6 +4,7 @@ import { BarChartOutlined, DashboardOutlined, FileTextOutlined, FundOutlined, He
 import { Avatar, Breadcrumb, Button, Drawer, Layout, Menu, Skeleton, Space, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import StockSearchInput from './components/StockSearchInput';
+import ErrorBoundary from './components/ErrorBoundary';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const StockDetail = lazy(() => import('./pages/stock/StockDetail'));
@@ -194,7 +195,8 @@ export default function App() {
   return (
     <BrowserRouter basename={import.meta.env.BASE_URL}>
       <AppLayout>
-        <Routes>
+        <ErrorBoundary>
+          <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/watchlist" element={<Watchlist />} />
           <Route path="/stock/choose" element={<StockChoose />} />
@@ -212,7 +214,8 @@ export default function App() {
           <Route path="/news" element={<NewsHome />} />
           <Route path="/news/event/:id" element={<EventDetail />} />
           <Route path="*" element={<NotFound />} />
-        </Routes>
+          </Routes>
+        </ErrorBoundary>
       </AppLayout>
     </BrowserRouter>
   );

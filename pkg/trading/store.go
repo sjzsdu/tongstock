@@ -233,8 +233,12 @@ func (s *Store) GetAllPositions() ([]Trade, error) {
 		return nil, err
 	}
 
+	// GetAll returns trades ordered by created_at DESC (newest first).
+	// For position calculation we need chronological order (oldest first)
+	// so that sells correctly cancel prior buys.
 	positions := make(map[string]Trade)
-	for _, t := range trades {
+	for i := len(trades) - 1; i >= 0; i-- {
+		t := trades[i]
 		if t.Action == TradeBuy {
 			positions[t.Code] = t
 		} else if t.Action == TradeSell {

@@ -1,4 +1,4 @@
-import { Button, Result, Typography } from 'antd';
+import { Button, Result } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { HomeOutlined } from '@ant-design/icons';
 
