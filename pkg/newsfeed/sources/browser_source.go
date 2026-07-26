@@ -190,17 +190,27 @@ func mapNewsType(t string) newsfeed.NewsType {
 	}
 }
 
-// extractJSONFromOutput 从 ego-browser 输出中提取 JSON 数组
+// extractJSONFromOutput 从 ego-browser 输出中提取 JSON 数据
 func extractJSONFromOutput(output string) string {
+	// 尝试找到第一个 [ 和最后一个 ] 来提取 JSON 数组
 	start := strings.Index(output, "[")
 	if start == -1 {
-		return ""
+		// 如果没有找到数组，尝试找对象 {}
+		start = strings.Index(output, "{")
+		if start == -1 {
+			return ""
+		}
 	}
-	// 从最后一个 ] 开始查找
+	
+	// 从最后一个 ] 开始查找（对于数组）或 }（对于对象）
 	end := strings.LastIndex(output, "]")
 	if end == -1 || end <= start {
-		return ""
+		end = strings.LastIndex(output, "}")
+		if end == -1 || end <= start {
+			return ""
+		}
 	}
+	
 	return output[start : end+1]
 }
 

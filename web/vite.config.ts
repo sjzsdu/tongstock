@@ -20,9 +20,6 @@ export default defineConfig({
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined
 
-          if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/scheduler/')) {
-            return 'react-vendor'
-          }
           if (id.includes('react-router')) {
             return 'router-vendor'
           }
@@ -32,7 +29,10 @@ export default defineConfig({
           if (id.includes('lucide-react') || id.includes('@ant-design/icons')) {
             return 'icons-vendor'
           }
-          if (id.includes('antd') || id.includes('@ant-design') || id.includes('rc-')) {
+          // Merge react, react-dom, scheduler with antd to prevent duplicate React instances
+          // which cause "Invalid hook call" errors in production builds
+          if (id.includes('antd') || id.includes('@ant-design') || id.includes('rc-') ||
+              id.includes('/react/') || id.includes('/react-dom/') || id.includes('/scheduler/')) {
             return 'antd-vendor'
           }
           if (id.includes('lightweight-charts')) {

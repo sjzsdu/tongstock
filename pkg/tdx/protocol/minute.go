@@ -128,7 +128,16 @@ func decodeCode(code string) (byte, string, error) {
 		case '0', '3':
 			market = byte(ExchangeSZ)
 		default:
-			market = byte(ExchangeSZ)
+			// 指数代码处理：
+			// 999xxx 和 000xxx 是上交所指数
+			// 399xxx 是深交所指数
+			if (code[:3] == "999" || code[:3] == "000") && len(code) == 6 {
+				market = byte(ExchangeSH)
+			} else if code[:3] == "399" && len(code) == 6 {
+				market = byte(ExchangeSZ)
+			} else {
+				market = byte(ExchangeSZ)
+			}
 		}
 		return market, code, nil
 	}

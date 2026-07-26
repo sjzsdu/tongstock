@@ -10,13 +10,13 @@ import {
 } from '@ant-design/icons';
 import {
   Alert,
+  App,
   Button,
   Card,
   Collapse,
   Flex,
   Input,
   InputNumber,
-  Modal,
   Skeleton,
   Space,
   Tabs,
@@ -504,6 +504,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [messageApi, contextHolder] = message.useMessage();
+  const { modal } = App.useApp();
 
   const isDirty = useMemo(
     () => JSON.stringify(config) !== JSON.stringify(savedConfig),
@@ -556,7 +557,7 @@ export default function SettingsPage() {
 
   const handleReload = () => {
     if (isDirty) {
-      Modal.confirm({
+      modal.confirm({
         title: '确认重新加载？',
         icon: <ExclamationCircleOutlined />,
         content: '当前有未保存的修改，重新加载将丢弃这些改动。',
@@ -571,7 +572,7 @@ export default function SettingsPage() {
   };
 
   const handleReset = () => {
-    Modal.confirm({
+    modal.confirm({
       title: '确认恢复示例默认配置？',
       icon: <ExclamationCircleOutlined />,
       content: '这将把当前页面所有参数重置为内置示例值。重置后仍需点击"保存配置"才会写入服务端。',
@@ -580,7 +581,6 @@ export default function SettingsPage() {
       onOk: () => {
         setConfig(cloneIndicatorConfig(INITIAL_CONFIG));
         messageApi.info('已重置为示例配置，请确认后点击"保存配置"');
-        return Promise.resolve();
       },
     });
   };
