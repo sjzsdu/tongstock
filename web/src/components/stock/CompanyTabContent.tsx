@@ -1,13 +1,10 @@
-import { useEffect } from 'react';
+import 'react';
 import { Button, Card, Col, Empty, List, Row, Space } from 'antd';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import type { CompanyCategory } from '../../types/api';
 import TabContent from '../TabContent';
 import TdxContent from '../TdxContent';
 import { parseTdxText } from '../../lib/tdx-parser';
-
-// Keep react import for JSX runtime
-useEffect(() => {}, []);
 
 interface CompanyTabContentProps {
   companyCats: CompanyCategory[];

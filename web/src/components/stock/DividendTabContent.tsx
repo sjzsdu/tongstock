@@ -1,11 +1,8 @@
-import { useEffect } from 'react';
+import 'react';
 import { Card, Table } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { XdXrItem } from '../../types/api';
 import { formatTdxDate } from '../../lib/datetime';
-
-// Keep react import for JSX runtime
-useEffect(() => {}, []);
 
 interface DividendTabContentProps {
   dividends: XdXrItem[];

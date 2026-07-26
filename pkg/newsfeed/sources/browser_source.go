@@ -102,6 +102,9 @@ func (s *BrowserSource) FetchByKeyword(ctx context.Context, keyword string) ([]*
 	return s.runScript(ctx, script)
 }
 
+// JSON output protocol marker
+const jsonProtocolMarker = "TONGSTOCK_JSON_V1:"
+
 // runScript 执行 ego-browser 抓取脚本并解析结果
 func (s *BrowserSource) runScript(ctx context.Context, script string) ([]*newsfeed.NewsItem, error) {
 	bin := egoBrowserPath()
@@ -111,15 +114,31 @@ func (s *BrowserSource) runScript(ctx context.Context, script string) ([]*newsfe
 	cmd := exec.CommandContext(ctx, bin, "nodejs")
 	cmd.Stdin = strings.NewReader(script)
 
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("ego-browser 执行失败: %w", err)
+		// 获取退出码信息
+		exitCode := 0
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		}
+		// 截断输出以避免日志污染（最多2KB）
+		truncatedOutput := string(output)
+		if len(truncatedOutput) > 2048 {
+			truncatedOutput = truncatedOutput[:2048] + "..."
+		}
+		return nil, fmt.Errorf("ego-browser 执行失败 [exit=%d, stdout+stderr_len=%d]: %w, output=%q",
+			exitCode, len(output), err, truncatedOutput)
 	}
 
 	// 从输出中提取 JSON 数据
 	jsonStr := extractJSONFromOutput(string(output))
 	if jsonStr == "" {
-		return nil, fmt.Errorf("无法从 ego-browser 输出中提取数据")
+		// 截断输出以避免日志污染（最多2KB）
+		truncatedOutput := string(output)
+		if len(truncatedOutput) > 2048 {
+			truncatedOutput = truncatedOutput[:2048] + "..."
+		}
+		return nil, fmt.Errorf("无法从 ego-browser 输出中提取数据, output=%q", truncatedOutput)
 	}
 
 	var items []browserNewsItem
@@ -191,10 +210,21 @@ func mapNewsType(t string) newsfeed.NewsType {
 }
 
 // extractJSONFromOutput 从 ego-browser 输出中提取 JSON 数据
+// 使用明确的协议标记 TONGSTOCK_JSON_V1: 来定位 JSON 数据
 func extractJSONFromOutput(output string) string {
-	// 首先尝试找到第一个 [ 或 {
-	startBracket := strings.Index(output, "[")
-	startCurly := strings.Index(output, "{")
+	// 查找最后一个协议标记（避免被日志中的重复标记干扰）
+	markerPos := strings.LastIndex(output, jsonProtocolMarker)
+	if markerPos == -1 {
+		return ""
+	}
+
+	// 跳过协议标记，从标记后面开始查找 JSON
+	jsonStart := markerPos + len(jsonProtocolMarker)
+	remaining := output[jsonStart:]
+
+	// 尝试找到第一个 [ 或 {
+	startBracket := strings.Index(remaining, "[")
+	startCurly := strings.Index(remaining, "{")
 
 	start := -1
 	if startBracket != -1 && startCurly != -1 {
@@ -211,26 +241,26 @@ func extractJSONFromOutput(output string) string {
 
 	// 使用括号匹配来找到正确的结束位置
 	nesting := 0
-	isArray := output[start] == '['
+	isArray := remaining[start] == '['
 	var endChar byte = ']'
 	if !isArray {
 		endChar = '}'
 	}
 
-	for i := start; i < len(output); i++ {
-		c := output[i]
+	for i := start; i < len(remaining); i++ {
+		c := remaining[i]
 		if c == '[' || c == '{' {
 			nesting++
 		} else if c == ']' || c == '}' {
 			nesting--
 			if nesting == 0 && c == endChar {
-				return output[start : i+1]
+				return remaining[start : i+1]
 			}
 		} else if c == '"' {
 			// 跳过字符串内的内容
 			i++
-			for i < len(output) && output[i] != '"' {
-				if output[i] == '\\' {
+			for i < len(remaining) && remaining[i] != '"' {
+				if remaining[i] == '\\' {
 					i++
 				}
 				i++

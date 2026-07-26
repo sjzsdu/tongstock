@@ -1,9 +1,6 @@
-import { useEffect } from 'react';
+import 'react';
 import { Card, Col, Row, Statistic } from 'antd';
 import { amountWanToYi } from '../../lib/stock-detail';
-
-// Keep react import for JSX runtime
-useEffect(() => {}, []);
 
 interface StockStatisticsProps {
   quote: any;

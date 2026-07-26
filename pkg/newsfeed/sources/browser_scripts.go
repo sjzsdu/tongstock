@@ -81,7 +81,7 @@ const data = await js(String.raw` + "`" + `(() => {
   return JSON.stringify(results)
 })()` + "`" + `)
 
-console.log(data)
+cliLog('TONGSTOCK_JSON_V1:' + data)
 `
 
 // 财联社按股票搜索脚本
@@ -117,7 +117,7 @@ const data = await js(String.raw` + "`" + `(() => {
   return JSON.stringify(results)
 })()` + "`" + `)
 
-console.log(data)
+cliLog('TONGSTOCK_JSON_V1:' + data)
 `
 
 // 财联社按关键词搜索脚本
@@ -162,7 +162,7 @@ const data = await js(String.raw` + "`" + `(() => {
   return JSON.stringify(results)
 })()` + "`" + `)
 
-console.log(data)
+cliLog('TONGSTOCK_JSON_V1:' + data)
 `
 
 // 雪球按股票搜索脚本
@@ -209,7 +209,7 @@ const data = await js(String.raw` + "`" + `(() => {
   return JSON.stringify(results)
 })()` + "`" + `)
 
-console.log(data)
+cliLog('TONGSTOCK_JSON_V1:' + data)
 `
 
 // 雪球按关键词搜索脚本
@@ -251,5 +251,5 @@ const data = await js(String.raw` + "`" + `(() => {
   return JSON.stringify(results)
 })()` + "`" + `)
 
-console.log(data)
+cliLog('TONGSTOCK_JSON_V1:' + data)
 `
