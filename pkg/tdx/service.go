@@ -185,6 +185,12 @@ func (s *Service) FetchCompanyCategory(code string) ([]*protocol.CompanyCategory
 			return items, nil
 		}
 	}
+	return s.RefreshCompanyCategory(code)
+}
+
+// RefreshCompanyCategory bypasses the local cache and replaces it with the
+// latest category offsets from the TDX server.
+func (s *Service) RefreshCompanyCategory(code string) ([]*protocol.CompanyCategoryItem, error) {
 	items, err := s.Client.GetCompanyInfoCategory(code)
 	if err != nil {
 		return nil, err

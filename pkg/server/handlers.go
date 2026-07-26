@@ -1216,7 +1216,7 @@ func (s *Server) handleFinanceTrends(c *gin.Context) {
 		return
 	}
 
-	content, err := s.fetchCompanyBlockContent(code, "财务分析")
+	content, err := s.fetchFinanceAnalysisContent(code)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取财务趋势数据失败: %v", err)})
 		return
@@ -1244,7 +1244,7 @@ func (s *Server) handleFinanceMetrics(c *gin.Context) {
 		return
 	}
 
-	content, err := s.fetchCompanyBlockContent(code, "财务分析")
+	content, err := s.fetchFinanceAnalysisContent(code)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取主要财务指标失败: %v", err)})
 		return
@@ -3199,16 +3199,40 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 
 // fetchCompanyBlockContent fetches content from a specific block in the company's F10 data
 func (s *Server) fetchCompanyBlockContent(code, block string) (string, error) {
-	var cats []*protocol.CompanyCategoryItem
-	var err error
-
-	cats, err = withRetry(s, func() ([]*protocol.CompanyCategoryItem, error) {
+	cats, err := withRetry(s, func() ([]*protocol.CompanyCategoryItem, error) {
 		return s.svc.FetchCompanyCategory(code)
 	})
 	if err != nil {
 		return "", err
 	}
 
+	return s.fetchCompanyBlockContentFromCategories(code, block, cats)
+}
+
+// fetchFinanceAnalysisContent retries once with fresh category metadata when
+// cached byte offsets point into the middle of the latest F10 file.
+func (s *Server) fetchFinanceAnalysisContent(code string) (string, error) {
+	const block = "财务分析"
+
+	content, err := s.fetchCompanyBlockContent(code, block)
+	if err != nil || hasMainFinanceMetricSection(content) {
+		return content, err
+	}
+
+	cats, err := withRetry(s, func() ([]*protocol.CompanyCategoryItem, error) {
+		return s.svc.RefreshCompanyCategory(code)
+	})
+	if err != nil {
+		return "", err
+	}
+	return s.fetchCompanyBlockContentFromCategories(code, block, cats)
+}
+
+func hasMainFinanceMetricSection(content string) bool {
+	return strings.Contains(content, "【1.主要财务指标】")
+}
+
+func (s *Server) fetchCompanyBlockContentFromCategories(code, block string, cats []*protocol.CompanyCategoryItem) (string, error) {
 	for _, cat := range cats {
 		if cat.Name != block {
 			continue

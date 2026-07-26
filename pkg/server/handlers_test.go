@@ -2,6 +2,33 @@ package server
 
 import "testing"
 
+func TestHasMainFinanceMetricSection(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{
+			name:    "complete finance block",
+			content: "财务分析\n【1.主要财务指标】\n",
+			want:    true,
+		},
+		{
+			name:    "stale offset starts at second section",
+			content: "【2.偿债能力指标】\n",
+			want:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hasMainFinanceMetricSection(tt.content); got != tt.want {
+				t.Fatalf("hasMainFinanceMetricSection() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseMainFinanceMetricTables(t *testing.T) {
 	content := `财务分析
 【1.主要财务指标】
