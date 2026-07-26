@@ -16,7 +16,6 @@ import {
   Flex,
   Input,
   InputNumber,
-  Modal,
   Skeleton,
   Space,
   Tabs,
@@ -64,6 +63,62 @@ const PARAM_OPTIONS: { key: keyof IndicatorParams; label: string }[] = [
 
 function cloneIndicatorConfig(config: IndicatorConfig): IndicatorConfig {
   return structuredClone(config);
+}
+
+function ConfirmationDialog({
+  open,
+  title,
+  content,
+  confirmText,
+  danger = false,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  title: string;
+  content: string;
+  confirmText: string;
+  danger?: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 1100,
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+        paddingTop: 100,
+        background: 'rgba(0, 0, 0, 0.45)',
+      }}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onCancel();
+      }}
+    >
+      <div role="dialog" aria-modal="true" aria-label={title} style={{ width: 'min(520px, calc(100vw - 32px))' }}>
+        <Card styles={{ body: { padding: 24 } }} style={{ boxShadow: '0 6px 24px rgba(0, 0, 0, 0.24)' }}>
+          <Space direction="vertical" size={20} style={{ width: '100%' }}>
+            <Space align="start">
+              <ExclamationCircleOutlined style={{ color: danger ? '#ff4d4f' : '#faad14', fontSize: 20, marginTop: 2 }} />
+              <Space direction="vertical" size={8}>
+                <Typography.Text strong style={{ fontSize: 16 }}>{title}</Typography.Text>
+                <Typography.Text>{content}</Typography.Text>
+              </Space>
+            </Space>
+            <Flex justify="flex-end" gap={8}>
+              <Button onClick={onCancel}>取消</Button>
+              <Button type="primary" danger={danger} onClick={onConfirm}>{confirmText}</Button>
+            </Flex>
+          </Space>
+        </Card>
+      </div>
+    </div>
+  );
 }
 
 function NumberTagEditor({
@@ -647,35 +702,31 @@ export default function SettingsPage() {
         )}
       </Space>
 
-      <Modal
+      <ConfirmationDialog
         open={reloadOpen}
-        title={<Space><ExclamationCircleOutlined />确认重新加载？</Space>}
-        okText="丢弃并重新加载"
-        okType="danger"
-        cancelText="取消"
+        title="确认重新加载？"
+        content="当前有未保存的修改，重新加载将丢弃这些改动。"
+        confirmText="丢弃并重新加载"
+        danger
         onCancel={() => setReloadOpen(false)}
-        onOk={() => {
+        onConfirm={() => {
           setReloadOpen(false);
           void loadConfig();
         }}
-      >
-        当前有未保存的修改，重新加载将丢弃这些改动。
-      </Modal>
+      />
 
-      <Modal
+      <ConfirmationDialog
         open={resetOpen}
-        title={<Space><ExclamationCircleOutlined />确认恢复示例默认配置？</Space>}
-        okText="确认重置"
-        cancelText="取消"
+        title="确认恢复示例默认配置？"
+        content={'这将把当前页面所有参数重置为内置示例值。重置后仍需点击"保存配置"才会写入服务端。'}
+        confirmText="确认重置"
         onCancel={() => setResetOpen(false)}
-        onOk={() => {
+        onConfirm={() => {
           setResetOpen(false);
           setConfig(cloneIndicatorConfig(INITIAL_CONFIG));
           messageApi.info('已重置为示例配置，请确认后点击"保存配置"');
         }}
-      >
-        这将把当前页面所有参数重置为内置示例值。重置后仍需点击"保存配置"才会写入服务端。
-      </Modal>
+      />
     </>
   );
 }

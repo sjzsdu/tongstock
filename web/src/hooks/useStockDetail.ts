@@ -65,6 +65,7 @@ export function useStockDetail(): UseStockDetailReturn {
         if (cancelled) return;
         setQuote(quoteResult);
         api.historyAdd(code, quoteResult.Name).catch(() => {});
+        setDetailStatus('ready');
         setLoading(false);
       } catch (error) {
         if (cancelled) return;
