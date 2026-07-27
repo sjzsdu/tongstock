@@ -4322,17 +4322,7 @@ func (s *Server) handleStockinfoList(c *gin.Context) {
 	} else if exchange != "" {
 		infos, err = s.stockinfoDB.GetByExchange(exchange)
 	} else {
-		allInfos, err2 := s.stockinfoDB.GetAll()
-		if err2 != nil {
-			err = err2
-		} else {
-			// Limit result for full list
-			if len(allInfos) > 1000 {
-				infos = allInfos[:1000]
-			} else {
-				infos = allInfos
-			}
-		}
+		infos, err = s.stockinfoDB.GetAll()
 	}
 
 	if err != nil {

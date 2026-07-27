@@ -690,6 +690,7 @@ export interface NewsSummary {
   hotScore: number;
   tags: string[];
   relatedStocks: string[];
+  url?: string;
 }
 
 export interface FeedResult {

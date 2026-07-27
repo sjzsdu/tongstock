@@ -1,9 +1,9 @@
 .PHONY: all web cli server menubar install clean run
 
-BINDIR ?= $(if $(GOBIN),$(GOBIN),$(shell go env GOPATH)/bin)
+# Default to ~/.local/bin for installation, which is the standard user binary directory
+# Users can override with BINDIR environment variable if needed
+BINDIR ?= $(HOME)/.local/bin
 CLI_BIN := tongstock
-SERVER_BIN := tongstock-server
-MENUBAR_BIN := tongstock-menubar
 
 all: cli
 
@@ -16,10 +16,10 @@ cli: web
 	go build -o $(CLI_BIN) ./cmd/cli
 
 server: web
-	go build -o $(SERVER_BIN) ./cmd/server
+	go build -o tongstock-server ./cmd/server
 
 menubar:
-	go build -o $(MENUBAR_BIN) ./cmd/menubar
+	go build -o tongstock-menubar ./cmd/menubar
 
 run: cli
 	./$(CLI_BIN) server
@@ -29,5 +29,5 @@ install: cli
 	install -m 755 $(CLI_BIN) $(BINDIR)/$(CLI_BIN)
 
 clean:
-	rm -f $(CLI_BIN) $(SERVER_BIN) $(MENUBAR_BIN)
+	rm -f $(CLI_BIN) tongstock-server tongstock-menubar
 	rm -rf pkg/web/dist

@@ -278,6 +278,13 @@ export default function NewsHome() {
               dataSource={newsList}
               renderItem={(news, index) => {
                 const isLast = index === newsList.length - 1;
+                const handleClick = () => {
+                  if (news.url) {
+                    window.open(news.url, '_blank');
+                  } else {
+                    navigate(`/news/event/${news.id}`);
+                  }
+                };
                 return (
                   <div ref={isLast ? lastItemRef : null}>
                     <List.Item
@@ -287,7 +294,7 @@ export default function NewsHome() {
                         <Tag color={getHotColor(news.hotScore)}>{news.hotScore}</Tag>,
                       ]}
                       style={{ padding: '16px 0', borderBottom: '1px solid #1f2937', cursor: 'pointer' }}
-                      onClick={() => navigate(`/news/event/${news.id}`)}
+                      onClick={handleClick}
                     >
                       <List.Item.Meta
                         title={<Typography.Text strong style={{ fontSize: 15 }}>{news.title}</Typography.Text>}
@@ -391,14 +398,15 @@ export default function NewsHome() {
         </Card>
 
         {/* 市场情绪概览 */}
-        <Card
-          title={
-            <Space>
-              <WarningOutlined />
-              市场情绪
-            </Space>
-          }
-        >
+          <Card
+            title={
+              <Space>
+                <WarningOutlined />
+                市场情绪
+              </Space>
+            }
+            style={{ marginBottom: 16 }}
+          >
           {marketSentiment ? (
             <>
               {(() => {
@@ -408,16 +416,16 @@ export default function NewsHome() {
                 const negativePct = total > 0 ? marketSentiment.negativeCount / total : 0;
                 return (
                   <>
-                    <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', padding: '20px 0' }}>
-                      <div style={{ textAlign: 'center' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', padding: '20px 0', gap: 16 }}>
+                      <div style={{ textAlign: 'center', flex: 1 }}>
                         <div style={{ fontSize: 32, fontWeight: 'bold', color: '#22c55e' }}>{(positivePct * 100).toFixed(1)}%</div>
                         <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>正面</div>
                       </div>
-                      <div style={{ textAlign: 'center' }}>
+                      <div style={{ textAlign: 'center', flex: 1 }}>
                         <div style={{ fontSize: 32, fontWeight: 'bold', color: '#f59e0b' }}>{(neutralPct * 100).toFixed(1)}%</div>
                         <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>中性</div>
                       </div>
-                      <div style={{ textAlign: 'center' }}>
+                      <div style={{ textAlign: 'center', flex: 1 }}>
                         <div style={{ fontSize: 32, fontWeight: 'bold', color: '#ef4444' }}>{(negativePct * 100).toFixed(1)}%</div>
                         <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>负面</div>
                       </div>
