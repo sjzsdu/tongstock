@@ -10,29 +10,29 @@ import (
 
 // StockInfo 股票基础信息
 type StockInfo struct {
-	Code            string  `json:"code"`              // 股票代码
-	Name            string  `json:"name"`              // 股票名称
-	Exchange        string  `json:"exchange"`          // 交易所(sh/sz/bj)
-	Price           float64 `json:"price"`             // 最新价格
-	Open            float64 `json:"open"`              // 开盘价
-	High            float64 `json:"high"`              // 最高价
-	Low             float64 `json:"low"`               // 最低价
-	LastClose       float64 `json:"lastClose"`         // 昨收价
-	ChangePct       float64 `json:"changePct"`         // 涨跌幅(%)
-	Volume          float64 `json:"volume"`            // 成交量(手)
-	Amount          float64 `json:"amount"`            // 成交额(万元)
-	TurnoverRate    float64 `json:"turnoverRate"`      // 换手率(%)
-	LiuTongGuBen    float64 `json:"liuTongGuBen"`      // 流通股本(万股)
-	ZongGuBen       float64 `json:"zongGuBen"`         // 总股本(万股)
-	MarketCap       float64 `json:"marketCap"`         // 流通市值(亿元)
-	TotalMarketCap  float64 `json:"totalMarketCap"`    // 总市值(亿元)
-	JingZiChan      float64 `json:"jingZiChan"`        // 净资产(万元)
-	JingLiRun       float64 `json:"jingLiRun"`         // 净利润(万元)
-	MeiGuJingZiChan float64 `json:"meiGuJingZiChan"`   // 每股净资产(元)
-	Province        uint16  `json:"province"`          // 省份代码
-	Industry        uint16  `json:"industry"`          // 行业代码
-	IPODate         uint32  `json:"ipoDate"`           // 上市日期
-	UpdatedAt       int64   `json:"updatedAt"`         // 更新时间戳
+	Code            string  `json:"code"`            // 股票代码
+	Name            string  `json:"name"`            // 股票名称
+	Exchange        string  `json:"exchange"`        // 交易所(sh/sz/bj)
+	Price           float64 `json:"price"`           // 最新价格
+	Open            float64 `json:"open"`            // 开盘价
+	High            float64 `json:"high"`            // 最高价
+	Low             float64 `json:"low"`             // 最低价
+	LastClose       float64 `json:"lastClose"`       // 昨收价
+	ChangePct       float64 `json:"changePct"`       // 涨跌幅(%)
+	Volume          float64 `json:"volume"`          // 成交量(手)
+	Amount          float64 `json:"amount"`          // 成交额(万元)
+	TurnoverRate    float64 `json:"turnoverRate"`    // 换手率(%)
+	LiuTongGuBen    float64 `json:"liuTongGuBen"`    // 流通股本(万股)
+	ZongGuBen       float64 `json:"zongGuBen"`       // 总股本(万股)
+	MarketCap       float64 `json:"marketCap"`       // 流通市值(亿元)
+	TotalMarketCap  float64 `json:"totalMarketCap"`  // 总市值(亿元)
+	JingZiChan      float64 `json:"jingZiChan"`      // 净资产(万元)
+	JingLiRun       float64 `json:"jingLiRun"`       // 净利润(万元)
+	MeiGuJingZiChan float64 `json:"meiGuJingZiChan"` // 每股净资产(元)
+	Province        uint16  `json:"province"`        // 省份代码
+	Industry        uint16  `json:"industry"`        // 行业代码
+	IPODate         uint32  `json:"ipoDate"`         // 上市日期
+	UpdatedAt       int64   `json:"updatedAt"`       // 更新时间戳
 }
 
 // Store 股票信息存储
@@ -42,99 +42,7 @@ type Store struct {
 
 // New 创建存储实例
 func New(s *storage.Storage) (*Store, error) {
-	store := &Store{s: s}
-	if err := store.init(); err != nil {
-		return nil, err
-	}
-	return store, nil
-}
-
-func (s *Store) init() error {
-	_, err := s.s.DB().Exec(s.createTableSQL())
-	return err
-}
-
-func (s *Store) createTableSQL() string {
-	switch s.s.Dialect() {
-	case storage.Postgres:
-		return `CREATE TABLE IF NOT EXISTS stockinfo (
-			code TEXT PRIMARY KEY,
-			name TEXT NOT NULL DEFAULT '',
-			exchange TEXT NOT NULL DEFAULT '',
-			price DOUBLE PRECISION NOT NULL DEFAULT 0,
-			open DOUBLE PRECISION NOT NULL DEFAULT 0,
-			high DOUBLE PRECISION NOT NULL DEFAULT 0,
-			low DOUBLE PRECISION NOT NULL DEFAULT 0,
-			last_close DOUBLE PRECISION NOT NULL DEFAULT 0,
-			change_pct DOUBLE PRECISION NOT NULL DEFAULT 0,
-			volume DOUBLE PRECISION NOT NULL DEFAULT 0,
-			amount DOUBLE PRECISION NOT NULL DEFAULT 0,
-			turnover_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
-			liu_tong_gu_ben DOUBLE PRECISION NOT NULL DEFAULT 0,
-			zong_gu_ben DOUBLE PRECISION NOT NULL DEFAULT 0,
-			market_cap DOUBLE PRECISION NOT NULL DEFAULT 0,
-			total_market_cap DOUBLE PRECISION NOT NULL DEFAULT 0,
-			jing_zi_chan DOUBLE PRECISION NOT NULL DEFAULT 0,
-			jing_li_run DOUBLE PRECISION NOT NULL DEFAULT 0,
-			mei_gu_jing_zi_chan DOUBLE PRECISION NOT NULL DEFAULT 0,
-			province INTEGER NOT NULL DEFAULT 0,
-			industry INTEGER NOT NULL DEFAULT 0,
-			ipo_date INTEGER NOT NULL DEFAULT 0,
-			updated_at BIGINT NOT NULL DEFAULT 0
-		)`
-	case storage.MySQL:
-		return `CREATE TABLE IF NOT EXISTS stockinfo (
-			code VARCHAR(20) PRIMARY KEY,
-			name VARCHAR(100) NOT NULL DEFAULT '',
-			exchange VARCHAR(10) NOT NULL DEFAULT '',
-			price DOUBLE NOT NULL DEFAULT 0,
-			open DOUBLE NOT NULL DEFAULT 0,
-			high DOUBLE NOT NULL DEFAULT 0,
-			low DOUBLE NOT NULL DEFAULT 0,
-			last_close DOUBLE NOT NULL DEFAULT 0,
-			change_pct DOUBLE NOT NULL DEFAULT 0,
-			volume DOUBLE NOT NULL DEFAULT 0,
-			amount DOUBLE NOT NULL DEFAULT 0,
-			turnover_rate DOUBLE NOT NULL DEFAULT 0,
-			liu_tong_gu_ben DOUBLE NOT NULL DEFAULT 0,
-			zong_gu_ben DOUBLE NOT NULL DEFAULT 0,
-			market_cap DOUBLE NOT NULL DEFAULT 0,
-			total_market_cap DOUBLE NOT NULL DEFAULT 0,
-			jing_zi_chan DOUBLE NOT NULL DEFAULT 0,
-			jing_li_run DOUBLE NOT NULL DEFAULT 0,
-			mei_gu_jing_zi_chan DOUBLE NOT NULL DEFAULT 0,
-			province INT NOT NULL DEFAULT 0,
-			industry INT NOT NULL DEFAULT 0,
-			ipo_date INT NOT NULL DEFAULT 0,
-			updated_at BIGINT NOT NULL DEFAULT 0
-		)`
-	default: // SQLite
-		return `CREATE TABLE IF NOT EXISTS stockinfo (
-			code TEXT PRIMARY KEY,
-			name TEXT NOT NULL DEFAULT '',
-			exchange TEXT NOT NULL DEFAULT '',
-			price REAL NOT NULL DEFAULT 0,
-			open REAL NOT NULL DEFAULT 0,
-			high REAL NOT NULL DEFAULT 0,
-			low REAL NOT NULL DEFAULT 0,
-			last_close REAL NOT NULL DEFAULT 0,
-			change_pct REAL NOT NULL DEFAULT 0,
-			volume REAL NOT NULL DEFAULT 0,
-			amount REAL NOT NULL DEFAULT 0,
-			turnover_rate REAL NOT NULL DEFAULT 0,
-			liu_tong_gu_ben REAL NOT NULL DEFAULT 0,
-			zong_gu_ben REAL NOT NULL DEFAULT 0,
-			market_cap REAL NOT NULL DEFAULT 0,
-			total_market_cap REAL NOT NULL DEFAULT 0,
-			jing_zi_chan REAL NOT NULL DEFAULT 0,
-			jing_li_run REAL NOT NULL DEFAULT 0,
-			mei_gu_jing_zi_chan REAL NOT NULL DEFAULT 0,
-			province INTEGER NOT NULL DEFAULT 0,
-			industry INTEGER NOT NULL DEFAULT 0,
-			ipo_date INTEGER NOT NULL DEFAULT 0,
-			updated_at INTEGER NOT NULL DEFAULT 0
-		)`
-	}
+	return &Store{s: s}, nil
 }
 
 // ph 返回占位符 ? 或 $N

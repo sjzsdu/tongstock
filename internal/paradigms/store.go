@@ -24,31 +24,11 @@ func NewStore(dir string) (*Store, error) {
 func NewStoreWithStorage(dir string, db *storage.Storage) (*Store, error) {
 	s := &Store{paradigms: make(map[string]*Paradigm), db: db}
 	if db != nil {
-		if err := s.initDB(); err != nil {
-			return nil, err
-		}
 		if err := s.loadAllDB(); err != nil {
 			return nil, err
 		}
 	}
 	return s, nil
-}
-
-func (s *Store) initDB() error {
-	_, err := s.db.DB().Exec(`CREATE TABLE IF NOT EXISTS paradigms (
-		id TEXT PRIMARY KEY,
-		stock_code TEXT NOT NULL DEFAULT '',
-		side TEXT NOT NULL DEFAULT '',
-		cache_key TEXT NOT NULL DEFAULT '',
-		updated_at BIGINT NOT NULL,
-		data TEXT NOT NULL
-	)`)
-	if err != nil {
-		return err
-	}
-	_, _ = s.db.DB().Exec(`CREATE INDEX IF NOT EXISTS idx_paradigms_stock_code ON paradigms(stock_code)`)
-	_, _ = s.db.DB().Exec(`CREATE INDEX IF NOT EXISTS idx_paradigms_cache_key ON paradigms(cache_key)`)
-	return nil
 }
 
 func (s *Store) loadAllDB() error {

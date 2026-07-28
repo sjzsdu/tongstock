@@ -2,6 +2,8 @@
 
 基于 Go 语言实现的 TDX (通达信) 行情数据客户端，支持 CLI 和 HTTP API 两种方式获取股票数据。
 
+CLI 和 HTTP API 共享同一个 DB-first 股票数据服务：先从 SQLite 检查数据与同步水位，再结合当前日期、交易时段和交易日历判断新鲜度；数据缺失或过期时只从 TDX 同步缺失范围，在事务中写入业务数据和水位，最后重新读取数据库返回。详细设计见 [架构说明](ai-docs/ARCHITECTURE.md)。
+
 ## 功能特性
 
 - **实时行情** - 五档买卖盘、昨收价、内外盘、成交量/额
@@ -29,11 +31,8 @@
 git clone https://github.com/sjzsdu/tongstock.git
 cd tongstock
 
-# 一键安装（需要 Go 1.24+ 和 pnpm）
-bash setup.sh
-
-# 或手动构建（生成单个 tongstock 二进制）
-pnpm install
+# 安装依赖并构建（需要 Go 1.25+、Node.js 22+ 和 pnpm 10）
+cd web && pnpm install --frozen-lockfile && cd ..
 make cli
 
 # 启动 HTTP 服务
@@ -69,15 +68,25 @@ npx skills add sjzsdu/tongstock
 | 页面 | 路径 | 功能 |
 |------|------|------|
 | 市场总览 | `/` | 主要指数行情 + 快速分析入口 |
-| 指标分析 | `/stock` | 单股 MACD/KDJ/MA/BOLL 图表 + 信号标记 |
+| 自选股 | `/watchlist` | 分组自选股、备注和快速行情入口 |
+| 股票选择 | `/stock/choose` | 搜索并进入个股详情 |
+| 个股详情 | `/stock/:code` | 行情、K 线、指标、财务和资讯 |
 | 信号筛选 | `/screen` | 批量筛选金叉/死叉/超买/超卖 |
+| 投资组合 | `/portfolio` | 持仓与交易记录 |
+| 板块 | `/blocks` | 板块列表和成分股 |
+| 指数详情 | `/index/:code` | 指数行情与 K 线 |
+| Agent | `/agent` | 股票 Agent 对话与诊断 |
+| 投资范式 | `/paradigms` | 范式分析、复盘与告警 |
+| 隔夜策略 | `/strategy/overnight` | 隔夜套利策略分析 |
+| 新闻 | `/news` | 新闻流、热点事件和情绪 |
+| 设置 | `/settings` | 指标参数等本地设置 |
 
 ### 开发模式
 
 ```bash
 cd web
-npm install
-npm run dev        # 启动开发服务器，默认代理到 localhost:8080
+pnpm install --frozen-lockfile
+pnpm dev           # 启动开发服务器，默认代理到 localhost:8080
 ```
 
 ## CLI 使用方法
@@ -469,9 +478,21 @@ curl "http://localhost:8080/api/block/show?code=600519"
 
 ### 缓存说明
 
-股票代码和板块数据 API 使用 SQLite 进行缓存，缓存有效期为 24 小时：
-- `codes.db` - 股票代码缓存
-- `blocks.db` - 板块数据缓存
+应用使用 `~/.tongstock/cache/tongstock.db` 这一份 SQLite 数据库统一保存业务数据、缓存、股票 read model 和同步水位。日 K、行情快照和财务快照遵循数据库优先策略；股票代码、板块、F10 等低频数据使用同库中的 TTL cache 表。
+
+核心股票接口支持：
+
+- `consistency=require_fresh`（默认）：必要时同步，失败返回错误；
+- `consistency=allow_stale`：同步失败时允许返回数据库旧数据；
+- `consistency=cache_only`：只读数据库，不连接 TDX；
+- `refresh=true`：强制刷新后重新读库。
+
+CLI 使用同名全局参数，例如：
+
+```bash
+./tongstock quote 000001 --consistency=cache_only
+./tongstock finance 000001 --refresh
+```
 
 ## 配置
 
@@ -568,70 +589,33 @@ overrides:
 ```
 tongstock/
 ├── cmd/
-│   ├── cli/              # CLI 工具
-│   │   └── main.go       # 命令行入口
-│   └── server/           # HTTP API 服务
-│       └── main.go       # 服务入口（嵌入 Web UI）
-├── web/                  # React + TypeScript Web UI
-│   ├── src/
-│   │   ├── api/          # API 客户端
-│   │   ├── components/   # 组件（图表等）
-│   │   ├── pages/        # 页面（Dashboard/Stock/Screen）
-│   │   └── types/        # TypeScript 类型
-│   ├── package.json
-│   └── vite.config.ts
+│   ├── cli/              # 按业务域拆分的 CLI 传输适配器
+│   └── server/           # HTTP 进程入口
+├── internal/
+│   ├── app/stockdata/    # DB-first 应用服务、新鲜度、同步与事务
+│   └── serverapp/        # App composition root 和生命周期
 ├── pkg/
-│   ├── tdx/              # TDX 协议实现
-│   │   ├── client.go     # 客户端
-│   │   ├── hosts.go      # 服务器地址
-│   │   ├── codes.go      # 股票代码
-│   │   ├── pull.go       # 行情拉取 + KlineStore
-│   │   ├── service.go    # 业务逻辑层
-│   │   ├── workday.go    # 交易日判断
-│   │   ├── bj_codes.go   # 北京交易所代码
-│   │   └── protocol/     # 协议解析
-│   │       ├── quote.go   # 行情解析(含五档盘口)
-│   │       ├── kline.go   # K线解析
-│   │       ├── index.go   # 指数K线解析
-│   │       ├── minute.go  # 分时解析
-│   │       ├── trade.go   # 分笔解析
-│   │       ├── xdxr.go    # 除权除息解析
-│   │       ├── finance.go # 财务数据解析
-│   │       ├── company.go # 公司信息解析
-│   │       ├── block.go   # 板块信息解析
-│   │       ├── code.go    # 代码解析
-│   │       └── ...
-│   ├── ta/               # 技术指标计算（无状态）
-│   │   ├── types.go      # 核心类型（KlineInput, IndicatorResult）
-│   │   ├── ma.go         # SMA, EMA
-│   │   ├── macd.go       # MACD
-│   │   ├── kdj.go        # KDJ
-│   │   ├── boll.go       # BOLL
-│   │   ├── rsi.go        # RSI
-│   │   └── indicator.go  # 统一计算入口（并发）
-│   ├── signal/           # 信号检测
-│   │   ├── signal.go     # Signal 类型定义
-│   │   ├── detector.go   # 统一检测入口（并发）
-│   │   ├── cross.go      # 金叉/死叉检测
-│   │   ├── macd.go       # MACD 信号
-│   │   ├── kdj.go        # KDJ 信号
-│   │   ├── boll.go       # BOLL 信号
-│   │   ├── ma.go         # MA 信号
-│   │   └── rsi.go        # RSI 信号
-│   ├── param/            # 参数管理
-│   │   ├── types.go      # CategoryParams, ParamConfig
-│   │   ├── params.go     # Init, Resolve（三层参数覆盖）
-│   │   └── category.go   # 按代码判断市值分类
-│   └── utils/            # 工具函数
-├── configs/
-│   └── params.yaml       # 指标参数配置（含大盘/小盘分类）
-├── Makefile              # 构建脚本
-└── README.md
+│   ├── server/           # HTTP 路由、垂直 handlers、错误契约、可观测性
+│   ├── storage/          # SQLite 连接和版本化迁移
+│   └── tdx/              # TDX 协议、连接池和上游适配
+├── api/openapi.json      # API 契约源
+├── web/                  # React + TypeScript Web UI
+├── docs/adr/             # 架构决策记录
+└── ai-docs/              # 架构、存储、服务和运维文档
 ```
+
+本地和 CI 使用同一个质量入口：
+
+```bash
+make check
+```
+
+`api/openapi.json` 覆盖所有公开 HTTP 路由。Go 契约测试双向比对实际 Gin
+路由与 OpenAPI，前端 `api:check` 则验证生成的 DTO/操作表没有漂移。
 
 ## 技术栈
 
-- **Go 1.24+** - 后端开发语言
+- **Go 1.25+** - 后端开发语言
 - **spf13/cobra** - CLI 框架
 - **Gin** - HTTP 框架
 - **TDX 协议** - 通达信私有二进制协议
@@ -640,7 +624,7 @@ tongstock/
 - **TypeScript** - 前端类型安全
 - **Vite** - 前端构建工具
 - **Tailwind CSS** - 样式框架
-- **Recharts** - 图表组件库
+- **lightweight-charts** - 图表组件库
 
 ## 数据来源
 

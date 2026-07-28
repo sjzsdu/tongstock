@@ -112,7 +112,7 @@ export default function AgentWeb() {
           ));
         } else if (event.type === 'error') {
           setMessages(prev => prev.map((item, idx) =>
-            idx === pendingIndex ? { role: 'assistant', content: event.error || 'agent failed', error: true } : item
+            idx === pendingIndex ? { role: 'assistant', content: event.message || event.error || 'agent failed', error: true } : item
           ));
         }
       });

@@ -12,6 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ci": "vitest run --reporter=verbose",
+    "api:generate": "node scripts/generate-api.mjs",
+    "api:check": "node scripts/generate-api.mjs --check",
     "preview": "vite preview"
   },
   "dependencies": {

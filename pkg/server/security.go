@@ -78,9 +78,7 @@ func SecurityHeaders() gin.HandlerFunc {
 func MaxRequestBody() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if c.Request.ContentLength > maxRequestBodyBytes {
-			c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{
-				"error": "request body exceeds 4 MiB limit",
-			})
+			WriteError(c, http.StatusRequestEntityTooLarge, "request_too_large", "请求体超过 4 MiB 限制")
 			return
 		}
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxRequestBodyBytes)
@@ -105,29 +103,21 @@ func AccessTokenAuth(bindAddress, accessToken string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		h := c.GetHeader(headerAuthorization)
 		if h == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"error": "Authorization header required when accessing from non-loopback",
-			})
+			WriteError(c, http.StatusUnauthorized, "unauthorized", "远程访问需要 Authorization Bearer Token")
 			return
 		}
 		if !strings.HasPrefix(h, headerBearerPrefix) {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"error": "Authorization header must start with 'Bearer '",
-			})
+			WriteError(c, http.StatusUnauthorized, "unauthorized", "Authorization 必须使用 Bearer Token")
 			return
 		}
 		got := strings.TrimSpace(strings.TrimPrefix(h, headerBearerPrefix))
 		if got == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"error": "empty bearer token",
-			})
+			WriteError(c, http.StatusUnauthorized, "unauthorized", "Bearer Token 不能为空")
 			return
 		}
 		// Constant-time comparison to mitigate timing attacks.
 		if subtle.ConstantTimeCompare([]byte(got), expected) != 1 {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"error": "invalid access token",
-			})
+			WriteError(c, http.StatusUnauthorized, "unauthorized", "访问令牌无效")
 			return
 		}
 		c.Next()

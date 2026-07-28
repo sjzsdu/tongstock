@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sjzsdu/tongstock/pkg/cache"
 	"github.com/sjzsdu/tongstock/pkg/storage"
 	protocol "github.com/sjzsdu/tongstock/pkg/tdx/protocol"
 )
@@ -43,6 +44,7 @@ type KlineBatchSyncResult struct {
 type Service struct {
 	executor     Executor
 	ownsExecutor bool
+	ownsStorage  bool
 	storage      *storage.Storage
 	codes        *CodeStore
 	klines       *KlineStore
@@ -75,6 +77,18 @@ func NewService(client *Client, s *storage.Storage) (*Service, error) {
 	return svc, nil
 }
 
+// NewOwnedService is the CLI composition helper. Unlike NewService, Close
+// also releases the supplied Storage. Server code must keep using
+// NewServiceWithExecutor because App owns its shared Storage.
+func NewOwnedService(client *Client, s *storage.Storage) (*Service, error) {
+	svc, err := NewService(client, s)
+	if err != nil {
+		return nil, err
+	}
+	svc.ownsStorage = true
+	return svc, nil
+}
+
 // NewServiceWithExecutor creates a Service backed by the given Executor
 // (Pool or singleExecutor). The Executor owns the underlying connection(s)
 // and must outlive the Service. If the executor is a singleExecutor its
@@ -94,7 +108,11 @@ func NewServiceWithExecutor(exec Executor, s *storage.Storage) (*Service, error)
 		svc.Client = se.client
 	}
 
-	codes, err := GetCodeStore("")
+	sharedCache, err := cache.NewSQLiteCacheWithDB(s.DB())
+	if err != nil {
+		return nil, err
+	}
+	codes, err := NewCodeStore(sharedCache)
 	if err != nil {
 		return nil, err
 	}
@@ -145,6 +163,11 @@ func (s *Service) Close() error {
 	}
 	if s.workdays != nil {
 		if err := s.workdays.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if s.ownsStorage && s.storage != nil {
+		if err := s.storage.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -575,6 +598,43 @@ func (s *Service) GetQuote(codes ...string) ([]*protocol.QuoteItem, error) {
 	return items, err
 }
 
+// FetchKlineUpstream bypasses local read models and stops paging once the
+// earliest requested date is reached. TDX pages are offset from the newest
+// bar, so newer bars may be transferred, but older history is not fetched.
+// It is intended only for the StockDataService Provider.
+func (s *Service) FetchKlineUpstream(ctx context.Context, code string, ktype uint8, earliest time.Time) ([]*protocol.Kline, error) {
+	var items []*protocol.Kline
+	err := s.withClientContext(ctx, func(c *Client) error {
+		var e error
+		items, e = c.GetKlineUntil(code, ktype, func(item *protocol.Kline) bool {
+			return !earliest.IsZero() && !item.Time.After(earliest)
+		})
+		return e
+	})
+	return items, err
+}
+
+func (s *Service) FetchQuoteUpstream(ctx context.Context, codes ...string) ([]*protocol.QuoteItem, error) {
+	var items []*protocol.QuoteItem
+	err := s.withClientContext(ctx, func(c *Client) error {
+		var e error
+		items, e = c.GetQuote(codes...)
+		return e
+	})
+	return items, err
+}
+
+// FetchFinanceUpstream bypasses legacy cache state for StockDataService sync.
+func (s *Service) FetchFinanceUpstream(ctx context.Context, code string) (*protocol.FinanceInfo, error) {
+	var item *protocol.FinanceInfo
+	err := s.withClientContext(ctx, func(c *Client) error {
+		var e error
+		item, e = c.GetFinanceInfo(code)
+		return e
+	})
+	return item, err
+}
+
 // GetIndexBars fetches index K-line bars.
 func (s *Service) GetIndexBars(code string, ktype uint8, start, count uint16) ([]*protocol.IndexBar, error) {
 	var items []*protocol.IndexBar
@@ -614,6 +674,17 @@ func (s *Service) GetMinuteTradeAll(code string) (*protocol.TradeResp, error) {
 	err := s.withClient(func(c *Client) error {
 		var e error
 		result, e = c.GetMinuteTradeAll(code)
+		return e
+	})
+	return result, err
+}
+
+// GetMinuteTrade fetches a window of real-time trade data.
+func (s *Service) GetMinuteTrade(code string, start, count uint16) (*protocol.TradeResp, error) {
+	var result *protocol.TradeResp
+	err := s.withClient(func(c *Client) error {
+		var e error
+		result, e = c.GetMinuteTrade(code, start, count)
 		return e
 	})
 	return result, err

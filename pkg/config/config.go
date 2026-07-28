@@ -3,7 +3,6 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"sync"
 
 	yaml "gopkg.in/yaml.v3"
 )
@@ -101,7 +100,7 @@ cache:
 
 # 数据库配置 (用于 K 线、交易日历等)
 database:
-  # 驱动: sqlite3, postgres, mysql
+  # TongStock 正式仅支持 sqlite3
   driver: sqlite3
   # 连接字符串
   # dsn: ~/.tongstock/cache/tongstock.db
@@ -218,46 +217,4 @@ func writeDefaultConfig(path string) error {
 		return err
 	}
 	return os.WriteFile(path, []byte(template), 0644)
-}
-
-var (
-	globalConfig *Config
-	configMu     sync.RWMutex
-	configOnce   sync.Once
-)
-
-// Get 返回全局配置，在需要时延迟加载
-func Get() *Config {
-	configMu.RLock()
-	if globalConfig != nil {
-		defer configMu.RUnlock()
-		return globalConfig
-	}
-	configMu.RUnlock()
-
-	configOnce.Do(func() {
-		cfg, err := Load()
-		if err != nil {
-			cfg = DefaultConfig()
-		}
-		configMu.Lock()
-		globalConfig = cfg
-		configMu.Unlock()
-	})
-
-	configMu.RLock()
-	defer configMu.RUnlock()
-	return globalConfig
-}
-
-// Init 显式初始化配置，应用启动阶段调用
-func Init() error {
-	cfg, err := Load()
-	if err != nil {
-		return err
-	}
-	configMu.Lock()
-	globalConfig = cfg
-	configMu.Unlock()
-	return nil
 }

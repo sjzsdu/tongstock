@@ -33,48 +33,7 @@ type Store struct {
 
 // New creates a new stock pool store
 func New(s *storage.Storage) (*Store, error) {
-	store := &Store{s: s}
-	if err := store.init(); err != nil {
-		return nil, err
-	}
-	return store, nil
-}
-
-func (s *Store) init() error {
-	_, err := s.s.DB().Exec(s.createTableSQL())
-	return err
-}
-
-func (s *Store) createTableSQL() string {
-	switch s.s.Dialect() {
-	case storage.Postgres:
-		return `CREATE TABLE IF NOT EXISTS stockpool (
-			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL,
-			description TEXT NOT NULL DEFAULT '',
-			filters JSONB NOT NULL DEFAULT '[]',
-			created_at BIGINT NOT NULL,
-			updated_at BIGINT NOT NULL DEFAULT 0
-		)`
-	case storage.MySQL:
-		return "CREATE TABLE IF NOT EXISTS stockpool (" +
-			"id VARCHAR(36) PRIMARY KEY," +
-			"name VARCHAR(100) NOT NULL," +
-			"description TEXT NOT NULL DEFAULT ''," +
-			"filters JSON NOT NULL DEFAULT '[]'," +
-			"created_at BIGINT NOT NULL," +
-			"updated_at BIGINT NOT NULL DEFAULT 0" +
-			")"
-	default: // SQLite
-		return `CREATE TABLE IF NOT EXISTS stockpool (
-			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL,
-			description TEXT NOT NULL DEFAULT '',
-			filters TEXT NOT NULL DEFAULT '[]',
-			created_at INTEGER NOT NULL,
-			updated_at INTEGER NOT NULL DEFAULT 0
-		)`
-	}
+	return &Store{s: s}, nil
 }
 
 // GetAll returns all stock pools

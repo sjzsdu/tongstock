@@ -236,7 +236,11 @@ func inspectService() serviceInspection {
 }
 
 func configuredServerPort() int {
-	port := config.Get().Server.Port
+	cfg, err := config.Load()
+	if err != nil {
+		cfg = config.DefaultConfig()
+	}
+	port := cfg.Server.Port
 	if port == 0 {
 		return 8080
 	}

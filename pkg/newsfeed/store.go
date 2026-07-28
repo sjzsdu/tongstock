@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/sjzsdu/tongstock/pkg/storage"
 )
 
 // 错误定义
@@ -48,101 +48,30 @@ type Store interface {
 
 // SQLiteStore SQLite存储实现
 type SQLiteStore struct {
-	db *sql.DB
+	db    *sql.DB
+	owner *storage.Storage
 }
 
-// NewSQLiteStore 创建SQLite存储
+// NewSQLiteStore creates a standalone compatibility store. Application code
+// should use NewStoreWithStorage so Newsfeed shares the App-owned connection.
 func NewSQLiteStore(dsn string) (*SQLiteStore, error) {
-	db, err := sql.Open("sqlite3", dsn)
+	owner, err := storage.New(storage.Config{Driver: "sqlite3", DSN: dsn})
 	if err != nil {
 		return nil, err
 	}
-
-	// 创建表
-	if err := createTables(db); err != nil {
-		return nil, err
-	}
-
-	return &SQLiteStore{db: db}, nil
+	return &SQLiteStore{db: owner.DB(), owner: owner}, nil
 }
 
-// createTables 创建数据库表
-func createTables(db *sql.DB) error {
-	newsTable := `
-	CREATE TABLE IF NOT EXISTS news_items (
-		id TEXT PRIMARY KEY,
-		source TEXT NOT NULL,
-		news_type TEXT NOT NULL,
-		title TEXT NOT NULL,
-		summary TEXT,
-		content TEXT,
-		publish_time DATETIME NOT NULL,
-		hot_score INTEGER DEFAULT 0,
-		tags TEXT,
-		related_stocks TEXT,
-		url TEXT,
-		original_id TEXT UNIQUE,
-		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	);
-	CREATE INDEX IF NOT EXISTS idx_news_source ON news_items(source);
-	CREATE INDEX IF NOT EXISTS idx_news_publish_time ON news_items(publish_time);
-	CREATE INDEX IF NOT EXISTS idx_news_hot_score ON news_items(hot_score);
-	CREATE INDEX IF NOT EXISTS idx_news_related_stocks ON news_items(related_stocks);
-	`
-
-	eventTable := `
-	CREATE TABLE IF NOT EXISTS hot_events (
-		id TEXT PRIMARY KEY,
-		title TEXT NOT NULL,
-		keywords TEXT,
-		related_stocks TEXT,
-		hot_index INTEGER DEFAULT 0,
-		source_counts TEXT,
-		news_item_ids TEXT,
-		status TEXT DEFAULT 'active',
-		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	);
-	CREATE INDEX IF NOT EXISTS idx_event_hot_index ON hot_events(hot_index);
-	CREATE INDEX IF NOT EXISTS idx_event_status ON hot_events(status);
-	CREATE INDEX IF NOT EXISTS idx_event_updated_at ON hot_events(updated_at);
-	`
-
-	alertTable := `
-	CREATE TABLE IF NOT EXISTS alert_records (
-		id TEXT PRIMARY KEY,
-		rule_id TEXT,
-		news_id TEXT,
-		stock_code TEXT,
-		level TEXT,
-		type TEXT,
-		title TEXT,
-		summary TEXT,
-		source TEXT,
-		read BOOLEAN DEFAULT FALSE,
-		trigger_time TEXT,
-		created_at TEXT,
-		FOREIGN KEY (news_id) REFERENCES news_items(id)
-	);
-	CREATE INDEX IF NOT EXISTS idx_alert_records_read ON alert_records(read);
-	CREATE INDEX IF NOT EXISTS idx_alert_records_trigger_time ON alert_records(trigger_time);
-	CREATE INDEX IF NOT EXISTS idx_alert_records_stock_code ON alert_records(stock_code);
-	`
-
-	if _, err := db.Exec(newsTable); err != nil {
-		return err
+// NewStoreWithStorage creates a non-owning Newsfeed store backed by the shared
+// App storage. Close is intentionally a no-op for this variant.
+func NewStoreWithStorage(s *storage.Storage) (*SQLiteStore, error) {
+	if s == nil {
+		return nil, errors.New("nil storage")
 	}
-
-	if _, err := db.Exec(eventTable); err != nil {
-		return err
+	if s.Dialect() != storage.SQLite {
+		return nil, errors.New("newsfeed requires sqlite storage")
 	}
-
-	if _, err := db.Exec(alertTable); err != nil {
-		return err
-	}
-
-	return nil
+	return &SQLiteStore{db: s.DB()}, nil
 }
 
 // SaveNews 保存新闻列表
@@ -506,8 +435,8 @@ func (s *SQLiteStore) DeleteExpiredNews(ctx context.Context, days int) (int, err
 
 // Close 关闭数据库连接
 func (s *SQLiteStore) Close() error {
-	if s.db != nil {
-		return s.db.Close()
+	if s.owner != nil {
+		return s.owner.Close()
 	}
 	return nil
 }

@@ -39,6 +39,7 @@ import type {
   AlertRule,
   SyncFreshnessResult,
 } from '../types/api';
+import type { ErrorEnvelope } from './generated';
 
 const BASE = '';
 const ACCESS_TOKEN_KEY = 'tongstock.access_token';
@@ -77,8 +78,11 @@ async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
     headers,
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || '请求失败');
+    const payload = await res.json().catch(() => null) as ErrorEnvelope | { error?: string } | null;
+    if (payload && typeof payload.error === 'object') {
+      throw new TongStockAPIError(payload.error.code, payload.error.message, payload.error.request_id, res.status);
+    }
+    throw new TongStockAPIError('http_error', typeof payload?.error === 'string' ? payload.error : '请求失败', undefined, res.status);
   }
   const data = await res.json();
   // 检查响应是否包含错误字段
@@ -86,6 +90,25 @@ async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(data.error || '请求失败');
   }
   return data;
+}
+
+export class TongStockAPIError extends Error {
+  readonly code: string;
+  readonly requestId?: string;
+  readonly status?: number;
+
+  constructor(
+    code: string,
+    message: string,
+    requestId?: string,
+    status?: number,
+  ) {
+    super(message);
+    this.name = 'TongStockAPIError';
+    this.code = code;
+    this.requestId = requestId;
+    this.status = status;
+  }
 }
 
 export const api = {

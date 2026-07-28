@@ -12,6 +12,40 @@ interface UseWatchlistReturn {
   syncWatchlistDaily: () => Promise<KlineBatchSyncResult | undefined>;
 }
 
+export function mergeWatchlist(previous: StockItem[], remote: { code: string; name?: string }[]): StockItem[] {
+  const merged = [...previous];
+  for (const item of remote) {
+    if (!merged.some((stock) => stock.code === item.code)) {
+      merged.push({ code: item.code, name: item.name || item.code });
+    }
+  }
+  return merged;
+}
+
+export function resolveWatchlistAdditions(
+  codes: string[],
+  cache: Record<string, { list: { Code?: string; Name?: string }[] }>,
+): { code: string; name: string }[] {
+  const grouped: Record<string, string[]> = { sz: [], sh: [], bj: [] };
+  for (const code of codes) {
+    if (code.startsWith('6')) grouped.sh.push(code);
+    else if (code.startsWith('8') || code.startsWith('9')) grouped.bj.push(code);
+    else grouped.sz.push(code);
+  }
+  const results: { code: string; name: string }[] = [];
+  for (const [exchange, codeList] of Object.entries(grouped)) {
+    const cached = cache[exchange];
+    if (!cached) continue;
+    for (const code of codeList) {
+      const stockInfo = cached.list.find((item) => item.Code === code);
+      if (stockInfo?.Name && !results.some((item) => item.code === code)) {
+        results.push({ code, name: stockInfo.Name });
+      }
+    }
+  }
+  return results;
+}
+
 export function useWatchlist(): UseWatchlistReturn {
   const [stockList, setStockList] = useState<StockItem[]>(() => {
     try {
@@ -30,39 +64,13 @@ export function useWatchlist(): UseWatchlistReturn {
     api.watchlist()
       .then((items) => {
         if (items.length === 0) return;
-        setStockList((previous) => {
-          const merged = [...previous];
-          for (const item of items) {
-            if (!merged.some((stock) => stock.code === item.code)) {
-              merged.push({ code: item.code, name: item.name });
-            }
-          }
-          return merged;
-        });
+        setStockList((previous) => mergeWatchlist(previous, items));
       })
       .catch(() => {});
   }, []);
 
   const addCodes = useCallback(async (codes: string[], cache: Record<string, { list: { Code?: string; Name?: string }[] }>) => {
-    const grouped: Record<string, string[]> = { sz: [], sh: [], bj: [] };
-    for (const code of codes) {
-      if (code.startsWith('6')) grouped.sh.push(code);
-      else if (code.startsWith('8') || code.startsWith('9')) grouped.bj.push(code);
-      else grouped.sz.push(code);
-    }
-
-    const results: { code: string; name: string }[] = [];
-    for (const [exchange, codeList] of Object.entries(grouped)) {
-      if (codeList.length === 0) continue;
-      const cached = cache[exchange];
-      if (!cached) continue;
-      for (const code of codeList) {
-        const stockInfo = cached.list.find((item) => item.Code === code);
-        if (stockInfo?.Name) {
-          results.push({ code, name: stockInfo.Name });
-        }
-      }
-    }
+    const results = resolveWatchlistAdditions(codes, cache);
 
     if (results.length > 0) {
       setStockList((previous) => [...previous, ...results]);

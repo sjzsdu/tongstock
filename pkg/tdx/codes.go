@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/sjzsdu/tongstock/pkg/cache"
-	"github.com/sjzsdu/tongstock/pkg/config"
 	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
 )
 
@@ -18,30 +17,11 @@ type CodeStore struct {
 	ttl    time.Duration
 }
 
-var (
-	store     *CodeStore
-	storeOnce sync.Once
-)
-
-func GetCodeStore(cachePath string) (*CodeStore, error) {
-	var err error
-	storeOnce.Do(func() {
-		var c cache.Cache
-		cfg := config.Get()
-		if cfg.Cache.Backend == "file" {
-			c, err = cache.NewFileCache(cfg.Cache.Dir)
-		} else {
-			if cachePath == "" {
-				cachePath = config.DBPath()
-			}
-			c, err = cache.NewSQLiteCache(cachePath)
-		}
-		if err != nil {
-			return
-		}
-		store = &CodeStore{cache: c, ttl: 24 * time.Hour}
-	})
-	return store, err
+func NewCodeStore(c cache.Cache) (*CodeStore, error) {
+	if c == nil {
+		return nil, fmt.Errorf("nil cache")
+	}
+	return &CodeStore{cache: c, ttl: 24 * time.Hour}, nil
 }
 
 func (s *CodeStore) SaveCodes(codes []*protocol.CodeItem, exchange protocol.Exchange) error {

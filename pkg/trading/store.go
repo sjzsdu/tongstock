@@ -32,57 +32,7 @@ type Store struct {
 }
 
 func New(s *storage.Storage) (*Store, error) {
-	store := &Store{s: s}
-	if err := store.init(); err != nil {
-		return nil, err
-	}
-	return store, nil
-}
-
-func (s *Store) init() error {
-	_, err := s.s.DB().Exec(s.createTableSQL())
-	return err
-}
-
-func (s *Store) createTableSQL() string {
-	switch s.s.Dialect() {
-	case storage.Postgres:
-		return `CREATE TABLE IF NOT EXISTS trades (
-			id SERIAL PRIMARY KEY,
-			code TEXT NOT NULL,
-			name TEXT NOT NULL DEFAULT '',
-			action TEXT NOT NULL,
-			price FLOAT NOT NULL,
-			signal TEXT NOT NULL DEFAULT '',
-			ktype TEXT NOT NULL DEFAULT 'day',
-			reason TEXT NOT NULL DEFAULT '',
-			created_at BIGINT NOT NULL
-		)`
-	case storage.MySQL:
-		return "CREATE TABLE IF NOT EXISTS trades (" +
-			"id INTEGER AUTO_INCREMENT PRIMARY KEY," +
-			"code VARCHAR(20) NOT NULL," +
-			"name VARCHAR(100) NOT NULL DEFAULT ''," +
-			"action VARCHAR(10) NOT NULL," +
-			"price FLOAT NOT NULL," +
-			"signal VARCHAR(100) NOT NULL DEFAULT ''," +
-			"ktype VARCHAR(20) NOT NULL DEFAULT 'day'," +
-			"reason TEXT NOT NULL DEFAULT ''," +
-			"created_at BIGINT NOT NULL" +
-			")"
-	default:
-		return `CREATE TABLE IF NOT EXISTS trades (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			code TEXT NOT NULL,
-			name TEXT NOT NULL DEFAULT '',
-			action TEXT NOT NULL,
-			price REAL NOT NULL,
-			signal TEXT NOT NULL DEFAULT '',
-			ktype TEXT NOT NULL DEFAULT 'day',
-			reason TEXT NOT NULL DEFAULT '',
-			created_at INTEGER NOT NULL
-		)`
-	}
+	return &Store{s: s}, nil
 }
 
 func (s *Store) ph(n int) string {

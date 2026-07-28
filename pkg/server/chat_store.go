@@ -40,29 +40,11 @@ func NewChatStore(dir string) (*ChatStore, error) {
 func NewChatStoreWithStorage(dir string, db *storage.Storage) (*ChatStore, error) {
 	s := &ChatStore{sessions: make(map[string]*ChatSession), db: db}
 	if db != nil {
-		if err := s.initDB(); err != nil {
-			return nil, err
-		}
 		if err := s.loadAllDB(); err != nil {
 			return nil, err
 		}
 	}
 	return s, nil
-}
-
-func (s *ChatStore) initDB() error {
-	_, err := s.db.DB().Exec(`CREATE TABLE IF NOT EXISTS chat_sessions (
-		id TEXT PRIMARY KEY,
-		stock_code TEXT NOT NULL DEFAULT '',
-		agent TEXT NOT NULL DEFAULT '',
-		updated_at BIGINT NOT NULL,
-		data TEXT NOT NULL
-	)`)
-	if err != nil {
-		return err
-	}
-	_, _ = s.db.DB().Exec(`CREATE INDEX IF NOT EXISTS idx_chat_sessions_stock_code ON chat_sessions(stock_code)`)
-	return nil
 }
 
 func (s *ChatStore) loadAllDB() error {

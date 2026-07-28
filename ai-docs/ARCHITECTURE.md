@@ -1,168 +1,69 @@
-# 系统架构
+# TongStock 架构
 
-## 整体架构
+TongStock 是一个模块化单体。CLI 和 HTTP 只是两个传输适配器；日 K、行情快照和财务快照都通过同一个 `internal/app/stockdata.Service` 获取，不允许传输层直接把 TDX 响应当作最终结果。
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         CLI / HTTP Server                        │
-│                 (tongstock CLI: commands / server / menubar)    │
-└─────────────────────────────────────────────────────────────────┘
-                                 │
-                                 ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      pkg/tdx/service.go                         │
-│                    Service 层 (统一入口)                         │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐    │
-│  │ Fetch   │ │ Fetch   │ │ Fetch   │ │ Fetch   │ │ Fetch   │    │
-│  │ Codes   │ │ Kline   │ │ XdXr    │ │Finance  │ │ Block   │    │
-│  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘    │
-│       │           │           │           │           │          │
-│       ▼           ▼           │           │           │          │
-│  ┌─────────────────────┐     │           │           │          │
-│  │   Client (TDX协议)   │◄────┴───────────┴───────────┘          │
-│  │   实时数据访问        │                                        │
-│  └──────────┬──────────┘                                        │
-└─────────────┼───────────────────────────────────────────────────┘
-              │
-    ┌─────────┼────────────────────────────────────┐
-    │         │              │                    │
-    ▼         ▼              ▼                    ▼
-┌────────┐ ┌────────┐ ┌────────┐ ┌────────────────────────────┐
-│Codes    │ │ Kline   │ │ Workday│ │  XdXr / Finance / Company │
-│Cache    │ │ DB      │ │ DB     │ │  Block (Cache)             │
-│Store    │ │ Store   │ │ Store  │ │  Stores                   │
-└────────┘ └────────┘ └────────┘ └────────────────────────────┘
-     │                      │
-     ▼                      ▼
-┌─────────────┐    ┌─────────────────────────┐
-│ Cache 接口   │    │  DB 接口 (sql.DB)      │
-│ (SQLite/    │    │  (SQLite/Postgres/    │
-│  File)       │    │   MySQL)              │
-└─────────────┘    └─────────────────────────┘
+## 核心数据流
+
+```text
+CLI command ─┐
+             ├─> stockdata.Service
+HTTP route ──┘       │
+                     ├─ 1. 检查 SQLite 中的数据覆盖与同步水位
+                     ├─ 2. 按当前时间、交易日历和数据类型判断新鲜度
+                     ├─ 3. 新鲜：直接查询数据库
+                     └─ 4. 过期/缺失：
+                            TDX Provider 拉取缺失范围
+                            → 校验
+                            → 数据和水位同一事务提交
+                            → 重新查询数据库
+                            → 返回
 ```
 
-## 模块职责
+数据库是股票数据的 read model 和唯一返回来源。同步成功后也必须重新读库，避免 CLI 与 API 对同一请求产生不同语义。相同同步键由 `singleflight` 合并；等待者可以独立取消，不会中断其他调用者共享的刷新。
 
-### pkg/cache - 通用缓存
+## 组合与生命周期
 
-**职责**: 提供 KV 缓存抽象，支持 TTL、bucket 分组
+`internal/serverapp.App` 是服务进程唯一的 composition root，按以下顺序创建资源：
 
-**接口**:
-```go
-type Cache interface {
-    Get(bucket, key string) ([]byte, error)
-    Set(bucket, key string, value []byte, opts ...Option) error
-    Delete(bucket, key string) error
-    Has(bucket, key string) bool
-    List(bucket string) ([]string, error)
-    Clear(bucket string) error
-    Close() error
-}
-```
+1. 配置和参数；
+2. `storage.Storage` 与版本化迁移；
+3. TDX `Executor`/连接池；
+4. 旧 TDX 能力适配器与统一 `stockdata.Service`；
+5. 各业务 Store、可选 Agent/Chat/Paradigm/Newsfeed 模块；
+6. Gin Router、`http.Server` 和监听器。
 
-**后端实现**:
-- `SQLiteCache` - 基于 SQLite，键值存 BLOB
-- `FileCache` - 基于文件系统，.dat + .meta 文件
+`Shutdown` 可重复调用，并按 HTTP → 后台任务 → TDX Service → Executor → Storage 的逆序释放。Store 借用 App 持有的数据库连接，不单独关闭它。可选模块失败会标记为 `degraded`，不会伪装成核心模块不可用。
 
-### pkg/db - 数据库抽象
+## 模块边界
 
-**职责**: 提供数据库连接工厂，支持多驱动
+| 层 | 目录 | 职责 |
+|---|---|---|
+| 进程组合 | `internal/serverapp` | 构造、运行、诊断、关闭 |
+| 应用服务 | `internal/app/stockdata` | DB-first、新鲜度、同步、事务、singleflight |
+| 上游适配 | `pkg/tdx` | TDX 协议、连接池和类型化调用 |
+| 持久化 | `pkg/storage` | SQLite 连接、迁移和 schema 版本 |
+| HTTP 适配 | `pkg/server` | 路由、错误契约、认证、SSE、可观测性 |
+| CLI 适配 | `cmd/cli` | Cobra 命令和输出格式 |
+| Web 适配 | `web/src/api` | 生成契约和浏览器客户端 |
 
-**接口**:
-```go
-func Open(driver, dsn string) (*sql.DB, error)
-func OpenSQLite(dsn string) (*sql.DB, error)
-func OpenPostgres(dsn string) (*sql.DB, error)
-func OpenMySQL(dsn string) (*sql.DB, error)
-func OpenFromConfig(driver, dsn string) (*sql.DB, error)
-```
+HTTP 路由和 handler 已按 market、analysis、portfolio、sync、strategy 垂直拆分。CLI 命令也按相同业务域拆分。新增能力应先进入应用服务，再由 CLI/HTTP 适配；不要在 handler 或 Cobra `RunE` 中重新实现新鲜度与同步判断。
 
-### pkg/config - 配置管理
+## 一致性模式
 
-**职责**: 集中管理配置，支持 YAML 文件 + 默认值
+- `require_fresh`：默认。过期时同步；同步失败则返回稳定错误。
+- `allow_stale`：尝试同步，失败且数据库有旧数据时返回旧数据。
+- `cache_only`：只读数据库，不访问 TDX；缺失时返回 `cache_miss`。
+- `refresh=true` / CLI `--refresh`：强制刷新；不能与 `cache_only` 组合。
 
-**配置项**:
-```yaml
-server:
-  port: 8080
+## API 与可观测性
 
-tdx:
-  hosts:  # 可选，留空使用内置默认
+所有 JSON 错误使用 `{"error":{"code","message","request_id","details?"}}`。内部连接串、SQL、panic 和上游原始错误不返回给客户端。SSE 在发送响应头前使用同一 JSON 错误；开始流式输出后使用带 `code/message/request_id` 的 `error` 事件。
 
-cache:
-  backend: sqlite  # sqlite 或 file
-  dir: ~/.tongstock/cache
+运行状态：
 
-database:
-  driver: sqlite3
-  dsn: ~/.tongstock/cache/tongstock.db
-```
+- `/health/live`：进程存活；
+- `/health/ready`：数据库和 TDX 等核心依赖是否可用；
+- `/health/diagnostics`：模块状态和 schema 版本；
+- `/health/data-sync`：最近一次新鲜度决策、原因、同步范围和 `as_of`。
 
-**目录结构**:
-```
-~/.tongstock/
-├── config.yaml      # 配置文件
-└── cache/
-    ├── tongstock.db  # SQLite 数据库 (K线、交易日历)
-    └── (缓存数据)
-```
-
-### pkg/tdx/service.go - Service 层
-
-**职责**: 编排 Client + 本地存储，提供统一的数据访问入口
-
-**核心功能**:
-- 缓存命中时直接返回本地数据
-- 缓存未命中时拉取远程数据并落库
-- 智能判断是否需要刷新（如交易时间内刷新日K）
-- 生命周期管理（统一 Close）
-
-## 数据流
-
-### 缓存命中场景
-
-```
-用户请求 → Service.FetchXxx()
-         → 检查本地 Store
-         → 有缓存且未过期
-         → 直接返回
-```
-
-### 缓存未命中场景
-
-```
-用户请求 → Service.FetchXxx()
-         → 检查本地 Store
-         → 无缓存/已过期
-         → Client 拉取 TDX
-         → 存入本地 Store
-         → 返回数据
-```
-
-## K线数据特殊处理
-
-日K线使用 DB 存储，采用智能增量更新：
-
-```
-FetchKlineAll(code, ktype=day):
-  ① 查本地最新日期
-  ② 判断是否需要更新:
-     - 昨日收盘后至今 → 跳过
-     - 盘中且有今日数据 → 只刷新今日
-     - 有新数据 → 增量拉取
-  ③ 存库，返回全量
-```
-
-## 扩展性
-
-### 新增数据类型的缓存
-
-1. 在 `metadata.go` 创建新的 Store 结构
-2. 实现 Get/Save 方法（复用 CodeStore 的 cache 实例）
-3. 在 Service 中添加对应字段和 Fetch 方法
-4. CLI/Server 路由到新的 Fetch 方法
-
-### 新增数据库表
-
-1. 在对应的 Store 中添加新的表创建逻辑
-2. 使用 `KlineStore` 模式：init() 中执行 CREATE TABLE
+`api/openapi.json` 是传输契约源，`web/src/api/generated.ts` 由它生成。CI 运行 `pnpm api:check` 防止生成物漂移。

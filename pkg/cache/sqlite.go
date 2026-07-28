@@ -2,39 +2,35 @@ package cache
 
 import (
 	"database/sql"
+	"errors"
 	"sync"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/sjzsdu/tongstock/pkg/storage"
 )
 
 type sqliteCache struct {
-	db *sql.DB
-	mu sync.RWMutex
+	db    *sql.DB
+	mu    sync.RWMutex
+	owner *storage.Storage
 }
 
-// NewSQLiteCache 创建基于 SQLite 的缓存实例
+// NewSQLiteCache creates a standalone compatibility cache through the same
+// storage factory and versioned migrations used by the application.
 func NewSQLiteCache(dbPath string) (Cache, error) {
-	db, err := sql.Open("sqlite3", dbPath+"?cache=shared")
+	owner, err := storage.New(storage.Config{Driver: "sqlite3", DSN: dbPath})
 	if err != nil {
 		return nil, err
 	}
+	return &sqliteCache{db: owner.DB(), owner: owner}, nil
+}
 
-	if _, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS cache (
-			bucket TEXT NOT NULL,
-			key TEXT NOT NULL,
-			value BLOB,
-			created_at INTEGER NOT NULL,
-			expires_at INTEGER NOT NULL DEFAULT 0,
-			PRIMARY KEY (bucket, key)
-		);
-		CREATE INDEX IF NOT EXISTS idx_cache_bucket ON cache(bucket);
-	`); err != nil {
-		db.Close()
-		return nil, err
+// NewSQLiteCacheWithDB creates a non-owning cache adapter on the App-owned
+// database. The schema is installed by storage migrations.
+func NewSQLiteCacheWithDB(db *sql.DB) (Cache, error) {
+	if db == nil {
+		return nil, errors.New("nil database")
 	}
-
 	return &sqliteCache{db: db}, nil
 }
 
@@ -140,8 +136,8 @@ func (c *sqliteCache) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.db != nil {
-		return c.db.Close()
+	if c.owner != nil {
+		return c.owner.Close()
 	}
 	return nil
 }

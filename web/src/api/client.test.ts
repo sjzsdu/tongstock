@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { fetchWithAccessToken } from './client'
+import { api, fetchWithAccessToken, TongStockAPIError } from './client'
 
 const storage = new Map<string, string>()
 
@@ -12,6 +12,23 @@ beforeEach(() => {
       setItem: (key: string, value: string) => storage.set(key, value),
     },
     prompt: vi.fn(),
+  })
+})
+
+describe('structured API errors', () => {
+  it('throws a stable coded error instead of classifying localized text', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: { code: 'not_found', message: '请求的资源不存在', request_id: 'req-1' },
+    }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' },
+    })))
+
+    const error = await api.quote('600000').catch((reason) => reason)
+
+    expect(error).toBeInstanceOf(TongStockAPIError)
+    expect(error.code).toBe('not_found')
+    expect(error.requestId).toBe('req-1')
   })
 })
 

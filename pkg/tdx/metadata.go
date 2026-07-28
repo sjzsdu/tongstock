@@ -2,7 +2,6 @@ package tdx
 
 import (
 	"encoding/json"
-	"sync"
 	"time"
 
 	"github.com/sjzsdu/tongstock/pkg/cache"
@@ -39,32 +38,6 @@ type CompanyStore struct {
 type BlockStore struct {
 	cache cache.Cache
 	ttl   time.Duration
-}
-
-var (
-	// Optional: a simple singleton for XdXrStore cached via GetCodeStore backend
-	xdxrStore     *XdXrStore
-	xdxrStoreOnce sync.Once
-)
-
-// GetXdXrStore returns a store backed by the same cache backend used by CodeStore.
-// It follows the GetCodeStore pattern but reuses the underlying cache instance.
-func GetXdXrStore(cachePath string) (*XdXrStore, error) {
-	var err error
-	xdxrStoreOnce.Do(func() {
-		// Reuse the same cache backend as codes store
-		cs, e := GetCodeStore(cachePath)
-		if e != nil {
-			err = e
-			return
-		}
-		xdxrStore = &XdXrStore{cache: cs.cache, ttl: xdxrTTL}
-	})
-	if err != nil {
-		return nil, err
-	}
-	// xdxrStore may still be nil if the first call failed, guard anyway
-	return xdxrStore, nil
 }
 
 // Get reads cached XdXr items by code.

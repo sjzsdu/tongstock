@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -68,9 +69,12 @@ type agentChatResponse struct {
 }
 
 type agentStreamEvent struct {
-	Type  string `json:"type"`
-	Delta string `json:"delta,omitempty"`
-	Error string `json:"error,omitempty"`
+	Type      string `json:"type"`
+	Delta     string `json:"delta,omitempty"`
+	Error     string `json:"error,omitempty"` // compatibility alias for older SPA builds
+	Code      string `json:"code,omitempty"`
+	Message   string `json:"message,omitempty"`
+	RequestID string `json:"request_id,omitempty"`
 }
 
 type agentTranscriptMessage struct {
@@ -151,14 +155,6 @@ func (s *Server) InitAgentState(home, configPath, model, agentID, stockAgent, wo
 		},
 	}
 	return nil
-}
-
-// RegisterAgentLister registers the agent list function on the given server.
-// Kept for backward compatibility; prefer s.SetAgentLister in new code.
-func RegisterAgentLister(s *Server, fn func() ([]EmbeddedAgent, error)) {
-	if s != nil {
-		s.agentListFunc = fn
-	}
 }
 
 func (s *Server) SetupAgentRoutes(api *gin.RouterGroup) {
@@ -377,33 +373,31 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 
 func (s *Server) handleAgentChatStream(c *gin.Context) {
 	if s.agentState == nil {
-		c.JSON(http.StatusServiceUnavailable, agentStreamEvent{
-			Type: "error", Error: "Agent 未初始化。请在 ~/.tongstock/config.yaml 中配置 agent.enabled: true 并确保 picoclaw 已正确配置。",
-		})
+		WriteError(c, http.StatusServiceUnavailable, "agent_unavailable", "Agent 服务未初始化")
 		return
 	}
 
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
-		c.JSON(http.StatusInternalServerError, agentStreamEvent{Type: "error", Error: "streaming unsupported"})
+		WriteError(c, http.StatusInternalServerError, "stream_unsupported", "当前连接不支持流式响应")
 		return
 	}
 
 	var req agentChatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, agentStreamEvent{Type: "error", Error: "invalid request"})
+		WriteError(c, http.StatusBadRequest, "validation_failed", "请求格式无效")
 		return
 	}
 	req.Message = strings.TrimSpace(req.Message)
 	if req.Message == "" {
-		c.JSON(http.StatusBadRequest, agentStreamEvent{Type: "error", Error: "message is required"})
+		WriteError(c, http.StatusBadRequest, "validation_failed", "message 不能为空")
 		return
 	}
 	if req.Agent == "" {
 		req.Agent = s.agentState.defaults.Agent
 	}
 	if !s.isValidAgent(req.Agent) {
-		c.JSON(http.StatusBadRequest, agentStreamEvent{Type: "error", Error: "unknown agent: " + req.Agent})
+		WriteError(c, http.StatusBadRequest, "unknown_agent", "指定的 Agent 不存在")
 		return
 	}
 	if req.Session == "" {
@@ -443,7 +437,7 @@ func (s *Server) handleAgentChatStream(c *gin.Context) {
 	})
 	s.agentState.mu.Unlock()
 	if err != nil {
-		writeSSE(c.Writer, flusher, agentStreamEvent{Type: "error", Error: err.Error()})
+		writeSSEError(c, flusher, "agent_runner_failed", "Agent 运行器初始化失败")
 		flusher.Flush()
 		return
 	}
@@ -459,7 +453,13 @@ func (s *Server) handleAgentChatStream(c *gin.Context) {
 		Workspace: s.agentState.workspace,
 	})
 	if err != nil {
-		writeSSE(c.Writer, flusher, agentStreamEvent{Type: "error", Error: err.Error()})
+		code, message := "agent_failed", "Agent 处理失败"
+		if errors.Is(err, context.DeadlineExceeded) {
+			code, message = "upstream_timeout", "Agent 处理超时"
+		} else if errors.Is(err, context.Canceled) {
+			code, message = "request_cancelled", "请求已取消"
+		}
+		writeSSEError(c, flusher, code, message)
 		flusher.Flush()
 		return
 	}
@@ -477,6 +477,13 @@ func (s *Server) handleAgentChatStream(c *gin.Context) {
 	s.saveAgentChatSession(req.Session, req.Agent, req.Message, response)
 	writeSSE(c.Writer, flusher, agentStreamEvent{Type: "done"})
 	flusher.Flush()
+}
+
+func writeSSEError(c *gin.Context, flusher http.Flusher, code, message string) {
+	writeSSE(c.Writer, flusher, agentStreamEvent{
+		Type: "error", Error: message, Code: code, Message: message,
+		RequestID: RequestIDFromContext(c),
+	})
 }
 
 func (s *Server) handleAgentTranscript(c *gin.Context) {

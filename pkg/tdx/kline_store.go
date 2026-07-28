@@ -37,85 +37,7 @@ var ErrKlineNotFound = errors.New("kline: not found")
 
 // NewKlineStore 创建K线存储
 func NewKlineStore(s *storage.Storage) (*KlineStore, error) {
-	store := &KlineStore{s: s, loc: time.Local}
-	if err := store.init(); err != nil {
-		return nil, err
-	}
-	return store, nil
-}
-
-func (s *KlineStore) init() error {
-	db := s.s.DB()
-	
-	// 创建 kline 表
-	if _, err := db.Exec(s.createTableSQL()); err != nil {
-		return err
-	}
-
-	// 创建索引（PostgreSQL 不支持多语句 Exec，需单独执行）
-	if s.s.Dialect() == storage.Postgres {
-		db.Exec(`CREATE INDEX IF NOT EXISTS idx_code_ktype ON kline(code, ktype)`)
-		db.Exec(`CREATE INDEX IF NOT EXISTS idx_date ON kline(date)`)
-	}
-
-	// 创建 kline_sync_state 表
-	if _, err := db.Exec(s.createSyncStateSQL()); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s *KlineStore) createTableSQL() string {
-	switch s.s.Dialect() {
-	case storage.Postgres:
-		return `CREATE TABLE IF NOT EXISTS kline (
-			code TEXT, ktype SMALLINT, date TEXT,
-			open DOUBLE PRECISION, high DOUBLE PRECISION, low DOUBLE PRECISION, close DOUBLE PRECISION, 
-			volume DOUBLE PRECISION, amount DOUBLE PRECISION,
-			PRIMARY KEY (code, ktype, date)
-		)`
-	case storage.MySQL:
-		return "CREATE TABLE IF NOT EXISTS kline (" +
-			"code VARCHAR(20), ktype TINYINT UNSIGNED, date VARCHAR(8)," +
-			"open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE, volume DOUBLE, amount DOUBLE," +
-			"PRIMARY KEY (code, ktype, date), INDEX idx_code_ktype (code, ktype), INDEX idx_date (date)" +
-			")"
-	default: // SQLite
-		return `CREATE TABLE IF NOT EXISTS kline (
-			code TEXT, ktype INTEGER, date TEXT,
-			open REAL, high REAL, low REAL, close REAL, volume REAL, amount REAL,
-			PRIMARY KEY (code, ktype, date)
-		); CREATE INDEX IF NOT EXISTS idx_code_ktype ON kline(code, ktype); CREATE INDEX IF NOT EXISTS idx_date ON kline(date);`
-	}
-}
-
-func (s *KlineStore) createSyncStateSQL() string {
-	switch s.s.Dialect() {
-	case storage.Postgres:
-		return `CREATE TABLE IF NOT EXISTS kline_sync_state (
-			code TEXT, ktype SMALLINT,
-			first_date TEXT NOT NULL DEFAULT '', last_date TEXT NOT NULL DEFAULT '',
-			row_count INTEGER NOT NULL DEFAULT 0, last_sync_at BIGINT NOT NULL DEFAULT 0,
-			status TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '',
-			PRIMARY KEY (code, ktype)
-		)`
-	case storage.MySQL:
-		return "CREATE TABLE IF NOT EXISTS kline_sync_state (" +
-			"code VARCHAR(20), ktype TINYINT UNSIGNED," +
-			"first_date VARCHAR(8) NOT NULL DEFAULT '', last_date VARCHAR(8) NOT NULL DEFAULT ''," +
-			"row_count INT NOT NULL DEFAULT 0, last_sync_at BIGINT NOT NULL DEFAULT 0," +
-			"status VARCHAR(20) NOT NULL DEFAULT '', error TEXT NOT NULL," +
-			"PRIMARY KEY (code, ktype))"
-	default: // SQLite
-		return `CREATE TABLE IF NOT EXISTS kline_sync_state (
-			code TEXT, ktype INTEGER,
-			first_date TEXT NOT NULL DEFAULT '', last_date TEXT NOT NULL DEFAULT '',
-			row_count INTEGER NOT NULL DEFAULT 0, last_sync_at INTEGER NOT NULL DEFAULT 0,
-			status TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '',
-			PRIMARY KEY (code, ktype)
-		)`
-	}
+	return &KlineStore{s: s, loc: time.Local}, nil
 }
 
 // SaveKline 保存K线数据
@@ -212,7 +134,7 @@ func (s *KlineStore) GetKline(code string, ktype uint8, startDate, endDate strin
 
 	// 日期范围检查
 	now := time.Now()
-	maxDate := now.AddDate(0, 0, 1) // 最多到明天
+	maxDate := now.AddDate(0, 0, 1)                     // 最多到明天
 	minDate := time.Date(1990, 1, 1, 0, 0, 0, 0, s.loc) // 最早1990年
 
 	var klines []*protocol.Kline

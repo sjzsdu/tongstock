@@ -396,38 +396,3 @@ func (a *AlertService) CleanOldAlerts(ctx context.Context, days int) error {
 
 	return nil
 }
-
-// InitializeAlertTable 初始化预警记录表
-func (s *SQLiteStore) InitializeAlertTable(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS alert_records (
-			id TEXT PRIMARY KEY,
-			rule_id TEXT,
-			news_id TEXT,
-			stock_code TEXT,
-			level TEXT,
-			type TEXT,
-			title TEXT,
-			summary TEXT,
-			source TEXT,
-			read BOOLEAN,
-			trigger_time TEXT,
-			created_at TEXT,
-			FOREIGN KEY (news_id) REFERENCES news_items(id)
-		)
-	`)
-
-	if err != nil {
-		return fmt.Errorf("创建预警记录表失败: %w", err)
-	}
-
-	// 创建索引
-	_, err = s.db.ExecContext(ctx, `
-		CREATE INDEX IF NOT EXISTS idx_alert_records_read ON alert_records(read)
-	`)
-	if err != nil {
-		return fmt.Errorf("创建预警记录索引失败: %w", err)
-	}
-
-	return nil
-}

@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
-	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -15,7 +14,10 @@ import (
 type Dialect string
 
 const (
-	SQLite   Dialect = "sqlite"
+	SQLite Dialect = "sqlite"
+	// Postgres and MySQL remain as compile-time compatibility constants for
+	// legacy Store code. New rejects both drivers: TongStock officially
+	// supports SQLite only (see docs/adr/0001-sqlite-only.md).
 	Postgres Dialect = "postgres"
 	MySQL    Dialect = "mysql"
 )
@@ -34,53 +36,54 @@ type Config struct {
 
 // New 创建存储实例
 func New(cfg Config) (*Storage, error) {
-	var driverName string
-	var dsn string
-	var dialect Dialect
+	driver := strings.ToLower(strings.TrimSpace(cfg.Driver))
+	if driver != "" && driver != "sqlite" && driver != "sqlite3" {
+		return nil, fmt.Errorf("不支持数据库驱动 %q：TongStock 仅支持 sqlite3", cfg.Driver)
+	}
 
-	switch cfg.Driver {
-	case "postgres", "postgresql":
-		driverName = "postgres"
-		dsn = cfg.DSN
-		dialect = Postgres
-	case "mysql":
-		driverName = "mysql"
-		dsn = cfg.DSN
-		dialect = MySQL
-	default:
-		driverName = "sqlite3"
-		dialect = SQLite
-		if cfg.DSN == "" {
-			home, _ := os.UserHomeDir()
-			dsn = filepath.Join(home, ".tongstock", "data.db")
-		} else {
-			dsn = cfg.DSN
+	dsn := strings.TrimSpace(cfg.DSN)
+	if dsn == "" {
+		home, _ := os.UserHomeDir()
+		dsn = filepath.Join(home, ".tongstock", "data.db")
+	}
+	if strings.HasPrefix(dsn, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			dsn = filepath.Join(home, strings.TrimPrefix(dsn, "~/"))
 		}
-		// 创建目录
+	}
+	if dsn != ":memory:" && !strings.HasPrefix(dsn, "file:") {
 		if dir := filepath.Dir(dsn); dir != "" {
 			if err := os.MkdirAll(dir, 0755); err != nil {
 				return nil, fmt.Errorf("创建数据库目录失败: %w", err)
 			}
 		}
-		dsn += "?cache=shared&_busy_timeout=5000"
+	}
+	if !strings.Contains(dsn, "?") {
+		dsn += "?cache=shared&_busy_timeout=5000&_foreign_keys=on"
+	} else {
+		dsn += "&_busy_timeout=5000&_foreign_keys=on"
 	}
 
-	db, err := sql.Open(driverName, dsn)
+	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
-
-	if dialect != SQLite {
-		if err := db.Ping(); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("连接数据库失败: %w", err)
-		}
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("连接数据库失败: %w", err)
 	}
 
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
+	// A single writer connection gives local SQLite deterministic transaction
+	// semantics and avoids per-connection in-memory databases in tests.
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 
-	return &Storage{db: db, dialect: dialect}, nil
+	s := &Storage{db: db, dialect: SQLite}
+	if err := s.Migrate(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("迁移数据库失败: %w", err)
+	}
+	return s, nil
 }
 
 // DB 返回数据库连接
@@ -97,4 +100,3 @@ func (s *Storage) Dialect() Dialect {
 func (s *Storage) Close() error {
 	return s.db.Close()
 }
-

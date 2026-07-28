@@ -18,6 +18,7 @@ type Executor interface {
 	// Len returns the number of live idle connections. For single-client
 	// executors this is either 0 or 1.
 	Len() int
+	Status() ExecutorStatus
 }
 
 // ExecutorStatus is a minimal snapshot used for diagnostics.

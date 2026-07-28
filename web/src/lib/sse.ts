@@ -1,4 +1,11 @@
-type StreamEvent = { type: string; delta?: string; error?: string };
+type StreamEvent = {
+  type: string;
+  delta?: string;
+  error?: string;
+  code?: string;
+  message?: string;
+  request_id?: string;
+};
 
 export async function readSSE(
   res: Response,

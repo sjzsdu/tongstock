@@ -22,25 +22,7 @@ var ErrWorkdayNotFound = errors.New("workday: not found")
 
 // NewWorkdayStore 创建交易日存储
 func NewWorkdayStore(s *storage.Storage) (*WorkdayStore, error) {
-	store := &WorkdayStore{s: s, loc: time.Local}
-	if err := store.init(); err != nil {
-		return nil, err
-	}
-	return store, nil
-}
-
-func (s *WorkdayStore) init() error {
-	var sql string
-	switch s.s.Dialect() {
-	case storage.Postgres:
-		sql = `CREATE TABLE IF NOT EXISTS workday (unix BIGINT PRIMARY KEY, date TEXT)`
-	case storage.MySQL:
-		sql = "CREATE TABLE IF NOT EXISTS workday (unix BIGINT PRIMARY KEY, date VARCHAR(8))"
-	default: // SQLite
-		sql = `CREATE TABLE IF NOT EXISTS workday (unix INTEGER PRIMARY KEY, date TEXT)`
-	}
-	_, err := s.s.DB().Exec(sql)
-	return err
+	return &WorkdayStore{s: s, loc: time.Local}, nil
 }
 
 // Is 检查指定日期是否为交易日

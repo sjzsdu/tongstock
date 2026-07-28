@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
+import { TongStockAPIError } from '../api/client';
 import type { KlineSyncState } from '../types/api';
 
 export type DetailStatus = 'loading' | 'ready' | 'not_found' | 'no_data';
@@ -10,9 +11,10 @@ function getDetailErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-function classifyDetailStatus(error: unknown): DetailStatus {
-  const message = error instanceof Error ? error.message : '';
-  if (message.includes('未找到') || message.includes('多个匹配股票')) return 'not_found';
+export function classifyDetailStatus(error: unknown): DetailStatus {
+  if (error instanceof TongStockAPIError && ['not_found', 'cache_miss', 'multiple_matches'].includes(error.code)) {
+    return 'not_found';
+  }
   return 'no_data';
 }
 
@@ -69,7 +71,7 @@ export function useStockDetail(): UseStockDetailReturn {
         setLoading(false);
       } catch (error) {
         if (cancelled) return;
-        setDetailStatus('not_found');
+        setDetailStatus(classifyDetailStatus(error));
         setDetailError(getDetailErrorMessage(error, '未找到匹配股票或行情数据'));
         setLoading(false);
         return;
