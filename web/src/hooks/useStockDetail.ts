@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { TongStockAPIError } from '../api/client';
@@ -25,6 +25,7 @@ export interface UseStockDetailReturn {
   detailStatus: DetailStatus;
   detailError: string;
   syncState: KlineSyncState | null;
+  refreshSyncState: () => void;
   ktype: string;
   setKtype: (ktype: string) => void;
 }
@@ -39,6 +40,13 @@ export function useStockDetail(): UseStockDetailReturn {
   const [detailError, setDetailError] = useState('');
   const [syncState, setSyncState] = useState<KlineSyncState | null>(null);
   const [ktype, setKtype] = useState('day');
+
+  const refreshSyncState = useCallback(() => {
+    if (!code) return;
+    api.getSyncState(code, ktype).then((state) => {
+      setSyncState(state);
+    }).catch(() => {});
+  }, [code, ktype]);
 
   useEffect(() => {
     if (!paramCode) {
@@ -97,6 +105,7 @@ export function useStockDetail(): UseStockDetailReturn {
     detailStatus,
     detailError,
     syncState,
+    refreshSyncState,
     ktype,
     setKtype,
   };

@@ -332,6 +332,8 @@ export interface KlineSyncState {
   row_count: number;
   last_sync_at: string;
   status: string;
+  freshness?: 'fresh' | 'stale' | 'outdated' | 'failed' | 'empty' | 'unknown';
+  stale_reason?: string;
   error?: string;
 }
 

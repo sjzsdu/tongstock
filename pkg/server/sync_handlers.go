@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/sjzsdu/tongstock/internal/app/stockdata"
 	"github.com/sjzsdu/tongstock/pkg/param"
 	"github.com/sjzsdu/tongstock/pkg/ta"
 	"github.com/sjzsdu/tongstock/pkg/tdx"
@@ -59,6 +60,34 @@ func (s *Server) handleSyncState(c *gin.Context) {
 	ktypeStr := c.DefaultQuery("ktype", "day")
 	ktype := tdx.ParseKlineType(ktypeStr)
 
+	if s.stockData != nil {
+		coverage, decision, err := s.stockData.InspectFreshness(c.Request.Context(), stockdata.DataSpec{
+			Type: stockdata.DataKline, Market: marketForCode(code), Code: code,
+			Granularity: ktypeStr, KType: ktype,
+		})
+		if err == nil {
+			status := coverage.Status
+			if status == "" && coverage.Exists {
+				status = "ok"
+			}
+			freshness := "stale"
+			if !coverage.Exists {
+				freshness = "empty"
+			} else if decision.Fresh {
+				freshness = "fresh"
+			} else if !coverage.LastSyncAt.IsZero() && time.Since(coverage.LastSyncAt) > 24*time.Hour {
+				freshness = "outdated"
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"code": code, "ktype": ktype, "status": status,
+				"first_date": formatSyncDate(coverage.Start), "last_date": formatSyncDate(coverage.End),
+				"row_count": len(coverage.Points), "last_sync_at": formatSyncTime(coverage.LastSyncAt),
+				"freshness": freshness, "stale_reason": decision.Reason,
+			})
+			return
+		}
+	}
+
 	state, err := s.svc.GetSyncState(code, ktype)
 	if err != nil {
 		// No sync state record found — return empty state
@@ -71,6 +100,20 @@ func (s *Server) handleSyncState(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, state)
+}
+
+func formatSyncDate(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.Format("20060102")
+}
+
+func formatSyncTime(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.Format(time.RFC3339)
 }
 
 // handleSyncFreshness handles requests to get sync freshness for multiple codes

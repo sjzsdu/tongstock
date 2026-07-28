@@ -62,6 +62,22 @@ func NewServiceWithContext(
 	}, nil
 }
 
+// InspectFreshness reports cached coverage and freshness without triggering a sync.
+func (s *Service) InspectFreshness(ctx context.Context, spec DataSpec) (Coverage, FreshnessDecision, error) {
+	if err := validateRequest(DataRequest{Spec: spec}); err != nil {
+		return Coverage{}, FreshnessDecision{}, &Error{Code: ErrInvalidRequest, Op: "validate", Err: err}
+	}
+	coverage, err := s.repository.InspectCoverage(ctx, spec)
+	if err != nil {
+		return Coverage{}, FreshnessDecision{}, &Error{Code: ErrPersistence, Op: "inspect", Err: err}
+	}
+	decision, err := s.policy.Evaluate(ctx, s.clock.Now(), spec, coverage)
+	if err != nil {
+		return Coverage{}, FreshnessDecision{}, &Error{Code: ErrPersistence, Op: "freshness", Err: err}
+	}
+	return coverage, decision, nil
+}
+
 func (s *Service) Query(ctx context.Context, request DataRequest) (DataResult, error) {
 	if err := validateRequest(request); err != nil {
 		return DataResult{}, &Error{Code: ErrInvalidRequest, Op: "validate", Err: err}

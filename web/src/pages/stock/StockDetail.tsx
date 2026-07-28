@@ -48,8 +48,8 @@ export default function StockDetail() {
   const [newsFeed, setNewsFeed] = useState<NewsSummary[]>([]);
   const [newsLoading, setNewsLoading] = useState(false);
 
-  const { code, quote, loading, detailStatus, detailError, syncState, ktype, setKtype } = useStockDetail();
-  const { klines, indicator, chartLoading, analysis, sortedSignals, sortedSignalOutcomes, latestClose, mainOverlay, setMainOverlay, subPanel, setSubPanel } = useStockChart(code, ktype, detailStatus);
+  const { code, quote, loading, detailStatus, detailError, syncState, refreshSyncState, ktype, setKtype } = useStockDetail();
+  const { klines, indicator, chartLoading, analysis, sortedSignals, sortedSignalOutcomes, latestClose, mainOverlay, setMainOverlay, subPanel, setSubPanel } = useStockChart(code, ktype, detailStatus, refreshSyncState);
   const { finance, financeTrends, financeMetrics, financeTrendMode, setFinanceTrendMode, financeCompareMode, setFinanceCompareMode, financeViewMode, setFinanceViewMode, selectedFinanceMetrics, setSelectedFinanceMetrics, financeTrendLoading, availableFinanceMetrics, financeChartGroups, financeDisplayRecords, activeFinanceMetrics, latestFinanceRecord, formatFinanceMetricValue, financeItems } = useStockFinance(code, detailStatus);
   const { companyCats, companyContent, selectedCat, loadCompanyContent } = useStockCompany(code, detailStatus);
   const { minuteData, minuteDate, minuteLoading, minuteError, highlightedIdx, setHighlightedIdx } = useStockMinute(code, detailStatus);
@@ -171,9 +171,9 @@ export default function StockDetail() {
                   {(() => {
                     const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
                     const lastDate = syncState.last_date;
-                    if (lastDate >= today) {
+                    if (syncState.freshness === 'fresh' || (!syncState.freshness && lastDate >= today)) {
                       return (
-                        <Tag color="green" icon={<InfoCircleOutlined />}>数据新鲜 - 已更新至今日</Tag>
+                        <Tag color="green" icon={<InfoCircleOutlined />}>数据新鲜 - 已更新至最新交易日</Tag>
                       );
                     }
                     const lastSyncDate = syncState.last_sync_at ? new Date(syncState.last_sync_at) : new Date(0);

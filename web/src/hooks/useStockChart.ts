@@ -23,7 +23,12 @@ export interface UseStockChartReturn {
   setSubPanel: (panel: string) => void;
 }
 
-export function useStockChart(code: string, ktype: string, detailStatus: DetailStatus): UseStockChartReturn {
+export function useStockChart(
+  code: string,
+  ktype: string,
+  detailStatus: DetailStatus,
+  onDataLoaded?: () => void,
+): UseStockChartReturn {
   const [klines, setKlines] = useState<any[]>([]);
   const [indicator, setIndicator] = useState<any>(null);
   const [chartLoading, setChartLoading] = useState(false);
@@ -46,6 +51,7 @@ export function useStockChart(code: string, ktype: string, detailStatus: DetailS
       ]);
 
       if (cancelled) return;
+      onDataLoaded?.();
 
       if (indicatorResult.status === 'rejected') {
         setChartLoading(false);
@@ -74,7 +80,7 @@ export function useStockChart(code: string, ktype: string, detailStatus: DetailS
     return () => {
       cancelled = true;
     };
-  }, [code, ktype, detailStatus]);
+  }, [code, ktype, detailStatus, onDataLoaded]);
 
   const sortedSignals = useMemo(
     () => [...(indicator?.signals ?? [])].sort((a, b) => compareDateDesc(a.Date, b.Date)),

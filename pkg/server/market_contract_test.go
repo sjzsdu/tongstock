@@ -129,6 +129,32 @@ func TestQuoteHandlerPersistenceErrorIsSafe(t *testing.T) {
 	}
 }
 
+func TestSyncStateUsesUnifiedKlineCoverage(t *testing.T) {
+	first := time.Date(2026, 7, 27, 0, 0, 0, 0, time.Local)
+	last := time.Date(2026, 7, 28, 0, 0, 0, 0, time.Local)
+	router := contractRouter(t, contractRepository{
+		coverage: stockdata.Coverage{
+			Exists: true, Start: first, End: last, Points: []time.Time{first, last},
+			LastSyncAt: time.Date(2026, 7, 28, 16, 0, 0, 0, time.Local), Status: "ok",
+		},
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/api/sync/state?code=600000&ktype=day", nil)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["last_date"] != "20260728" || body["row_count"] != float64(2) || body["freshness"] != "fresh" {
+		t.Fatalf("unexpected sync state: %#v", body)
+	}
+}
+
 func responseContainsAny(value string, candidates ...string) bool {
 	for _, candidate := range candidates {
 		if candidate != "" && strings.Contains(value, candidate) {
