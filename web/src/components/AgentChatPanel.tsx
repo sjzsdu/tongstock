@@ -3,7 +3,7 @@ import { Button, Select, Space, Spin, Typography } from 'antd';
 import ResizableDrawer from './ResizableDrawer';
 import { RobotOutlined, SendOutlined } from '@ant-design/icons';
 import AgentChatMessage from './AgentChatMessage';
-import { api } from '../api/client';
+import { api, fetchWithAccessToken } from '../api/client';
 import { readSSE } from '../lib/sse';
 
 type ChatMessage = { role: string; content: string; error?: boolean };
@@ -81,7 +81,7 @@ export default function AgentChatPanel({ stockCode, stockName, open, onClose }: 
 
     let acc = '';
     try {
-      const res = await fetch('/api/agent/chat/stream', {
+      const res = await fetchWithAccessToken('/api/agent/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
         body: JSON.stringify({

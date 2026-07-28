@@ -20,14 +20,17 @@ func init() {
 }
 
 type Client struct {
-	conn   net.Conn
-	addr   string
-	mu     sync.Mutex
-	msgID  uint32
-	reader *bufio.Reader
-	redial bool
-	hosts  []string
-	closed bool
+	conn      net.Conn
+	addr      string
+	mu        sync.Mutex
+	msgID     uint32
+	reader    *bufio.Reader
+	redial    bool
+	hosts     []string
+	closed    bool
+	done      chan struct{}
+	closeOnce sync.Once
+	closeErr  error
 }
 
 func Dial(addr string, opts ...Option) (*Client, error) {
@@ -40,6 +43,7 @@ func Dial(addr string, opts ...Option) (*Client, error) {
 		conn:   conn,
 		addr:   addr,
 		reader: bufio.NewReader(conn),
+		done:   make(chan struct{}),
 	}
 
 	for _, opt := range opts {
@@ -116,32 +120,37 @@ func (c *Client) heartbeat() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		c.mu.Lock()
-		if c.closed {
-			c.mu.Unlock()
+	for {
+		select {
+		case <-c.done:
 			return
-		}
-		if err := c.conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
-			c.mu.Unlock()
-			log.Printf("心跳设置超时失败: %v", err)
-			return
-		}
-		f := protocol.MHeart.Frame()
-		_, err := c.conn.Write(f.Bytes())
-		if err != nil {
+		case <-ticker.C:
+			c.mu.Lock()
+			if c.closed {
+				c.mu.Unlock()
+				return
+			}
+			if err := c.conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+				c.mu.Unlock()
+				log.Printf("心跳设置超时失败: %v", err)
+				return
+			}
+			f := protocol.MHeart.Frame()
+			_, err := c.conn.Write(f.Bytes())
+			if err != nil {
+				_ = c.conn.SetDeadline(time.Time{})
+				c.mu.Unlock()
+				log.Printf("心跳失败: %v", err)
+				return
+			}
+			// Must read and discard the heartbeat response, otherwise it
+			// stays in the bufio.Reader buffer and the next send() call
+			// picks up the stale heartbeat response, causing a type mismatch
+			// error like "响应类型不匹配: 请求 2c5, 响应 4".
+			_, _ = c.readResponse()
 			_ = c.conn.SetDeadline(time.Time{})
 			c.mu.Unlock()
-			log.Printf("心跳失败: %v", err)
-			return
 		}
-		// Must read and discard the heartbeat response, otherwise it
-		// stays in the bufio.Reader buffer and the next send() call
-		// picks up the stale heartbeat response, causing a type mismatch
-		// error like "响应类型不匹配: 请求 2c5, 响应 4".
-		_, _ = c.readResponse()
-		_ = c.conn.SetDeadline(time.Time{})
-		c.mu.Unlock()
 	}
 }
 
@@ -246,10 +255,19 @@ func (c *Client) reconnectAndRetry(frame *protocol.Frame) error {
 }
 
 func (c *Client) Close() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.closed = true
-	return c.conn.Close()
+	c.closeOnce.Do(func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+
+		c.closed = true
+		if c.done != nil {
+			close(c.done)
+		}
+		if c.conn != nil {
+			c.closeErr = c.conn.Close()
+		}
+	})
+	return c.closeErr
 }
 
 func (c *Client) GetQuote(codes ...string) ([]*protocol.QuoteItem, error) {

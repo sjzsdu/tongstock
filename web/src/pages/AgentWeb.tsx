@@ -11,7 +11,7 @@ import {
 } from 'antd';
 import { RobotOutlined, SendOutlined, SyncOutlined } from '@ant-design/icons';
 import AgentChatMessage from '../components/AgentChatMessage';
-import { api } from '../api/client';
+import { api, fetchWithAccessToken } from '../api/client';
 import { readSSE } from '../lib/sse';
 import type { AgentInfo, AgentSessionInfo } from '../types/api';
 import type { AgentDiagnosticResponse } from '../types/api';
@@ -98,7 +98,7 @@ export default function AgentWeb() {
     setMessages(prev => [...prev, { role: 'user', content: text }, { role: 'assistant', content: '正在等待回复...' }]);
     let acc = '';
     try {
-      const res = await fetch('/api/agent/chat/stream', {
+      const res = await fetchWithAccessToken('/api/agent/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
         body: JSON.stringify({ message: text, agent: selectedAgent, session, model }),

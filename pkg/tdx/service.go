@@ -1,6 +1,7 @@
 package tdx
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -35,38 +36,70 @@ type KlineBatchSyncResult struct {
 	Results []KlineSyncResult `json:"results"`
 }
 
-// Service wraps Client + local stores for cached data access.
+// Service wraps an Executor + local stores for cached data access. All
+// TDX protocol operations go through the Executor so that the pool (or
+// single client) remains the sole owner of connection lifecycle and
+// concurrency.
 type Service struct {
-	Client   *Client
-	storage  *storage.Storage
-	codes    *CodeStore
-	klines   *KlineStore
-	workdays *WorkdayStore
-	xdxr     *XdXrStore
-	finance  *FinanceStore
-	company  *CompanyStore
-	block    *BlockStore
+	executor     Executor
+	ownsExecutor bool
+	storage      *storage.Storage
+	codes        *CodeStore
+	klines       *KlineStore
+	workdays     *WorkdayStore
+	xdxr         *XdXrStore
+	finance      *FinanceStore
+	company      *CompanyStore
+	block        *BlockStore
+	// Client exposes the underlying *Client for backwards-compatible call
+	// sites in handlers.go. New code should use ExecDo or typed Fetch/Sync
+	// methods instead of touching Client directly — Client may be nil when
+	// the Service is backed by a Pool (use ExecDo to borrow a Client).
+	Client *Client
 }
 
-// NewService creates a new Service with a shared storage instance.
+// NewService creates a new Service with a shared storage instance using a
+// single *Client wrapped in a singleExecutor for backwards compatibility.
+// New code should prefer NewServiceWithExecutor to pass a Pool or
+// singleExecutor explicitly.
 func NewService(client *Client, s *storage.Storage) (*Service, error) {
 	if client == nil {
 		return nil, errors.New("nil client")
+	}
+	svc, err := NewServiceWithExecutor(newSingleExecutor(client), s)
+	if err != nil {
+		return nil, err
+	}
+	svc.Client = client
+	svc.ownsExecutor = true
+	return svc, nil
+}
+
+// NewServiceWithExecutor creates a Service backed by the given Executor
+// (Pool or singleExecutor). The Executor owns the underlying connection(s)
+// and must outlive the Service. If the executor is a singleExecutor its
+// underlying Client is also exposed via Service.Client for backwards
+// compatibility; Pool-backed executors leave Client nil and callers must
+// use ExecDo to borrow a Client.
+func NewServiceWithExecutor(exec Executor, s *storage.Storage) (*Service, error) {
+	if exec == nil {
+		return nil, errors.New("nil executor")
 	}
 	if s == nil {
 		return nil, errors.New("nil storage")
 	}
 
-	svc := &Service{Client: client, storage: s}
+	svc := &Service{executor: exec, storage: s}
+	if se, ok := exec.(*singleExecutor); ok {
+		svc.Client = se.client
+	}
 
-	// Codes store
 	codes, err := GetCodeStore("")
 	if err != nil {
 		return nil, err
 	}
 	svc.codes = codes
 
-	// Kline store
 	klines, err := NewKlineStore(s)
 	if err != nil {
 		_ = codes.Close()
@@ -74,7 +107,6 @@ func NewService(client *Client, s *storage.Storage) (*Service, error) {
 	}
 	svc.klines = klines
 
-	// Workday store
 	w, err := NewWorkdayStore(s)
 	if err != nil {
 		_ = klines.Close()
@@ -83,7 +115,6 @@ func NewService(client *Client, s *storage.Storage) (*Service, error) {
 	}
 	svc.workdays = w
 
-	// Cache-backed stores
 	svc.xdxr = &XdXrStore{cache: codes.cache, ttl: xdxrTTL}
 	svc.finance = &FinanceStore{cache: codes.cache, ttl: financeTTL}
 	svc.company = &CompanyStore{cache: codes.cache, ttl: companyTTL}
@@ -92,7 +123,9 @@ func NewService(client *Client, s *storage.Storage) (*Service, error) {
 	return svc, nil
 }
 
-// Close closes the service along with all internal stores and the client.
+// Close closes the service along with all internal stores. Services created
+// by NewService also close their internally-created single executor; callers
+// of NewServiceWithExecutor retain executor ownership.
 func (s *Service) Close() error {
 	var errs []error
 	if s.codes != nil {
@@ -105,13 +138,13 @@ func (s *Service) Close() error {
 			errs = append(errs, err)
 		}
 	}
-	if s.workdays != nil {
-		if err := s.workdays.Close(); err != nil {
+	if s.ownsExecutor && s.executor != nil {
+		if err := s.executor.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}
-	if s.Client != nil {
-		if err := s.Client.Close(); err != nil {
+	if s.workdays != nil {
+		if err := s.workdays.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -129,6 +162,31 @@ func (s *Service) GetSyncState(code string, ktype uint8) (*KlineSyncState, error
 	return s.klines.GetSyncState(code, ktype)
 }
 
+func (s *Service) withClient(fn func(c *Client) error) error {
+	return s.withClientContext(context.Background(), fn)
+}
+
+func (s *Service) withClientContext(ctx context.Context, fn func(c *Client) error) error {
+	if s.executor == nil {
+		return errors.New("executor not initialized")
+	}
+	return s.executor.DoContext(ctx, fn)
+}
+
+// ExecDo exposes the executor's Do method for handlers that need to call
+// TDX methods that are not wrapped by typed Service methods. It is the only
+// sanctioned way to obtain a *Client inside the HTTP layer.
+func (s *Service) ExecDo(fn func(c *Client) error) error {
+	return s.withClient(fn)
+}
+
+// ExecDoContext is the context-aware form of ExecDo. Cancellation applies
+// while waiting for an executor slot; protocol calls still use Client-level
+// deadlines for in-flight I/O.
+func (s *Service) ExecDoContext(ctx context.Context, fn func(c *Client) error) error {
+	return s.withClientContext(ctx, fn)
+}
+
 // FetchCodes tries to load codes from cache first, then fetches from the Client if needed.
 func (s *Service) FetchCodes(exchange protocol.Exchange) ([]*protocol.CodeItem, error) {
 	if s.codes != nil {
@@ -136,7 +194,12 @@ func (s *Service) FetchCodes(exchange protocol.Exchange) ([]*protocol.CodeItem, 
 			return codes, nil
 		}
 	}
-	items, err := s.Client.GetCode(exchange)
+	var items []*protocol.CodeItem
+	err := s.withClient(func(c *Client) error {
+		var e error
+		items, e = c.GetCode(exchange)
+		return e
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -146,14 +209,18 @@ func (s *Service) FetchCodes(exchange protocol.Exchange) ([]*protocol.CodeItem, 
 	return items, nil
 }
 
-// FetchXdXr caches or fetches XdXr data
 func (s *Service) FetchXdXr(code string) ([]*protocol.XdXrItem, error) {
 	if s.xdxr != nil {
 		if items, err := s.xdxr.Get(code); err == nil && items != nil {
 			return items, nil
 		}
 	}
-	items, err := s.Client.GetXdXrInfo(code)
+	var items []*protocol.XdXrItem
+	err := s.withClient(func(c *Client) error {
+		var e error
+		items, e = c.GetXdXrInfo(code)
+		return e
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +236,12 @@ func (s *Service) FetchFinance(code string) (*protocol.FinanceInfo, error) {
 			return info, nil
 		}
 	}
-	info, err := s.Client.GetFinanceInfo(code)
+	var info *protocol.FinanceInfo
+	err := s.withClient(func(c *Client) error {
+		var e error
+		info, e = c.GetFinanceInfo(code)
+		return e
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -188,10 +260,13 @@ func (s *Service) FetchCompanyCategory(code string) ([]*protocol.CompanyCategory
 	return s.RefreshCompanyCategory(code)
 }
 
-// RefreshCompanyCategory bypasses the local cache and replaces it with the
-// latest category offsets from the TDX server.
 func (s *Service) RefreshCompanyCategory(code string) ([]*protocol.CompanyCategoryItem, error) {
-	items, err := s.Client.GetCompanyInfoCategory(code)
+	var items []*protocol.CompanyCategoryItem
+	err := s.withClient(func(c *Client) error {
+		var e error
+		items, e = c.GetCompanyInfoCategory(code)
+		return e
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -207,7 +282,12 @@ func (s *Service) FetchCompanyContent(code, filename string, start, length uint3
 			return content, nil
 		}
 	}
-	content, err := s.Client.GetCompanyInfoContentAll(code, filename, start, length)
+	var content string
+	err := s.withClient(func(c *Client) error {
+		var e error
+		content, e = c.GetCompanyInfoContentAll(code, filename, start, length)
+		return e
+	})
 	if err != nil {
 		return "", err
 	}
@@ -223,7 +303,12 @@ func (s *Service) FetchBlock(blockFile string) ([]*protocol.BlockItem, error) {
 			return items, nil
 		}
 	}
-	items, err := s.Client.GetBlockInfoAll(blockFile)
+	var items []*protocol.BlockItem
+	err := s.withClient(func(c *Client) error {
+		var e error
+		items, e = c.GetBlockInfoAll(blockFile)
+		return e
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -236,19 +321,35 @@ func (s *Service) FetchBlock(blockFile string) ([]*protocol.BlockItem, error) {
 func (s *Service) FetchKlineAll(code string, ktype uint8) ([]*protocol.Kline, error) {
 	if !isDailyKline(ktype) {
 		if ktype == protocol.TypeKlineMinute {
-			klines, err := s.Client.GetKline(code, ktype, 0, 800)
+			var klines []*protocol.Kline
+			err := s.withClient(func(c *Client) error {
+				var e error
+				klines, e = c.GetKline(code, ktype, 0, 800)
+				return e
+			})
 			if err != nil {
-				return s.Client.GetKline(code, protocol.TypeKlineMinute2, 0, 800)
+				return s.FetchKlineAll(code, protocol.TypeKlineMinute2)
 			}
 			return klines, nil
 		}
-		klines, err := s.Client.GetKlineAll(code, ktype)
+		var klines []*protocol.Kline
+		err := s.withClient(func(c *Client) error {
+			var e error
+			klines, e = c.GetKlineAll(code, ktype)
+			return e
+		})
 		return klines, err
 	}
 
 	latest, err := s.klines.GetLatestDate(code, ktype)
 	if err != nil && !errors.Is(err, ErrKlineNotFound) {
-		return s.Client.GetKlineAll(code, ktype)
+		var klines []*protocol.Kline
+		e := s.withClient(func(c *Client) error {
+			var ee error
+			klines, ee = c.GetKlineAll(code, ktype)
+			return ee
+		})
+		return klines, e
 	}
 
 	if errors.Is(err, ErrKlineNotFound) || latest == "" {
@@ -338,7 +439,12 @@ func (s *Service) SyncDailyKlines(codes []string, mode SyncMode, concurrency int
 }
 
 func (s *Service) fetchAndSaveKlineAll(code string, ktype uint8) ([]*protocol.Kline, error) {
-	klines, err := s.Client.GetKlineAll(code, ktype)
+	var klines []*protocol.Kline
+	err := s.withClient(func(c *Client) error {
+		var e error
+		klines, e = c.GetKlineAll(code, ktype)
+		return e
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -348,7 +454,12 @@ func (s *Service) fetchAndSaveKlineAll(code string, ktype uint8) ([]*protocol.Kl
 }
 
 func (s *Service) refreshTodayKline(code string, ktype uint8) ([]*protocol.Kline, error) {
-	fresh, err := s.Client.GetKline(code, ktype, 0, 1)
+	var fresh []*protocol.Kline
+	err := s.withClient(func(c *Client) error {
+		var e error
+		fresh, e = c.GetKline(code, ktype, 0, 1)
+		return e
+	})
 	if err != nil {
 		return s.klines.GetKline(code, ktype, "", "")
 	}
@@ -360,8 +471,13 @@ func (s *Service) refreshTodayKline(code string, ktype uint8) ([]*protocol.Kline
 }
 
 func (s *Service) fetchIncrementalKline(code string, ktype uint8, latest string) ([]*protocol.Kline, error) {
-	klines, err := s.Client.GetKlineUntil(code, ktype, func(k *protocol.Kline) bool {
-		return k.Time.Format("20060102") < latest
+	var klines []*protocol.Kline
+	err := s.withClient(func(c *Client) error {
+		var e error
+		klines, e = c.GetKlineUntil(code, ktype, func(k *protocol.Kline) bool {
+			return k.Time.Format("20060102") < latest
+		})
+		return e
 	})
 	if err != nil {
 		return nil, err
@@ -377,7 +493,6 @@ func FilterValidKlines(klines []*protocol.Kline) []*protocol.Kline {
 	if len(klines) == 0 {
 		return klines
 	}
-	// 日期范围检查
 	now := time.Now()
 	maxDate := now.AddDate(0, 0, 1)
 	minDate := time.Date(1990, 1, 1, 0, 0, 0, 0, time.Local)
@@ -385,18 +500,16 @@ func FilterValidKlines(klines []*protocol.Kline) []*protocol.Kline {
 	filtered := make([]*protocol.Kline, 0, len(klines))
 	var lastClose float64
 	for _, k := range klines {
-		// 过滤日期异常的数据
 		if k.Time.Before(minDate) || k.Time.After(maxDate) {
 			continue
 		}
 		if validateKline(k) != "" {
 			continue
 		}
-		// 检查与前一条有效 K 线的价格变化
 		if lastClose > 0 {
 			ratio := k.Close / lastClose
 			if ratio > 3.0 || ratio < 0.33 {
-				continue // 跳过异常跳变
+				continue
 			}
 		}
 		lastClose = k.Close
@@ -405,7 +518,6 @@ func FilterValidKlines(klines []*protocol.Kline) []*protocol.Kline {
 	return filtered
 }
 
-// CleanAndRefetchKlines removes corrupted klines from DB and re-fetches from TDX server.
 func (s *Service) CleanAndRefetchKlines(code string, ktype uint8) ([]*protocol.Kline, error) {
 	deleted, err := s.klines.DetectAndCleanCorruptedKlines(code, ktype)
 	if err != nil {
@@ -417,7 +529,12 @@ func (s *Service) CleanAndRefetchKlines(code string, ktype uint8) ([]*protocol.K
 
 	log.Printf("[kline] 清理了 %d 条异常数据，重新获取 %s 的K线数据", deleted, code)
 
-	klines, err := s.Client.GetKlineAll(code, ktype)
+	var klines []*protocol.Kline
+	err = s.withClient(func(c *Client) error {
+		var e error
+		klines, e = c.GetKlineAll(code, ktype)
+		return e
+	})
 	if err != nil {
 		return nil, fmt.Errorf("重新获取K线数据失败: %w", err)
 	}
@@ -430,16 +547,111 @@ func (s *Service) CleanAndRefetchKlines(code string, ktype uint8) ([]*protocol.K
 	return klines, nil
 }
 
-// FetchKline passes through to the Client for non-cached real-time data.
 func (s *Service) FetchKline(code string, ktype uint8, start, count uint16) ([]*protocol.Kline, error) {
-	klines, err := s.Client.GetKline(code, ktype, start, count)
+	var klines []*protocol.Kline
+	err := s.withClient(func(c *Client) error {
+		var e error
+		klines, e = c.GetKline(code, ktype, start, count)
+		return e
+	})
 	if err != nil && ktype == protocol.TypeKlineMinute {
-		return s.Client.GetKline(code, protocol.TypeKlineMinute2, start, count)
+		err = s.withClient(func(c *Client) error {
+			var e error
+			klines, e = c.GetKline(code, protocol.TypeKlineMinute2, start, count)
+			return e
+		})
 	}
 	return klines, err
 }
 
-// EnsureWorkday makes sure there is workday data available.
+// GetQuote fetches real-time quotes for one or more stock codes.
+func (s *Service) GetQuote(codes ...string) ([]*protocol.QuoteItem, error) {
+	var items []*protocol.QuoteItem
+	err := s.withClient(func(c *Client) error {
+		var e error
+		items, e = c.GetQuote(codes...)
+		return e
+	})
+	return items, err
+}
+
+// GetIndexBars fetches index K-line bars.
+func (s *Service) GetIndexBars(code string, ktype uint8, start, count uint16) ([]*protocol.IndexBar, error) {
+	var items []*protocol.IndexBar
+	err := s.withClient(func(c *Client) error {
+		var e error
+		items, e = c.GetIndexBars(code, ktype, start, count)
+		return e
+	})
+	return items, err
+}
+
+// GetMinute fetches real-time minute data for a stock.
+func (s *Service) GetMinute(code string) (*protocol.MinuteResp, error) {
+	var result *protocol.MinuteResp
+	err := s.withClient(func(c *Client) error {
+		var e error
+		result, e = c.GetMinute(code)
+		return e
+	})
+	return result, err
+}
+
+// GetHistoryMinute fetches historical minute data for a stock.
+func (s *Service) GetHistoryMinute(date, code string) (*protocol.MinuteResp, error) {
+	var result *protocol.MinuteResp
+	err := s.withClient(func(c *Client) error {
+		var e error
+		result, e = c.GetHistoryMinute(date, code)
+		return e
+	})
+	return result, err
+}
+
+// GetMinuteTradeAll fetches real-time trade data for a stock.
+func (s *Service) GetMinuteTradeAll(code string) (*protocol.TradeResp, error) {
+	var result *protocol.TradeResp
+	err := s.withClient(func(c *Client) error {
+		var e error
+		result, e = c.GetMinuteTradeAll(code)
+		return e
+	})
+	return result, err
+}
+
+// GetHistoryMinuteTrade fetches historical trade data for a stock.
+func (s *Service) GetHistoryMinuteTrade(date, code string, start, count uint16) (*protocol.TradeResp, error) {
+	var result *protocol.TradeResp
+	err := s.withClient(func(c *Client) error {
+		var e error
+		result, e = c.GetHistoryMinuteTrade(date, code, start, count)
+		return e
+	})
+	return result, err
+}
+
+// GetCallAuction fetches call auction data for a stock.
+func (s *Service) GetCallAuction(code string) (*protocol.CallAuctionResp, error) {
+	var result *protocol.CallAuctionResp
+	err := s.withClient(func(c *Client) error {
+		var e error
+		result, e = c.GetCallAuction(code)
+		return e
+	})
+	return result, err
+}
+
+// GetSecurityCount returns the number of securities in an exchange.
+func (s *Service) GetSecurityCount(exchange protocol.Exchange) (int, error) {
+	var count int
+	err := s.withClient(func(c *Client) error {
+		var e error
+		count, e = c.GetSecurityCount(exchange)
+		return e
+	})
+	return count, err
+}
+
 func (s *Service) EnsureWorkday() error {
 	if s.workdays == nil {
 		return errors.New("workday store not initialized")
@@ -447,10 +659,11 @@ func (s *Service) EnsureWorkday() error {
 	if _, err := s.workdays.GetLastWorkday(); err == nil {
 		return nil
 	}
-	return s.workdays.UpdateFromKline(s.Client, "999999")
+	return s.withClient(func(c *Client) error {
+		return s.workdays.UpdateFromKline(c, "999999")
+	})
 }
 
-// ParseKlineType converts a human-friendly kline type string to the protocol uint8 constant.
 func ParseKlineType(s string) uint8 {
 	switch s {
 	case "1m", "minute":

@@ -16,6 +16,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	pinyin "github.com/mozillazg/go-pinyin"
+	"github.com/sjzsdu/tongstock/internal/paradigms"
 	"github.com/sjzsdu/tongstock/pkg/config"
 	"github.com/sjzsdu/tongstock/pkg/history"
 	"github.com/sjzsdu/tongstock/pkg/newsfeed"
@@ -40,11 +41,13 @@ type Server struct {
 	stockpoolDB           *stockpool.Store
 	stockinfoDB           *stockinfo.Store
 	stockSearchIndexCache stockSearchIndexCache
-	tdxMu                 sync.Mutex
 	agentState            *AgentState
+	agentListFunc         func() ([]EmbeddedAgent, error)
+	paradigmStore         *paradigms.Store
 	paradigmAlertMu       sync.RWMutex
 	paradigmAlertCache    []paradigmAlert
 	paradigmAlertLastScan time.Time
+	backgroundWG          sync.WaitGroup
 	newsfeedHandler       *NewsfeedHandler
 }
 
@@ -118,6 +121,22 @@ func (s *Server) SetChatStore(store *ChatStore) {
 	s.agentState.chatStore = store
 }
 
+// SetParadigmStore sets the paradigm store on the server instance.
+func (s *Server) SetParadigmStore(store *paradigms.Store) {
+	s.paradigmStore = store
+}
+
+// SetAgentLister registers an agent list function on the server instance.
+func (s *Server) SetAgentLister(fn func() ([]EmbeddedAgent, error)) {
+	s.agentListFunc = fn
+}
+
+// WaitForBackgroundTasks waits for context-controlled workers started by the
+// Server. The caller must cancel their parent context before calling it.
+func (s *Server) WaitForBackgroundTasks() {
+	s.backgroundWG.Wait()
+}
+
 // Stock search types
 type stockSearchMatch struct {
 	Code      string `json:"code"`
@@ -176,15 +195,12 @@ type stockSearchIndexCache struct {
 	items   []stockSearchIndexItem
 }
 
-// TDX service management
-// Note: With Pool mode, service is created at startup and passed to Server.
-// Pool handles reconnection internally. withRetry only provides mutex locking for thread safety.
+// withRetry is retained while handlers migrate to typed Service methods. The
+// Service owns executor borrowing and retry/reconnect semantics, so this
+// wrapper must not borrow a second Client around a typed Service call.
 
 func withRetry[T any](s *Server, fn func() (T, error)) (T, error) {
-	s.tdxMu.Lock()
-	result, err := fn()
-	s.tdxMu.Unlock()
-	return result, err
+	return fn()
 }
 
 // Stock search helper functions
@@ -415,8 +431,10 @@ func normalizeStockCodeQuery(input string) string {
 	return input
 }
 
-// SetupRoutes configures all API routes
-func (s *Server) SetupRoutes(r *gin.Engine) {
+// SetupRoutes configures all API routes. Optional middleware applies only to
+// /api; health and embedded SPA assets remain reachable so a remote browser
+// can load the token bootstrap UI.
+func (s *Server) SetupRoutes(r *gin.Engine, apiMiddleware ...gin.HandlerFunc) {
 	// Health check
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -428,7 +446,7 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 	})
 
 	// API group
-	api := r.Group("/api")
+	api := r.Group("/api", apiMiddleware...)
 	{
 		// Quote
 		api.GET("/quote", s.handleQuote)
@@ -559,7 +577,7 @@ func (s *Server) handleQuote(c *gin.Context) {
 	}
 
 	quotes, err := withRetry(s, func() ([]*protocol.QuoteItem, error) {
-		return s.svc.Client.GetQuote(code)
+		return s.svc.GetQuote(code)
 	})
 	if err != nil {
 		fallback, fallbackErr := s.fallbackQuoteFromKline(code)
@@ -603,7 +621,7 @@ func (s *Server) handleQuotes(c *gin.Context) {
 		}
 
 		quotes, err := withRetry(s, func() ([]*protocol.QuoteItem, error) {
-			return s.svc.Client.GetQuote(code)
+			return s.svc.GetQuote(code)
 		})
 		if err != nil {
 			fallback, fallbackErr := s.fallbackQuoteFromKline(code)
@@ -834,7 +852,12 @@ func (s *Server) handleCodesWithMarketCap(c *gin.Context) {
 			}
 
 			fullCode := item.name + code.Code
-			quotes, _ := s.svc.Client.GetQuote(fullCode)
+			var quotes []*protocol.QuoteItem
+			_ = s.svc.ExecDo(func(c *tdx.Client) error {
+				var err error
+				quotes, err = c.GetQuote(fullCode)
+				return err
+			})
 			finance, _ := s.svc.FetchFinance(fullCode)
 
 			var marketCap float64
@@ -1003,7 +1026,7 @@ func (s *Server) handleIndex(c *gin.Context) {
 	ktype := tdx.ParseKlineType(ktypeStr)
 
 	bars, err := withRetry(s, func() ([]*protocol.IndexBar, error) {
-		return s.svc.Client.GetIndexBars(code, ktype, 0, 500)
+		return s.svc.GetIndexBars(code, ktype, 0, 500)
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取指数K线失败: %v", err)})
@@ -1042,11 +1065,11 @@ func (s *Server) handleMinute(c *gin.Context) {
 
 	if history && date != "" {
 		result, err = withRetry(s, func() (*protocol.MinuteResp, error) {
-			return s.svc.Client.GetHistoryMinute(date, code)
+			return s.svc.GetHistoryMinute(date, code)
 		})
 	} else {
 		result, err = withRetry(s, func() (*protocol.MinuteResp, error) {
-			return s.svc.Client.GetMinute(code)
+			return s.svc.GetMinute(code)
 		})
 	}
 
@@ -1093,11 +1116,11 @@ func (s *Server) handleTrade(c *gin.Context) {
 
 	if history && date != "" {
 		result, err = withRetry(s, func() (*protocol.TradeResp, error) {
-			return s.svc.Client.GetHistoryMinuteTrade(date, code, 0, 2000)
+			return s.svc.GetHistoryMinuteTrade(date, code, 0, 2000)
 		})
 	} else {
 		result, err = withRetry(s, func() (*protocol.TradeResp, error) {
-			return s.svc.Client.GetMinuteTradeAll(code)
+			return s.svc.GetMinuteTradeAll(code)
 		})
 	}
 
@@ -1126,7 +1149,7 @@ func (s *Server) handleAuction(c *gin.Context) {
 	}
 
 	result, err := withRetry(s, func() (*protocol.CallAuctionResp, error) {
-		return s.svc.Client.GetCallAuction(code)
+		return s.svc.GetCallAuction(code)
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取集合竞价数据失败: %v", err)})
@@ -1643,7 +1666,7 @@ func (s *Server) handleCount(c *gin.Context) {
 		ex = protocol.ExchangeSZ
 	}
 
-	count, err := s.svc.Client.GetSecurityCount(ex)
+	count, err := s.svc.GetSecurityCount(ex)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1728,7 +1751,7 @@ func (s *Server) handleIndicator(c *gin.Context) {
 
 	// Get quote for name
 	quotes, err := withRetry(s, func() ([]*protocol.QuoteItem, error) {
-		return s.svc.Client.GetQuote(code)
+		return s.svc.GetQuote(code)
 	})
 	name := ""
 	if err == nil && len(quotes) > 0 {
@@ -1922,7 +1945,7 @@ func (s *Server) handleScreen(c *gin.Context) {
 			name := codeNameMap[code]
 			if name == "" {
 				quotes, err := withRetry(s, func() ([]*protocol.QuoteItem, error) {
-					return s.svc.Client.GetQuote(code)
+					return s.svc.GetQuote(code)
 				})
 				if err == nil && len(quotes) > 0 {
 					name = quotes[0].Name
@@ -2990,7 +3013,7 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 	defer cancel()
 
 	// Get stock quote
-	quotes, err := s.svc.Client.GetQuote(code)
+	quotes, err := s.svc.GetQuote(code)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -3088,7 +3111,7 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 					qsem <- struct{}{}
 					defer func() { <-qsem }()
 
-					qs, err := s.svc.Client.GetQuote(stockCode)
+					qs, err := s.svc.GetQuote(stockCode)
 					if err != nil || len(qs) == 0 {
 						quoteResults[idx] = quoteResult{code: stockCode, ok: false}
 						return
@@ -3970,7 +3993,7 @@ func (s *Server) handleOvernightArbitrage(c *gin.Context) {
 			defer func() { <-sem }()
 
 			quotes, err := withRetry(s, func() ([]*protocol.QuoteItem, error) {
-				return s.svc.Client.GetQuote(code)
+				return s.svc.GetQuote(code)
 			})
 			if err != nil {
 				quoteChan <- quoteResult{code: code, err: err}
@@ -4227,7 +4250,7 @@ func (s *Server) handleOvernightArbitrage(c *gin.Context) {
 			defer func() { <-sem }()
 
 			minute, err := withRetry(s, func() (*protocol.MinuteResp, error) {
-				return s.svc.Client.GetMinute(item.quote.Code)
+				return s.svc.GetMinute(item.quote.Code)
 			})
 			if err != nil {
 				minuteChan <- minuteResult{quote: item.quote, finance: item.finance, err: err}
@@ -4408,7 +4431,7 @@ func (s *Server) handleStockinfoSync(c *gin.Context) {
 			}
 
 			fullCode := item.name + code.Code
-			quotes, err := s.svc.Client.GetQuote(fullCode)
+			quotes, err := s.svc.GetQuote(fullCode)
 			if err != nil {
 				log.Printf("获取 %s 行情失败: %v", fullCode, err)
 			}

@@ -41,11 +41,40 @@ import type {
 } from '../types/api';
 
 const BASE = '';
+const ACCESS_TOKEN_KEY = 'tongstock.access_token';
+
+function storedAccessToken(): string {
+  if (typeof window === 'undefined') return '';
+  return window.localStorage.getItem(ACCESS_TOKEN_KEY)?.trim() || '';
+}
+
+export async function fetchWithAccessToken(path: string, init?: RequestInit): Promise<Response> {
+  const request = (token: string) => {
+    const headers = new Headers(init?.headers);
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    return fetch(`${BASE}${path}`, { ...init, headers });
+  };
+
+  let token = storedAccessToken();
+  let response = await request(token);
+  if (response.status !== 401 || typeof window === 'undefined') {
+    return response;
+  }
+
+  const entered = window.prompt('TongStock 远程访问需要 Access Token', token);
+  token = entered?.trim() || '';
+  if (!token) return response;
+  window.localStorage.setItem(ACCESS_TOKEN_KEY, token);
+  response = await request(token);
+  return response;
+}
 
 async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
+  const headers = new Headers(init?.headers);
+  headers.set('Content-Type', 'application/json');
+  const res = await fetchWithAccessToken(path, {
     ...init,
+    headers,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));

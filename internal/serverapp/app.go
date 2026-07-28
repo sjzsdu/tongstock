@@ -34,8 +34,11 @@ import (
 
 // Run starts the TongStock HTTP server and blocks until it exits.
 func Run() error {
+	runCtx, cancelRun := context.WithCancel(context.Background())
+
 	// Initialize config
 	if err := config.Init(); err != nil {
+		cancelRun()
 		return fmt.Errorf("初始化配置失败: %w", err)
 	}
 	cfg := config.Get()
@@ -45,42 +48,43 @@ func Run() error {
 		log.Printf("初始化指标参数配置失败: %v", err)
 	}
 
-	// Create TDX client pool
+	// Create TDX executor (single client or Pool). The executor owns the
+	// actual connection(s) and must outlive everything that uses them.
 	hosts := cfg.TDX.Hosts
 	if len(hosts) == 0 {
 		hosts = tdx.DefaultHosts
 	}
-	pool, err := tdx.NewPool(func() (*tdx.Client, error) {
+	executor, err := tdx.NewExecutor(func() (*tdx.Client, error) {
 		return tdx.DialHosts(hosts, tdx.WithRedial(true))
 	}, 3)
 	if err != nil {
-		return fmt.Errorf("创建连接池失败: %w", err)
+		return fmt.Errorf("创建 TDX 执行器失败: %w", err)
 	}
-
-	// Get a client from pool to create service
-	client, err := pool.Get()
-	if err != nil {
-		return fmt.Errorf("获取连接失败: %w", err)
-	}
+	defer func() {
+		if err := executor.Close(); err != nil {
+			log.Printf("关闭 TDX 执行器失败: %v", err)
+		}
+	}()
 
 	// Initialize unified storage
 	s, err := storage.New(storage.Config{Driver: cfg.Database.Driver, DSN: cfg.Database.DSN})
 	if err != nil {
 		return fmt.Errorf("初始化存储失败: %w", err)
 	}
+	defer func() {
+		if err := s.Close(); err != nil {
+			log.Printf("关闭存储失败: %v", err)
+		}
+	}()
 
-	// Create service with shared storage
-	svc, err := tdx.NewService(client, s)
+	// Create service backed by the executor
+	svc, err := tdx.NewServiceWithExecutor(executor, s)
 	if err != nil {
-		_ = s.Close()
 		return fmt.Errorf("创建服务失败: %w", err)
 	}
 	defer func() {
 		if err := svc.Close(); err != nil {
 			log.Printf("关闭服务失败: %v", err)
-		}
-		if err := s.Close(); err != nil {
-			log.Printf("关闭存储失败: %v", err)
 		}
 	}()
 
@@ -116,6 +120,10 @@ func Run() error {
 
 	// Create HTTP server
 	httpServer := server.NewServer(svc, historyStore, watchlistStore, tradingStore, stockpoolStore, stockinfoStore)
+	defer func() {
+		cancelRun()
+		httpServer.WaitForBackgroundTasks()
+	}()
 
 	// Initialize Agent (picoclaw) if enabled
 	if cfg.Agent.Enabled {
@@ -140,7 +148,7 @@ func Run() error {
 			}
 			return result, nil
 		}
-		server.RegisterAgentLister(agentLister)
+		httpServer.SetAgentLister(agentLister)
 		// Expand ~ in home and config paths
 		agentHome := cfg.Agent.Home
 		if strings.HasPrefix(agentHome, "~") {
@@ -175,18 +183,21 @@ func Run() error {
 	if err != nil {
 		log.Printf("Warning: Failed to initialize paradigm store: %v", err)
 	} else {
-		server.ParadigmStore = paradigmStore
+		httpServer.SetParadigmStore(paradigmStore)
 		log.Printf("Paradigm store initialized: %d paradigms loaded", paradigmStore.Count())
-		httpServer.StartParadigmAlertScanner(5 * time.Minute)
+		httpServer.StartParadigmAlertScanner(runCtx, 5*time.Minute)
 	}
 
 	// Setup Gin router
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(server.SecurityHeaders())
+	r.Use(server.MaxRequestBody())
 
-	// Setup API routes
-	httpServer.SetupRoutes(r)
+	// Protect API traffic for non-loopback binds while keeping the embedded
+	// SPA and health endpoint reachable for browser token bootstrap.
+	httpServer.SetupRoutes(r, server.AccessTokenAuth(cfg.Server.BindAddress, cfg.Server.AccessToken))
 
 	// Serve static files for SPA
 	r.GET("/", func(c *gin.Context) {
@@ -242,8 +253,14 @@ func Run() error {
 		port = 8080
 	}
 
-	addr := fmt.Sprintf(":%d", port)
-	log.Printf("TongStock server starting on %s", addr)
+	// Security rule: non-loopback binds MUST have an access token set.
+	bind, isLoopback, err := server.ValidateBindSecurity(cfg.Server.BindAddress, cfg.Server.AccessToken)
+	if err != nil {
+		return err
+	}
+
+	addr := net.JoinHostPort(bind, fmt.Sprintf("%d", port))
+	log.Printf("TongStock server starting on %s (loopback=%v, token=%v)", addr, isLoopback, cfg.Server.AccessToken != "")
 
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -267,7 +284,7 @@ func Run() error {
 		serverErr <- err
 	}()
 
-	signalCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	signalCtx, stopSignals := signal.NotifyContext(runCtx, syscall.SIGINT, syscall.SIGTERM)
 	defer stopSignals()
 
 	select {

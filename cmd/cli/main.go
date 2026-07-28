@@ -223,7 +223,7 @@ func outputIndicatorJSON(code string, inputs []ta.KlineInput, result *ta.Indicat
 			return nil, err
 		}
 		defer svc.Close()
-		return svc.Client.GetQuote(code)
+		return svc.GetQuote(code)
 	}()
 	if err == nil && len(quotes) > 0 {
 		stockName = quotes[0].Name

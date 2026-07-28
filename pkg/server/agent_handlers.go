@@ -119,8 +119,8 @@ func (s *Server) InitAgentState(home, configPath, model, agentID, stockAgent, wo
 	}
 
 	var embeddedAgents []EmbeddedAgent
-	if agentListFunc != nil {
-		embeddedAgents, err = agentListFunc()
+	if s.agentListFunc != nil {
+		embeddedAgents, err = s.agentListFunc()
 		if err != nil {
 			return fmt.Errorf("load embedded agents failed: %w", err)
 		}
@@ -153,12 +153,12 @@ func (s *Server) InitAgentState(home, configPath, model, agentID, stockAgent, wo
 	return nil
 }
 
-// agentListFunc is the registered function to list embedded agents
-var agentListFunc func() ([]EmbeddedAgent, error)
-
-// RegisterAgentLister registers the agent list function (called from main.go)
-func RegisterAgentLister(fn func() ([]EmbeddedAgent, error)) {
-	agentListFunc = fn
+// RegisterAgentLister registers the agent list function on the given server.
+// Kept for backward compatibility; prefer s.SetAgentLister in new code.
+func RegisterAgentLister(s *Server, fn func() ([]EmbeddedAgent, error)) {
+	if s != nil {
+		s.agentListFunc = fn
+	}
 }
 
 func (s *Server) SetupAgentRoutes(api *gin.RouterGroup) {
@@ -673,7 +673,7 @@ func extractStockCode(msg string) string {
 }
 
 func (s *Server) fetchQuoteForAgent(code string) (string, error) {
-	quotes, err := s.svc.Client.GetQuote(code)
+	quotes, err := s.svc.GetQuote(code)
 	if err != nil {
 		return "", err
 	}

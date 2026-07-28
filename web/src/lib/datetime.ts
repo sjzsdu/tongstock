@@ -19,6 +19,16 @@ function parseDateLike(input: string | number | Date | null | undefined): Date |
 
   const trimmed = input.trim();
   if (!trimmed) return null;
+
+  // TDX compact datetime: YYYYMMDD HH:MM[:SS]
+  const tdxMatch = trimmed.match(/^(\d{4})(\d{2})(\d{2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (tdxMatch) {
+    return new Date(
+      Number(tdxMatch[1]), Number(tdxMatch[2]) - 1, Number(tdxMatch[3]),
+      Number(tdxMatch[4]), Number(tdxMatch[5]), tdxMatch[6] ? Number(tdxMatch[6]) : 0
+    );
+  }
+
   if (/^\d{8}$/.test(trimmed)) {
     return new Date(Number(trimmed.slice(0, 4)), Number(trimmed.slice(4, 6)) - 1, Number(trimmed.slice(6, 8)));
   }

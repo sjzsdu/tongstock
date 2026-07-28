@@ -19,7 +19,17 @@ type Config struct {
 
 // ServerConfig HTTP 服务器配置
 type ServerConfig struct {
+	// Port is the TCP port the server binds to.
 	Port int `yaml:"port"`
+	// BindAddress is the address the server listens on. Use "127.0.0.1"
+	// (default) for local-only access, or "0.0.0.0" for all interfaces.
+	// Binding to a non-loopback address requires AccessToken to be set.
+	BindAddress string `yaml:"bind_address"`
+	// AccessToken is a shared secret required for non-loopback access. When
+	// empty the server only accepts requests from the loopback interface
+	// (see BindAddress). When set, clients must send
+	// "Authorization: Bearer <token>" to access protected routes.
+	AccessToken string `yaml:"access_token"`
 }
 
 // TDXConfig 通达信相关配置
@@ -41,19 +51,19 @@ type DatabaseConfig struct {
 
 // AgentConfig AI Agent 配置
 type AgentConfig struct {
-	Enabled     bool   `yaml:"enabled"`
-	Home        string `yaml:"home"`
-	Config      string `yaml:"config"`
-	Model       string `yaml:"model"`
-	Agent       string `yaml:"agent"`
-	Session     string `yaml:"session"`
-	StockAgent  string `yaml:"stock_agent"`  // default agent for stock analysis panel
+	Enabled    bool   `yaml:"enabled"`
+	Home       string `yaml:"home"`
+	Config     string `yaml:"config"`
+	Model      string `yaml:"model"`
+	Agent      string `yaml:"agent"`
+	Session    string `yaml:"session"`
+	StockAgent string `yaml:"stock_agent"` // default agent for stock analysis panel
 }
 
 // DefaultConfig 返回一个包含默认值的 Config 实例
 func DefaultConfig() *Config {
 	return &Config{
-		Server:   ServerConfig{Port: 8080},
+		Server:   ServerConfig{Port: 8080, BindAddress: "127.0.0.1"},
 		TDX:      TDXConfig{Hosts: nil},
 		Cache:    CacheConfig{Backend: "sqlite", Dir: CacheDir()},
 		Database: DatabaseConfig{Driver: "sqlite3", DSN: DBPath()},
@@ -66,8 +76,14 @@ func defaultConfigTemplate() string {
 
 # HTTP 服务配置
 server:
-  # 服务端口
+  # 监听端口
   port: 8080
+  # 监听地址，默认仅本机访问
+  # - 127.0.0.1: 仅本机 (安全默认值)
+  # - 0.0.0.0  所有网卡，此时必须配置 access_token
+  bind_address: 127.0.0.1
+  # 远程访问时需要的 Bearer Token。留空则仅允许本机访问
+  # access_token: "please-change-me"
 
 # 通达信服务器配置
 tdx:
@@ -130,6 +146,12 @@ func Load() (*Config, error) {
 	merged := DefaultConfig()
 	if tmp.Server.Port != 0 {
 		merged.Server.Port = tmp.Server.Port
+	}
+	if tmp.Server.BindAddress != "" {
+		merged.Server.BindAddress = tmp.Server.BindAddress
+	}
+	if tmp.Server.AccessToken != "" {
+		merged.Server.AccessToken = tmp.Server.AccessToken
 	}
 	if len(tmp.TDX.Hosts) > 0 {
 		merged.TDX.Hosts = tmp.TDX.Hosts

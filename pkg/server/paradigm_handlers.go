@@ -16,9 +16,7 @@ import (
 	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
 )
 
-// ParadigmStore is set from main.go to avoid import cycles
-var ParadigmStore *paradigms.Store
-
+// numberRangeRe parses expressions like "10-20%" or "10~20%".
 var numberRangeRe = regexp.MustCompile(`(\d+(?:\.\d+)?)\s*[-~至到]\s*(\d+(?:\.\d+)?)\s*%?`)
 
 type paradigmAnalyzeRequest struct {
@@ -75,16 +73,23 @@ type paradigmAlert struct {
 	Severity   string `json:"severity"`
 }
 
-func (s *Server) StartParadigmAlertScanner(interval time.Duration) {
+func (s *Server) StartParadigmAlertScanner(ctx context.Context, interval time.Duration) {
 	if interval <= 0 {
 		interval = 5 * time.Minute
 	}
+	s.backgroundWG.Add(1)
 	go func() {
+		defer s.backgroundWG.Done()
 		s.refreshParadigmAlertCache()
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
-		for range ticker.C {
-			s.refreshParadigmAlertCache()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.refreshParadigmAlertCache()
+			}
 		}
 	}()
 }
@@ -98,14 +103,14 @@ func (s *Server) refreshParadigmAlertCache() {
 }
 
 func (s *Server) collectParadigmAlerts(code string) []paradigmAlert {
-	if ParadigmStore == nil {
+	if s.paradigmStore == nil {
 		return []paradigmAlert{}
 	}
 	var list []*paradigms.Paradigm
 	if code != "" {
-		list = ParadigmStore.ListByStockCode(code)
+		list = s.paradigmStore.ListByStockCode(code)
 	} else {
-		list = ParadigmStore.List()
+		list = s.paradigmStore.List()
 	}
 	alerts := make([]paradigmAlert, 0)
 	for _, p := range list {
@@ -168,7 +173,7 @@ type paradigmBacktestResponse struct {
 }
 
 func (s *Server) handleParadigmBacktest(c *gin.Context) {
-	if ParadigmStore == nil {
+	if s.paradigmStore == nil {
 		c.JSON(http.StatusOK, []paradigmBacktestResponse{})
 		return
 	}
@@ -176,16 +181,16 @@ func (s *Server) handleParadigmBacktest(c *gin.Context) {
 	stockCode := c.Query("stock_code")
 	var list []*paradigms.Paradigm
 	if id != "" {
-		p, err := ParadigmStore.Get(id)
+		p, err := s.paradigmStore.Get(id)
 		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 			return
 		}
 		list = []*paradigms.Paradigm{p}
 	} else if stockCode != "" {
-		list = ParadigmStore.ListByStockCode(stockCode)
+		list = s.paradigmStore.ListByStockCode(stockCode)
 	} else {
-		list = ParadigmStore.List()
+		list = s.paradigmStore.List()
 	}
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	if limit <= 0 || limit > 200 {
@@ -297,11 +302,11 @@ func percentReturn(entry, exit float64) float64 {
 }
 
 func (s *Server) handleParadigmStats(c *gin.Context) {
-	if ParadigmStore == nil {
+	if s.paradigmStore == nil {
 		c.JSON(http.StatusOK, paradigmStatsResponse{})
 		return
 	}
-	list := ParadigmStore.List()
+	list := s.paradigmStore.List()
 	resp := paradigmStatsResponse{Total: len(list)}
 	var retSum, ratingSum float64
 	var retN, ratingN, wins int
@@ -350,7 +355,7 @@ type paradigmEvaluateResponse struct {
 }
 
 func (s *Server) handleParadigmEvaluate(c *gin.Context) {
-	if ParadigmStore == nil {
+	if s.paradigmStore == nil {
 		c.JSON(http.StatusInternalServerError, paradigmEvaluateResponse{Error: "paradigm store not initialized"})
 		return
 	}
@@ -365,7 +370,7 @@ func (s *Server) handleParadigmEvaluate(c *gin.Context) {
 		return
 	}
 
-	existing := ParadigmStore.GetByStockCode(req.StockCode)
+	existing := s.paradigmStore.GetByStockCode(req.StockCode)
 	if existing == nil {
 		c.JSON(http.StatusOK, paradigmEvaluateResponse{StockCode: req.StockCode, Conditions: []EvaluatedCondition{}})
 		return
@@ -383,7 +388,7 @@ func (s *Server) handleParadigmAnalyze(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, paradigmAnalyzeResponse{Error: "agent not initialized"})
 		return
 	}
-	if ParadigmStore == nil {
+	if s.paradigmStore == nil {
 		c.JSON(http.StatusInternalServerError, paradigmAnalyzeResponse{Error: "paradigm store not initialized"})
 		return
 	}
@@ -407,9 +412,9 @@ func (s *Server) handleParadigmAnalyze(c *gin.Context) {
 
 	// Check cache: return existing paradigm for this stock if available
 	if !req.ForceRefresh {
-		existing := ParadigmStore.GetByCacheKey(cacheKey)
+		existing := s.paradigmStore.GetByCacheKey(cacheKey)
 		if existing == nil {
-			existing = ParadigmStore.GetByStockCode(req.StockCode)
+			existing = s.paradigmStore.GetByStockCode(req.StockCode)
 		}
 		if existing != nil {
 			evalConfirm, evalInvalid := s.evaluateConditions(req.StockCode, existing)
@@ -470,7 +475,7 @@ func (s *Server) handleParadigmAnalyze(c *gin.Context) {
 			c.JSON(http.StatusOK, paradigmAnalyzeResponse{StockCode: req.StockCode, StockName: req.StockName, Paradigm: paradigm, AgentText: agentResp, Error: strings.Join(paradigm.Validation.Errors, "; ")})
 			return
 		}
-		_ = ParadigmStore.Save(paradigm)
+		_ = s.paradigmStore.Save(paradigm)
 	}
 
 	// Evaluate confirmations and invalidations against current data
@@ -487,11 +492,11 @@ func (s *Server) handleParadigmAnalyze(c *gin.Context) {
 }
 
 func (s *Server) handleParadigmList(c *gin.Context) {
-	if ParadigmStore == nil {
+	if s.paradigmStore == nil {
 		c.JSON(http.StatusOK, paradigmListResponse{Paradigms: []*paradigms.Paradigm{}, Total: 0})
 		return
 	}
-	list := filterParadigms(ParadigmStore.List(), c)
+	list := filterParadigms(s.paradigmStore.List(), c)
 	total := len(list)
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "0"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
@@ -552,12 +557,12 @@ func filterParadigms(list []*paradigms.Paradigm, c *gin.Context) []*paradigms.Pa
 }
 
 func (s *Server) handleParadigmGet(c *gin.Context) {
-	if ParadigmStore == nil {
+	if s.paradigmStore == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "paradigm store not initialized"})
 		return
 	}
 	id := c.Param("id")
-	p, err := ParadigmStore.Get(id)
+	p, err := s.paradigmStore.Get(id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -566,21 +571,21 @@ func (s *Server) handleParadigmGet(c *gin.Context) {
 }
 
 func (s *Server) handleParadigmByStock(c *gin.Context) {
-	if ParadigmStore == nil {
+	if s.paradigmStore == nil {
 		c.JSON(http.StatusOK, paradigmListResponse{Paradigms: []*paradigms.Paradigm{}, Total: 0})
 		return
 	}
 	code := c.Param("code")
-	list := ParadigmStore.ListByStockCode(code)
+	list := s.paradigmStore.ListByStockCode(code)
 	c.JSON(http.StatusOK, paradigmListResponse{Paradigms: list, Total: len(list)})
 }
 
 func (s *Server) handleParadigmHistory(c *gin.Context) {
-	if ParadigmStore == nil {
+	if s.paradigmStore == nil {
 		c.JSON(http.StatusOK, paradigmListResponse{Paradigms: []*paradigms.Paradigm{}, Total: 0})
 		return
 	}
-	list := ParadigmStore.List()
+	list := s.paradigmStore.List()
 	c.JSON(http.StatusOK, paradigmListResponse{Paradigms: list, Total: len(list)})
 }
 
@@ -592,12 +597,12 @@ type paradigmReviewRequest struct {
 }
 
 func (s *Server) handleParadigmReview(c *gin.Context) {
-	if ParadigmStore == nil {
+	if s.paradigmStore == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "paradigm store not initialized"})
 		return
 	}
 	id := c.Param("id")
-	p, err := ParadigmStore.Get(id)
+	p, err := s.paradigmStore.Get(id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -623,7 +628,7 @@ func (s *Server) handleParadigmReview(c *gin.Context) {
 		pCopy.ActualReturn = req.ActualReturn
 	}
 
-	if err := ParadigmStore.Save(&pCopy); err != nil {
+	if err := s.paradigmStore.Save(&pCopy); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -631,12 +636,12 @@ func (s *Server) handleParadigmReview(c *gin.Context) {
 }
 
 func (s *Server) handleParadigmDelete(c *gin.Context) {
-	if ParadigmStore == nil {
+	if s.paradigmStore == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "paradigm store not initialized"})
 		return
 	}
 	id := c.Param("id")
-	if err := ParadigmStore.Delete(id); err != nil {
+	if err := s.paradigmStore.Delete(id); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}

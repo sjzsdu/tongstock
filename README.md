@@ -355,7 +355,28 @@ npm run dev        # 启动开发服务器，默认代理到 localhost:8080
 ./tongstock server
 ```
 
-服务默认监听 `http://localhost:8080`
+服务默认只监听 `http://127.0.0.1:8080`。
+
+如需从其他设备访问，必须同时配置非本机监听地址和访问令牌：
+
+```yaml
+server:
+  port: 8080
+  bind_address: 0.0.0.0
+  access_token: "替换为足够长的随机令牌"
+```
+
+远程 API 客户端通过 Header 传递令牌，不要把令牌放进 URL：
+
+```bash
+curl -H "Authorization: Bearer $TONGSTOCK_ACCESS_TOKEN" \
+  "http://server-host:8080/api/quote?code=000001"
+```
+
+远程打开 Web UI 时，页面第一次收到 401 会提示输入 Access Token；令牌仅保存在浏览器
+localStorage 中，后续 API 和 Agent SSE 请求通过 `Authorization` Header 发送。`/health`
+和 SPA 静态资源保持公开，所有 `/api` 路由均受令牌保护。非 loopback 地址没有配置
+`access_token` 时，服务会拒绝启动。
 
 ### API 接口
 
@@ -461,6 +482,9 @@ curl "http://localhost:8080/api/block/show?code=600519"
 ```yaml
 server:
   port: 8080
+  bind_address: 127.0.0.1
+  # 非本机监听时必填
+  # access_token: "替换为足够长的随机令牌"
 
 tdx:
   # hosts:
