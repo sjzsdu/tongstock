@@ -187,6 +187,44 @@ CREATE INDEX IF NOT EXISTS idx_adj_factor_code
 	ON adjustment_factor(code);
 `,
 	},
+	{
+		version: 4,
+		name:    "point_in_time_securities_master",
+		sql: `
+-- 证券状态历史: 记录每只证券的可交易/ST/停牌等状态变更区间
+CREATE TABLE IF NOT EXISTS security_status_history (
+	code TEXT NOT NULL,
+	effective_from TEXT NOT NULL,       -- 状态生效起始日 (YYYY-MM-DD), 包含
+	effective_to TEXT NOT NULL,         -- 状态失效日 (YYYY-MM-DD), 包含; '' 表示仍在生效
+	status TEXT NOT NULL,               -- normal / st / *st / suspended / delisted / halted
+	reason TEXT NOT NULL DEFAULT '',    -- 触发原因 (停牌/摘牌/ST 原因等)
+	source TEXT NOT NULL DEFAULT '',    -- 数据来源 (tdx/f10/manual)
+	created_at INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (code, effective_from, status)
+);
+CREATE INDEX IF NOT EXISTS idx_status_hist_code_date
+	ON security_status_history(code, effective_from, effective_to);
+CREATE INDEX IF NOT EXISTS idx_status_hist_status
+	ON security_status_history(status);
+`,
+		after: func(tx *sql.Tx) error {
+			// 扩展 stockinfo 增加上市/退市/ST 标记字段
+			additional := []struct {
+				name string
+				ddl  string
+			}{
+				{"ipo_date_txt", `TEXT NOT NULL DEFAULT ''`},
+				{"delist_date", `TEXT NOT NULL DEFAULT ''`},
+				{"st_flag", `INTEGER NOT NULL DEFAULT 0`},
+			}
+			for _, c := range additional {
+				if err := ensureSQLiteColumn(tx, "stockinfo", c.name, c.ddl); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
 }
 
 // Migrate upgrades the SQLite database transactionally. Store constructors
