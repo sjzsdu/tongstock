@@ -126,11 +126,11 @@ type CostModel struct {
 // DefaultCostModel 返回默认 A 股成本模型。
 func DefaultCostModel() CostModel {
 	return CostModel{
-		CommissionRate:  0.00025,
-		MinCommission:   5.0,
-		StampDutyRate:   0.0005,
-		TransferFeeRate: 0.00001,
-		SlippageBps:     10.0,
+		CommissionRate:  0.00025, // 万 2.5
+		MinCommission:   5.0,     // 最低 5 元
+		StampDutyRate:   0.0005,  // 万 5 (仅卖出)
+		TransferFeeRate: 0.00001, // 万 0.1 (双边)
+		SlippageBps:     10.0,    // 10 bps 滑点 (由引擎应用到执行价格, 成本模型中不再单独计算)
 		EnableStampDuty: true,
 	}
 }
@@ -145,7 +145,8 @@ type TradingCost struct {
 }
 
 // CalculateCost 计算单笔交易的成本。
-// action: buy/sell, price: 成交价, quantity: 数量
+// 注意: 滑点已经由引擎应用到执行价格上, 此函数不再单独计算滑点成本
+// action: buy/sell, price: 成交价 (已含滑点), quantity: 数量
 func (cm CostModel) CalculateCost(action OrderSide, price float64, quantity int) TradingCost {
 	tradeValue := price * float64(quantity)
 
@@ -165,12 +166,11 @@ func (cm CostModel) CalculateCost(action OrderSide, price float64, quantity int)
 	// 过户费 (双边)
 	cost.TransferFee = tradeValue * cm.TransferFeeRate
 
-	// 滑点 (基于成交价)
-	slippageMult := cm.SlippageBps / 10000.0
-	cost.SlippageCost = tradeValue * slippageMult
+	// 滑点成本为 0 (已通过执行价格体现)
+	cost.SlippageCost = 0
 
-	// 总成本
-	cost.Total = cost.Commission + cost.StampDuty + cost.TransferFee + cost.SlippageCost
+	// 总成本 = 佣金 + 印花税 + 过户费 (滑点已含在执行价中)
+	cost.Total = cost.Commission + cost.StampDuty + cost.TransferFee
 
 	return cost
 }

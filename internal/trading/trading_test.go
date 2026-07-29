@@ -96,13 +96,13 @@ func TestCostModel_BuyCost(t *testing.T) {
 		t.Errorf("TransferFee = %f, want 0.1", cost.TransferFee)
 	}
 
-	// 滑点: 10000 * 0.001 = 10 (10 bps)
-	if math.Abs(cost.SlippageCost-10.0) > 0.01 {
-		t.Errorf("Slippage = %f, want 10.0", cost.SlippageCost)
+	// 滑点: 已通过执行价格体现, 成本模型中不再单独计算
+	if cost.SlippageCost != 0 {
+		t.Errorf("SlippageCost should be 0 (included in execution price), got %f", cost.SlippageCost)
 	}
 
-	// 总成本
-	expectedTotal := expectedCommission + 0 + 0.1 + 10.0
+	// 总成本 (不含滑点, 滑点已含在执行价中)
+	expectedTotal := expectedCommission + 0 + 0.1
 	if math.Abs(cost.Total-expectedTotal) > 0.01 {
 		t.Errorf("Total = %f, want %f", cost.Total, expectedTotal)
 	}
@@ -138,10 +138,10 @@ func TestCostModel_HighValueTrade(t *testing.T) {
 		t.Errorf("Commission = %f, want %f", cost.Commission, expectedCommission)
 	}
 
-	// 总费率约为: 0.025% + 0.001% + 0.1% = 0.126%
+	// 总费率约为: 0.025% + 0.001% = 0.026% (滑点已含在执行价中)
 	rate := cost.Total / 1000000.0 * 100
-	if rate < 0.1 || rate > 0.5 {
-		t.Errorf("Total rate = %f%%, expected ~0.13%%", rate)
+	if rate < 0.01 || rate > 0.1 {
+		t.Errorf("Total rate = %f%%, expected ~0.03%%", rate)
 	}
 }
 
