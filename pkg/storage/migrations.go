@@ -271,6 +271,67 @@ CREATE INDEX IF NOT EXISTS idx_exp_binding_exp
 	ON experiment_snapshot_binding(experiment_id);
 `,
 	},
+	{
+		version: 6,
+		name:    "feature_registry",
+		sql: `
+-- 特征规格表: 统一特征定义 (TA/量价/相对强弱/市场状态/财务/事件)
+CREATE TABLE IF NOT EXISTS feature_spec (
+	id TEXT NOT NULL,
+	version INTEGER NOT NULL DEFAULT 1,
+	name TEXT NOT NULL,
+	category TEXT NOT NULL,
+	description TEXT NOT NULL DEFAULT '',
+	default_params TEXT NOT NULL DEFAULT '{}',   -- JSON
+	window INTEGER NOT NULL DEFAULT 0,
+	min_samples INTEGER NOT NULL DEFAULT 1,
+	dependencies TEXT NOT NULL DEFAULT '[]',     -- JSON array
+	timing TEXT NOT NULL DEFAULT 'end_of_day',
+	data_required TEXT NOT NULL DEFAULT '[]',   -- JSON array
+	formula_hash TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'active',
+	created_at INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_feature_spec_category
+	ON feature_spec(category);
+CREATE INDEX IF NOT EXISTS idx_feature_spec_status
+	ON feature_spec(status);
+
+-- 特征集合表: 一组特征的打包定义
+CREATE TABLE IF NOT EXISTS feature_set_spec (
+	id TEXT NOT NULL,
+	version INTEGER NOT NULL DEFAULT 1,
+	name TEXT NOT NULL,
+	description TEXT NOT NULL DEFAULT '',
+	features TEXT NOT NULL DEFAULT '[]',         -- JSON array of feature IDs
+	category TEXT NOT NULL DEFAULT 'technical',
+	price_req TEXT NOT NULL DEFAULT 'raw',
+	created_at INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_feature_set_category
+	ON feature_set_spec(category);
+
+-- 特征计算结果表: 记录每次特征计算的结果
+CREATE TABLE IF NOT EXISTS feature_value (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	feature_id TEXT NOT NULL,
+	feature_version INTEGER NOT NULL DEFAULT 1,
+	stock_code TEXT NOT NULL,
+	date TEXT NOT NULL,
+	value REAL NOT NULL DEFAULT 0,
+	source_data TEXT NOT NULL DEFAULT '',
+	computed_at INTEGER NOT NULL DEFAULT 0,
+	as_of INTEGER NOT NULL DEFAULT 0,
+	leak_checked INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_feature_value_lookup
+	ON feature_value(stock_code, date, feature_id);
+CREATE INDEX IF NOT EXISTS idx_feature_value_feature
+	ON feature_value(feature_id, feature_version);
+`,
+	},
 }
 
 // Migrate upgrades the SQLite database transactionally. Store constructors
