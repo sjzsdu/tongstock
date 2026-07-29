@@ -9,6 +9,46 @@ import (
 	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
 )
 
+// Adjustment 统一的价格口径枚举，贯穿研究、信号与收益计算。
+// - Raw: 不复权（原始成交价格）
+// - Forward: 前复权（历史价格向最新对齐，适合指标/图形）
+// - Backward: 后复权（未来价格向最早对齐，适合累计收益）
+type Adjustment string
+
+const (
+	AdjustmentRaw      Adjustment = "raw"
+	AdjustmentForward  Adjustment = "forward"
+	AdjustmentBackward Adjustment = "backward"
+)
+
+// Normalize 把空值/非法值归一为 raw。
+func (a Adjustment) Normalize() Adjustment {
+	switch a {
+	case "", AdjustmentRaw:
+		return AdjustmentRaw
+	case AdjustmentForward:
+		return AdjustmentForward
+	case AdjustmentBackward:
+		return AdjustmentBackward
+	default:
+		return AdjustmentRaw
+	}
+}
+
+// String 人类可读描述。
+func (a Adjustment) String() string {
+	switch a.Normalize() {
+	case AdjustmentRaw:
+		return "不复权"
+	case AdjustmentForward:
+		return "前复权"
+	case AdjustmentBackward:
+		return "后复权"
+	default:
+		return "未知口径"
+	}
+}
+
 type DataType string
 
 const (
@@ -31,6 +71,7 @@ type DataSpec struct {
 	Code        string
 	Granularity string
 	KType       uint8
+	Adjustment  Adjustment
 	Start       time.Time
 	End         time.Time
 }

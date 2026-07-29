@@ -164,10 +164,13 @@ func (s *KlineStore) GetKline(code string, ktype uint8, startDate, endDate strin
 			continue
 		}
 		// 检查与前一条有效 K 线的价格变化
+		// 注意: A股存在除权除息、停牌复牌等公司行为，单一价格跳变并非必然是脏数据。
+		// 调整因子的识别应由 adjustment service (基于 xdxr 事件) 完成。
+		// 这里仅过滤极端异常 (单日涨/跌超过 5x)，其余跳空视为正常价格行为。
 		if lastClose > 0 {
 			ratio := k.Close / lastClose
-			if ratio > 3.0 || ratio < 0.33 {
-				continue // 跳过异常跳变
+			if ratio > 5.0 || ratio < 0.2 {
+				continue
 			}
 		}
 		lastClose = k.Close
@@ -295,6 +298,7 @@ func (s *KlineStore) DetectAndCleanCorruptedKlines(code string, ktype uint8) (in
 				isCorrupted = true
 			} else if idx > 0 && lastClose > 0 {
 				r := close / lastClose
+				// 放宽阈值: A股除权/复牌可能产生大跳空，5x 内视为合法。
 				if r > 5 || r < 0.2 {
 					isCorrupted = true
 				} else {

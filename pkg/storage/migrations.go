@@ -147,6 +147,46 @@ CREATE INDEX IF NOT EXISTS idx_data_sync_lookup
 	ON data_sync_state(data_type, market, code, granularity);
 `,
 	},
+	{
+		version: 3,
+		name:    "xdxr_and_adjustment_factor",
+		sql: `
+CREATE TABLE IF NOT EXISTS xdxr_event (
+	code TEXT NOT NULL,
+	date TEXT NOT NULL,   -- 除权除息/公司行为日期 (YYYY-MM-DD)
+	category INTEGER NOT NULL,
+	fen_hong REAL NOT NULL DEFAULT 0,       -- 每股分红 (元)
+	pei_gu_jia REAL NOT NULL DEFAULT 0,      -- 配股价
+	song_zhuan_gu REAL NOT NULL DEFAULT 0,   -- 每10股送转
+	pei_gu REAL NOT NULL DEFAULT 0,          -- 每10股配股
+	suo_gu REAL NOT NULL DEFAULT 0,          -- 缩股比例
+	qian_liu_tong REAL NOT NULL DEFAULT 0,   -- 前流通股本(万股)
+	hou_liu_tong REAL NOT NULL DEFAULT 0,    -- 后流通股本(万股)
+	qian_zong REAL NOT NULL DEFAULT 0,       -- 前总股本(万股)
+	hou_zong REAL NOT NULL DEFAULT 0,        -- 后总股本(万股)
+	source_updated_at INTEGER NOT NULL DEFAULT 0,
+	created_at INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (code, date, category)
+);
+CREATE INDEX IF NOT EXISTS idx_xdxr_event_code_date
+	ON xdxr_event(code, date);
+
+CREATE TABLE IF NOT EXISTS adjustment_factor (
+	code TEXT NOT NULL,
+	date TEXT NOT NULL,  -- 除权除息日
+	prev_close REAL NOT NULL DEFAULT 0,     -- 前收盘价 (不复权)
+	forward_factor REAL NOT NULL DEFAULT 1, -- 前复权因子: 历史价格 * forward_factor
+	backward_factor REAL NOT NULL DEFAULT 1,-- 后复权因子: 历史价格 / backward_factor
+	cum_forward REAL NOT NULL DEFAULT 1,    -- 累计前复权因子 (截至该日)
+	cum_backward REAL NOT NULL DEFAULT 1,   -- 累计后复权因子 (截至该日)
+	reason TEXT NOT NULL DEFAULT '',       -- 触发原因 (ex_dividend / split / ...)
+	created_at INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (code, date)
+);
+CREATE INDEX IF NOT EXISTS idx_adj_factor_code
+	ON adjustment_factor(code);
+`,
+	},
 }
 
 // Migrate upgrades the SQLite database transactionally. Store constructors
