@@ -225,6 +225,52 @@ CREATE INDEX IF NOT EXISTS idx_status_hist_status
 			return nil
 		},
 	},
+	{
+		version: 5,
+		name:    "dataset_snapshot_and_lineage",
+		sql: `
+-- 数据快照: 用于绑定实验, 确保不可变和可追溯
+CREATE TABLE IF NOT EXISTS dataset_snapshot (
+	id TEXT PRIMARY KEY,
+	version TEXT NOT NULL,
+	date_range_start TEXT NOT NULL,
+	date_range_end TEXT NOT NULL,
+	universe TEXT NOT NULL DEFAULT '[]',  -- JSON array of codes
+	market TEXT NOT NULL DEFAULT 'ALL',
+	price_adjustment TEXT NOT NULL DEFAULT 'raw',
+	description TEXT NOT NULL DEFAULT '',
+	created_at INTEGER NOT NULL DEFAULT 0,
+	frozen INTEGER NOT NULL DEFAULT 0   -- 1 = immutable
+);
+CREATE INDEX IF NOT EXISTS idx_ds_created_at
+	ON dataset_snapshot(created_at);
+
+-- 快照中的数据源明细 (血缘追踪)
+CREATE TABLE IF NOT EXISTS snapshot_data_source (
+	snapshot_id TEXT NOT NULL,
+	source_type TEXT NOT NULL,         -- kline / quote / finance / news / factor
+	source_version TEXT NOT NULL,
+	as_of INTEGER NOT NULL DEFAULT 0,
+	source_updated_at INTEGER NOT NULL DEFAULT 0,
+	hash TEXT NOT NULL DEFAULT '',
+	created_at INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (snapshot_id, source_type),
+	FOREIGN KEY (snapshot_id) REFERENCES dataset_snapshot(id)
+);
+CREATE INDEX IF NOT EXISTS idx_snapshot_source_type
+	ON snapshot_data_source(source_type);
+
+-- 实验-快照绑定: 记录每个实验使用的不可变快照 ID 列表
+CREATE TABLE IF NOT EXISTS experiment_snapshot_binding (
+	experiment_id TEXT NOT NULL,
+	snapshot_id TEXT NOT NULL,
+	bound_at INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (experiment_id, snapshot_id)
+);
+CREATE INDEX IF NOT EXISTS idx_exp_binding_exp
+	ON experiment_snapshot_binding(experiment_id);
+`,
+	},
 }
 
 // Migrate upgrades the SQLite database transactionally. Store constructors

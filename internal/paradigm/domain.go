@@ -85,6 +85,15 @@ type Hypothesis struct {
 	Status    string    `json:"status"` // draft / tested / accepted / rejected
 }
 
+// DataSource 描述单一数据源在快照中的引用信息, 用于 as-of 追溯和版本比对。
+type DataSource struct {
+	Type            string    `json:"type"`              // kline / quote / finance / news / factor
+	Version         string    `json:"version"`           // 数据版本号或 hash
+	AsOf            time.Time `json:"as_of"`             // 该数据在决策时点可获得的时间
+	SourceUpdatedAt time.Time `json:"source_updated_at"` // 数据本身的更新时间
+	Hash            string    `json:"hash,omitempty"`    // 内容哈希, 用于检测静默变更
+}
+
 // DatasetSnapshot is a versioned, immutable snapshot of the data used in an
 // experiment. It ensures reproducibility by pinning data version, date range,
 // and universe (e.g. which stocks were included).
@@ -97,6 +106,10 @@ type DatasetSnapshot struct {
 	PriceAdjustment PriceAdjustment `json:"price_adjustment"` // raw / forward / backward
 	Description     string          `json:"description"`
 	CreatedAt       time.Time       `json:"created_at"`
+	// Sources 记录该快照包含的所有数据源明细, 用于血缘追溯.
+	Sources []DataSource `json:"sources,omitempty"`
+	// Frozen 标记快照已冻结 (不可变), 由系统在创建后自动设置.
+	Frozen bool `json:"frozen,omitempty"`
 }
 
 // DateRange is an inclusive date range.
@@ -119,6 +132,42 @@ type FeatureSet struct {
 	CreatedAt       time.Time       `json:"created_at"`
 }
 
+// Freeze 冻结快照, 使其不可变. 冻结后 Source 列表不可再修改.
+func (d *DatasetSnapshot) Freeze() {
+	d.Frozen = true
+}
+
+// ValidateAsOf 校验所有数据源的 as-of 时间均不晚于 referenceDate.
+// 用于确保实验在 T 日运行时, 所有数据都已在 T 日或之前可获得.
+func (d *DatasetSnapshot) ValidateAsOf(referenceDate time.Time) error {
+	for _, src := range d.Sources {
+		if src.AsOf.After(referenceDate) {
+			return fmt.Errorf("data source %q as_of (%s) is after reference date (%s), future data leak",
+				src.Type, src.AsOf.Format("2006-01-02"), referenceDate.Format("2006-01-02"))
+		}
+	}
+	return nil
+}
+
+// HasSource 检查是否包含指定类型的数据源.
+func (d *DatasetSnapshot) HasSource(sourceType string) bool {
+	for _, src := range d.Sources {
+		if src.Type == sourceType {
+			return true
+		}
+	}
+	return false
+}
+
+// SourceVersions 返回所有数据源的版本摘要, 用于血缘追溯展示.
+func (d *DatasetSnapshot) SourceVersions() map[string]string {
+	m := make(map[string]string, len(d.Sources))
+	for _, src := range d.Sources {
+		m[src.Type] = src.Version
+	}
+	return m
+}
+
 // Experiment runs a hypothesis against a dataset and feature set.
 // It produces one or more Candidate paradigms.
 type Experiment struct {
@@ -132,6 +181,9 @@ type Experiment struct {
 	Status          string     `json:"status"`         // running / completed / failed
 	CreatedAt       time.Time  `json:"created_at"`
 	CompletedAt     *time.Time `json:"completed_at,omitempty"`
+	// BoundSnapshotIDs 记录实验实际绑定的所有不可变快照 ID (含 DatasetSnapshot 和 FeatureSet 版本),
+	// 用于确保重跑时不会静默读取更新后的数据.
+	BoundSnapshotIDs []string `json:"bound_snapshot_ids,omitempty"`
 }
 
 // Candidate is a paradigm that has passed initial screening but has not yet
