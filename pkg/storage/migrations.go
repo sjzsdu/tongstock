@@ -332,6 +332,72 @@ CREATE INDEX IF NOT EXISTS idx_feature_value_feature
 	ON feature_value(feature_id, feature_version);
 `,
 	},
+	{
+		version: 7,
+		name:    "quality_gate",
+		sql: `
+-- 数据质量报告表: 每个数据快照/数据集对应一个质量报告
+CREATE TABLE IF NOT EXISTS quality_report (
+	id TEXT PRIMARY KEY,
+	snapshot_id TEXT NOT NULL DEFAULT '',
+	stock_code TEXT NOT NULL DEFAULT '',
+	date_range_start TEXT NOT NULL DEFAULT '',
+	date_range_end TEXT NOT NULL DEFAULT '',
+	source TEXT NOT NULL DEFAULT 'kline',
+	as_of INTEGER NOT NULL DEFAULT 0,
+	passed INTEGER NOT NULL DEFAULT 1,
+	blocked INTEGER NOT NULL DEFAULT 0,
+	total_issues INTEGER NOT NULL DEFAULT 0,
+	critical_count INTEGER NOT NULL DEFAULT 0,
+	warning_count INTEGER NOT NULL DEFAULT 0,
+	info_count INTEGER NOT NULL DEFAULT 0,
+	checked_records INTEGER NOT NULL DEFAULT 0,
+	passed_records INTEGER NOT NULL DEFAULT 0,
+	failed_records INTEGER NOT NULL DEFAULT 0,
+	coverage_percent REAL NOT NULL DEFAULT 0,
+	report_hash TEXT NOT NULL DEFAULT '',
+	created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_quality_report_snapshot
+	ON quality_report(snapshot_id);
+CREATE INDEX IF NOT EXISTS idx_quality_report_stock
+	ON quality_report(stock_code);
+CREATE INDEX IF NOT EXISTS idx_quality_report_created
+	ON quality_report(created_at);
+
+-- 质量问题明细表
+CREATE TABLE IF NOT EXISTS quality_issue (
+	id TEXT PRIMARY KEY,
+	report_id TEXT NOT NULL,
+	category TEXT NOT NULL,
+	severity TEXT NOT NULL,
+	stock_code TEXT NOT NULL DEFAULT '',
+	date TEXT NOT NULL DEFAULT '',
+	metric TEXT NOT NULL DEFAULT '',
+	expected TEXT NOT NULL DEFAULT '',
+	actual TEXT NOT NULL DEFAULT '',
+	description TEXT NOT NULL DEFAULT '',
+	created_at INTEGER NOT NULL DEFAULT 0,
+	FOREIGN KEY (report_id) REFERENCES quality_report(id)
+);
+CREATE INDEX IF NOT EXISTS idx_quality_issue_report
+	ON quality_issue(report_id);
+CREATE INDEX IF NOT EXISTS idx_quality_issue_severity
+	ON quality_issue(severity);
+
+-- 质量门配置表: 可持久化质量门参数
+CREATE TABLE IF NOT EXISTS quality_gate_config (
+	id TEXT PRIMARY KEY DEFAULT 'default',
+	max_price_change_pct REAL NOT NULL DEFAULT 5.0,
+	max_volume_ratio REAL NOT NULL DEFAULT 10.0,
+	min_coverage_percent REAL NOT NULL DEFAULT 95.0,
+	max_missing_days INTEGER NOT NULL DEFAULT 5,
+	max_financial_lag_days INTEGER NOT NULL DEFAULT 60,
+	block_on_critical INTEGER NOT NULL DEFAULT 1,
+	updated_at INTEGER NOT NULL DEFAULT 0
+);
+`,
+	},
 }
 
 // Migrate upgrades the SQLite database transactionally. Store constructors
