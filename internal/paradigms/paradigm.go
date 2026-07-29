@@ -19,6 +19,9 @@ type Paradigm struct {
 	AgentText   string            `json:"agent_text,omitempty"`
 	Source      ParadigmSource    `json:"source,omitempty"`
 	Validation  ValidationSummary `json:"validation,omitempty"`
+	// Evidence holds the admission check result for paradigm promotion.
+	// Populated when the paradigm undergoes validation.
+	Evidence *ParadigmEvidence `json:"evidence,omitempty"`
 	CreatedAt   time.Time         `json:"created_at"`
 	UpdatedAt   time.Time         `json:"updated_at"`
 	Tags        []string          `json:"tags,omitempty"`
@@ -77,6 +80,16 @@ type Expectation struct {
 	Confidence     float64 `json:"confidence"` // 0-1
 }
 
+// ParadigmEvidence wraps an admission-check result for JSON serialization within a Paradigm.
+type ParadigmEvidence struct {
+	Eligible    bool     `json:"eligible"`
+	Level       string   `json:"level"`
+	Score       float64  `json:"score"`
+	Reasons     []string `json:"reasons,omitempty"`
+	MustFix     []string `json:"must_fix,omitempty"`
+	Warnings    []string `json:"warnings,omitempty"`
+	Suggestions []string `json:"suggestions,omitempty"`
+}
 // EvaluatedItem is a condition with its current status
 type EvaluatedItem struct {
 	Text   string `json:"text"`
