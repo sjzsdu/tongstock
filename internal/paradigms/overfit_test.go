@@ -29,7 +29,7 @@ func TestBootstrapValidate(t *testing.T) {
 	bv := NewBootstrapValidator(200)
 
 	// 生成测试数据 (正态分布)
-	data := generateNormalData(100, 0.1, 0.02)
+	data := testGenerateNormalData(100, 0.1, 0.02)
 
 	result := bv.Validate(data, func(data []float64) float64 {
 		return mean(data)
@@ -59,7 +59,7 @@ func TestBootstrapValidateSmallData(t *testing.T) {
 func TestBootstrapValidateReturn(t *testing.T) {
 	bv := NewBootstrapValidator(200)
 
-	returns := generateNormalData(200, 0.001, 0.01) // 日收益率
+	returns := testGenerateNormalData(200, 0.001, 0.01) // 日收益率
 
 	result := bv.ValidateReturn(returns)
 
@@ -72,13 +72,13 @@ func TestBootstrapStabilityScore(t *testing.T) {
 	bv := NewBootstrapValidator(200)
 
 	// 稳定数据
-	stableData := generateNormalData(200, 0.1, 0.01)
+	stableData := testGenerateNormalData(200, 0.1, 0.01)
 	stableResult := bv.Validate(stableData, func(data []float64) float64 {
 		return mean(data)
 	})
 
 	// 不稳定数据 (高方差)
-	unstableData := generateNormalData(200, 0.1, 0.5)
+	unstableData := testGenerateNormalData(200, 0.1, 0.5)
 	unstableResult := bv.Validate(unstableData, func(data []float64) float64 {
 		return mean(data)
 	})
@@ -116,7 +116,7 @@ func TestPermutationTestInvalidAlpha(t *testing.T) {
 func TestPermutationTest(t *testing.T) {
 	pt := NewPermutationTest(300, 0.05)
 
-	data := generateNormalData(50, 0.05, 0.02)
+	data := testGenerateNormalData(50, 0.05, 0.02)
 	labels := make([]bool, 50)
 	for i := 0; i < 25; i++ {
 		labels[i] = true
@@ -145,8 +145,8 @@ func TestPermutationTest(t *testing.T) {
 func TestPermutationTestTwoGroups(t *testing.T) {
 	pt := NewPermutationTest(300, 0.05)
 
-	group1 := generateNormalData(30, 0.06, 0.02)
-	group2 := generateNormalData(30, 0.04, 0.02)
+	group1 := testGenerateNormalData(30, 0.06, 0.02)
+	group2 := testGenerateNormalData(30, 0.04, 0.02)
 
 	result := pt.TestTwoGroups(group1, group2)
 
@@ -505,7 +505,7 @@ func TestOverfitEngineProtect(t *testing.T) {
 	oe.SetIterations(100, 100, 50)
 
 	// 生成测试数据
-	data := generateNormalData(80, 0.05, 0.02)
+	data := testGenerateNormalData(80, 0.05, 0.02)
 	labels := make([]bool, 80)
 	for i := 0; i < 40; i++ {
 		labels[i] = true
@@ -547,7 +547,7 @@ func TestOverfitEngineDetection(t *testing.T) {
 	oe.SetIterations(100, 100, 100)
 
 	// 生成"过拟合"数据 - 小样本, 高方差
-	data := generateNormalData(20, 0.01, 0.1)
+	data := testGenerateNormalData(20, 0.01, 0.1)
 	labels := make([]bool, 20)
 	for i := 0; i < 10; i++ {
 		labels[i] = true
@@ -680,7 +680,7 @@ func TestPercentileIntervalEmpty(t *testing.T) {
 // 数据生成辅助
 // ============================================================================
 
-func generateNormalData(n int, mean, std float64) []float64 {
+func testGenerateNormalData(n int, mean, std float64) []float64 {
 	rng := rand.New(rand.NewSource(42))
 	data := make([]float64, n)
 	for i := range data {
