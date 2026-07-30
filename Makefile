@@ -1,4 +1,4 @@
-.PHONY: all web cli server menubar install clean run check fmt-check go-check web-check
+.PHONY: all web cli server menubar install clean run check fmt-check go-check web-check quality-check
 
 # Default to ~/.local/bin for installation, which is the standard user binary directory
 # Users can override with BINDIR environment variable if needed
@@ -37,6 +37,9 @@ server: web
 
 menubar:
 	go build -o tongstock-menubar ./cmd/menubar
+
+quality-check: cli
+	./$(CLI_BIN) quality check --block
 
 run: cli
 	./$(CLI_BIN) server

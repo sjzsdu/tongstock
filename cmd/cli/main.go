@@ -147,4 +147,5 @@ func init() {
 	rootCmd.AddCommand(indicatorCmd)
 	rootCmd.AddCommand(screenCmd)
 	rootCmd.AddCommand(syncCmd)
+	rootCmd.AddCommand(qualityCmd)
 }
