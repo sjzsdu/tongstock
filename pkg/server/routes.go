@@ -19,6 +19,7 @@ func (s *Server) SetupRoutes(router *gin.Engine, apiMiddleware ...gin.HandlerFun
 	s.SetupParadigmRoutes(api)
 	s.registerForwardRunRoutes(api)
 	s.registerMonitoringRoutes(api)
+	s.registerReviewRoutes(api)
 }
 
 func (s *Server) registerMarketRoutes(api *gin.RouterGroup) {

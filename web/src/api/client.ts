@@ -782,6 +782,67 @@ export const api = {
 
 	monitoringHealth: () =>
 		fetchJSON<{ status: string; engine_source: string; alert_summary: AlertSummary }>('/api/monitoring/health'),
+
+	// Review APIs
+	reviewGenerate: (payload: import('../types/api').ReviewGenerateRequest) =>
+		fetchJSON<{ report: import('../types/api').ReviewReport }>('/api/review/generate', {
+			method: 'POST',
+			body: JSON.stringify(payload),
+		}),
+
+	reviewList: (params?: { source_id?: string; source_type?: string; type?: string }) => {
+		const qs = new URLSearchParams();
+		if (params?.source_id) qs.set('source_id', params.source_id);
+		if (params?.source_type) qs.set('source_type', params.source_type);
+		if (params?.type) qs.set('type', params.type);
+		return fetchJSON<{ reports: import('../types/api').ReviewReport[]; total: number }>(
+			`/api/review/list${qs.toString() ? `?${qs.toString()}` : ''}`
+		);
+	},
+
+	reviewGet: (id: string) =>
+		fetchJSON<{ report: import('../types/api').ReviewReport }>(`/api/review/${id}`),
+
+	reviewFailureAnalysis: (failures: import('../types/api').FailureEvent[]) =>
+		fetchJSON<{ analysis: import('../types/api').FailureAnalysisResult; failures: import('../types/api').FailureEvent[] }>(
+			'/api/review/failure-analysis',
+			{ method: 'POST', body: JSON.stringify({ failures }) }
+		),
+
+	reviewFailurePatterns: () =>
+		fetchJSON<{ patterns: import('../types/api').FailurePattern[]; total: number }>(
+			'/api/review/failure-patterns'
+		),
+
+	reviewFeedbackGenerate: (reviewId: string) =>
+		fetchJSON<{ portfolio: import('../types/api').FeedbackPortfolio }>('/api/review/feedback/generate', {
+			method: 'POST',
+			body: JSON.stringify({ review_id: reviewId }),
+		}),
+
+	reviewFeedbackList: (params?: { status?: string; priority?: string }) => {
+		const qs = new URLSearchParams();
+		if (params?.status) qs.set('status', params.status);
+		if (params?.priority) qs.set('priority', params.priority);
+		return fetchJSON<{ portfolios: import('../types/api').FeedbackPortfolio[]; total: number }>(
+			`/api/review/feedback/list${qs.toString() ? `?${qs.toString()}` : ''}`
+		);
+	},
+
+	reviewFeedbackUpdate: (portfolioId: string, payload: { status: string; note?: string; actor?: string; item_id?: string }) => {
+		const qs = new URLSearchParams();
+		if (payload.item_id) qs.set('item_id', payload.item_id);
+		return fetchJSON<{ portfolio: import('../types/api').FeedbackPortfolio }>(
+			`/api/review/feedback/${portfolioId}${qs.toString() ? `?${qs.toString()}` : ''}`,
+			{ method: 'PUT', body: JSON.stringify(payload) }
+		);
+	},
+
+	reviewFeedbackImplement: (portfolioId: string, itemId: string, newVersion: string, actor?: string) =>
+		fetchJSON<{ portfolio: import('../types/api').FeedbackPortfolio }>(
+			`/api/review/feedback/${portfolioId}/implement`,
+			{ method: 'POST', body: JSON.stringify({ item_id: itemId, new_version: newVersion, actor }) }
+		),
 };
 
 export interface OvernightCriteria {

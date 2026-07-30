@@ -1629,3 +1629,259 @@ export interface PositionItem {
   weight: number;
   value?: number;
 }
+
+// ============================================================================
+// Review (复盘) types
+// ============================================================================
+
+export type ReviewPeriod = 'weekly' | 'monthly' | 'quarterly';
+export type ReviewStatus = 'draft' | 'completed' | 'published';
+export type ReviewType = 'post_mortem' | 'retrospective' | 'param_audit' | 'failure_analysis';
+export type ReviewPriority = 'high' | 'medium' | 'low';
+
+export interface ReviewFinding {
+  id: string;
+  category: string;
+  severity: string;
+  title: string;
+  description: string;
+  evidence?: string[];
+  metric: string;
+  value: number;
+  threshold: number;
+  timestamp: string;
+}
+
+export interface ReviewStats {
+  total_signals: number;
+  executed_signals: number;
+  failed_signals: number;
+  unexecuted_signals: number;
+  execution_rate: number;
+  win_rate: number;
+  avg_return: number;
+  total_pnl: number;
+  max_drawdown: number;
+  sharpe_ratio: number;
+  status_changes: number;
+  param_changes: number;
+  data_quality_score: number;
+}
+
+export interface ReviewDecision {
+  id: string;
+  type: string;
+  target_id: string;
+  reason: string;
+  rationale: string;
+  approved_by: string;
+  new_version?: string;
+  old_version?: string;
+  created_at: string;
+}
+
+export interface ActionItem {
+  id: string;
+  title: string;
+  description: string;
+  priority: string;
+  assignee: string;
+  due_date: string;
+  status: string;
+  related_finding_id?: string;
+}
+
+export interface ReviewReport {
+  id: string;
+  type: ReviewType;
+  period: ReviewPeriod;
+  status: ReviewStatus;
+  priority: ReviewPriority;
+  source_id: string;
+  source_type: string;
+  period_start: string;
+  period_end: string;
+  generated_at: string;
+  findings: ReviewFinding[];
+  failures: FailureEvent[];
+  decisions: ReviewDecision[];
+  stats: ReviewStats;
+  executive_summary: string;
+  action_items: ActionItem[];
+  open_questions: string[];
+  recommendations: string[];
+  lessons_learned: string[];
+  feedback_generated: boolean;
+  feedback_id?: string;
+  author: string;
+  reviewed_by?: string;
+  approved_by?: string;
+}
+
+export type FailureCategory =
+  | 'model_degradation'
+  | 'market_regime'
+  | 'data_quality'
+  | 'execution'
+  | 'risk_management'
+  | 'liquidity'
+  | 'user_decision'
+  | 'system_error'
+  | 'overfitting'
+  | 'parameter_drift';
+
+export type FailureSeverity = 'info' | 'warning' | 'critical' | 'catastrophic';
+
+export interface FailureEvent {
+  id: string;
+  category: FailureCategory;
+  severity: FailureSeverity;
+  type: string;
+  title: string;
+  description: string;
+  source_id?: string;
+  source_type?: string;
+  paradigm_id?: string;
+  signal_id?: string;
+  order_id?: string;
+  metric: string;
+  expected: number;
+  actual: number;
+  deviation: number;
+  detected_at: string;
+  resolved_at?: string;
+  duration_minutes?: number;
+  root_cause?: string;
+  contributing_factors?: string[];
+  correction?: string;
+  status: string;
+  related_review_id?: string;
+}
+
+export interface FailureAnalysisResult {
+  total_failures: number;
+  open_failures: number;
+  by_category: Record<string, number>;
+  by_severity: Record<string, number>;
+  patterns: FailurePattern[];
+  top_causes: RootCauseItem[];
+  failure_rate: number;
+  mean_time_to_detect: number;
+  mean_time_to_resolve: number;
+  recurring_failures: number;
+}
+
+export interface FailurePattern {
+  id: string;
+  pattern_type: string;
+  name: string;
+  description: string;
+  occurrence_count: number;
+  affected_areas: string[];
+  detected_pattern?: number[];
+  severity: string;
+  recommendation: string;
+}
+
+export interface RootCauseItem {
+  factor: string;
+  count: number;
+  percentage: number;
+  first_seen: string;
+  last_seen: string;
+}
+
+export type FeedbackStatus = 'pending' | 'in_progress' | 'validated' | 'rejected' | 'implemented' | 'archived';
+export type FeedbackPriority = 'P0' | 'P1' | 'P2' | 'P3';
+export type FeedbackType = 'hypothesis' | 'param_update' | 'strategy_rev' | 'data_fix' | 'process_improve' | 'model_retrain';
+
+export interface FeedbackHistory {
+  timestamp: string;
+  actor: string;
+  action: string;
+  note?: string;
+  old_status?: string;
+  new_status?: string;
+}
+
+export interface ResearchFeedback {
+  id: string;
+  type: FeedbackType;
+  status: FeedbackStatus;
+  priority: FeedbackPriority;
+  source_review_id: string;
+  source_finding_id?: string;
+  source_failure_id?: string;
+  source_pattern_id?: string;
+  title: string;
+  description: string;
+  expected_impact: string;
+  validation_plan: string;
+  target_paradigm_id?: string;
+  target_version?: string;
+  new_version?: string;
+  created_at: string;
+  updated_at: string;
+  validated_at?: string;
+  validated_result?: string;
+  effort_estimate?: string;
+  impact_score?: number;
+  feasibility_score?: number;
+  history?: FeedbackHistory[];
+  author: string;
+  assignee?: string;
+}
+
+export interface FeedbackPortfolio {
+  id: string;
+  generated_at: string;
+  total_count: number;
+  pending_count: number;
+  high_priority: number;
+  items: ResearchFeedback[];
+  recommendations: string[];
+}
+
+export interface ReviewGenerateRequest {
+  source_id: string;
+  source_type: string;
+  type: ReviewType;
+  period: ReviewPeriod;
+  period_start?: string;
+  period_end?: string;
+  author?: string;
+  signal_count?: number;
+  executed_count?: number;
+  failed_count?: number;
+  unexecuted_count?: number;
+  returns?: number[];
+  pnl?: number;
+  status_changes?: number;
+  param_changes?: number;
+  data_quality_score?: number;
+  failures?: FailureEvent[];
+  decisions?: ReviewDecision[];
+}
+
+export interface ReviewGenerateResponse {
+  report: ReviewReport;
+}
+
+export interface ReviewListResponse {
+  reports: ReviewReport[];
+  total: number;
+}
+
+export interface ReviewFailureAnalysisResponse {
+  analysis: FailureAnalysisResult;
+  failures: FailureEvent[];
+}
+
+export interface ReviewFeedbackResponse {
+  portfolio: FeedbackPortfolio;
+}
+
+export interface ReviewFeedbackListResponse {
+  portfolios: FeedbackPortfolio[];
+  total: number;
+}
