@@ -589,7 +589,7 @@ func (uqg *UnifiedQualityGate) evaluateForwardMonitoring(opts EvaluateOptions) G
 		result.Failures++
 	}
 
-	result.Score = opts.ForwardReport.HealthScore
+	result.Score = opts.ForwardReport.HealthScore * 100
 
 	switch {
 	case !opts.ForwardReport.Passed || opts.ForwardReport.CriticalAlerts > 0:
@@ -604,7 +604,7 @@ func (uqg *UnifiedQualityGate) evaluateForwardMonitoring(opts EvaluateOptions) G
 	default:
 		result.Status = GatePass
 		result.Passed = true
-		result.Message = fmt.Sprintf("前向监控通过 (健康分 %.1f)", opts.ForwardReport.HealthScore)
+		result.Message = fmt.Sprintf("前向监控通过 (健康分 %.0f)", opts.ForwardReport.HealthScore*100)
 	}
 
 	result.LatencyMs = time.Since(start).Milliseconds()

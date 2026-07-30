@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/sjzsdu/tongstock/internal/quality"
+	"github.com/sjzsdu/tongstock/pkg/config"
+	"github.com/sjzsdu/tongstock/pkg/storage"
+	"github.com/sjzsdu/tongstock/pkg/tdx"
 	"github.com/spf13/cobra"
 )
 
@@ -41,11 +45,24 @@ var qualityVerifyCmd = &cobra.Command{
 	RunE:  runQualityVerify,
 }
 
+var qualityDemoCmd = &cobra.Command{
+	Use:   "demo",
+	Short: "端到端可复现演示 (使用内置测试数据)",
+	Long: `运行完整的质量门演示流程:
+  1. 使用内置 K 线数据验证数据质量门
+  2. 运行黄金回测测试集
+  3. 模拟范式阶段评分
+  4. 生成 AI 评测结果
+  5. 汇总为统一质量报告`,
+	RunE: runQualityDemo,
+}
+
 func init() {
 	qualityCmd.AddCommand(qualityCheckCmd)
 	qualityCmd.AddCommand(qualityStatusCmd)
 	qualityCmd.AddCommand(qualityReportCmd)
 	qualityCmd.AddCommand(qualityVerifyCmd)
+	qualityCmd.AddCommand(qualityDemoCmd)
 
 	qualityCheckCmd.Flags().String("source-id", "", "来源 ID (如 paradigm 版本 ID)")
 	qualityCheckCmd.Flags().String("source-type", "system", "来源类型: paradigm/run/system")
@@ -55,6 +72,11 @@ func init() {
 	qualityCheckCmd.Flags().Bool("skip-recovery", false, "跳过恢复就绪检查")
 	qualityCheckCmd.Flags().Bool("json", false, "输出 JSON 格式")
 	qualityCheckCmd.Flags().Bool("block", false, "退出码: 有 block 时返回非零")
+	qualityCheckCmd.Flags().String("codes", "", "股票代码列表 (逗号分隔, 如 sh000001,sz399001)")
+	qualityCheckCmd.Flags().String("kline-type", "day", "K 线类型: day/week/month/5min/15min/30min/60min")
+	qualityCheckCmd.Flags().String("start", "", "开始日期 (YYYYMMDD)")
+	qualityCheckCmd.Flags().String("end", "", "结束日期 (YYYYMMDD)")
+	qualityCheckCmd.Flags().Bool("golden", false, "运行黄金回测测试集")
 }
 
 func runQualityCheck(cmd *cobra.Command, args []string) error {
@@ -66,6 +88,11 @@ func runQualityCheck(cmd *cobra.Command, args []string) error {
 	skipRecovery, _ := cmd.Flags().GetBool("skip-recovery")
 	jsonOut, _ := cmd.Flags().GetBool("json")
 	blockExit, _ := cmd.Flags().GetBool("block")
+	codesStr, _ := cmd.Flags().GetString("codes")
+	ktypeStr, _ := cmd.Flags().GetString("kline-type")
+	startDate, _ := cmd.Flags().GetString("start")
+	endDate, _ := cmd.Flags().GetString("end")
+	runGolden, _ := cmd.Flags().GetBool("golden")
 
 	if sourceID == "" {
 		sourceID = fmt.Sprintf("manual-%d", time.Now().Unix())
@@ -75,18 +102,53 @@ func runQualityCheck(cmd *cobra.Command, args []string) error {
 	uqg := quality.NewUnifiedQualityGate(config)
 
 	opts := quality.EvaluateOptions{
-		SourceID:      sourceID,
-		SourceType:    sourceType,
-		RunID:         fmt.Sprintf("run-%d", time.Now().UnixNano()),
-		SkipDataQuality:   skipData,
-		SkipBacktest:      skipBacktest,
-		SkipAI:            skipAI,
-		SkipRecovery:      skipRecovery,
-		AsOfDate:          time.Now(),
-		HasBackup:         true,
-		LastBackupTime:    time.Now().Add(-1 * time.Hour),
-		CanDegrade:        true,
-		ManualOverride:    true,
+		SourceID:       sourceID,
+		SourceType:     sourceType,
+		RunID:          fmt.Sprintf("run-%d", time.Now().UnixNano()),
+		SkipDataQuality: skipData,
+		SkipBacktest:   skipBacktest,
+		SkipAI:         skipAI,
+		SkipRecovery:   skipRecovery,
+		AsOfDate:       time.Now(),
+		HasBackup:      true,
+		LastBackupTime: time.Now().Add(-1 * time.Hour),
+		CanDegrade:     true,
+		ManualOverride: true,
+	}
+
+	// 如果指定了股票代码, 从数据库获取真实 K 线数据
+	if codesStr != "" {
+		codes := splitCodes(codesStr)
+		ktype := tdx.ParseKlineType(ktypeStr)
+		dataSource, err := newQualityDataSource()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "⚠️  无法连接数据库, 使用空数据: %v\n", err)
+		} else if err := dataSource.FetchKlineData(codes, ktype, startDate, endDate, &opts); err != nil {
+			fmt.Fprintf(os.Stderr, "⚠️  数据获取部分失败: %v\n", err)
+		} else {
+			fmt.Printf("📊 已获取 %d 只股票的 K 线数据\n", len(codes))
+		}
+	}
+
+	// 运行黄金回测测试集
+	if runGolden && !skipBacktest {
+		engine := quality.NewBaselineEngineAdapter()
+		gs := quality.DefaultGoldenSet()
+		runner := quality.NewGoldenBacktestRunner(engine, gs.Specs)
+
+		btResult, details := runner.RunAll(context.Background())
+		opts.BacktestResults = btResult
+
+		fmt.Printf("🏆 黄金回测: %s (%d/%d 通过)\n",
+			btResult.Description, btResult.TestCount-btResult.FailCount, btResult.TestCount)
+		for _, d := range details {
+			status := "✅"
+			if !d.Passed {
+				status = "❌"
+			}
+			fmt.Printf("   %s %s: 收益 %.4f (预期 %.4f), 交易 %d 笔\n",
+				status, d.SpecID, d.ActualReturn, d.ActualReturn-d.ReturnDiff, d.ActualTrades)
+		}
 	}
 
 	report := uqg.Evaluate(opts)
@@ -290,4 +352,186 @@ func truncateStr(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen-1] + "…"
+}
+
+// newQualityDataSource 创建连接到数据库的质量数据源。
+func newQualityDataSource() (*quality.QualityDataSource, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, err
+	}
+	s, err := storage.New(storage.Config{Driver: cfg.Database.Driver, DSN: cfg.Database.DSN})
+	if err != nil {
+		return nil, err
+	}
+	store, err := tdx.NewKlineStore(s)
+	if err != nil {
+		_ = s.Close()
+		return nil, err
+	}
+	adapter := quality.NewTdxKlineAdapter(store)
+	return &quality.QualityDataSource{Fetcher: adapter}, nil
+}
+
+// runQualityDemo 运行端到端可复现演示。
+func runQualityDemo(cmd *cobra.Command, args []string) error {
+	fmt.Println("╔══════════════════════════════════════════════════════════════════╗")
+	fmt.Println("║              质量门端到端可复现演示                              ║")
+	fmt.Println("╚══════════════════════════════════════════════════════════════════╝")
+	fmt.Println()
+
+	config := quality.DefaultUnifiedGateConfig()
+	uqg := quality.NewUnifiedQualityGate(config)
+
+	// 1. 准备内置测试 K 线数据 (3 只股票)
+	fmt.Println("📌 步骤 1: 准备内置 K 线测试数据")
+	klineData := make(map[string][]quality.KlineRecord)
+	now := time.Now()
+
+	// sh000001 - 正常数据
+	klineData["sh000001"] = generateDemoKline(20, 15.0, 0.3, now)
+	// sz399001 - 有一些异常
+	klineData["sz399001"] = generateDemoKline(20, 8.0, 0.1, now)
+	// bj899050 - 数据质量差 (缺失 + 异常价格)
+	klineData["bj899050"] = generateDemoKlineWithIssues(20, 25.0, now)
+
+	for code, records := range klineData {
+		fmt.Printf("   %s: %d 条记录\n", code, len(records))
+	}
+
+	// 2. 运行黄金回测
+	fmt.Println("\n📌 步骤 2: 运行黄金回测测试集")
+	engine := quality.NewBaselineEngineAdapter()
+	gs := quality.DefaultGoldenSet()
+	runner := quality.NewGoldenBacktestRunner(engine, gs.Specs)
+	btResult, btDetails := runner.RunAll(context.Background())
+	fmt.Printf("   结果: %s\n", btResult.Description)
+	for _, d := range btDetails {
+		status := "✅"
+		if !d.Passed {
+			status = "❌"
+		}
+		fmt.Printf("   %s %s: 收益 %.4f, 交易 %d 笔\n",
+			status, d.SpecID, d.ActualReturn, d.ActualTrades)
+	}
+
+	// 3. 组装质量门输入
+	fmt.Println("\n📌 步骤 3: 组装质量门输入数据")
+	expectedDays := make(map[string][]time.Time)
+	for code := range klineData {
+		expectedDays[code] = generateDemoTradingDays(20, now)
+	}
+
+	opts := quality.EvaluateOptions{
+		SourceID:         fmt.Sprintf("demo-%d", time.Now().Unix()),
+		SourceType:       "demo",
+		RunID:            fmt.Sprintf("demo-run-%d", time.Now().UnixNano()),
+		KlineData:        klineData,
+		ExpectedDays:     expectedDays,
+		AsOfDate:         now,
+		BacktestResults:  btResult,
+		ParadigmScore: &quality.ParadigmScoreInput{
+			Stage:         "growth",
+			Score:         82.5,
+			GateThreshold: 70.0,
+			Decision:      "advance",
+			Transitions:   2,
+			EvidenceCount: 8,
+		},
+		AIEvaluation: &quality.AIEvaluationInput{
+			ModelVersion:  "v2.1.0",
+			Accuracy:      0.87,
+			Consistency:   0.92,
+			DriftDetected: false,
+			LastEvalDate:  now,
+			Passed:        true,
+		},
+		ForwardReport: &quality.ForwardMonitorInput{
+			HealthScore:    0.88,
+			DriftDetected:  false,
+			DecayDetected:  false,
+			AlertCount:     0,
+			CriticalAlerts: 0,
+			Passed:         true,
+		},
+		HasBackup:         true,
+		LastBackupTime:    now.Add(-30 * time.Minute),
+		CanDegrade:        true,
+		ManualOverride:    false,
+	}
+
+	// 4. 运行质量门评估
+	fmt.Println("\n📌 步骤 4: 运行统一质量门评估")
+	report := uqg.Evaluate(opts)
+
+	// 5. 输出结果
+	fmt.Println("\n📌 步骤 5: 生成质量报告")
+	printQualityReport(report)
+
+	// 6. 输出 JSON 版本
+	fmt.Println("\n📌 步骤 6: JSON 报告 (机器可读)")
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(report); err != nil {
+		return fmt.Errorf("JSON 编码失败: %w", err)
+	}
+
+	// 总结
+	fmt.Println("\n📌 演示完成")
+	if report.Blocked {
+		return fmt.Errorf("质量门被阻止: %s", report.Decision)
+	}
+	return nil
+}
+
+// generateDemoKline 生成演示用的 K 线数据。
+func generateDemoKline(n int, startPrice, step float64, baseDate time.Time) []quality.KlineRecord {
+	records := make([]quality.KlineRecord, n)
+	for i := 0; i < n; i++ {
+		price := startPrice + step*float64(i)
+		records[i] = quality.KlineRecord{
+			Date:   baseDate.AddDate(0, 0, -n+i),
+			Open:   price,
+			High:   price + 0.5,
+			Low:    price - 0.3,
+			Close:  price + step*0.5,
+			Volume: float64(10000 + i*500),
+			Amount: float64(price * 10000),
+		}
+	}
+	return records
+}
+
+// generateDemoKlineWithIssues 生成包含问题的演示 K 线数据。
+func generateDemoKlineWithIssues(n int, startPrice float64, baseDate time.Time) []quality.KlineRecord {
+	records := make([]quality.KlineRecord, n)
+	for i := 0; i < n; i++ {
+		price := startPrice + float64(i)*0.5
+		// 故意注入一些异常
+		if i == 5 {
+			price = 9999.0 // 异常高价
+		}
+		if i == 10 {
+			price = -1.0 // 负价格
+		}
+		records[i] = quality.KlineRecord{
+			Date:   baseDate.AddDate(0, 0, -n+i),
+			Open:   price,
+			High:   price + 0.5,
+			Low:    price - 0.3,
+			Close:  price,
+			Volume: float64(10000 + i*500),
+			Amount: float64(price * 10000),
+		}
+	}
+	return records
+}
+
+// generateDemoTradingDays 生成演示用的交易日列表。
+func generateDemoTradingDays(n int, baseDate time.Time) []time.Time {
+	days := make([]time.Time, n)
+	for i := 0; i < n; i++ {
+		days[i] = baseDate.AddDate(0, 0, -n+i)
+	}
+	return days
 }

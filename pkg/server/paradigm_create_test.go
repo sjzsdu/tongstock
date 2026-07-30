@@ -15,10 +15,13 @@ func TestHandleParadigmCreateSuccess(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 
-	store := paradigms.NewStore()
+	store, err := paradigms.NewStore("")
+	if err != nil {
+		t.Fatal(err)
+	}
 	s := NewServer(Dependencies{})
 	s.SetParadigmStore(store)
-	s.SetupParadigmRoutes(router)
+	s.SetupParadigmRoutes(&router.RouterGroup)
 
 	payload := paradigmCreateRequest{
 		Name:      "测试多头突破",
@@ -38,16 +41,16 @@ func TestHandleParadigmCreateSuccess(t *testing.T) {
 		Confirmations: []string{"成交量放大"},
 		Invalidations: []string{"跌破 MA60"},
 		Expectation: paradigms.Expectation{
-			HoldingPeriod:    "10日",
-			ExpectedReturn:   "10%",
-			RiskRewardRatio:  "2:1",
-			Confidence:       0.75,
+			HoldingPeriod:  "10日",
+			ExpectedReturn: "10%",
+			RiskReward:     "2:1",
+			Confidence:     0.75,
 		},
 		Tags: []string{"trend", "breakout"},
 	}
 
 	body, _ := json.Marshal(payload)
-	req := httptest.NewRequest(http.MethodPost, "/api/paradigm/hypothesis", bytes.NewBuffer(body))
+	req := httptest.NewRequest(http.MethodPost, "/paradigm/hypothesis", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -90,10 +93,13 @@ func TestHandleParadigmCreateMissingFalsifiability(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 
-	store := paradigms.NewStore()
+	store, err := paradigms.NewStore("")
+	if err != nil {
+		t.Fatal(err)
+	}
 	s := NewServer(Dependencies{})
 	s.SetParadigmStore(store)
-	s.SetupParadigmRoutes(router)
+	s.SetupParadigmRoutes(&router.RouterGroup)
 
 	payload := paradigmCreateRequest{
 		Name:      "无失效条件假设",
@@ -106,7 +112,7 @@ func TestHandleParadigmCreateMissingFalsifiability(t *testing.T) {
 	}
 
 	body, _ := json.Marshal(payload)
-	req := httptest.NewRequest(http.MethodPost, "/api/paradigm/hypothesis", bytes.NewBuffer(body))
+	req := httptest.NewRequest(http.MethodPost, "/paradigm/hypothesis", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -140,16 +146,19 @@ func TestHandleParadigmCreateMissingFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 
-	store := paradigms.NewStore()
+	store, err := paradigms.NewStore("")
+	if err != nil {
+		t.Fatal(err)
+	}
 	s := NewServer(Dependencies{})
 	s.SetParadigmStore(store)
-	s.SetupParadigmRoutes(router)
+	s.SetupParadigmRoutes(&router.RouterGroup)
 
 	// 缺少名称、方向、证券代码、买入条件、失效条件
 	payload := paradigmCreateRequest{}
 
 	body, _ := json.Marshal(payload)
-	req := httptest.NewRequest(http.MethodPost, "/api/paradigm/hypothesis", bytes.NewBuffer(body))
+	req := httptest.NewRequest(http.MethodPost, "/paradigm/hypothesis", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -166,10 +175,10 @@ func TestHandleParadigmCreateMissingFields(t *testing.T) {
 	}
 
 	expectedErrs := map[string]bool{
-		"假设名称不能为空": false,
-		"方向必须为 buy 或 sell": false,
-		"必须选择目标证券": false,
-		"至少需要一个买入触发条件": false,
+		"假设名称不能为空":                false,
+		"方向必须为 buy 或 sell":        false,
+		"必须选择目标证券":                false,
+		"至少需要一个买入触发条件":            false,
 		"缺少可证伪条件 (否定条件)，假设不能进入实验": false,
 	}
 
@@ -190,10 +199,13 @@ func TestHandleParadigmCreateInvalidSide(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 
-	store := paradigms.NewStore()
+	store, err := paradigms.NewStore("")
+	if err != nil {
+		t.Fatal(err)
+	}
 	s := NewServer(Dependencies{})
 	s.SetParadigmStore(store)
-	s.SetupParadigmRoutes(router)
+	s.SetupParadigmRoutes(&router.RouterGroup)
 
 	payload := paradigmCreateRequest{
 		Name:      "测试",
@@ -206,7 +218,7 @@ func TestHandleParadigmCreateInvalidSide(t *testing.T) {
 	}
 
 	body, _ := json.Marshal(payload)
-	req := httptest.NewRequest(http.MethodPost, "/api/paradigm/hypothesis", bytes.NewBuffer(body))
+	req := httptest.NewRequest(http.MethodPost, "/paradigm/hypothesis", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -227,10 +239,13 @@ func TestHandleParadigmCreatePersistsToStore(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 
-	store := paradigms.NewStore()
+	store, err := paradigms.NewStore("")
+	if err != nil {
+		t.Fatal(err)
+	}
 	s := NewServer(Dependencies{})
 	s.SetParadigmStore(store)
-	s.SetupParadigmRoutes(router)
+	s.SetupParadigmRoutes(&router.RouterGroup)
 
 	payload := paradigmCreateRequest{
 		Name:      "持久化测试",
@@ -243,7 +258,7 @@ func TestHandleParadigmCreatePersistsToStore(t *testing.T) {
 	}
 
 	body, _ := json.Marshal(payload)
-	req := httptest.NewRequest(http.MethodPost, "/api/paradigm/hypothesis", bytes.NewBuffer(body))
+	req := httptest.NewRequest(http.MethodPost, "/paradigm/hypothesis", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
