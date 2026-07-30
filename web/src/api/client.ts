@@ -27,6 +27,14 @@ import type {
   ParadigmStatsResponse,
   ParadigmBacktestItem,
   EvidenceCard,
+  ParadigmVersionRecord,
+  ParadigmLineageGraph,
+  ParadigmVersionDiff,
+  ParadigmDiscoverResponse,
+  ParadigmDecisionCardsResponse,
+  ParadigmTransitionsResponse,
+  ParadigmTransitionRequest,
+  ParadigmTransitionResponse,
   HypothesisPreviewRequest,
   HypothesisPreviewResponse,
   ChatSessionInfo,
@@ -506,6 +514,46 @@ export const api = {
 
   paradigmDelete: (id: string) =>
 	fetchJSON<{ message: string }>(`/api/paradigm/${id}`, { method: 'DELETE' }),
+
+  paradigmLineage: (id: string) =>
+	fetchJSON<ParadigmLineageGraph>(`/api/paradigm/${id}/lineage`),
+
+  paradigmVersions: (id: string) =>
+	fetchJSON<{ paradigm_id: string; total: number; versions: ParadigmVersionRecord[] }>(`/api/paradigm/${id}/versions`),
+
+  paradigmDiff: (id: string, from: number, to: number) =>
+	fetchJSON<ParadigmVersionDiff>(`/api/paradigm/${id}/diff?from=${from}&to=${to}`),
+
+  paradigmSnapshot: (id: string, payload: { change_type?: string; change_reason?: string; author?: string; evidence_hash?: string }) =>
+	fetchJSON<{ version: ParadigmVersionRecord }>(`/api/paradigm/${id}/snapshot`, {
+	  method: 'PUT',
+	  body: JSON.stringify(payload),
+	}),
+
+  paradigmDiscover: (filters?: { review_status?: string; side?: string; reliability?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.review_status) params.set('review_status', filters.review_status);
+    if (filters?.side) params.set('side', filters.side);
+    if (filters?.reliability) params.set('reliability', filters.reliability);
+    const q = params.toString();
+    return fetchJSON<ParadigmDiscoverResponse>('/api/paradigm/discover' + (q ? `?${q}` : ''));
+  },
+
+  paradigmDecisionCards: (code?: string) => {
+    const params = new URLSearchParams();
+    if (code) params.set('code', code);
+    const q = params.toString();
+    return fetchJSON<ParadigmDecisionCardsResponse>('/api/paradigm/decision-cards' + (q ? `?${q}` : ''));
+  },
+
+  paradigmTransitions: (id: string) =>
+	fetchJSON<ParadigmTransitionsResponse>(`/api/paradigm/${id}/transitions`),
+
+  paradigmTransition: (id: string, payload: ParadigmTransitionRequest) =>
+	fetchJSON<ParadigmTransitionResponse>(`/api/paradigm/${id}/transition`, {
+	  method: 'POST',
+	  body: JSON.stringify(payload),
+	}),
 
 	// Strategy APIs
 	overnightArbitrage: (codes: string[], minMarketCap?: number, maxMarketCap?: number) =>

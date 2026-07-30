@@ -53,13 +53,21 @@ func (s *Server) SetupParadigmRoutes(api *gin.RouterGroup) {
 		p.POST("/hypothesis/preview", s.handleParadigmPreview)
 		p.GET("/backtest", s.handleParadigmBacktest)
 		p.GET("/list", s.handleParadigmList)
+		p.GET("/discover", s.handleParadigmDiscover)
+		p.GET("/decision-cards", s.handleParadigmDecisionCards)
 		p.GET("/alerts", s.handleParadigmAlerts)
 		p.GET("/stats", s.handleParadigmStats)
 		p.GET("/stock/:code", s.handleParadigmByStock)
 		p.GET("/history", s.handleParadigmHistory)
 		p.GET("/:id", s.handleParadigmGet)
 		p.GET("/:id/evidence", s.handleParadigmEvidence)
+		p.GET("/:id/lineage", s.handleParadigmLineage)
+		p.GET("/:id/versions", s.handleParadigmVersions)
+		p.GET("/:id/diff", s.handleParadigmDiff)
+		p.GET("/:id/transitions", s.handleParadigmTransitions)
 		p.PUT("/:id/review", s.handleParadigmReview)
+		p.PUT("/:id/snapshot", s.handleParadigmSnapshot)
+		p.POST("/:id/transition", s.handleParadigmTransition)
 		p.DELETE("/:id", s.handleParadigmDelete)
 	}
 }
@@ -345,6 +353,94 @@ func (s *Server) handleParadigmStats(c *gin.Context) {
 		resp.AverageRating = ratingSum / float64(ratingN)
 	}
 	c.JSON(http.StatusOK, resp)
+}
+
+// handleParadigmDiscover 返回已晋级范式的精简列表, 供产品发现页使用。
+// 只有 verified / promoted 才能进入发现流。
+func (s *Server) handleParadigmDiscover(c *gin.Context) {
+	if s.paradigmStore == nil {
+		c.JSON(http.StatusOK, gin.H{"paradigms": []*paradigms.Paradigm{}, "total": 0})
+		return
+	}
+	list := paradigms.FilterPromoted(s.paradigmStore.List())
+	// 支持按 review_status / side / reliability 进一步过滤
+	if status := strings.TrimSpace(c.Query("review_status")); status != "" {
+		list = filterByStatus(list, status)
+	}
+	if side := strings.TrimSpace(c.Query("side")); side != "" {
+		list = filterBySide(list, side)
+	}
+	if rel := strings.TrimSpace(c.Query("reliability")); rel != "" {
+		list = filterByReliability(list, rel)
+	}
+	c.JSON(http.StatusOK, gin.H{"paradigms": list, "total": len(list)})
+}
+
+// handleParadigmDecisionCards 生成已晋级范式的决策卡列表, 供产品决策入口使用。
+func (s *Server) handleParadigmDecisionCards(c *gin.Context) {
+	if s.paradigmStore == nil {
+		c.JSON(http.StatusOK, gin.H{"cards": []paradigms.DecisionCard{}, "total": 0})
+		return
+	}
+	promoted := paradigms.FilterPromoted(s.paradigmStore.List())
+	// 若指定 code, 则只返回匹配股票的决策卡
+	if code := strings.TrimSpace(c.Query("code")); code != "" {
+		promoted = filterByStockCode(promoted, code)
+	}
+	cards := make([]paradigms.DecisionCard, 0, len(promoted))
+	for _, p := range promoted {
+		version := 0
+		history := s.paradigmStore.GetVersions(p.ID)
+		if len(history) > 0 {
+			version = history[len(history)-1].Version
+		}
+		evidenceHash := ""
+		if p.Evidence != nil {
+			evidenceHash = p.Source.CacheKey
+		}
+		cards = append(cards, paradigms.BuildDecisionCard(p, version, evidenceHash))
+	}
+	c.JSON(http.StatusOK, gin.H{"cards": cards, "total": len(cards)})
+}
+
+func filterByStatus(list []*paradigms.Paradigm, status string) []*paradigms.Paradigm {
+	out := make([]*paradigms.Paradigm, 0, len(list))
+	for _, p := range list {
+		if p.ReviewStatus == status {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func filterBySide(list []*paradigms.Paradigm, side string) []*paradigms.Paradigm {
+	out := make([]*paradigms.Paradigm, 0, len(list))
+	for _, p := range list {
+		if p.Side == side {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func filterByReliability(list []*paradigms.Paradigm, rel string) []*paradigms.Paradigm {
+	out := make([]*paradigms.Paradigm, 0, len(list))
+	for _, p := range list {
+		if p.Validation.ReliabilityLabel == rel {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func filterByStockCode(list []*paradigms.Paradigm, code string) []*paradigms.Paradigm {
+	out := make([]*paradigms.Paradigm, 0, len(list))
+	for _, p := range list {
+		if p.StockCode == code {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 type paradigmEvaluateRequest struct {
@@ -1612,6 +1708,191 @@ func (s *Server) handleParadigmEvidence(c *gin.Context) {
 	builder := paradigms.NewEvidenceBuilder()
 	card := builder.BuildFromParadigm(p, bt)
 	c.JSON(http.StatusOK, card)
+}
+
+// --- Lineage & Versioning ---
+
+// handleParadigmLineage 返回范式的研究血缘图
+func (s *Server) handleParadigmLineage(c *gin.Context) {
+	if s.paradigmStore == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "paradigm store not initialized"})
+		return
+	}
+	id := c.Param("id")
+	// 查询关联证据卡哈希 (若存在)
+	evidenceHash := ""
+	if p, err := s.paradigmStore.Get(id); err == nil {
+		evidenceHash = p.Source.CacheKey
+	}
+	graph, err := s.paradigmStore.BuildLineageFor(id, evidenceHash)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, graph)
+}
+
+// handleParadigmVersions 返回范式的版本历史
+func (s *Server) handleParadigmVersions(c *gin.Context) {
+	if s.paradigmStore == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "paradigm store not initialized"})
+		return
+	}
+	id := c.Param("id")
+	if _, err := s.paradigmStore.Get(id); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	versions := s.paradigmStore.GetVersions(id)
+	c.JSON(http.StatusOK, gin.H{
+		"paradigm_id": id,
+		"total":       len(versions),
+		"versions":    versions,
+	})
+}
+
+// handleParadigmDiff 比较两个版本
+func (s *Server) handleParadigmDiff(c *gin.Context) {
+	if s.paradigmStore == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "paradigm store not initialized"})
+		return
+	}
+	id := c.Param("id")
+	fromStr := c.Query("from")
+	toStr := c.Query("to")
+	if fromStr == "" || toStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "from and to query params are required"})
+		return
+	}
+	fromV, err := strconv.Atoi(fromStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid from"})
+		return
+	}
+	toV, err := strconv.Atoi(toStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid to"})
+		return
+	}
+
+	fromVer, err := s.paradigmStore.GetVersion(id, fromV)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	toVer, err := s.paradigmStore.GetVersion(id, toV)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	diff := paradigms.DiffParadigmVersions(fromVer.Snapshot, toVer.Snapshot, fromV, toV)
+	c.JSON(http.StatusOK, diff)
+}
+
+// handleParadigmTransitions 返回范式的状态变更审计记录
+func (s *Server) handleParadigmTransitions(c *gin.Context) {
+	if s.paradigmStore == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "paradigm store not initialized"})
+		return
+	}
+	id := c.Param("id")
+	p, err := s.paradigmStore.Get(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"paradigm_id": id,
+		"current":     p.ReviewStatus,
+		"transitions": p.Transitions,
+		"total":       len(p.Transitions),
+	})
+}
+
+type paradigmTransitionRequest struct {
+	To           string `json:"to"`
+	Reason       string `json:"reason"`
+	Actor        string `json:"actor,omitempty"`
+	EvidenceHash string `json:"evidence_hash,omitempty"`
+	Auto         bool   `json:"auto,omitempty"`
+}
+
+type paradigmTransitionResponse struct {
+	Paradigm   *paradigms.Paradigm              `json:"paradigm"`
+	Transition *paradigms.StateTransition       `json:"transition"`
+	Version    *paradigms.ParadigmVersionRecord `json:"version"`
+}
+
+// handleParadigmTransition 应用一次状态机变更 (晋级/降级/暂停/淘汰等)
+func (s *Server) handleParadigmTransition(c *gin.Context) {
+	if s.paradigmStore == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "paradigm store not initialized"})
+		return
+	}
+	id := c.Param("id")
+	var req paradigmTransitionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.To == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "to is required"})
+		return
+	}
+	p, rec, ver, err := s.paradigmStore.Transition(id, req.To, req.Reason, req.Actor, req.EvidenceHash, req.Auto)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, paradigmTransitionResponse{
+		Paradigm:   p,
+		Transition: rec,
+		Version:    ver,
+	})
+}
+
+// paradigmSnapshotRequest 请求体：创建一个不可变版本快照
+type paradigmSnapshotRequest struct {
+	ChangeType   string `json:"change_type"`
+	ChangeReason string `json:"change_reason"`
+	Author       string `json:"author"`
+	EvidenceHash string `json:"evidence_hash,omitempty"`
+}
+
+// handleParadigmSnapshot 为当前范式创建一个不可变版本快照
+func (s *Server) handleParadigmSnapshot(c *gin.Context) {
+	if s.paradigmStore == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "paradigm store not initialized"})
+		return
+	}
+	id := c.Param("id")
+	p, err := s.paradigmStore.Get(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	var req paradigmSnapshotRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// 允许空 body: 使用默认值
+		req.ChangeType = "update"
+	}
+	if req.ChangeType == "" {
+		req.ChangeType = "update"
+	}
+	if req.Author == "" {
+		req.Author = "system"
+	}
+
+	rec, err := s.paradigmStore.SaveVersion(p, req.ChangeType, req.ChangeReason, req.Author, req.EvidenceHash)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"version": rec,
+	})
 }
 
 // --- Hypothesis Preview ---

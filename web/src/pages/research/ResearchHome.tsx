@@ -48,6 +48,14 @@ const workflowStages = [
     desc: '不可回填的实时信号监测与收益追踪',
   },
   {
+    key: 'discover',
+    title: '发现',
+    subtitle: '决策入口',
+    path: '/research/discover',
+    color: '#52c41a',
+    desc: '已晋级范式的决策卡, 面向产品与决策场景',
+  },
+  {
     key: 'retrospective',
     title: '复盘迭代',
     subtitle: '持续改进',
@@ -150,7 +158,7 @@ export default function ResearchHome() {
       </Card>
 
       {/* 工作流阶段 */}
-      <Card title="研究工作流" extra={<Tag color="blue">6 阶段</Tag>}>
+      <Card title="研究工作流" extra={<Tag color="blue">{workflowStages.length} 阶段</Tag>}>
         <Row gutter={[16, 16]}>
           {workflowStages.map((stage, idx) => (
             <Col xs={24} sm={12} lg={8} key={stage.key}>

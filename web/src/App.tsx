@@ -33,6 +33,7 @@ const Candidates = lazy(() => import('./pages/research/Candidates'));
 const Verified = lazy(() => import('./pages/research/Verified'));
 const Observation = lazy(() => import('./pages/research/Observation'));
 const Retrospective = lazy(() => import('./pages/research/Retrospective'));
+const Discover = lazy(() => import('./pages/research/Discover'));
 
 const StockDetail = lazy(() => import('./pages/stock/StockDetail'));
 const StockChoose = lazy(() => import('./pages/stock/StockChoose'));
@@ -259,6 +260,7 @@ export default function App() {
             <Route path="/research/verified" element={<Verified />} />
             <Route path="/research/observation" element={<Observation />} />
             <Route path="/research/retrospective" element={<Retrospective />} />
+            <Route path="/research/discover" element={<Discover />} />
 
             {/* 保持向后兼容的路由 */}
             <Route path="/watchlist" element={<Watchlist />} />

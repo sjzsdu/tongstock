@@ -39,6 +39,7 @@ const GROUP_COLORS: Record<string, string> = {
   industry: 'blue',
   concept: 'green',
   custom: 'purple',
+  paradigm: 'magenta',
 };
 
 function getGroupColor(group: string): string {
@@ -50,6 +51,7 @@ function getGroupLabel(group: string): string {
     default: '默认',
     industry: '行业',
     concept: '概念',
+    paradigm: '范式观察',
   };
   return labels[group] ?? group;
 }
@@ -285,7 +287,7 @@ export default function Watchlist() {
 
   const groupOptions = useMemo(() => {
     const existing = (groups ?? []).map((g) => g.name);
-    const presets = ['default', 'industry', 'concept', 'custom'];
+    const presets = ['default', 'industry', 'concept', 'custom', 'paradigm'];
     const all = Array.from(new Set([...presets, ...existing]));
     return all.map((name) => ({ label: getGroupLabel(name), value: name }));
   }, [groups]);

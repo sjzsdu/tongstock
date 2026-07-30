@@ -25,6 +25,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
 import type { ParadigmItem, EvidenceCard } from '../../types/api';
 import EvidenceCardView from '../../components/research/EvidenceCard';
+import LineageView from '../../components/research/LineageView';
 import {
   ProductStatusBanner,
   ProductStatusBlock,
@@ -74,7 +75,9 @@ export default function Experiment() {
   const [total, setTotal] = useState(0);
 
   const [evidenceDrawerOpen, setEvidenceDrawerOpen] = useState(false);
+  const [lineageDrawerOpen, setLineageDrawerOpen] = useState(false);
   const [currentEvidence, setCurrentEvidence] = useState<EvidenceCard | null>(null);
+  const [currentParadigmId, setCurrentParadigmId] = useState<string>('');
   const [evidenceLoading, setEvidenceLoading] = useState(false);
 
   const [errMsg, setErrMsg] = useState<string | null>(null);
@@ -107,6 +110,7 @@ export default function Experiment() {
   };
 
   const showEvidence = async (id: string) => {
+    setCurrentParadigmId(id);
     setEvidenceDrawerOpen(true);
     setEvidenceLoading(true);
     setCurrentEvidence(null);
@@ -118,6 +122,11 @@ export default function Experiment() {
     } finally {
       setEvidenceLoading(false);
     }
+  };
+
+  const showLineage = (id: string) => {
+    setCurrentParadigmId(id);
+    setLineageDrawerOpen(true);
   };
 
   const columns: ColumnsType<ParadigmItem> = [
@@ -186,7 +195,7 @@ export default function Experiment() {
     {
       title: '操作',
       key: 'action',
-      width: 180,
+      width: 220,
       render: (_, r) => (
         <Space>
           <Button
@@ -196,6 +205,13 @@ export default function Experiment() {
             onClick={() => showEvidence(r.id)}
           >
             证据卡
+          </Button>
+          <Button
+            size="small"
+            type="link"
+            onClick={() => showLineage(r.id)}
+          >
+            血缘
           </Button>
           <Button
             size="small"
@@ -360,6 +376,24 @@ export default function Experiment() {
             description="该范式尚未生成证据卡，可能是缺少样本数据或回测失败。"
           />
         )}
+      </Drawer>
+
+      {/* 血缘视图抽屉 */}
+      <Drawer
+        title={
+          <Space>
+            <ExperimentOutlined />
+            <span>研究血缘与版本对比</span>
+          </Space>
+        }
+        width={1000}
+        open={lineageDrawerOpen}
+        onClose={() => setLineageDrawerOpen(false)}
+        destroyOnClose
+      >
+        {currentParadigmId ? (
+          <LineageView paradigmId={currentParadigmId} />
+        ) : null}
       </Drawer>
     </Space>
   );

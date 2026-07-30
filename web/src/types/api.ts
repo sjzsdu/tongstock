@@ -840,6 +840,158 @@ export interface EvidenceCard {
   stage_gate_decision?: GateDecision;
 }
 
+// Paradigm lineage & versioning types
+
+export interface ParadigmVersionRecord {
+  id: string;
+  paradigm_id: string;
+  version: number;
+  parent_version: number;
+  change_reason: string;
+  change_type: string; // "create" | "update" | "review" | "promote" | "rollback"
+  content_hash: string;
+  author?: string;
+  snapshot?: ParadigmItem;
+  evidence_hash: string;
+  created_at: string;
+}
+
+export interface LineageNode {
+  id: string;
+  type: string; // "hypothesis" | "paradigm" | "evidence" | "review" | "promote" | "reject"
+  title: string;
+  detail?: string;
+  version?: number;
+  status: string;
+  timestamp: string;
+  actor?: string;
+  payload?: unknown;
+}
+
+export interface LineageEdge {
+  from: string;
+  to: string;
+  type: string;
+}
+
+export interface ParadigmLineageGraph {
+  paradigm_id: string;
+  paradigm_name: string;
+  current_state: string;
+  nodes: LineageNode[];
+  edges: LineageEdge[];
+  versions: ParadigmVersionRecord[];
+  summary: string;
+}
+
+export interface RuleDiffDetail {
+  added: string[];
+  removed: string[];
+  updated: string[];
+}
+
+export interface DataDiffDetail {
+  old_data_source?: string;
+  new_data_source?: string;
+  old_version?: string;
+  new_version?: string;
+  changed: boolean;
+}
+
+export interface MetaDiffDetail {
+  old_review_status?: string;
+  new_review_status?: string;
+  old_reliability?: string;
+  new_reliability?: string;
+  changed: boolean;
+}
+
+export interface ParadigmVersionDiff {
+  from_version: number;
+  to_version: number;
+  changed_rule: boolean;
+  changed_data: boolean;
+  changed_meta: boolean;
+  rule_diff: RuleDiffDetail;
+  data_diff: DataDiffDetail;
+  meta_diff: MetaDiffDetail;
+  summary: string;
+}
+
+// Decision Card 类型: 面向决策场景的已晋级范式摘要
+export interface ParadigmDecisionCard {
+  paradigm_id: string;
+  paradigm_name: string;
+  paradigm_version: number;
+  stock_code: string;
+  stock_name: string;
+  side: 'buy' | 'sell' | string;
+  review_status: string;
+  triggers: string[];
+  invalidations: string[];
+  evidence_score: number;
+  evidence_hash: string;
+  reliability: string;
+  generated_at: string;
+  ttl: string;
+  promoted_at: string;
+  active: boolean;
+}
+
+export interface ParadigmDiscoverResponse {
+  paradigms: ParadigmItem[];
+  total: number;
+}
+
+export interface ParadigmDecisionCardsResponse {
+  cards: ParadigmDecisionCard[];
+  total: number;
+}
+
+// Paradigm lifecycle state machine types
+export type ParadigmState =
+  | 'pending'
+  | 'reviewed'
+  | 'verified'
+  | 'promoted'
+  | 'degraded'
+  | 'suspended'
+  | 'rejected';
+
+export interface StateTransition {
+  id: string;
+  paradigm_id: string;
+  from: string;
+  to: string;
+  action: string;
+  reason: string;
+  actor?: string;
+  evidence_hash?: string;
+  auto: boolean;
+  created_at: string;
+}
+
+export interface ParadigmTransitionsResponse {
+  paradigm_id: string;
+  current: string;
+  transitions: StateTransition[];
+  total: number;
+}
+
+export interface ParadigmTransitionRequest {
+  to: string;
+  reason: string;
+  actor?: string;
+  evidence_hash?: string;
+  auto?: boolean;
+}
+
+export interface ParadigmTransitionResponse {
+  paradigm: ParadigmItem;
+  transition: StateTransition;
+  version: ParadigmVersionRecord;
+}
+
 // Hypothesis Preview types
 export interface HypothesisPreviewRequest {
   name: string;
