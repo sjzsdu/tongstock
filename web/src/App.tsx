@@ -48,6 +48,7 @@ const Paradigms = lazy(() => import('./pages/Paradigms'));
 const OvernightArbitrage = lazy(() => import('./pages/strategy/OvernightArbitrage'));
 const EventDetail = lazy(() => import('./pages/news/EventDetail'));
 const NewsHome = lazy(() => import('./pages/news/NewsHome'));
+const Monitoring = lazy(() => import('./pages/Monitoring'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 const { Header, Content, Sider } = Layout;
@@ -96,6 +97,7 @@ const toolsMenuItems: MenuProps['items'] = [
     children: [
       { key: '/agent', icon: <RobotOutlined />, label: <Link to="/agent">AI 助手</Link> },
       { key: '/paradigms', icon: <RadarChartOutlined />, label: <Link to="/paradigms">范式库</Link> },
+      { key: '/monitoring', icon: <SafetyCertificateOutlined />, label: <Link to="/monitoring">范式监控</Link> },
       { key: '/screen', icon: <SearchOutlined />, label: <Link to="/screen">信号筛选</Link> },
       { key: '/stock/choose', icon: <StockOutlined />, label: <Link to="/stock/choose">个股分析</Link> },
       { key: '/watchlist', icon: <HeartOutlined />, label: <Link to="/watchlist">自选股</Link> },
@@ -275,6 +277,7 @@ export default function App() {
             <Route path="/index/:code/:tab" element={<IndexDetail />} />
             <Route path="/agent" element={<AgentWeb />} />
             <Route path="/paradigms" element={<Paradigms />} />
+            <Route path="/monitoring" element={<Monitoring />} />
             <Route path="/strategy/overnight" element={<OvernightArbitrage />} />
             <Route path="/news" element={<NewsHome />} />
             <Route path="/news/event/:id" element={<EventDetail />} />
@@ -311,6 +314,7 @@ function buildBreadcrumbs(pathname: string) {
     blocks: '股票池',
     settings: '配置',
     paradigms: '范式库',
+    monitoring: '范式监控',
     strategy: '策略',
     overnight: '隔夜套利',
     agent: 'AI 助手',

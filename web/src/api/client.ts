@@ -57,6 +57,10 @@ import type {
   ComparisonReport,
   SignalEntry,
   EquityPoint,
+  MonitoringReport,
+  MonitoringRunRequest,
+  AlertItem,
+  AlertSummary,
 } from '../types/api';
 import type { ErrorEnvelope } from './generated';
 
@@ -749,6 +753,35 @@ export const api = {
 				method: 'POST',
 				body: JSON.stringify(payload),
 			}),
+
+	// Monitoring APIs
+	monitoringRun: (payload: MonitoringRunRequest) =>
+		fetchJSON<{ report: MonitoringReport }>('/api/monitoring/run', {
+			method: 'POST',
+			body: JSON.stringify(payload),
+		}),
+
+	monitoringReport: () =>
+		fetchJSON<{ report: MonitoringReport }>('/api/monitoring/report'),
+
+	monitoringAlerts: () =>
+		fetchJSON<{ alerts: AlertItem[]; summary: AlertSummary }>('/api/monitoring/alerts'),
+
+	monitoringAlertAck: (id: string, user?: string) =>
+		fetchJSON<{ status: string; id: string }>(`/api/monitoring/alerts/${id}/ack` + (user ? `?user=${user}` : ''), {
+			method: 'POST',
+		}),
+
+	monitoringAlertResolve: (id: string) =>
+		fetchJSON<{ status: string; id: string }>(`/api/monitoring/alerts/${id}/resolve`, {
+			method: 'POST',
+		}),
+
+	monitoringConfig: () =>
+		fetchJSON<{ config: Record<string, unknown> }>('/api/monitoring/config'),
+
+	monitoringHealth: () =>
+		fetchJSON<{ status: string; engine_source: string; alert_summary: AlertSummary }>('/api/monitoring/health'),
 };
 
 export interface OvernightCriteria {

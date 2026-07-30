@@ -1341,3 +1341,291 @@ export interface EquityPoint {
   value: number;
   total: number;
 }
+
+// ============================================================================
+// 监控模块类型
+// ============================================================================
+
+export interface DriftDetectionResult {
+  type: string;
+  significant: boolean;
+  severity: string;
+  metric_name: string;
+  old_value: number;
+  new_value: number;
+  delta: number;
+  delta_pct: number;
+  p_value: number;
+  threshold: number;
+  sample_size: number;
+  description: string;
+}
+
+export interface DriftSummary {
+  total_detections: number;
+  significant_count: number;
+  severe_count: number;
+  average_delta_pct: number;
+  overall_status: string;
+}
+
+export interface DecayDetectionResult {
+  type: string;
+  is_decaying: boolean;
+  severity: string;
+  current_value: number;
+  historical_avg: number;
+  change_pct: number;
+  window_days: number;
+  confidence: number;
+  description: string;
+  detected_at: string;
+}
+
+export interface DecaySummary {
+  total_detections: number;
+  decaying_count: number;
+  critical_count: number;
+  avg_confidence: number;
+  overall_status: string;
+}
+
+export interface ConcentrationResult {
+  type: string;
+  hhi: number;
+  effective_count: number;
+  is_concentrated: boolean;
+  severity: string;
+  top_contributor: string;
+  top_weight: number;
+  threshold: number;
+  breakdown: Record<string, number>;
+  description: string;
+}
+
+export interface ConcentrationSummary {
+  total_detections: number;
+  concentrated_count: number;
+  critical_count: number;
+  avg_hhi: number;
+  overall_status: string;
+}
+
+export interface AlertItem {
+  id: string;
+  category: string;
+  level: string;
+  status: string;
+  title: string;
+  message: string;
+  source: string;
+  metric_name: string;
+  metric_value: number;
+  threshold: number;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  acked_at?: string;
+  resolved_at?: string;
+  acked_by?: string;
+}
+
+export interface AlertSummary {
+  total_alerts: number;
+  active_count: number;
+  acked_count: number;
+  resolved_count: number;
+  suppressed_count: number;
+  critical_count: number;
+  danger_count: number;
+  warning_count: number;
+  info_count: number;
+}
+
+export interface MonitoringReport {
+  source: string;
+  generated_at: string;
+  period: {
+    start_date: string;
+    end_date: string;
+    window_days: number;
+  };
+  drift_results: DriftDetectionResult[];
+  drift_summary: DriftSummary;
+  decay_results: DecayDetectionResult[];
+  decay_summary: DecaySummary;
+  concentration_results: ConcentrationResult[];
+  concentration_summary: ConcentrationSummary;
+  generated_alerts: AlertItem[];
+  alert_summary: AlertSummary;
+  recommendations: string[];
+  health_score: number;
+}
+
+export interface MonitoringRunRequest {
+  source?: string;
+  baseline_returns: number[];
+  forward_returns: number[];
+  forward_dates?: string[];
+  positions?: {
+    code: string;
+    name?: string;
+    industry: string;
+    weight: number;
+    value?: number;
+  }[];
+}
+
+export interface PositionItem {
+  code: string;
+  name?: string;
+  industry: string;
+  weight: number;
+  value?: number;
+}
+
+export interface MonitoringAlertAckRequest {
+  user?: string;
+}
+
+// ============================================================================
+// 监控模块类型
+// ============================================================================
+
+export interface DriftDetectionResult {
+  type: string;
+  significant: boolean;
+  severity: string;
+  metric_name: string;
+  old_value: number;
+  new_value: number;
+  delta: number;
+  delta_pct: number;
+  p_value: number;
+  threshold: number;
+  sample_size: number;
+  description: string;
+}
+
+export interface DriftSummary {
+  total_detections: number;
+  significant_count: number;
+  severe_count: number;
+  average_delta_pct: number;
+  overall_status: string;
+}
+
+export interface DecayDetectionResult {
+  type: string;
+  is_decaying: boolean;
+  severity: string;
+  current_value: number;
+  historical_avg: number;
+  change_pct: number;
+  window_days: number;
+  confidence: number;
+  description: string;
+  detected_at: string;
+}
+
+export interface DecaySummary {
+  total_detections: number;
+  decaying_count: number;
+  critical_count: number;
+  avg_confidence: number;
+  overall_status: string;
+}
+
+export interface ConcentrationResult {
+  type: string;
+  hhi: number;
+  effective_count: number;
+  is_concentrated: boolean;
+  severity: string;
+  top_contributor: string;
+  top_weight: number;
+  threshold: number;
+  breakdown: Record<string, number>;
+  description: string;
+}
+
+export interface ConcentrationSummary {
+  total_detections: number;
+  concentrated_count: number;
+  critical_count: number;
+  avg_hhi: number;
+  overall_status: string;
+}
+
+export interface AlertItem {
+  id: string;
+  category: string;
+  level: string;
+  status: string;
+  title: string;
+  message: string;
+  source: string;
+  metric_name: string;
+  metric_value: number;
+  threshold: number;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  acked_at?: string;
+  resolved_at?: string;
+  acked_by?: string;
+}
+
+export interface AlertSummary {
+  total_alerts: number;
+  active_count: number;
+  acked_count: number;
+  resolved_count: number;
+  suppressed_count: number;
+  critical_count: number;
+  danger_count: number;
+  warning_count: number;
+  info_count: number;
+}
+
+export interface MonitoringReport {
+  source: string;
+  generated_at: string;
+  period: {
+    start_date: string;
+    end_date: string;
+    window_days: number;
+  };
+  drift_results: DriftDetectionResult[];
+  drift_summary: DriftSummary;
+  decay_results: DecayDetectionResult[];
+  decay_summary: DecaySummary;
+  concentration_results: ConcentrationResult[];
+  concentration_summary: ConcentrationSummary;
+  generated_alerts: AlertItem[];
+  alert_summary: AlertSummary;
+  recommendations: string[];
+  health_score: number;
+}
+
+export interface MonitoringRunRequest {
+  source?: string;
+  baseline_returns: number[];
+  forward_returns: number[];
+  forward_dates?: string[];
+  positions?: {
+    code: string;
+    name?: string;
+    industry: string;
+    weight: number;
+    value?: number;
+  }[];
+}
+
+export interface PositionItem {
+  code: string;
+  name?: string;
+  industry: string;
+  weight: number;
+  value?: number;
+}
