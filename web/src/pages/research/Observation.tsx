@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Card, Row, Col, Tag, Typography, Space, Alert, Table, Progress, Button, message,
-  Modal, Form, InputNumber, DatePicker, Select, Statistic, Divider, Descriptions,
+  Modal, Form, Input, InputNumber, DatePicker, Select, Statistic, Divider, Descriptions,
   Drawer, Empty, Tooltip, Badge, Segmented,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -13,18 +13,17 @@ import {
 import dayjs from 'dayjs';
 import { api } from '../../api/client';
 import type {
-  ParadigmAlertItem, ParadigmAlertsResponse, ParadigmItem,
+  ParadigmAlertItem, ParadigmItem,
   ForwardRun, ForwardRunCreateRequest, SignalEntry, ComparisonReport,
   ForwardRunExecuteResponse,
 } from '../../types/api';
 
 const { Title, Text, Paragraph } = Typography;
-const { RangePicker } = DatePicker;
 
 export default function Observation() {
   const [loading, setLoading] = useState(false);
   const [alerts, setAlerts] = useState<ParadigmAlertItem[]>([]);
-  const [total, setTotal] = useState(0);
+  const [, setTotal] = useState(0);
   const [paradigms, setParadigms] = useState<ParadigmItem[]>([]);
 
   // Forward Run state
@@ -181,8 +180,6 @@ export default function Observation() {
   // ========================================================================
 
   const criticalCount = alerts.filter(a => a.severity === 'critical').length;
-  const warningCount = alerts.filter(a => a.severity === 'warning').length;
-  const infoCount = alerts.filter(a => a.severity === 'info').length;
 
   const activeRuns = runs.filter(r => r.status === 'active');
   const completedRuns = runs.filter(r => r.status === 'completed');

@@ -56,7 +56,7 @@ describe('研究工作台信息架构', () => {
     };
 
     it('所有研究路由都应有对应的组件', () => {
-      for (const [path, component] of Object.entries(routeMappings)) {
+      for (const [, component] of Object.entries(routeMappings)) {
         expect(component).toBeDefined();
         expect(component.length).toBeGreaterThan(0);
       }

@@ -5,7 +5,6 @@ import {
   Button,
   Card,
   Col,
-  Descriptions,
   Progress,
   Row,
   Space,
@@ -20,7 +19,6 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   ExclamationCircleOutlined,
-  ExclamationTriangleOutlined,
   InfoCircleOutlined,
   LoadingOutlined,
   SafetyCertificateOutlined,
@@ -62,7 +60,7 @@ const levelColor: Record<string, string> = {
 const levelIcon: Record<string, React.ReactNode> = {
   critical: <CloseCircleOutlined />,
   danger: <BugOutlined />,
-  warning: <ExclamationTriangleOutlined />,
+  warning: <WarningOutlined />,
   info: <InfoCircleOutlined />,
 };
 
@@ -255,14 +253,14 @@ export default function Monitoring() {
                   <Tag color={severityColor[report.decay_summary.overall_status]}>
                     {report.decay_summary.critical_count > 0
                       ? '严重'
-                      : report.decay_summary.decayingCount > 0
+                      : report.decay_summary.decaying_count > 0
                       ? '警告'
                       : '正常'}
                   </Tag>
                 }
               />
               <Text type="secondary">
-                {report.decay_summary.decayingCount} 项衰减 / {report.decay_summary.total_detections} 项检测
+                {report.decay_summary.decaying_count} 项衰减 / {report.decay_summary.total_detections} 项检测
               </Text>
             </Card>
           </Col>
@@ -292,7 +290,7 @@ export default function Monitoring() {
                 title="预警汇总"
                 value={alertSummary?.total_alerts || report.alert_summary.total_alerts}
                 prefix={
-                  alertSummary?.critical_count > 0 || report.alert_summary.critical_count > 0 ? (
+                  (alertSummary?.critical_count ?? 0) > 0 || report.alert_summary.critical_count > 0 ? (
                     <Tag color="red">
                       <WarningOutlined /> {alertSummary?.critical_count || report.alert_summary.critical_count}
                     </Tag>

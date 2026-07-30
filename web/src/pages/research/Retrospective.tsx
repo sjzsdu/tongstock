@@ -7,7 +7,6 @@ import {
   FallOutlined,
   ThunderboltOutlined,
   CheckSquareOutlined,
-  EditOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
 import { api } from '../../api/client';
@@ -41,7 +40,6 @@ export default function Retrospective() {
   // 计算表现
   const withReturn = paradigms.filter(p => p.actual_return !== undefined && p.actual_return !== null);
   const winners = withReturn.filter(p => (p.actual_return || 0) > 0);
-  const losers = withReturn.filter(p => (p.actual_return || 0) < 0);
   const winRate = withReturn.length > 0 ? (winners.length / withReturn.length) * 100 : 0;
 
   // 按方向统计
