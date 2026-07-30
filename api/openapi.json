@@ -2318,6 +2318,96 @@
         }
       }
     },
+    "/api/paradigm/{id}/evidence": {
+      "get": {
+        "operationId": "getApiParadigmIdEvidence",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Evidence card for the paradigm"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/paradigm/hypothesis": {
+      "post": {
+        "operationId": "postApiParadigmHypothesis",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "side", "stock_code", "buy_conditions", "invalidations"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "side": { "type": "string", "enum": ["buy", "sell"] },
+                  "stock_code": { "type": "string" },
+                  "stock_name": { "type": "string" },
+                  "rationale": { "type": "string" },
+                  "logic": { "type": "string" },
+                  "buy_conditions": { "type": "array" },
+                  "sell_conditions": { "type": "object" },
+                  "confirmations": { "type": "array" },
+                  "invalidations": { "type": "array" },
+                  "expectation": { "type": "object" },
+                  "tags": { "type": "array" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Hypothesis created successfully"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/api/quote": {
       "get": {
         "operationId": "getQuote",

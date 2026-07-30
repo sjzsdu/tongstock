@@ -49,6 +49,8 @@ func (s *Server) SetupParadigmRoutes(api *gin.RouterGroup) {
 	{
 		p.POST("/analyze", s.handleParadigmAnalyze)
 		p.POST("/evaluate", s.handleParadigmEvaluate)
+		p.POST("/hypothesis", s.handleParadigmCreate)
+		p.POST("/hypothesis/preview", s.handleParadigmPreview)
 		p.GET("/backtest", s.handleParadigmBacktest)
 		p.GET("/list", s.handleParadigmList)
 		p.GET("/alerts", s.handleParadigmAlerts)
@@ -56,6 +58,7 @@ func (s *Server) SetupParadigmRoutes(api *gin.RouterGroup) {
 		p.GET("/stock/:code", s.handleParadigmByStock)
 		p.GET("/history", s.handleParadigmHistory)
 		p.GET("/:id", s.handleParadigmGet)
+		p.GET("/:id/evidence", s.handleParadigmEvidence)
 		p.PUT("/:id/review", s.handleParadigmReview)
 		p.DELETE("/:id", s.handleParadigmDelete)
 	}
@@ -646,6 +649,106 @@ func (s *Server) handleParadigmDelete(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+}
+
+// paradigmCreateRequest is the structured hypothesis creation payload
+type paradigmCreateRequest struct {
+	Name           string                   `json:"name"`
+	Side           string                   `json:"side"`
+	StockCode      string                   `json:"stock_code"`
+	StockName      string                   `json:"stock_name,omitempty"`
+	Rationale      string                   `json:"rationale,omitempty"`
+	Logic          string                   `json:"logic,omitempty"` // 经济/行为逻辑
+	BuyConditions  []paradigms.Condition    `json:"buy_conditions"`
+	SellConditions paradigms.SellConditions `json:"sell_conditions"`
+	Confirmations  []string                 `json:"confirmations,omitempty"`
+	Invalidations  []string                 `json:"invalidations,omitempty"` // 可证伪条件
+	Expectation    paradigms.Expectation    `json:"expectation"`
+	Tags           []string                 `json:"tags,omitempty"`
+}
+
+// paradigmCreateResponse wraps the created paradigm with validation
+type paradigmCreateResponse struct {
+	Paradigm *paradigms.Paradigm `json:"paradigm"`
+	Valid    bool                `json:"valid"`
+	Errors   []string            `json:"errors,omitempty"`
+	Warnings []string            `json:"warnings,omitempty"`
+}
+
+// handleParadigmCreate creates a paradigm from a structured hypothesis.
+// Enforces falsifiability (invalidations required) and basic completeness.
+func (s *Server) handleParadigmCreate(c *gin.Context) {
+	if s.paradigmStore == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "paradigm store not initialized"})
+		return
+	}
+
+	var req paradigmCreateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate required fields
+	var errs []string
+	if req.Name == "" {
+		errs = append(errs, "假设名称不能为空")
+	}
+	if req.Side != "buy" && req.Side != "sell" {
+		errs = append(errs, "方向必须为 buy 或 sell")
+	}
+	if req.StockCode == "" {
+		errs = append(errs, "必须选择目标证券")
+	}
+	if len(req.BuyConditions) == 0 {
+		errs = append(errs, "至少需要一个买入触发条件")
+	}
+	// Falsifiability: invalidations required for entry to experiment
+	if len(req.Invalidations) == 0 {
+		errs = append(errs, "缺少可证伪条件 (否定条件)，假设不能进入实验")
+	}
+
+	if len(errs) > 0 {
+		c.JSON(http.StatusBadRequest, paradigmCreateResponse{
+			Valid:  false,
+			Errors: errs,
+		})
+		return
+	}
+
+	id := fmt.Sprintf("hyp-%s-%d", req.StockCode, time.Now().UnixNano())
+	p := &paradigms.Paradigm{
+		ID:           id,
+		Name:         req.Name,
+		Side:         req.Side,
+		StockCode:    req.StockCode,
+		StockName:    req.StockName,
+		Context:      paradigms.Context{},
+		BuyConds:     req.BuyConditions,
+		SellConds:    req.SellConditions,
+		Confirm:      req.Confirmations,
+		Invalid:      req.Invalidations,
+		Expectation:  req.Expectation,
+		Rationale:    req.Rationale,
+		Tags:         req.Tags,
+		ReviewStatus: "pending",
+		Source: paradigms.ParadigmSource{
+			AgentVersion: "hypothesis-editor",
+			GeneratedAt:  time.Now().Format(time.RFC3339),
+		},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	if err := s.paradigmStore.Save(p); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, paradigmCreateResponse{
+		Paradigm: p,
+		Valid:    true,
+	})
 }
 
 func (s *Server) buildParadigmPrompt(code, name string, days int) string {
@@ -1473,6 +1576,273 @@ func extractPrice(text string) float64 {
 			if _, err := fmt.Sscanf(text[i:j], "%f", &price); err == nil && price > 0 {
 				return price
 			}
+		}
+	}
+	return 0
+}
+
+// handleParadigmEvidence returns the evidence card for a paradigm
+func (s *Server) handleParadigmEvidence(c *gin.Context) {
+	if s.paradigmStore == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "paradigm store not initialized"})
+		return
+	}
+	id := c.Param("id")
+	p, err := s.paradigmStore.Get(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	backtestResp := s.backtestParadigm(p)
+	bt := &paradigms.BacktestResult{
+		ParadigmID:  backtestResp.ParadigmID,
+		StockCode:   backtestResp.StockCode,
+		SampleSize:  backtestResp.SampleSize,
+		WinRate5:    backtestResp.WinRate5,
+		WinRate10:   backtestResp.WinRate10,
+		WinRate20:   backtestResp.WinRate20,
+		AvgReturn5:  backtestResp.AvgReturn5,
+		AvgReturn10: backtestResp.AvgReturn10,
+		AvgReturn20: backtestResp.AvgReturn20,
+		MaxDrawdown: backtestResp.MaxDrawdown,
+		Error:       backtestResp.Error,
+	}
+
+	builder := paradigms.NewEvidenceBuilder()
+	card := builder.BuildFromParadigm(p, bt)
+	c.JSON(http.StatusOK, card)
+}
+
+// --- Hypothesis Preview ---
+
+// hypothesisPreviewRequest is the payload for previewing a hypothesis before creating it
+type hypothesisPreviewRequest struct {
+	Name           string                   `json:"name"`
+	Side           string                   `json:"side"`
+	StockCode      string                   `json:"stock_code"`
+	StockName      string                   `json:"stock_name,omitempty"`
+	Rationale      string                   `json:"rationale,omitempty"`
+	Logic          string                   `json:"logic,omitempty"`
+	Features       []string                 `json:"features,omitempty"`
+	Baseline       string                   `json:"baseline,omitempty"`
+	BuyConditions  []paradigms.Condition    `json:"buy_conditions"`
+	SellConditions paradigms.SellConditions `json:"sell_conditions"`
+	Confirmations  []string                 `json:"confirmations,omitempty"`
+	Invalidations  []string                 `json:"invalidations,omitempty"`
+	Expectation    paradigms.Expectation    `json:"expectation"`
+}
+
+// hypothesisPreviewDataInfo contains data availability info for the stock
+type hypothesisPreviewDataInfo struct {
+	StockCode      string  `json:"stock_code"`
+	StockName      string  `json:"stock_name,omitempty"`
+	DataAvailable  bool    `json:"data_available"`
+	DataDays       int     `json:"data_days"`
+	LastUpdate     string  `json:"last_update,omitempty"`
+	LatestClose    float64 `json:"latest_close,omitempty"`
+	SuggestedSplit string  `json:"suggested_split"` // e.g., "70/30"
+	TrainDays      int     `json:"train_days"`
+	TestDays       int     `json:"test_days"`
+	Warning        string  `json:"warning,omitempty"`
+}
+
+// hypothesisPreviewCostInfo contains cost estimates
+type hypothesisPreviewCostInfo struct {
+	TradingCostRate float64 `json:"trading_cost_rate"` // 0.001 (0.1%)
+	SlippageRate    float64 `json:"slippage_rate"`     // 0.0005 (0.05%)
+	TotalCostRate   float64 `json:"total_cost_rate"`   // sum
+	ExpectedReturn  string  `json:"expected_return"`
+	NetReturnEst    string  `json:"net_return_est"` // after cost
+	CostImpact      string  `json:"cost_impact"`    // percentage impact
+}
+
+// hypothesisPreviewValidationInfo contains the validation results
+type hypothesisPreviewValidationInfo struct {
+	Valid           bool     `json:"valid"`
+	CanCreate       bool     `json:"can_create"`
+	Errors          []string `json:"errors,omitempty"`
+	Warnings        []string `json:"warnings,omitempty"`
+	Falsifiability  bool     `json:"falsifiability"`
+	Completeness    float64  `json:"completeness"`
+	AutoEvaluable   int      `json:"auto_evaluable"`
+	TotalConditions int      `json:"total_conditions"`
+}
+
+// hypothesisPreviewResponse is the full preview response
+type hypothesisPreviewResponse struct {
+	DataInfo    hypothesisPreviewDataInfo       `json:"data_info"`
+	CostInfo    hypothesisPreviewCostInfo       `json:"cost_info"`
+	Validation  hypothesisPreviewValidationInfo `json:"validation"`
+	FeatureList []string                        `json:"feature_list,omitempty"`
+	Baseline    string                          `json:"baseline,omitempty"`
+}
+
+// handleParadigmPreview previews a hypothesis before creating it.
+// It shows data availability, cost estimates, train/test split, and validation.
+func (s *Server) handleParadigmPreview(c *gin.Context) {
+	var req hypothesisPreviewRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// --- Validation ---
+	var errs []string
+	var warnings []string
+	if req.Name == "" {
+		errs = append(errs, "假设名称不能为空")
+	}
+	if req.Side != "buy" && req.Side != "sell" {
+		errs = append(errs, "方向必须为 buy 或 sell")
+	}
+	if req.StockCode == "" {
+		errs = append(errs, "必须选择目标证券")
+	}
+	if len(req.BuyConditions) == 0 {
+		errs = append(errs, "至少需要一个买入触发条件")
+	}
+	hasFalsifiability := len(req.Invalidations) > 0
+	if !hasFalsifiability {
+		errs = append(errs, "缺少可证伪条件 (否定条件)，假设不能进入实验")
+	}
+
+	totalConds := len(req.BuyConditions) + len(req.SellConditions.TakeProfit) + len(req.SellConditions.StopLoss)
+	autoEval := 0
+	for _, cond := range req.BuyConditions {
+		if isAutoEvaluableCondition(cond) {
+			autoEval++
+		}
+	}
+
+	completeness := 0.0
+	if req.Name != "" {
+		completeness += 0.15
+	}
+	if req.StockCode != "" {
+		completeness += 0.15
+	}
+	if len(req.BuyConditions) > 0 {
+		completeness += 0.2
+	}
+	if hasFalsifiability {
+		completeness += 0.2
+	}
+	if req.Expectation.HoldingPeriod != "" {
+		completeness += 0.1
+	}
+	if req.Expectation.ExpectedReturn != "" {
+		completeness += 0.1
+	}
+	if req.Logic != "" {
+		completeness += 0.1
+	}
+
+	validation := hypothesisPreviewValidationInfo{
+		Valid:           len(errs) == 0,
+		CanCreate:       len(errs) == 0,
+		Errors:          errs,
+		Warnings:        warnings,
+		Falsifiability:  hasFalsifiability,
+		Completeness:    completeness,
+		AutoEvaluable:   autoEval,
+		TotalConditions: totalConds,
+	}
+
+	// --- Data Info ---
+	dataInfo := hypothesisPreviewDataInfo{
+		StockCode:      req.StockCode,
+		StockName:      req.StockName,
+		DataAvailable:  false,
+		DataDays:       0,
+		SuggestedSplit: "70/30",
+		TrainDays:      0,
+		TestDays:       0,
+	}
+
+	if req.StockCode != "" && s.svc != nil {
+		klines, err := s.svc.FetchKlineAll(req.StockCode, 0)
+		if err == nil && len(klines) > 0 {
+			dataInfo.DataAvailable = true
+			dataInfo.DataDays = len(klines)
+			last := klines[len(klines)-1]
+			dataInfo.LastUpdate = last.Time.Format("2006-01-02")
+			dataInfo.LatestClose = last.Close
+
+			// Suggest split: 70% train, 30% test
+			trainDays := int(float64(len(klines)) * 0.7)
+			testDays := len(klines) - trainDays
+			dataInfo.TrainDays = trainDays
+			dataInfo.TestDays = testDays
+			if len(klines) < 60 {
+				dataInfo.SuggestedSplit = "数据不足 (需要至少 60 天)"
+				dataInfo.Warning = "历史数据不足，建议先同步数据"
+			} else if len(klines) < 120 {
+				dataInfo.SuggestedSplit = fmt.Sprintf("%d/%d", trainDays, testDays)
+				dataInfo.Warning = "数据量较少，回测结果可能不够稳健"
+			} else {
+				dataInfo.SuggestedSplit = fmt.Sprintf("%d/%d", trainDays, testDays)
+			}
+		} else {
+			dataInfo.Warning = "无法获取K线数据，请先同步行情数据"
+		}
+	}
+
+	// --- Cost Info ---
+	costInfo := hypothesisPreviewCostInfo{
+		TradingCostRate: 0.001,  // 0.1% trading commission
+		SlippageRate:    0.0005, // 0.05% slippage
+		TotalCostRate:   0.0015, // 0.15% total round-trip
+		ExpectedReturn:  req.Expectation.ExpectedReturn,
+	}
+
+	// Parse expected return to estimate net return
+	expectedRet := parseExpectedReturn(req.Expectation.ExpectedReturn)
+	if expectedRet > 0 {
+		netRet := expectedRet - costInfo.TotalCostRate*100
+		costInfo.NetReturnEst = fmt.Sprintf("%.2f%%", netRet)
+		costInfo.CostImpact = fmt.Sprintf("%.1f%%", costInfo.TotalCostRate*100)
+	} else {
+		costInfo.NetReturnEst = "待估算"
+		costInfo.CostImpact = "0.15% (单边)"
+	}
+
+	resp := hypothesisPreviewResponse{
+		DataInfo:    dataInfo,
+		CostInfo:    costInfo,
+		Validation:  validation,
+		FeatureList: req.Features,
+		Baseline:    req.Baseline,
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// parseExpectedReturn extracts a numeric return percentage from strings like "10%", "5-10%", "0.08"
+func parseExpectedReturn(s string) float64 {
+	if s == "" {
+		return 0
+	}
+	// Try direct float
+	var f float64
+	if _, err := fmt.Sscanf(s, "%f", &f); err == nil && f > 0 {
+		// If it looks like a percentage string like "10%" or "5-10%"
+		if strings.Contains(s, "%") {
+			return f
+		}
+		// If it's a decimal like 0.08, convert to percentage
+		if f < 1 {
+			return f * 100
+		}
+		return f
+	}
+	// Try range like "5-10%"
+	if match := numberRangeRe.FindStringSubmatch(s); len(match) >= 3 {
+		var low, high float64
+		fmt.Sscanf(match[1], "%f", &low)
+		fmt.Sscanf(match[2], "%f", &high)
+		if low > 0 && high > 0 {
+			return (low + high) / 2
 		}
 	}
 	return 0

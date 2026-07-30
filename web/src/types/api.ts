@@ -654,6 +654,252 @@ export interface ParadigmBacktestItem {
   error?: string;
 }
 
+// Evidence Card types
+export interface SampleResult {
+  period: string;
+  sample_size: number;
+  total_return: number;
+  annual_return: number;
+  sharpe_ratio: number;
+  win_rate: number;
+  max_drawdown: number;
+  trades_count: number;
+}
+
+export interface CIResult {
+  period: string;
+  sample_size: number;
+  mean_return: number;
+  ci_95_lower: number;
+  ci_95_upper: number;
+  ci_95_width: number;
+  t_statistic: number;
+  p_value: number;
+  significant: boolean;
+  notes?: string[];
+}
+
+export interface CostBreakdown {
+  gross_return: number;
+  net_return: number;
+  total_cost: number;
+  cost_per_trade: number;
+  cost_ratio: number;
+  net_retention: number;
+  slippage_cost: number;
+  commission_cost: number;
+  tax_cost: number;
+  break_even_trades: number;
+}
+
+export interface DrawdownInfo {
+  max_drawdown: number;
+  max_dd_duration_days: number;
+  current_drawdown: number;
+  drawdown_ratio: number;
+  recovery_days?: number;
+  max_dd_date?: string;
+  warning?: string;
+}
+
+export interface ScoreComponent {
+  name: string;
+  category: string;
+  score: number;
+  weight: number;
+  contribution: number;
+  reason: string;
+  threshold: number;
+  pass: boolean;
+}
+
+export interface HardKillResult {
+  reason: string;
+  category: string;
+  severity: string;
+  threshold: number;
+  actual: number;
+}
+
+export interface ScoreResult {
+  timestamp: string;
+  components: ScoreComponent[];
+  overall_score: number;
+  final_score: number;
+  hard_kills: HardKillResult[];
+  hard_killed: boolean;
+  stage: string;
+}
+
+export interface ParamSweep {
+  param_name: string;
+  param_value: number;
+  return: number;
+  change_pct: number;
+}
+
+export interface ParamSensitivityInfo {
+  sensitivity_index: number;
+  perturbation_pass: boolean;
+  perturbation_delta: number;
+  nearby_params: ParamSweep[];
+  warning?: string;
+}
+
+export interface HoldingItem {
+  stock_code: string;
+  stock_name: string;
+  weight: number;
+}
+
+export interface ConcentrationInfo {
+  max_position_weight: number;
+  concentration_index: number;
+  top_holdings: HoldingItem[];
+  sector_exposure?: Record<string, number>;
+  diversification_score: number;
+}
+
+export interface CounterExample {
+  type: string;
+  description: string;
+  period: string;
+  return: number;
+  reason: string;
+  severity: string;
+}
+
+export interface RiskFlag {
+  category: string;
+  level: string;
+  message: string;
+  mitigation?: string;
+}
+
+export interface ReviewRecord {
+  reviewer: string;
+  action: string;
+  note?: string;
+  rating?: number;
+  timestamp: string;
+}
+
+export interface DataLineage {
+  data_source: string;
+  data_version: string;
+  data_range: string;
+  data_start: string;
+  data_end: string;
+  last_updated: string;
+  generated_by: string;
+  generated_at: string;
+  source_hash: string;
+  version_id: string;
+  parent_id?: string;
+  review_history?: ReviewRecord[];
+}
+
+export interface TradeRecord {
+  trade_id: string;
+  date: string;
+  side: string;
+  price: number;
+  signal_type: string;
+  holding_days: number;
+  return: number;
+  reason?: string;
+}
+
+export interface GateDecision {
+  stage: string;
+  score: number;
+  gate_threshold: number;
+  reason: string;
+  overridden: boolean;
+  override_reason?: string;
+}
+
+export interface EvidenceCard {
+  paradigm_id: string;
+  paradigm_name: string;
+  stock_code: string;
+  stock_name: string;
+  generated_at: string;
+  in_sample: SampleResult;
+  out_of_sample: SampleResult;
+  confidence_interval: CIResult;
+  cost_analysis: CostBreakdown;
+  drawdown_analysis: DrawdownInfo;
+  robustness_score?: ScoreResult;
+  param_sensitivity: ParamSensitivityInfo;
+  concentration: ConcentrationInfo;
+  counter_evidence: CounterExample[];
+  risk_flags: RiskFlag[];
+  lineage: DataLineage;
+  trade_samples?: TradeRecord[];
+  stage_gate_decision?: GateDecision;
+}
+
+// Hypothesis Preview types
+export interface HypothesisPreviewRequest {
+  name: string;
+  side: 'buy' | 'sell';
+  stock_code: string;
+  stock_name?: string;
+  rationale?: string;
+  logic?: string;
+  features?: string[];
+  baseline?: string;
+  buy_conditions: { indicator: string; operator: string; value: string }[];
+  sell_conditions?: {
+    take_profit?: { indicator: string; operator: string; value: string }[];
+    stop_loss?: { indicator: string; operator: string; value: string }[];
+  };
+  confirmations?: string[];
+  invalidations: string[];
+  expectation: {
+    holding_period: string;
+    expected_return: string;
+    risk_reward_ratio: string;
+    confidence: number;
+  };
+}
+
+export interface HypothesisPreviewResponse {
+  data_info: {
+    stock_code: string;
+    stock_name?: string;
+    data_available: boolean;
+    data_days: number;
+    last_update?: string;
+    latest_close?: number;
+    suggested_split: string;
+    train_days: number;
+    test_days: number;
+    warning?: string;
+  };
+  cost_info: {
+    trading_cost_rate: number;
+    slippage_rate: number;
+    total_cost_rate: number;
+    expected_return: string;
+    net_return_est: string;
+    cost_impact: string;
+  };
+  validation: {
+    valid: boolean;
+    can_create: boolean;
+    errors?: string[];
+    warnings?: string[];
+    falsifiability: boolean;
+    completeness: number;
+    auto_evaluable: number;
+    total_conditions: number;
+  };
+  feature_list?: string[];
+  baseline?: string;
+}
+
 export interface ChatSessionInfo {
   id: string;
   stock_code: string;

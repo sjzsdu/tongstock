@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Card, Row, Col, Tag, Typography, Space, Table, Progress, Button, message, Select } from 'antd';
+import { Card, Row, Col, Tag, Typography, Space, Table, Progress, Button, message, Select, Drawer } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { AuditOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import { AuditOutlined, CheckCircleOutlined, CloseCircleOutlined, FileSearchOutlined } from '@ant-design/icons';
 import { api } from '../../api/client';
-import type { ParadigmItem, ParadigmListResponse } from '../../types/api';
+import type { ParadigmItem, EvidenceCard } from '../../types/api';
+import EvidenceCardView from '../../components/research/EvidenceCard';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -12,6 +13,9 @@ export default function Candidates() {
   const [data, setData] = useState<ParadigmItem[]>([]);
   const [total, setTotal] = useState(0);
   const [reviewStatus, setReviewStatus] = useState<string | undefined>('reviewed');
+  const [evidenceDrawerOpen, setEvidenceDrawerOpen] = useState(false);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
+  const [currentEvidence, setCurrentEvidence] = useState<EvidenceCard | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -29,6 +33,20 @@ export default function Candidates() {
   };
 
   useEffect(() => { load(); }, [reviewStatus]);
+
+  const loadEvidence = async (id: string) => {
+    setEvidenceLoading(true);
+    setEvidenceDrawerOpen(true);
+    try {
+      const card = await api.paradigmEvidence(id);
+      setCurrentEvidence(card);
+    } catch (err) {
+      message.error(String(err));
+      setCurrentEvidence(null);
+    } finally {
+      setEvidenceLoading(false);
+    }
+  };
 
   const columns: ColumnsType<ParadigmItem> = [
     { title: '范式名', dataIndex: 'name', key: 'name', width: 200, ellipsis: true },
@@ -56,9 +74,10 @@ export default function Candidates() {
     {
       title: '审查备注', dataIndex: 'review_note', key: 'note', width: 200, ellipsis: true },
     {
-      title: '操作', key: 'action', width: 100,
+      title: '操作', key: 'action', width: 150,
       render: (_, r) => (
         <Space>
+          <Button size="small" icon={<FileSearchOutlined />} onClick={() => loadEvidence(r.id)}>证据</Button>
           {r.review_status === 'reviewed' && (
             <Button size="small" type="primary" onClick={async () => {
               try {
@@ -163,6 +182,21 @@ export default function Candidates() {
           size="middle"
         />
       </Card>
+
+      <Drawer
+        title="范式证据卡"
+        width={800}
+        open={evidenceDrawerOpen}
+        onClose={() => setEvidenceDrawerOpen(false)}
+      >
+        {evidenceLoading ? (
+          <div style={{ textAlign: 'center', padding: 40 }}>加载中...</div>
+        ) : currentEvidence ? (
+          <EvidenceCardView card={currentEvidence} />
+        ) : (
+          <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>暂无证据数据</div>
+        )}
+      </Drawer>
     </Space>
   );
 }

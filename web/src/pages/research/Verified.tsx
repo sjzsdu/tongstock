@@ -1,15 +1,19 @@
 import { useEffect, useState } from 'react';
-import { Card, Row, Col, Tag, Typography, Space, Table, Progress, Button, message } from 'antd';
+import { Card, Row, Col, Tag, Typography, Space, Table, Progress, Button, message, Drawer } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { SafetyCertificateOutlined, TrophyOutlined } from '@ant-design/icons';
+import { SafetyCertificateOutlined, TrophyOutlined, FileSearchOutlined } from '@ant-design/icons';
 import { api } from '../../api/client';
-import type { ParadigmItem } from '../../types/api';
+import type { ParadigmItem, EvidenceCard } from '../../types/api';
+import EvidenceCardView from '../../components/research/EvidenceCard';
 
 const { Title, Text, Paragraph } = Typography;
 
 export default function Verified() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<ParadigmItem[]>([]);
+  const [evidenceDrawerOpen, setEvidenceDrawerOpen] = useState(false);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
+  const [currentEvidence, setCurrentEvidence] = useState<EvidenceCard | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -24,6 +28,20 @@ export default function Verified() {
   };
 
   useEffect(() => { load(); }, []);
+
+  const loadEvidence = async (id: string) => {
+    setEvidenceLoading(true);
+    setEvidenceDrawerOpen(true);
+    try {
+      const card = await api.paradigmEvidence(id);
+      setCurrentEvidence(card);
+    } catch (err) {
+      message.error(String(err));
+      setCurrentEvidence(null);
+    } finally {
+      setEvidenceLoading(false);
+    }
+  };
 
   const columns: ColumnsType<ParadigmItem> = [
     { title: '范式名', dataIndex: 'name', key: 'name', width: 200, ellipsis: true },
@@ -53,6 +71,12 @@ export default function Verified() {
     {
       title: '晋级时间', dataIndex: 'updated_at', key: 'updated', width: 180,
       render: (v: string) => <Text type="secondary" style={{ fontSize: 12 }}>{v ? new Date(v).toLocaleString() : '--'}</Text>,
+    },
+    {
+      title: '操作', key: 'action', width: 100,
+      render: (_, r) => (
+        <Button size="small" icon={<FileSearchOutlined />} onClick={() => loadEvidence(r.id)}>证据</Button>
+      ),
     },
   ];
 
@@ -124,6 +148,21 @@ export default function Verified() {
           size="middle"
         />
       </Card>
+
+      <Drawer
+        title="范式证据卡"
+        width={800}
+        open={evidenceDrawerOpen}
+        onClose={() => setEvidenceDrawerOpen(false)}
+      >
+        {evidenceLoading ? (
+          <div style={{ textAlign: 'center', padding: 40 }}>加载中...</div>
+        ) : currentEvidence ? (
+          <EvidenceCardView card={currentEvidence} />
+        ) : (
+          <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>暂无证据数据</div>
+        )}
+      </Drawer>
     </Space>
   );
 }

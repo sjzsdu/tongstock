@@ -26,6 +26,9 @@ import type {
   ParadigmAlertsResponse,
   ParadigmStatsResponse,
   ParadigmBacktestItem,
+  EvidenceCard,
+  HypothesisPreviewRequest,
+  HypothesisPreviewResponse,
   ChatSessionInfo,
   NewsItem,
   NewsSummary,
@@ -412,6 +415,50 @@ export const api = {
 
   paradigmGet: (id: string) =>
     fetchJSON<ParadigmItem>(`/api/paradigm/${id}`),
+
+  paradigmEvidence: (id: string) =>
+    fetchJSON<EvidenceCard>(`/api/paradigm/${id}/evidence`),
+
+  paradigmCreate: (payload: {
+    name: string;
+    side: string;
+    stock_code: string;
+    stock_name?: string;
+    rationale?: string;
+    logic?: string;
+    features?: string[];
+    baseline?: string;
+    buy_conditions: { indicator: string; operator: string; value: string }[];
+    sell_conditions?: {
+      take_profit?: { indicator: string; operator: string; value: string }[];
+      stop_loss?: { indicator: string; operator: string; value: string }[];
+    };
+    confirmations?: string[];
+    invalidations: string[];
+    expectation: {
+      holding_period: string;
+      expected_return: string;
+      risk_reward_ratio: string;
+      confidence: number;
+    };
+    tags?: string[];
+  }) =>
+    fetchJSON<{ paradigm: ParadigmItem; valid: boolean; errors?: string[]; warnings?: string[] }>(
+      '/api/paradigm/hypothesis',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    ),
+
+  paradigmPreview: (payload: HypothesisPreviewRequest) =>
+    fetchJSON<HypothesisPreviewResponse>(
+      '/api/paradigm/hypothesis/preview',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    ),
 
   paradigmEvaluate: (stockCode: string) =>
     fetchJSON<ParadigmEvaluateResponse>('/api/paradigm/evaluate', {

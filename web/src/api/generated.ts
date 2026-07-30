@@ -121,6 +121,8 @@ export const operations = {
   deleteApiParadigmId: { method: "DELETE", path: "/api/paradigm/{id}" },
   getApiParadigmId: { method: "GET", path: "/api/paradigm/{id}" },
   putApiParadigmIdReview: { method: "PUT", path: "/api/paradigm/{id}/review" },
+  getApiParadigmIdEvidence: { method: "GET", path: "/api/paradigm/{id}/evidence" },
+  postApiParadigmHypothesis: { method: "POST", path: "/api/paradigm/hypothesis" },
   getQuote: { method: "GET", path: "/api/quote" },
   getApiQuotes: { method: "GET", path: "/api/quotes" },
   getApiScreen: { method: "GET", path: "/api/screen" },
