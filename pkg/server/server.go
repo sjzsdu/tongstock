@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	pinyin "github.com/mozillazg/go-pinyin"
 	"github.com/sjzsdu/tongstock/internal/app/stockdata"
+	"github.com/sjzsdu/tongstock/internal/ledger"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
 	"github.com/sjzsdu/tongstock/pkg/history"
 	"github.com/sjzsdu/tongstock/pkg/stockinfo"
@@ -33,6 +34,7 @@ type Server struct {
 	stockSearchIndexCache stockSearchIndexCache
 	agentState            *AgentState
 	agentListFunc         func() ([]EmbeddedAgent, error)
+	ledger                *ledger.SignalLedger
 	paradigmStore         *paradigms.Store
 	paradigmAlertMu       sync.RWMutex
 	paradigmAlertCache    []paradigmAlert
@@ -110,6 +112,7 @@ func NewServer(deps Dependencies) *Server {
 		stockpoolDB:           deps.StockPool,
 		stockinfoDB:           deps.StockInfo,
 		stockSearchIndexCache: stockSearchIndexCache{},
+		ledger:                ledger.NewSignalLedger(),
 		newsfeedHandler:       deps.Newsfeed,
 		diagnostics:           deps.Diagnostics,
 	}
@@ -125,6 +128,11 @@ func (s *Server) SetChatStore(store *ChatStore) {
 // SetParadigmStore sets the paradigm store on the server instance.
 func (s *Server) SetParadigmStore(store *paradigms.Store) {
 	s.paradigmStore = store
+}
+
+// SetLedger sets the signal ledger on the server instance.
+func (s *Server) SetLedger(ledger *ledger.SignalLedger) {
+	s.ledger = ledger
 }
 
 // SetAgentLister registers an agent list function on the server instance.

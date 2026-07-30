@@ -1173,3 +1173,171 @@ export interface AlertRule {
   lastTrigger: string;
   createdAt: string;
 }
+
+// Forward Run & Signal Ledger types
+export interface ConstraintsSnapshot {
+  enable_t_1: boolean;
+  enable_price_limit: boolean;
+  enable_suspension: boolean;
+  board: string;
+  min_trade_unit: number;
+  commission_rate: number;
+  slippage_bps: number;
+  stamp_duty_rate: number;
+}
+
+export interface ForwardRun {
+  id: string;
+  paradigm_version_id: string;
+  start_date: string;
+  end_date?: string;
+  status: string; // active / completed / stopped
+  initial_cash: number;
+  final_cash: number;
+  final_position_value: number;
+  total_pnl: number;
+  total_return: number;
+  signal_count: number;
+  filled_count: number;
+  rejected_count: number;
+  executed_count: number;
+  max_drawdown: number;
+  win_rate: number;
+  sharpe_ratio: number;
+  constraints_snapshot: ConstraintsSnapshot;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DataSnapshot {
+  dataset_id: string;
+  feature_set_id: string;
+  rule_set_id: string;
+  data_hash: string;
+  captured_at: string;
+}
+
+export interface SignalSource {
+  rule_id: string;
+  rule_desc: string;
+  triggered_by: string;
+  context_tags?: Record<string, string>;
+}
+
+export interface ExecutionRecord {
+  status: string; // pending / filled / partial / rejected / cancelled
+  exec_price: number;
+  exec_qty: number;
+  fee: number;
+  pnl: number;
+  hold_qty: number;
+  hold_cost: number;
+  reject_reason?: string;
+  executed_at: string;
+}
+
+export interface SignalEntry {
+  id: string;
+  run_id: string;
+  paradigm_version_id: string;
+  stock_code: string;
+  direction: string;
+  signal_date: string;
+  execution_date: string;
+  price: number;
+  pre_close: number;
+  limit_up: number;
+  limit_down: number;
+  suspended: boolean;
+  board: string;
+  confidence: number;
+  data_snapshot: DataSnapshot;
+  source: SignalSource;
+  execution?: ExecutionRecord;
+  content_hash: string;
+  created_at: string;
+}
+
+export interface ForwardRunCreateRequest {
+  paradigm_version_id: string;
+  start_date: string;
+  initial_cash: number;
+  enable_t_1?: boolean;
+  enable_price_limit?: boolean;
+  enable_suspension?: boolean;
+  board?: string;
+  commission_rate?: number;
+  slippage_bps?: number;
+  stamp_duty_rate?: number;
+}
+
+export interface ForwardRunExecuteRequest {
+  from_date?: string;
+  to_date?: string;
+  signal_id?: string;
+}
+
+export interface ForwardRunExecuteResponse {
+  executed: number;
+  rejected: number;
+  results?: ExecutionRecord[];
+}
+
+export interface ForwardRunCompareRequest {
+  theoretical_return: number;
+  theoretical_max_drawdown: number;
+  theoretical_sharpe: number;
+  theoretical_win_rate: number;
+  theoretical_signals: number;
+  theoretical_annualized_return: number;
+}
+
+export interface TheoreticalMetrics {
+  total_return: number;
+  annualized_ret: number;
+  max_drawdown: number;
+  sharpe_ratio: number;
+  win_rate: number;
+  signal_count: number;
+  ideal_pnl: number;
+}
+
+export interface ActualMetrics {
+  total_return: number;
+  annualized_ret: number;
+  max_drawdown: number;
+  sharpe_ratio: number;
+  win_rate: number;
+  signal_count: number;
+  filled_count: number;
+  rejected_count: number;
+  actual_pnl: number;
+  missed_trades: number;
+}
+
+export interface GapAnalysis {
+  return_gap: number;
+  return_gap_pct: number;
+  drawdown_gap: number;
+  sharpe_gap: number;
+  win_rate_gap: number;
+  exec_loss: number;
+  constraint_impact: number;
+  key_insights: string[];
+}
+
+export interface ComparisonReport {
+  paradigm_version_id: string;
+  run_id: string;
+  compare_date: string;
+  theoretical: TheoreticalMetrics;
+  actual: ActualMetrics;
+  gap: GapAnalysis;
+}
+
+export interface EquityPoint {
+  date: string;
+  cash: number;
+  value: number;
+  total: number;
+}

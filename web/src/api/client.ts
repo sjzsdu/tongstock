@@ -49,6 +49,14 @@ import type {
   AlertRecord,
   AlertRule,
   SyncFreshnessResult,
+  ForwardRun,
+  ForwardRunCreateRequest,
+  ForwardRunExecuteRequest,
+  ForwardRunExecuteResponse,
+  ForwardRunCompareRequest,
+  ComparisonReport,
+  SignalEntry,
+  EquityPoint,
 } from '../types/api';
 import type { ErrorEnvelope } from './generated';
 
@@ -687,6 +695,60 @@ export const api = {
 			method: 'POST',
 			body: JSON.stringify({ stockCodes }),
 		}),
+
+	// Forward Run APIs
+	forwardRuns: (limit?: number) =>
+		fetchJSON<{ runs: ForwardRun[]; total: number }>(
+			'/api/forward/runs' + (limit ? `?limit=${limit}` : '')),
+
+	forwardRunCreate: (payload: ForwardRunCreateRequest) =>
+		fetchJSON<{ run: ForwardRun }>('/api/forward/runs', {
+			method: 'POST',
+			body: JSON.stringify(payload),
+		}),
+
+	forwardRunGet: (id: string) =>
+		fetchJSON<{ run: ForwardRun }>(`/api/forward/runs/${id}`),
+
+	forwardRunExecute: (id: string, payload?: ForwardRunExecuteRequest) =>
+		fetchJSON<ForwardRunExecuteResponse>(`/api/forward/runs/${id}/execute`, {
+			method: 'POST',
+			body: JSON.stringify(payload || {}),
+		}),
+
+	forwardRunFinalize: (id: string, endDate?: string) =>
+		fetchJSON<{ run: ForwardRun }>(
+			`/api/forward/runs/${id}/finalize` + (endDate ? `?end_date=${endDate}` : '')),
+
+	forwardRunSignals: (runId: string) =>
+		fetchJSON<{ signals: SignalEntry[]; total: number }>(`/api/forward/runs/${runId}/signals`),
+
+	forwardSignalAppend: (runId: string, payload: Partial<SignalEntry>) =>
+		fetchJSON<{ signal: SignalEntry }>(`/api/forward/runs/${runId}/signals`, {
+			method: 'POST',
+			body: JSON.stringify(payload),
+		}),
+
+	forwardSignalGet: (id: string) =>
+		fetchJSON<{ signal: SignalEntry }>(`/api/forward/signals/${id}`),
+
+	forwardSignalsList: (params: { paradigm_version_id?: string; run_id?: string; date?: string }) => {
+		const q = new URLSearchParams();
+		if (params.paradigm_version_id) q.set('paradigm_version_id', params.paradigm_version_id);
+		if (params.run_id) q.set('run_id', params.run_id);
+		if (params.date) q.set('date', params.date);
+		return fetchJSON<{ signals: SignalEntry[]; total: number }>('/api/forward/signals' + (q.toString() ? `?${q}` : ''));
+	},
+
+	forwardRunEquity: (id: string) =>
+		fetchJSON<{ run: ForwardRun; curve: EquityPoint[] }>(`/api/forward/runs/${id}/equity`),
+
+	forwardRunCompare: (id: string, payload: ForwardRunCompareRequest) =>
+		fetchJSON<{ report: ComparisonReport; pass: boolean; warnings: string[] }>(
+			`/api/forward/runs/${id}/compare`, {
+				method: 'POST',
+				body: JSON.stringify(payload),
+			}),
 };
 
 export interface OvernightCriteria {
