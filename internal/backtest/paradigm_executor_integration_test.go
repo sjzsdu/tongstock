@@ -10,7 +10,6 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
-	"github.com/sjzsdu/tongstock/internal/trading"
 )
 
 // TestRunParadigmAgainstRealDatabase is opt-in because it reads the user's
@@ -73,7 +72,7 @@ func TestRunParadigmAgainstRealDatabase(t *testing.T) {
 			t.Fatalf("parse real K-line date %q: %v", date, err)
 		}
 		bar.Code = code
-		bar.Board = boardForCode(code)
+		bar.Board = BoardForCode(code)
 		bars = append(bars, bar)
 	}
 	if err := rows.Err(); err != nil {
@@ -119,19 +118,6 @@ func TestRunParadigmAgainstRealDatabase(t *testing.T) {
 	t.Logf("verified code=%s ktype=%d range=%s..%s signal=%s execution=%s open=%.2f fill=%.2f",
 		code, ktype, bars[0].Date.Format("2006-01-02"), bars[len(bars)-1].Date.Format("2006-01-02"),
 		signalBar.Date.Format("2006-01-02"), fill.ExecutionDate.Format("2006-01-02"), executionBar.Open, fill.Price)
-}
-
-func boardForCode(code string) trading.Board {
-	switch {
-	case strings.HasPrefix(code, "300"), strings.HasPrefix(code, "301"):
-		return trading.BoardChiNext
-	case strings.HasPrefix(code, "688"), strings.HasPrefix(code, "689"):
-		return trading.BoardSTAR
-	case strings.HasPrefix(code, "4"), strings.HasPrefix(code, "8"), strings.HasPrefix(code, "9"):
-		return trading.BoardBJ
-	default:
-		return trading.BoardMain
-	}
 }
 
 func roundCents(value float64) float64 {

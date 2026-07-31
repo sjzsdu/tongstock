@@ -288,6 +288,34 @@ func TestTimeSeriesSplitter_CustomRatio(t *testing.T) {
 	}
 }
 
+func TestTimeSeriesSplitter_NoValidationSegment(t *testing.T) {
+	dates := generateWeekdayDates(100)
+	splitter, err := NewTimeSeriesSplitter(TimeSeriesSplitConfig{
+		Type: SplitFixed, TrainRatio: 0.8, ValidRatio: 0,
+		EmbargoDays: 3, PurgeDays: 2, MinTrainSize: 60,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := splitter.Split(dates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Valid != nil {
+		t.Fatal("validation segment must be nil")
+	}
+	if result.Train.End != dates[77] {
+		t.Fatalf("train end = %s, want purged trading date %s", result.Train.End, dates[77])
+	}
+	if result.Test.Start != dates[83] {
+		t.Fatalf("test start = %s, want embargoed trading date %s", result.Test.Start, dates[83])
+	}
+	if len(result.PurgeDates) != 2 || result.EmbargoTrainValid == nil ||
+		result.EmbargoValidTest != nil {
+		t.Fatalf("unexpected purge/embargo layout: %+v", result)
+	}
+}
+
 func TestTimeSeriesSplitter_MinTrainSize(t *testing.T) {
 	dates := generateDailyDates(10)
 

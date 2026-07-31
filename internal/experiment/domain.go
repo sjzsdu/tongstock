@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"sort"
 	"time"
 )
 
@@ -114,6 +115,12 @@ type ExperimentConfig struct {
 	InitialCash float64 `json:"initial_cash"`
 	// CommissionRate 佣金率
 	CommissionRate float64 `json:"commission_rate"`
+	// MinCommission 最低佣金
+	MinCommission float64 `json:"min_commission"`
+	// StampDutyRate 卖出印花税率
+	StampDutyRate float64 `json:"stamp_duty_rate"`
+	// TransferFeeRate 双边过户费率
+	TransferFeeRate float64 `json:"transfer_fee_rate"`
 	// SlippageBps 滑点 (bps)
 	SlippageBps float64 `json:"slippage_bps"`
 	// MaxPositionSize 最大仓位比例
@@ -124,6 +131,14 @@ type ExperimentConfig struct {
 	TakeProfitRatio float64 `json:"take_profit_ratio,omitempty"`
 	// StrategyParams 策略参数
 	StrategyParams map[string]interface{} `json:"strategy_params,omitempty"`
+	// KType 冻结行情周期
+	KType uint8 `json:"ktype"`
+	// Board A 股板块
+	Board string `json:"board"`
+	// EnableT1 是否启用 T+1
+	EnableT1 bool `json:"enable_t_1"`
+	// EnablePriceLimit 是否启用涨跌停约束
+	EnablePriceLimit bool `json:"enable_price_limit"`
 }
 
 // FeatureRef 特征引用。
@@ -135,11 +150,17 @@ type FeatureRef struct {
 
 // SplitConfigRef 切分配置引用。
 type SplitConfigRef struct {
-	Type        string  `json:"type"`
-	TrainRatio  float64 `json:"train_ratio"`
-	ValidRatio  float64 `json:"valid_ratio"`
-	EmbargoDays int     `json:"embargo_days"`
-	PurgeDays   int     `json:"purge_days"`
+	Type            string  `json:"type"`
+	TrainRatio      float64 `json:"train_ratio,omitempty"`
+	ValidRatio      float64 `json:"valid_ratio,omitempty"`
+	EmbargoDays     int     `json:"embargo_days"`
+	PurgeDays       int     `json:"purge_days"`
+	MinTrainSize    int     `json:"min_train_size,omitempty"`
+	Windows         int     `json:"windows,omitempty"`
+	TrainWindowDays int     `json:"train_window_days,omitempty"`
+	ValidWindowDays int     `json:"valid_window_days,omitempty"`
+	TestWindowDays  int     `json:"test_window_days,omitempty"`
+	StepDays        int     `json:"step_days,omitempty"`
 }
 
 // ComputeHash 计算配置哈希 (用于复现检测)。
@@ -245,6 +266,10 @@ const (
 	ArtifactLog         ArtifactType = "log"         // 日志
 	ArtifactConfig      ArtifactType = "config"      // 配置
 	ArtifactPredictions ArtifactType = "predictions" // 预测结果
+	ArtifactSplit       ArtifactType = "split"       // 时间切分
+	ArtifactFills       ArtifactType = "fills"       // 成交与拒单
+	ArtifactEquity      ArtifactType = "equity"      // 权益曲线
+	ArtifactManifest    ArtifactType = "manifest"    // 可复现运行清单
 )
 
 // Artifact 实验制品。
@@ -259,6 +284,8 @@ type Artifact struct {
 	Description string `json:"description,omitempty"`
 	// Content 内容 (JSON)
 	Content json.RawMessage `json:"content,omitempty"`
+	// ContentHash 内容哈希，不含 ID 和创建时间
+	ContentHash string `json:"content_hash,omitempty"`
 	// FilePath 文件路径 (如果存储在文件中)
 	FilePath string `json:"file_path,omitempty"`
 	// CreatedAt 创建时间
@@ -345,6 +372,8 @@ type ExperimentRun struct {
 	Logs string `json:"logs,omitempty"`
 	// ConfigHash 运行时配置哈希
 	ConfigHash string `json:"config_hash"`
+	// ResultHash 指标和全部制品内容的稳定哈希
+	ResultHash string `json:"result_hash,omitempty"`
 	// Reproducible 是否可复现
 	Reproducible bool `json:"reproducible"`
 	// ReproducibilityNote 可复现性说明
@@ -370,11 +399,23 @@ func (r *ExperimentRun) Start() {
 // Complete 标记运行为已完成。
 func (r *ExperimentRun) Complete(metrics MetricSet, artifacts []Artifact) {
 	now := time.Now()
+	for i := range artifacts {
+		if artifacts[i].ContentHash == "" {
+			artifacts[i].ContentHash = hashBytes(artifacts[i].Content)
+		}
+		if artifacts[i].ID == "" {
+			artifacts[i].ID = fmt.Sprintf("%s-art-%03d-%s", r.ID, i, artifacts[i].ContentHash[:12])
+		}
+		if artifacts[i].CreatedAt.IsZero() {
+			artifacts[i].CreatedAt = now
+		}
+	}
 	r.Status = RunCompleted
 	r.EndTime = &now
 	r.Duration = now.Sub(r.StartTime)
 	r.Metrics = &metrics
 	r.Artifacts = artifacts
+	r.ResultHash = computeResultHash(metrics, artifacts)
 	r.Reproducible = true
 }
 
@@ -569,6 +610,13 @@ func CompareExperimentRuns(run1, run2 *ExperimentRun) RunComparison {
 			"run2": run2.ConfigHash,
 		}
 	}
+	if run1.ResultHash != run2.ResultHash {
+		comparison.Identical = false
+		comparison.Differences["result_hash"] = map[string]string{
+			"run1": run1.ResultHash,
+			"run2": run2.ResultHash,
+		}
+	}
 
 	// 比较指标
 	if run1.Metrics != nil && run2.Metrics != nil {
@@ -582,6 +630,42 @@ func CompareExperimentRuns(run1, run2 *ExperimentRun) RunComparison {
 	}
 
 	return comparison
+}
+
+func hashBytes(data []byte) string {
+	hash := sha256.Sum256(data)
+	return fmt.Sprintf("%x", hash[:])
+}
+
+func computeResultHash(metrics MetricSet, artifacts []Artifact) string {
+	type artifactDigest struct {
+		Type        ArtifactType `json:"type"`
+		Name        string       `json:"name"`
+		ContentHash string       `json:"content_hash"`
+	}
+	digests := make([]artifactDigest, len(artifacts))
+	for i, artifact := range artifacts {
+		contentHash := artifact.ContentHash
+		if contentHash == "" {
+			contentHash = hashBytes(artifact.Content)
+		}
+		digests[i] = artifactDigest{Type: artifact.Type, Name: artifact.Name, ContentHash: contentHash}
+	}
+	sort.Slice(digests, func(i, j int) bool {
+		if digests[i].Type != digests[j].Type {
+			return digests[i].Type < digests[j].Type
+		}
+		if digests[i].Name != digests[j].Name {
+			return digests[i].Name < digests[j].Name
+		}
+		return digests[i].ContentHash < digests[j].ContentHash
+	})
+	payload := struct {
+		Metrics   MetricSet        `json:"metrics"`
+		Artifacts []artifactDigest `json:"artifacts"`
+	}{Metrics: metrics, Artifacts: digests}
+	data, _ := json.Marshal(payload)
+	return hashBytes(data)
 }
 
 // compareMetrics 比较两组指标。

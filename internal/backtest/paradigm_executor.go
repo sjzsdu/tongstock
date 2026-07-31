@@ -45,10 +45,12 @@ func MarketBarsFromSnapshot(bars []paradigm.SnapshotKlineBar, board trading.Boar
 }
 
 type ParadigmExecutionConfig struct {
-	InitialCash  float64
-	PositionSize float64
-	Constraints  trading.TradingConstraints
-	CostModel    trading.CostModel
+	InitialCash     float64
+	PositionSize    float64
+	Constraints     trading.TradingConstraints
+	CostModel       trading.CostModel
+	EvaluationStart time.Time
+	EvaluationEnd   time.Time
 }
 
 func DefaultParadigmExecutionConfig() ParadigmExecutionConfig {
@@ -132,6 +134,7 @@ func RunParadigm(ctx context.Context, p *paradigms.Paradigm, bars []MarketBar, c
 			return nil, err
 		}
 		bar := bars[i]
+		inEvaluation := evaluationContains(cfg, bar.Date)
 
 		if pending != nil && pending.index == i {
 			exec := executeAtOpen(engine, pending.order, bars, i)
@@ -163,7 +166,7 @@ func RunParadigm(ctx context.Context, p *paradigms.Paradigm, bars []MarketBar, c
 		}
 
 		pos, held := engine.GetPosition(bar.Code)
-		if pending == nil && !bar.Suspended {
+		if pending == nil && !bar.Suspended && inEvaluation {
 			frame := indicatorFrame(bars, i)
 			var side trading.OrderSide
 			var reason string
@@ -184,7 +187,7 @@ func RunParadigm(ctx context.Context, p *paradigms.Paradigm, bars []MarketBar, c
 				result.Signals = append(result.Signals, SignalRecord{
 					Date: bar.Date, Side: side, Price: bar.Close, Conditions: reason,
 				})
-				if i+1 >= len(bars) {
+				if i+1 >= len(bars) || !evaluationContains(cfg, bars[i+1].Date) {
 					order := newOrder(p, bar, side, 0, time.Time{}, reason)
 					result.Rejections = append(result.Rejections, Rejection{
 						Order: order, Code: trading.RejectMissingMarketData,
@@ -208,13 +211,18 @@ func RunParadigm(ctx context.Context, p *paradigms.Paradigm, bars []MarketBar, c
 			}
 		}
 
-		equity := engine.Cash()
-		if position, ok := engine.GetPosition(bar.Code); ok {
-			equity += float64(position.Quantity) * bar.Close
+		if inEvaluation {
+			equity := engine.Cash()
+			if position, ok := engine.GetPosition(bar.Code); ok {
+				equity += float64(position.Quantity) * bar.Close
+			}
+			result.EquityCurve = append(result.EquityCurve, EquityPoint{Date: bar.Date, Equity: equity})
 		}
-		result.EquityCurve = append(result.EquityCurve, EquityPoint{Date: bar.Date, Equity: equity})
 	}
 
+	if len(result.EquityCurve) == 0 {
+		return nil, fmt.Errorf("evaluation window contains no real market bars")
+	}
 	result.FinalEquity = result.EquityCurve[len(result.EquityCurve)-1].Equity
 	result.NetPnL = result.FinalEquity - result.InitialCash
 	result.GrossPnL = result.NetPnL + result.TotalCost
@@ -233,6 +241,10 @@ func validateExecutionInput(p *paradigms.Paradigm, bars []MarketBar, cfg Paradig
 	}
 	if cfg.InitialCash <= 0 || cfg.PositionSize <= 0 || cfg.PositionSize > 1 {
 		return fmt.Errorf("invalid cash or position size")
+	}
+	if !cfg.EvaluationStart.IsZero() && !cfg.EvaluationEnd.IsZero() &&
+		cfg.EvaluationStart.After(cfg.EvaluationEnd) {
+		return fmt.Errorf("evaluation start is after evaluation end")
 	}
 	for i, bar := range bars {
 		if bar.Code == "" || bar.Date.IsZero() {
@@ -258,6 +270,16 @@ func validateExecutionInput(p *paradigms.Paradigm, bars []MarketBar, cfg Paradig
 		}
 	}
 	return nil
+}
+
+func evaluationContains(cfg ParadigmExecutionConfig, date time.Time) bool {
+	if !cfg.EvaluationStart.IsZero() && date.Before(cfg.EvaluationStart) {
+		return false
+	}
+	if !cfg.EvaluationEnd.IsZero() && date.After(cfg.EvaluationEnd) {
+		return false
+	}
+	return true
 }
 
 func executeAtOpen(engine *trading.ExecutionEngine, order trading.Order, bars []MarketBar, i int) trading.ExecutionResult {

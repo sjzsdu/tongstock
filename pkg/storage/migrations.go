@@ -437,6 +437,66 @@ CREATE INDEX IF NOT EXISTS idx_snapshot_kline_bar_lookup
 			return ensureSQLiteColumn(tx, "dataset_snapshot", "content_hash", `TEXT NOT NULL DEFAULT ''`)
 		},
 	},
+	{
+		version: 9,
+		name:    "persistent_experiment_runs",
+		sql: `
+CREATE TABLE IF NOT EXISTS experiment_registry (
+	id TEXT PRIMARY KEY,
+	name TEXT NOT NULL,
+	description TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL,
+	config_json TEXT NOT NULL,
+	config_hash TEXT NOT NULL,
+	environment_json TEXT NOT NULL,
+	created_at_ns INTEGER NOT NULL,
+	updated_at_ns INTEGER NOT NULL,
+	completed_at_ns INTEGER,
+	created_by TEXT NOT NULL DEFAULT '',
+	tags_json TEXT NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS idx_experiment_registry_created
+	ON experiment_registry(created_at_ns);
+CREATE INDEX IF NOT EXISTS idx_experiment_registry_config_hash
+	ON experiment_registry(config_hash);
+
+CREATE TABLE IF NOT EXISTS experiment_run (
+	id TEXT PRIMARY KEY,
+	experiment_id TEXT NOT NULL,
+	status TEXT NOT NULL,
+	start_time_ns INTEGER NOT NULL,
+	end_time_ns INTEGER,
+	duration_ns INTEGER NOT NULL DEFAULT 0,
+	metrics_json TEXT,
+	error_message TEXT NOT NULL DEFAULT '',
+	logs TEXT NOT NULL DEFAULT '',
+	config_hash TEXT NOT NULL,
+	result_hash TEXT NOT NULL DEFAULT '',
+	reproducible INTEGER NOT NULL DEFAULT 0,
+	reproducibility_note TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY (experiment_id) REFERENCES experiment_registry(id)
+);
+CREATE INDEX IF NOT EXISTS idx_experiment_run_experiment
+	ON experiment_run(experiment_id, start_time_ns);
+CREATE INDEX IF NOT EXISTS idx_experiment_run_result_hash
+	ON experiment_run(result_hash);
+
+CREATE TABLE IF NOT EXISTS experiment_run_artifact (
+	id TEXT PRIMARY KEY,
+	run_id TEXT NOT NULL,
+	type TEXT NOT NULL,
+	name TEXT NOT NULL,
+	description TEXT NOT NULL DEFAULT '',
+	content BLOB,
+	content_hash TEXT NOT NULL DEFAULT '',
+	file_path TEXT NOT NULL DEFAULT '',
+	created_at_ns INTEGER NOT NULL,
+	FOREIGN KEY (run_id) REFERENCES experiment_run(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_experiment_artifact_run
+	ON experiment_run_artifact(run_id, type, name);
+`,
+	},
 }
 
 // Migrate upgrades the SQLite database transactionally. Store constructors

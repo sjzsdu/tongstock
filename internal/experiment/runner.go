@@ -32,8 +32,11 @@ func NewExperimentRunner(registry Registry) *ExperimentRunner {
 // Run 执行实验。
 func (r *ExperimentRunner) Run(ctx context.Context, exp *Experiment, executor ExperimentExecutor) (*ExperimentRun, error) {
 	// 检查实验状态
-	if exp.IsFinished() {
+	if exp.Status == StatusFailed || exp.Status == StatusCancelled {
 		return nil, fmt.Errorf("experiment %s is already finished (status: %s)", exp.ID, exp.Status)
+	}
+	if exp.Status == StatusRunning || r.IsRunning(exp.ID) {
+		return nil, fmt.Errorf("experiment %s is already running", exp.ID)
 	}
 
 	// 标记实验为运行中

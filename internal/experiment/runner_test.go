@@ -123,7 +123,7 @@ func TestExperimentRunner_CancelledContext(t *testing.T) {
 	t.Logf("Experiment status after cancelled context: %s", updatedExp.Status)
 }
 
-func TestExperimentRunner_DuplicateRun(t *testing.T) {
+func TestExperimentRunner_ReproducibleRerun(t *testing.T) {
 	registry := NewInMemoryRegistry()
 	runner := NewExperimentRunner(registry)
 	exp := createTestExperiment()
@@ -140,10 +140,20 @@ func TestExperimentRunner_DuplicateRun(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 实验已完成, 第二次运行应失败
-	_, err = runner.Run(context.Background(), exp, executor)
-	if err == nil {
-		t.Error("Running finished experiment should fail")
+	// 同一实验允许用同一冻结配置重跑，以验证结果哈希可复现。
+	second, err := runner.Run(context.Background(), exp, executor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, err := registry.ListRuns(exp.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 2 {
+		t.Fatalf("runs = %d, want 2", len(runs))
+	}
+	if runs[0].ResultHash != second.ResultHash {
+		t.Fatalf("result hashes differ: %s vs %s", runs[0].ResultHash, second.ResultHash)
 	}
 }
 

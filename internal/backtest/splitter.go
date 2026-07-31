@@ -272,11 +272,17 @@ func (c WalkForwardConfig) Validate() error {
 	if c.TrainWindowDays < 30 {
 		return fmt.Errorf("train window must be >= 30 days")
 	}
+	if c.ValidWindowDays < 0 {
+		return fmt.Errorf("valid window must be >= 0 days")
+	}
 	if c.TestWindowDays < 1 {
 		return fmt.Errorf("test window must be >= 1 day")
 	}
 	if c.StepDays < 1 {
 		return fmt.Errorf("step must be >= 1 day")
+	}
+	if c.EmbargoDays < 0 || c.PurgeDays < 0 {
+		return fmt.Errorf("embargo and purge must be >= 0 days")
 	}
 	return nil
 }
@@ -350,96 +356,22 @@ func (s *TimeSeriesSplitter) Split(dates []time.Time) (*SplitResult, error) {
 
 // fixedSplit 固定切分实现。
 func (s *TimeSeriesSplitter) fixedSplit(dates []time.Time) (*SplitResult, error) {
-	n := len(dates)
-
-	// 计算切分点
-	trainEndIdx := int(float64(n) * s.config.TrainRatio)
-	validEndIdx := trainEndIdx + int(float64(n)*s.config.ValidRatio)
-
-	// 确保不越界
-	if trainEndIdx >= n || validEndIdx > n {
-		return nil, fmt.Errorf("invalid split ratios for %d dates", n)
-	}
-
-	// 检查最小训练集
-	trainDays := trainEndIdx
-	if trainDays < s.config.MinTrainSize {
-		return nil, fmt.Errorf("train set too small: %d days (min: %d)", trainDays, s.config.MinTrainSize)
-	}
-
-	result := &SplitResult{
-		Train: TimeSegment{
-			Start: dates[0],
-			End:   dates[trainEndIdx-1],
-		},
-		Valid: &TimeSegment{
-			Start: dates[trainEndIdx],
-			End:   dates[validEndIdx-1],
-		},
-		Test: TimeSegment{
-			Start: dates[validEndIdx],
-			End:   dates[n-1],
-		},
-	}
-
-	// 添加 Embargo
-	if s.config.EmbargoDays > 0 {
-		embargoStart := dates[trainEndIdx]
-		embargoEnd := addDays(embargoStart, s.config.EmbargoDays-1)
-
-		// 调整训练集结束和验证集开始
-		result.Train.End = addDays(result.Train.End, 0) // 保持不变
-		// 封锁期: 训练结束后, 验证开始前
-		result.EmbargoTrainValid = &TimeSegment{
-			Start: embargoStart,
-			End:   embargoEnd,
-		}
-		result.Valid.Start = addDays(embargoEnd, 1)
-
-		// 验证与测试之间的封锁期
-		if validEndIdx < n {
-			embargoStart2 := result.Valid.End
-			embargoEnd2 := addDays(embargoStart2, s.config.EmbargoDays)
-			result.EmbargoValidTest = &TimeSegment{
-				Start: embargoStart2,
-				End:   embargoEnd2,
-			}
-			result.Test.Start = addDays(embargoEnd2, 1)
-		}
-	}
-
-	// 计算 Purge 日期 (标签重叠)
-	if s.config.PurgeDays > 0 {
-		purgeDates := s.computePurgeDates(dates, result)
-		result.PurgeDates = purgeDates
-	}
-
-	// 验证数据隔离
-	if err := result.ValidateDataIsolation(); err != nil {
+	if err := validateOrderedDates(dates); err != nil {
 		return nil, err
 	}
-
-	return result, nil
-}
-
-// computePurgeDates 计算需要清洗的日期 (标签重叠).
-func (s *TimeSeriesSplitter) computePurgeDates(dates []time.Time, result *SplitResult) []time.Time {
-	var purgeDates []time.Time
-
-	// 检查训练集末尾是否与测试集标签重叠
-	// Purge: 从训练集末尾去掉 PurgeDays 天的数据
-	if s.config.PurgeDays > 0 {
-		trainEnd := result.Train.End
-		for i := 0; i < s.config.PurgeDays; i++ {
-			purgeDate := addDays(trainEnd, -i)
-			purgeDates = append(purgeDates, purgeDate)
-		}
-
-		// 调整训练集结束
-		result.Train.End = addDays(trainEnd, -s.config.PurgeDays)
+	n := len(dates)
+	trainCount := int(float64(n) * s.config.TrainRatio)
+	validCount := int(float64(n) * s.config.ValidRatio)
+	testCount := n - trainCount - validCount
+	if trainCount <= 0 || validCount < 0 || testCount <= 0 {
+		return nil, fmt.Errorf("invalid split ratios for %d dates", n)
 	}
-
-	return purgeDates
+	if trainCount-s.config.PurgeDays < s.config.MinTrainSize {
+		return nil, fmt.Errorf("train set too small after purge: %d days (min: %d)",
+			trainCount-s.config.PurgeDays, s.config.MinTrainSize)
+	}
+	return splitTradingDates(dates, trainCount, validCount, testCount,
+		s.config.EmbargoDays, s.config.PurgeDays)
 }
 
 // SplitWalkForward 执行 Walk-Forward 切分。
@@ -447,9 +379,11 @@ func (s *TimeSeriesSplitter) SplitWalkForward(dates []time.Time) (*WalkForwardRe
 	if len(dates) == 0 {
 		return nil, fmt.Errorf("dates list is empty")
 	}
-
 	if s.config.Type != SplitWalkForward {
 		return nil, fmt.Errorf("not configured for walk-forward")
+	}
+	if err := validateOrderedDates(dates); err != nil {
+		return nil, err
 	}
 
 	cfg := s.wfConfig
@@ -459,69 +393,17 @@ func (s *TimeSeriesSplitter) SplitWalkForward(dates []time.Time) (*WalkForwardRe
 		DataRange: TimeSegment{Start: dates[0], End: dates[len(dates)-1]},
 	}
 
-	// 计算每个窗口
-	step := cfg.StepDays
 	for i := 0; i < cfg.Windows; i++ {
-		windowStart := addDays(dates[0], i*step)
-		trainEnd := addDays(windowStart, cfg.TrainWindowDays)
-		validEnd := addDays(trainEnd, cfg.ValidWindowDays)
-		testEnd := addDays(validEnd, cfg.TestWindowDays)
-
-		// 如果超过数据范围, 则截断
-		if testEnd.After(dates[len(dates)-1]) {
-			testEnd = dates[len(dates)-1]
+		start := i * cfg.StepDays
+		end := start + cfg.TrainWindowDays + cfg.ValidWindowDays + cfg.TestWindowDays
+		if end > len(dates) {
+			break
 		}
-		if trainEnd.After(dates[len(dates)-1]) {
-			break // 数据不足, 停止生成窗口
+		split, err := splitTradingDates(dates[start:end], cfg.TrainWindowDays,
+			cfg.ValidWindowDays, cfg.TestWindowDays, cfg.EmbargoDays, cfg.PurgeDays)
+		if err != nil {
+			return nil, fmt.Errorf("walk-forward window %d: %w", i, err)
 		}
-
-		split := &SplitResult{
-			Train: TimeSegment{
-				Start: windowStart,
-				End:   trainEnd,
-			},
-			Valid: &TimeSegment{
-				Start: trainEnd,
-				End:   validEnd,
-			},
-			Test: TimeSegment{
-				Start: validEnd,
-				End:   testEnd,
-			},
-		}
-
-		// 添加 Embargo
-		if cfg.EmbargoDays > 0 {
-			embargoEV := &TimeSegment{
-				Start: addDays(trainEnd, 0),
-				End:   addDays(trainEnd, cfg.EmbargoDays-1),
-			}
-			split.EmbargoTrainValid = embargoEV
-			split.Valid.Start = addDays(embargoEV.End, 1)
-
-			embargoVT := &TimeSegment{
-				Start: addDays(validEnd, 0),
-				End:   addDays(validEnd, cfg.EmbargoDays-1),
-			}
-			split.EmbargoValidTest = embargoVT
-			split.Test.Start = addDays(embargoVT.End, 1)
-		}
-
-		// 添加 Purge
-		if cfg.PurgeDays > 0 {
-			purgeDates := make([]time.Time, cfg.PurgeDays)
-			for j := 0; j < cfg.PurgeDays; j++ {
-				purgeDates[j] = addDays(trainEnd, -j)
-			}
-			split.PurgeDates = purgeDates
-			split.Train.End = addDays(trainEnd, -cfg.PurgeDays)
-		}
-
-		// 验证数据隔离
-		if err := split.ValidateDataIsolation(); err != nil {
-			continue // 跳过有问题的窗口
-		}
-
 		result.Windows = append(result.Windows, WalkForwardWindow{
 			Index: i,
 			Split: *split,
@@ -624,11 +506,6 @@ func (d *LeakDetector) HasCriticalLeak(leaks []LeakInfo) bool {
 // 辅助函数
 // ============================================================================
 
-// addDays 增加天数 (不考虑节假日).
-func addDays(t time.Time, days int) time.Time {
-	return t.AddDate(0, 0, days)
-}
-
 // FilterBySegment 按区间过滤数据。
 // data: 原始数据 (按日期升序)
 // Returns: 各区间的数据子集
@@ -643,4 +520,76 @@ func FilterBySegment(dates []time.Time, values map[string]interface{}, split *Sp
 	}
 
 	return result
+}
+
+func validateOrderedDates(dates []time.Time) error {
+	for i, date := range dates {
+		if date.IsZero() {
+			return fmt.Errorf("date %d is zero", i)
+		}
+		if i > 0 && !date.After(dates[i-1]) {
+			return fmt.Errorf("dates must be strictly increasing")
+		}
+	}
+	return nil
+}
+
+// splitTradingDates 按真实交易日行号切分。Embargo 从后续集合头部剔除，
+// Purge 从前序集合尾部剔除；周末和节假日不会消耗窗口计数。
+func splitTradingDates(dates []time.Time, trainCount, validCount, testCount, embargo, purge int) (*SplitResult, error) {
+	if trainCount+validCount+testCount != len(dates) {
+		return nil, fmt.Errorf("split counts do not cover dates")
+	}
+	if trainCount <= purge || testCount <= embargo {
+		return nil, fmt.Errorf("split too small for embargo=%d and purge=%d", embargo, purge)
+	}
+
+	trainBoundary := trainCount
+	validBoundary := trainCount + validCount
+	result := &SplitResult{
+		Train: TimeSegment{Start: dates[0], End: dates[trainBoundary-purge-1]},
+	}
+	if validCount == 0 {
+		result.Test = TimeSegment{
+			Start: dates[trainBoundary+embargo],
+			End:   dates[len(dates)-1],
+		}
+	} else {
+		if validCount <= purge+embargo {
+			return nil, fmt.Errorf("validation split too small for embargo=%d and purge=%d", embargo, purge)
+		}
+		result.Valid = &TimeSegment{
+			Start: dates[trainBoundary+embargo],
+			End:   dates[validBoundary-purge-1],
+		}
+		result.Test = TimeSegment{
+			Start: dates[validBoundary+embargo],
+			End:   dates[len(dates)-1],
+		}
+	}
+
+	if purge > 0 {
+		result.PurgeDates = append(result.PurgeDates,
+			dates[trainBoundary-purge:trainBoundary]...)
+		if validCount > 0 {
+			result.PurgeDates = append(result.PurgeDates,
+				dates[validBoundary-purge:validBoundary]...)
+		}
+	}
+	if embargo > 0 {
+		result.EmbargoTrainValid = &TimeSegment{
+			Start: dates[trainBoundary],
+			End:   dates[trainBoundary+embargo-1],
+		}
+		if validCount > 0 {
+			result.EmbargoValidTest = &TimeSegment{
+				Start: dates[validBoundary],
+				End:   dates[validBoundary+embargo-1],
+			}
+		}
+	}
+	if err := result.ValidateDataIsolation(); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
