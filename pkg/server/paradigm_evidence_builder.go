@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sjzsdu/tongstock/internal/ai_critic"
 	"github.com/sjzsdu/tongstock/internal/backtest"
 	"github.com/sjzsdu/tongstock/internal/experiment"
 	"github.com/sjzsdu/tongstock/internal/paradigm"
@@ -68,6 +69,7 @@ func buildParadigmEvidence(
 	segmentArtifact := findEvidenceArtifact(run.Artifacts, "segment_metrics")
 	transactionArtifact := findEvidenceArtifact(run.Artifacts, "transactions")
 	manifestArtifact := findEvidenceArtifact(run.Artifacts, "reproducibility_manifest")
+	criticArtifact := findEvidenceArtifact(run.Artifacts, "critic_review")
 	for name, artifact := range map[string]*experiment.Artifact{
 		"segment_metrics":          segmentArtifact,
 		"transactions":             transactionArtifact,
@@ -161,6 +163,30 @@ func buildParadigmEvidence(
 	card.Available = true
 
 	card.PromotionBlockers = evidencePromotionBlockers(card)
+	if criticArtifact == nil {
+		card.PromotionBlockers = append(card.PromotionBlockers, "缺少持久化 critic 反证审查")
+	} else {
+		var critic ai_critic.ReviewOutcome
+		if err := json.Unmarshal(criticArtifact.Content, &critic); err != nil {
+			return nil, fmt.Errorf("decode critic_review artifact: %w", err)
+		}
+		if !critic.Passed() {
+			card.PromotionBlockers = append(card.PromotionBlockers,
+				"critic 审查未通过: "+string(critic.Conclusion))
+		}
+		for _, issue := range critic.Issues {
+			severity := string(issue.Severity)
+			card.CounterEvidence = append(card.CounterEvidence, paradigms.CounterExample{
+				Type: "critic_" + string(issue.Dimension), Description: issue.Title,
+				Period: "experiment:" + exp.ID, Reason: issue.Evidence,
+				Severity: severity,
+			})
+			if issue.IsHardThresholdIssue() {
+				card.PromotionBlockers = append(card.PromotionBlockers,
+					"critic 硬门槛: "+issue.Title)
+			}
+		}
+	}
 	card.PromotionEligible = len(card.PromotionBlockers) == 0
 	card.RiskFlags = evidenceRiskFlags(card, rejectionCount)
 	if rejectionCount > 0 {

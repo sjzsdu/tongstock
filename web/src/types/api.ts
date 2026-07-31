@@ -451,6 +451,43 @@ export interface AgentChatResponse {
   error?: string;
 }
 
+export interface AgentResearchRequest {
+  paradigm_id: string;
+  question?: string;
+  snapshot_id?: string;
+  start_date?: string;
+  end_date?: string;
+}
+
+export interface AgentResearchResponse {
+  conclusion: 'evidence_passed' | 'not_verified' | string;
+  answer: string;
+  citation: {
+    experiment_id: string;
+    run_id: string;
+    snapshot_id: string;
+    evidence_hash: string;
+    result_hash: string;
+    trade_ids?: string[];
+  };
+  evidence: EvidenceCard;
+  critic: {
+    id: string;
+    target_id: string;
+    conclusion: string;
+    hard_blocked: boolean;
+    summary?: string;
+    issues: Array<{
+      id: string;
+      dimension: string;
+      severity: string;
+      title: string;
+      evidence?: string;
+      is_hard_threshold: boolean;
+    }>;
+  };
+}
+
 export interface AgentSessionsResponse {
   sessions: AgentSessionInfo[];
   missing?: boolean;
@@ -589,6 +626,10 @@ export interface ParadigmAnalyzeResponse {
   evaluated_confirm?: EvaluatedItem[];
   evaluated_invalid?: EvaluatedItem[];
   agent_text: string;
+  experiment_id?: string;
+  run_id?: string;
+  evidence_hash?: string;
+  research?: AgentResearchResponse;
   cached?: boolean;
   message?: string;
   error?: string;

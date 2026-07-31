@@ -15,6 +15,8 @@ import type {
   AgentState,
   AgentDiagnosticResponse,
   AgentChatResponse,
+  AgentResearchRequest,
+  AgentResearchResponse,
   AgentSessionsResponse,
   AgentTranscriptResponse,
   AgentDebateResponse,
@@ -398,6 +400,12 @@ export const api = {
     fetchJSON<AgentChatResponse>('/api/agent/chat', {
       method: 'POST',
       body: JSON.stringify({ message, agent, session }),
+    }),
+
+  agentResearch: (payload: AgentResearchRequest) =>
+    fetchJSON<AgentResearchResponse>('/api/agent/research', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     }),
 
   agentSessions: () =>

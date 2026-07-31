@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	pinyin "github.com/mozillazg/go-pinyin"
+	"github.com/sjzsdu/tongstock/internal/ai_tools"
 	"github.com/sjzsdu/tongstock/internal/app/stockdata"
 	"github.com/sjzsdu/tongstock/internal/experiment"
 	"github.com/sjzsdu/tongstock/internal/ledger"
@@ -41,6 +42,7 @@ type Server struct {
 	paradigmStore         *paradigms.Store
 	paradigmSnapshots     *paradigm.DatasetSnapshotStore
 	experimentRegistry    *experiment.SQLiteRegistry
+	researchTools         *ai_tools.ToolRegistry
 	storage               *storage.Storage
 	paradigmAlertMu       sync.RWMutex
 	paradigmAlertCache    []paradigmAlert
@@ -128,6 +130,8 @@ func NewServer(deps Dependencies) *Server {
 	if deps.Storage != nil {
 		s.paradigmSnapshots = paradigm.NewDatasetSnapshotStore(deps.Storage)
 		s.experimentRegistry, _ = experiment.NewSQLiteRegistry(deps.Storage)
+		s.researchTools = ai_tools.NewToolRegistry()
+		_ = s.researchTools.Register(&verifiedResearchEvidenceTool{server: s})
 	}
 	if s.ledger == nil {
 		s.ledger = ledger.NewSignalLedger()

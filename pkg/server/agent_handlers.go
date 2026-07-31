@@ -164,6 +164,7 @@ func (s *Server) SetupAgentRoutes(api *gin.RouterGroup) {
 		agent.GET("/diagnose", s.handleAgentDiagnose)
 		agent.POST("/chat", s.handleAgentChat)
 		agent.POST("/chat/stream", s.handleAgentChatStream)
+		agent.POST("/research", s.handleAgentResearch)
 		agent.POST("/debate", s.handleAgentDebate)
 		agent.GET("/transcript", s.handleAgentTranscript)
 		agent.GET("/sessions", s.handleAgentSessions)
@@ -327,6 +328,12 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, agentChatResponse{Error: "unknown agent: " + req.Agent})
 		return
 	}
+	if req.Agent == "stock-paradigm-miner" {
+		c.JSON(http.StatusConflict, agentChatResponse{
+			Error: "范式研究禁止直接 Prompt 出具结论；请使用 /api/agent/research 并提供 paradigm_id，以生成真实实验和 Evidence 引用。",
+		})
+		return
+	}
 	if req.Session == "" {
 		req.Session = s.agentState.defaults.Session
 	}
@@ -398,6 +405,11 @@ func (s *Server) handleAgentChatStream(c *gin.Context) {
 	}
 	if !s.isValidAgent(req.Agent) {
 		WriteError(c, http.StatusBadRequest, "unknown_agent", "指定的 Agent 不存在")
+		return
+	}
+	if req.Agent == "stock-paradigm-miner" {
+		WriteError(c, http.StatusConflict, "verified_research_required",
+			"范式研究禁止直接 Prompt 出具结论；请使用 /api/agent/research 并提供 paradigm_id")
 		return
 	}
 	if req.Session == "" {

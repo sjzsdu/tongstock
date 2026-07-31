@@ -1,7 +1,10 @@
 package server
 
 import (
+	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sjzsdu/tongstock/internal/ai_critic"
 	"github.com/sjzsdu/tongstock/internal/backtest"
 	"github.com/sjzsdu/tongstock/internal/experiment"
 	"github.com/sjzsdu/tongstock/internal/paradigm"
@@ -64,21 +68,56 @@ func (s *Server) handleParadigmBacktest(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "paradigm_id is required"})
 		return
 	}
-	p, err := s.paradigmStore.Get(req.ParadigmID)
+	p, exp, run, snapshotID, err := s.executeParadigmExperiment(
+		c.Request.Context(), req, "api",
+	)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		body := gin.H{"error": err.Error()}
+		if exp != nil {
+			body["experiment_id"] = exp.ID
+			body["snapshot_id"] = exp.Config.DataSnapshotID
+		}
+		if run != nil {
+			body["run_id"] = run.ID
+		}
+		c.JSON(http.StatusUnprocessableEntity, body)
 		return
+	}
+	c.JSON(http.StatusCreated, paradigmBacktestResponse{
+		ParadigmID: p.ID, StockCode: p.StockCode, ExperimentID: exp.ID,
+		RunID: run.ID, SnapshotID: snapshotID, ConfigHash: exp.ConfigHash,
+		ResultHash: run.ResultHash, Metrics: run.Metrics,
+		SegmentedMetric: artifactContent(run.Artifacts, "segment_metrics"),
+		Artifacts:       run.Artifacts,
+	})
+}
+
+func (s *Server) executeParadigmExperiment(
+	ctx context.Context,
+	req paradigmBacktestRequest,
+	createdBy string,
+) (
+	*paradigms.Paradigm,
+	*experiment.Experiment,
+	*experiment.ExperimentRun,
+	string,
+	error,
+) {
+	if s.paradigmStore == nil || s.paradigmSnapshots == nil ||
+		s.experimentRegistry == nil || s.storage == nil {
+		return nil, nil, nil, "", fmt.Errorf("paradigm experiment storage is not initialized")
+	}
+	p, err := s.paradigmStore.Get(strings.TrimSpace(req.ParadigmID))
+	if err != nil {
+		return nil, nil, nil, "", err
 	}
 	if len(p.BuyConds) == 0 {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "paradigm has no executable buy conditions"})
-		return
+		return p, nil, nil, "", fmt.Errorf("paradigm has no executable buy conditions")
 	}
-
 	applyParadigmBacktestDefaults(&req)
 	snapshotID, err := s.resolveParadigmSnapshot(p, req)
 	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
-		return
+		return p, nil, nil, "", err
 	}
 	config := experiment.ExperimentConfig{
 		StrategyName: "paradigm", StrategyVersion: "1",
@@ -100,39 +139,27 @@ func (s *Server) handleParadigmBacktest(c *gin.Context) {
 		fmt.Sprintf("Production backtest for paradigm %s on frozen real K-line data", p.ID),
 		config,
 	)
-	exp.CreatedBy = "api"
+	exp.CreatedBy = createdBy
 	exp.Tags = []string{"paradigm", p.StockCode, "production"}
 	if err := s.experimentRegistry.Create(exp); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "create experiment: " + err.Error()})
-		return
+		return p, exp, nil, snapshotID, fmt.Errorf("create experiment: %w", err)
 	}
 	if err := s.paradigmSnapshots.BindExperiment(exp.ID, []string{snapshotID}); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "bind frozen snapshot: " + err.Error(), "experiment_id": exp.ID,
-		})
-		return
+		return p, exp, nil, snapshotID, fmt.Errorf("bind frozen snapshot: %w", err)
 	}
 	run, err := experiment.NewExperimentRunner(s.experimentRegistry).Run(
-		c.Request.Context(), exp, &backtest.ParadigmExperimentExecutor{
+		ctx, exp, &backtest.ParadigmExperimentExecutor{
 			SnapshotStore: s.paradigmSnapshots,
 			Paradigm:      p,
 		},
 	)
 	if err != nil {
-		body := gin.H{"error": err.Error(), "experiment_id": exp.ID, "snapshot_id": snapshotID}
-		if run != nil {
-			body["run_id"] = run.ID
-		}
-		c.JSON(http.StatusUnprocessableEntity, body)
-		return
+		return p, exp, run, snapshotID, err
 	}
-	c.JSON(http.StatusCreated, paradigmBacktestResponse{
-		ParadigmID: p.ID, StockCode: p.StockCode, ExperimentID: exp.ID,
-		RunID: run.ID, SnapshotID: snapshotID, ConfigHash: exp.ConfigHash,
-		ResultHash: run.ResultHash, Metrics: run.Metrics,
-		SegmentedMetric: artifactContent(run.Artifacts, "segment_metrics"),
-		Artifacts:       run.Artifacts,
-	})
+	if _, err := s.attachExperimentCritic(p, exp, run); err != nil {
+		return p, exp, run, snapshotID, fmt.Errorf("persist critic review: %w", err)
+	}
+	return p, exp, run, snapshotID, nil
 }
 
 func applyParadigmBacktestDefaults(req *paradigmBacktestRequest) {
@@ -142,7 +169,7 @@ func applyParadigmBacktestDefaults(req *paradigmBacktestRequest) {
 	if req.Split.Type == "" {
 		req.Split = experiment.SplitConfigRef{
 			Type: string(backtest.SplitFixed), TrainRatio: 0.6, ValidRatio: 0.2,
-			EmbargoDays: 2, PurgeDays: 2, MinTrainSize: 60,
+			EmbargoDays: 5, PurgeDays: 3, MinTrainSize: 60,
 		}
 	}
 	if req.InitialCash <= 0 {
@@ -336,4 +363,106 @@ func containsStockCode(codes []string, wanted string) bool {
 		}
 	}
 	return false
+}
+
+func (s *Server) attachExperimentCritic(
+	p *paradigms.Paradigm,
+	exp *experiment.Experiment,
+	run *experiment.ExperimentRun,
+) (*ai_critic.ReviewOutcome, error) {
+	if run == nil || run.Metrics == nil {
+		return nil, fmt.Errorf("completed experiment metrics are required")
+	}
+	snapshot, err := s.paradigmSnapshots.GetByID(exp.Config.DataSnapshotID)
+	if err != nil {
+		return nil, err
+	}
+	card, err := buildParadigmEvidence(p, exp, run, snapshot)
+	if err != nil {
+		return nil, err
+	}
+	input := criticInputFromExperiment(p, exp, run, card)
+	outcome := ai_critic.NewResearchCritic(ai_critic.DefaultCriticConfig()).Review(input)
+	content, err := json.Marshal(outcome)
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256(content)
+	contentHash := hex.EncodeToString(sum[:])
+	run.Artifacts = append(run.Artifacts, experiment.Artifact{
+		ID:   run.ID + "-critic-" + contentHash[:12],
+		Type: experiment.ArtifactReport, Name: "critic_review",
+		Description: "Independent critic review derived from persisted experiment evidence",
+		Content:     content, ContentHash: contentHash, CreatedAt: outcome.ReviewedAt,
+	})
+	if err := s.experimentRegistry.UpdateRun(run); err != nil {
+		return nil, err
+	}
+	return outcome, nil
+}
+
+func criticInputFromExperiment(
+	p *paradigms.Paradigm,
+	exp *experiment.Experiment,
+	run *experiment.ExperimentRun,
+	card *paradigms.EvidenceCard,
+) ai_critic.ReviewInput {
+	features := make([]string, 0, len(p.BuyConds))
+	for _, condition := range p.BuyConds {
+		if value := strings.TrimSpace(condition.Indicator); value != "" {
+			features = append(features, value)
+		}
+	}
+	results := ai_critic.ReviewResults{
+		SharpeRatio: run.Metrics.SharpeRatio, SortinoRatio: run.Metrics.SortinoRatio,
+		MaxDrawdown: run.Metrics.MaxDrawdown, TotalReturn: run.Metrics.TotalReturn,
+		WinRate: run.Metrics.WinRate, TotalTrades: run.Metrics.TotalTrades,
+		ProfitFactor: run.Metrics.ProfitFactor,
+	}
+	if card != nil && card.OutOfSample != nil {
+		results.SampleSize = card.OutOfSample.SampleSize
+		results.TotalTrades = card.OutOfSample.TradesCount
+		if card.OutOfSample.TotalReturn != nil {
+			results.TotalReturn = *card.OutOfSample.TotalReturn
+		}
+		if card.OutOfSample.MaxDrawdown != nil {
+			results.MaxDrawdown = *card.OutOfSample.MaxDrawdown
+		}
+		if card.OutOfSample.WinRate != nil {
+			results.WinRate = *card.OutOfSample.WinRate
+		}
+	}
+	if card != nil && card.CostAnalysis != nil {
+		if card.CostAnalysis.GrossReturn != nil {
+			results.GrossReturn = *card.CostAnalysis.GrossReturn
+		}
+		if card.CostAnalysis.NetReturn != nil {
+			results.NetReturn = *card.CostAnalysis.NetReturn
+		}
+		if card.CostAnalysis.CostRatio != nil {
+			results.CostRatio = *card.CostAnalysis.CostRatio
+		}
+	}
+	if card != nil && card.Concentration != nil {
+		results.MaxPositionWeight = card.Concentration.MaxPositionWeight
+		results.Concentration = card.Concentration.ConcentrationIndex
+	}
+	return ai_critic.ReviewInput{
+		TargetID: exp.ID, TargetType: "experiment",
+		Metrics: map[string]float64{
+			"result_total_return": results.TotalReturn,
+			"result_max_drawdown": results.MaxDrawdown,
+			"result_sharpe":       results.SharpeRatio,
+		},
+		Config: ai_critic.ReviewConfig{
+			SplitType:    exp.Config.SplitConfig.Type,
+			TrainRatio:   exp.Config.SplitConfig.TrainRatio,
+			ValidRatio:   exp.Config.SplitConfig.ValidRatio,
+			EmbargoDays:  exp.Config.SplitConfig.EmbargoDays,
+			PurgeDays:    exp.Config.SplitConfig.PurgeDays,
+			FeatureCount: len(features), FeatureIDs: features,
+			DataSnapshotID: exp.Config.DataSnapshotID,
+		},
+		Results: results,
+	}
 }

@@ -34,6 +34,10 @@ type paradigmAnalyzeResponse struct {
 	EvaluatedConfirm []paradigms.EvaluatedItem `json:"evaluated_confirm,omitempty"`
 	EvaluatedInvalid []paradigms.EvaluatedItem `json:"evaluated_invalid,omitempty"`
 	AgentText        string                    `json:"agent_text"`
+	ExperimentID     string                    `json:"experiment_id,omitempty"`
+	RunID            string                    `json:"run_id,omitempty"`
+	EvidenceHash     string                    `json:"evidence_hash,omitempty"`
+	Research         *agentResearchResponse    `json:"research,omitempty"`
 	Cached           bool                      `json:"cached,omitempty"`
 	Message          string                    `json:"message,omitempty"`
 	Error            string                    `json:"error,omitempty"`
@@ -374,17 +378,7 @@ func (s *Server) handleParadigmAnalyze(c *gin.Context) {
 			existing = s.paradigmStore.GetByStockCode(req.StockCode)
 		}
 		if existing != nil {
-			evalConfirm, evalInvalid := s.evaluateConditions(req.StockCode, existing)
-			c.JSON(http.StatusOK, paradigmAnalyzeResponse{
-				StockCode:        req.StockCode,
-				StockName:        req.StockName,
-				Paradigm:         existing,
-				EvaluatedConfirm: evalConfirm,
-				EvaluatedInvalid: evalInvalid,
-				AgentText:        existing.AgentText,
-				Cached:           true,
-				Message:          "返回缓存范式。传 force_refresh=true 可重新分析。",
-			})
+			s.respondWithVerifiedParadigmResearch(c, req, existing, true)
 			return
 		}
 	}
@@ -435,16 +429,50 @@ func (s *Server) handleParadigmAnalyze(c *gin.Context) {
 		_ = s.paradigmStore.Save(paradigm)
 	}
 
-	// Evaluate confirmations and invalidations against current data
-	evalConfirm, evalInvalid := s.evaluateConditions(req.StockCode, paradigm)
+	if paradigm == nil {
+		c.JSON(http.StatusUnprocessableEntity, paradigmAnalyzeResponse{
+			StockCode: req.StockCode, StockName: req.StockName,
+			AgentText: "AI 输出未形成可执行、可证伪的结构化假设，拒绝给出有效性结论。",
+			Error:     "agent response did not contain a valid executable hypothesis",
+		})
+		return
+	}
+	s.respondWithVerifiedParadigmResearch(c, req, paradigm, false)
+}
 
+func (s *Server) respondWithVerifiedParadigmResearch(
+	c *gin.Context,
+	req paradigmAnalyzeRequest,
+	p *paradigms.Paradigm,
+	cached bool,
+) {
+	result, exp, run, err := s.conductVerifiedResearch(c.Request.Context(), agentResearchRequest{
+		ParadigmID: p.ID,
+		Question:   "验证 AI 生成的股票范式是否具有真实样本外证据",
+	})
+	if err != nil {
+		response := paradigmAnalyzeResponse{
+			StockCode: req.StockCode, StockName: req.StockName, Paradigm: p,
+			AgentText: "真实数据、冻结快照或实验制品不足，拒绝判断该范式有效。",
+			Error:     err.Error(), Cached: cached,
+		}
+		if exp != nil {
+			response.ExperimentID = exp.ID
+		}
+		if run != nil {
+			response.RunID = run.ID
+		}
+		c.JSON(http.StatusUnprocessableEntity, response)
+		return
+	}
+	evalConfirm, evalInvalid := s.evaluateConditions(req.StockCode, p)
 	c.JSON(http.StatusOK, paradigmAnalyzeResponse{
-		StockCode:        req.StockCode,
-		StockName:        req.StockName,
-		Paradigm:         paradigm,
-		EvaluatedConfirm: evalConfirm,
-		EvaluatedInvalid: evalInvalid,
-		AgentText:        agentResp,
+		StockCode: req.StockCode, StockName: req.StockName, Paradigm: p,
+		EvaluatedConfirm: evalConfirm, EvaluatedInvalid: evalInvalid,
+		AgentText: result.Answer, ExperimentID: result.Citation.ExperimentID,
+		RunID: result.Citation.RunID, EvidenceHash: result.Citation.EvidenceHash,
+		Research: result, Cached: cached,
+		Message: "AI 假设已通过真实冻结快照运行实验；结论仅引用返回的 Evidence 与 critic 制品。",
 	})
 }
 
@@ -764,12 +792,14 @@ func (s *Server) buildParadigmPrompt(code, name string, days int) string {
   "sell_conditions": {"take_profit":[{"indicator":"close", "operator":"gt", "value":"12.30"}], "stop_loss":[{"indicator":"close", "operator":"lt", "value":"MA60"}]},
   "confirmations": ["确认项"],
   "invalidations": ["失效规则"],
-  "expectation": {"holding_period":"2-6周", "expected_return":"8-15%", "risk_reward_ratio":"2:1", "win_rate":0, "sample_size":0, "confidence":0.6},
+  "expectation": {"holding_period":"待验证", "expected_return":"待真实实验验证", "risk_reward_ratio":"待真实实验验证", "win_rate":0, "sample_size":0, "confidence":0},
   "rationale": "范式逻辑"
 }
 ` + "```" + `
 
-要求：JSON 中条件必须尽量结构化。operator 只使用 gt、lt、between、near、cross_above、cross_below、describe。不要输出投资建议承诺。`)
+要求：JSON 中条件必须尽量结构化。operator 只使用 gt、lt、between、near、cross_above、cross_below、describe。
+你只负责生成可证伪假设，不得声称回测通过，不得编造收益率、胜率、样本量、交易记录或置信度；
+验证结论将由服务端真实冻结快照、持久化实验、Evidence 和 critic 生成。`)
 	return b.String()
 }
 

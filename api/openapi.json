@@ -226,6 +226,37 @@
         }
       }
     },
+    "/api/agent/research": {
+      "post": {
+        "operationId": "postApiAgentResearch",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["paradigm_id"],
+                "properties": {
+                  "paradigm_id": { "type": "string" },
+                  "question": { "type": "string" },
+                  "snapshot_id": { "type": "string" },
+                  "start_date": { "type": "string" },
+                  "end_date": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Persisted evidence-backed research result" },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "422": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/agent/chat/session/list": {
       "get": {
         "operationId": "getApiAgentChatSessionList",

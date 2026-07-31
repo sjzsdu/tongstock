@@ -53,6 +53,7 @@ export interface Quote {
 
 export const operations = {
   postApiAgentChat: { method: "POST", path: "/api/agent/chat" },
+  postApiAgentResearch: { method: "POST", path: "/api/agent/research" },
   getApiAgentChatSessionList: { method: "GET", path: "/api/agent/chat/session/list" },
   postApiAgentChatSessionSave: { method: "POST", path: "/api/agent/chat/session/save" },
   getApiAgentChatSessionId: { method: "GET", path: "/api/agent/chat/session/{id}" },
