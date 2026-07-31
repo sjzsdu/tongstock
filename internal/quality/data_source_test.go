@@ -9,8 +9,8 @@ func TestQualityDataSource_FetchKlineData_NilFetcher(t *testing.T) {
 	ds := &QualityDataSource{}
 	opts := &EvaluateOptions{}
 	err := ds.FetchKlineData([]string{"sh000001"}, 4, "", "", opts)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+	if err == nil {
+		t.Fatal("expected missing fetcher error")
 	}
 	if len(opts.KlineData) != 0 {
 		t.Fatalf("expected empty KlineData, got %d entries", len(opts.KlineData))
@@ -59,12 +59,12 @@ func TestQualityDataSource_NilReceiver(t *testing.T) {
 	var ds *QualityDataSource
 	opts := &EvaluateOptions{}
 	err := ds.FetchKlineData([]string{"sh000001"}, 4, "", "", opts)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+	if err == nil {
+		t.Fatal("expected nil receiver error")
 	}
 	records, err := ds.FetchKlineDataForCode("sh000001", 4, "", "")
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+	if err == nil {
+		t.Fatal("expected nil receiver error")
 	}
 	if records != nil {
 		t.Fatal("expected nil records")

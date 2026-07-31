@@ -2,12 +2,12 @@
 //
 // # 质量门类型
 //
-//   数据质量门 (data_quality): 检查 K 线数据完整性、重复、异常价格/成交量、时效性
-//   回测黄金集门 (backtest_golden): 对比回测结果与黄金集基线, 检测回归
-//   范式阶段门 (paradigm_stage): 验证范式是否满足晋级/保留条件 (分数、通过率)
-//   AI 评测门 (ai_evaluation): 检查 AI 模型准确率、一致性、数据漂移
-//   前向监控门 (forward_monitoring): 前向漂移检测、衰减监控、健康分
-//   恢复就绪门 (recovery_readiness): 备份状态、降级能力、手动覆盖权限
+//	数据质量门 (data_quality): 检查 K 线数据完整性、重复、异常价格/成交量、时效性
+//	回测黄金集门 (backtest_golden): 对比回测结果与黄金集基线, 检测回归
+//	范式阶段门 (paradigm_stage): 验证范式是否满足晋级/保留条件 (分数、通过率)
+//	AI 评测门 (ai_evaluation): 检查 AI 模型准确率、一致性、数据漂移
+//	前向监控门 (forward_monitoring): 前向漂移检测、衰减监控、健康分
+//	恢复就绪门 (recovery_readiness): 备份状态、降级能力、手动覆盖权限
 //
 // # 使用方式
 //
@@ -33,22 +33,21 @@
 //
 // # 降级模式
 //
-//   safe_mode: 仅允许查询, 禁止写入和前向推理
-//   readonly:  只读模式, 所有写操作被拒绝
-//   no_forward: 禁用前向推理, 仅允许历史数据查询
+//	safe_mode: 仅允许查询, 禁止写入和前向推理
+//	readonly:  只读模式, 所有写操作被拒绝
+//	no_forward: 禁用前向推理, 仅允许历史数据查询
 //
 // # 手动覆盖
 //
-// 当需要在质量门被阻止的情况下继续运行时, 可启用手动覆盖:
-//   - 在 EvaluateOptions 中设置 ManualOverride = true
-//   - 恢复计划中会记录覆盖操作 (ManualOverrideAllowed = true)
-//   - 建议覆盖后立即创建备份并排查根本原因
+// ManualOverride 只记录人工干预请求, 不会改变质量门的状态或分数。
+// 质量证据缺失或检查失败时必须保持阻止状态。
 //
 // # 质量评分
 //
 // 综合分 (0-100) 由各质量门得分加权计算:
-//   数据质量: 25% | 回测黄金集: 20% | 范式阶段: 15%
-//   AI 评测: 15% | 前向监控: 10% | 恢复就绪: 15%
+//
+//	数据质量: 25% | 回测黄金集: 20% | 范式阶段: 15%
+//	AI 评测: 15% | 前向监控: 10% | 恢复就绪: 15%
 //
 // 最低综合分阈值: 70 (可通过 MinOverallScore 配置调整)
 package quality
@@ -89,19 +88,19 @@ const (
 
 // UnifiedQualityReport 统一质量报告
 type UnifiedQualityReport struct {
-	ID         string         `json:"id"`
-	RunID      string         `json:"run_id"`
-	SourceID   string         `json:"source_id"`
-	SourceType string         `json:"source_type"`
-	Status     GateStatus     `json:"status"`
-	Score      float64        `json:"score"` // 0-100
+	ID         string     `json:"id"`
+	RunID      string     `json:"run_id"`
+	SourceID   string     `json:"source_id"`
+	SourceType string     `json:"source_type"`
+	Status     GateStatus `json:"status"`
+	Score      float64    `json:"score"` // 0-100
 
-	Gates      []GateResult   `json:"gates"`
-	Summary    GateSummary    `json:"summary"`
-	Issues     []GateIssue    `json:"issues"`
+	Gates   []GateResult `json:"gates"`
+	Summary GateSummary  `json:"summary"`
+	Issues  []GateIssue  `json:"issues"`
 
-	Decision   string         `json:"decision"` // pass / warn / block
-	Blocked    bool           `json:"blocked"`
+	Decision string `json:"decision"` // pass / warn / block
+	Blocked  bool   `json:"blocked"`
 
 	RecoveryPlan RecoveryPlan `json:"recovery_plan"`
 	GeneratedAt  time.Time    `json:"generated_at"`
@@ -109,28 +108,28 @@ type UnifiedQualityReport struct {
 
 // GateResult 单个质量门结果
 type GateResult struct {
-	Type       GateType    `json:"type"`
-	Name       string      `json:"name"`
-	Status     GateStatus  `json:"status"`
-	Score      float64     `json:"score"`
-	Passed     bool        `json:"passed"`
-	Blocked    bool        `json:"blocked"`
-	Checks     int         `json:"checks"`
-	Failures   int         `json:"failures"`
-	LatencyMs  int64       `json:"latency_ms"`
-	Message    string      `json:"message"`
-	Recommendations []string `json:"recommendations,omitempty"`
+	Type            GateType   `json:"type"`
+	Name            string     `json:"name"`
+	Status          GateStatus `json:"status"`
+	Score           float64    `json:"score"`
+	Passed          bool       `json:"passed"`
+	Blocked         bool       `json:"blocked"`
+	Checks          int        `json:"checks"`
+	Failures        int        `json:"failures"`
+	LatencyMs       int64      `json:"latency_ms"`
+	Message         string     `json:"message"`
+	Recommendations []string   `json:"recommendations,omitempty"`
 }
 
 // GateIssue 质量门发现的问题
 type GateIssue struct {
-	ID        string    `json:"id"`
-	GateType  GateType  `json:"gate_type"`
-	Severity  Severity  `json:"severity"`
-	Category  string    `json:"category"`
-	Title     string    `json:"title"`
-	Message   string    `json:"message"`
-	Context   string    `json:"context,omitempty"`
+	ID       string   `json:"id"`
+	GateType GateType `json:"gate_type"`
+	Severity Severity `json:"severity"`
+	Category string   `json:"category"`
+	Title    string   `json:"title"`
+	Message  string   `json:"message"`
+	Context  string   `json:"context,omitempty"`
 }
 
 // GateSummary 质量门汇总
@@ -148,14 +147,14 @@ type GateSummary struct {
 
 // RecoveryPlan 恢复计划
 type RecoveryPlan struct {
-	Status           string   `json:"status"`           // ready / degraded / not_ready
-	BackupExists     bool     `json:"backup_exists"`
-	LastBackupAt     string   `json:"last_backup_at,omitempty"`
-	RecoverySteps    []string `json:"recovery_steps"`
-	EstimatedTimeMs   int64   `json:"estimated_time_ms"`
-	CanDegrade       bool     `json:"can_degrade"`
-	DegradeMode      string   `json:"degrade_mode,omitempty"` // safe_mode / readonly / no_forward
-	ManualOverrideAllowed bool `json:"manual_override_allowed"`
+	Status                string   `json:"status"` // ready / degraded / not_ready
+	BackupExists          bool     `json:"backup_exists"`
+	LastBackupAt          string   `json:"last_backup_at,omitempty"`
+	RecoverySteps         []string `json:"recovery_steps"`
+	EstimatedTimeMs       int64    `json:"estimated_time_ms"`
+	CanDegrade            bool     `json:"can_degrade"`
+	DegradeMode           string   `json:"degrade_mode,omitempty"` // safe_mode / readonly / no_forward
+	ManualOverrideAllowed bool     `json:"manual_override_allowed"`
 }
 
 // ============================================================================
@@ -164,23 +163,23 @@ type RecoveryPlan struct {
 
 // UnifiedQualityGate 统一质量门评估器
 type UnifiedQualityGate struct {
-	config          UnifiedGateConfig
-	qualityChecker  *QualityChecker
-	enabledGates    map[GateType]bool
+	config         UnifiedGateConfig
+	qualityChecker *QualityChecker
+	enabledGates   map[GateType]bool
 }
 
 // UnifiedGateConfig 统一质量门配置
 type UnifiedGateConfig struct {
-	EnableDataQuality       bool  `json:"enable_data_quality"`
-	EnableBacktestGolden    bool  `json:"enable_backtest_golden"`
-	EnableParadigmStage     bool  `json:"enable_paradigm_stage"`
-	EnableAIEvaluation      bool  `json:"enable_ai_evaluation"`
-	EnableForwardMonitoring bool  `json:"enable_forward_monitoring"`
-	EnableRecoveryReadiness bool  `json:"enable_recovery_readiness"`
+	EnableDataQuality       bool `json:"enable_data_quality"`
+	EnableBacktestGolden    bool `json:"enable_backtest_golden"`
+	EnableParadigmStage     bool `json:"enable_paradigm_stage"`
+	EnableAIEvaluation      bool `json:"enable_ai_evaluation"`
+	EnableForwardMonitoring bool `json:"enable_forward_monitoring"`
+	EnableRecoveryReadiness bool `json:"enable_recovery_readiness"`
 
-	BlockOnCritical   bool  `json:"block_on_critical"`
-	WarnOnWarning     bool  `json:"warn_on_warning"`
-	MinOverallScore   float64 `json:"min_overall_score"`
+	BlockOnCritical bool    `json:"block_on_critical"`
+	WarnOnWarning   bool    `json:"warn_on_warning"`
+	MinOverallScore float64 `json:"min_overall_score"`
 
 	MaxAcceptableLatencyMs int64 `json:"max_acceptable_latency_ms"`
 }
@@ -220,67 +219,67 @@ func NewUnifiedQualityGate(config UnifiedGateConfig) *UnifiedQualityGate {
 
 // EvaluateOptions 评估选项
 type EvaluateOptions struct {
-	SourceID          string
-	SourceType        string
-	RunID             string
-	SkipDataQuality   bool
-	SkipBacktest      bool
-	SkipAI            bool
-	SkipRecovery      bool
+	SourceID        string
+	SourceType      string
+	RunID           string
+	SkipDataQuality bool
+	SkipBacktest    bool
+	SkipAI          bool
+	SkipRecovery    bool
 
 	// 数据质量门输入
-	KlineData         map[string][]KlineRecord
-	ExpectedDays      map[string][]time.Time
-	AsOfDate          time.Time
+	KlineData    map[string][]KlineRecord
+	ExpectedDays map[string][]time.Time
+	AsOfDate     time.Time
 
 	// 回测黄金集输入
-	BacktestResults   *BacktestGoldenResult
+	BacktestResults *BacktestGoldenResult
 
 	// 范式阶段门输入
-	ParadigmScore     *ParadigmScoreInput
+	ParadigmScore *ParadigmScoreInput
 
 	// AI 评测输入
-	AIEvaluation      *AIEvaluationInput
+	AIEvaluation *AIEvaluationInput
 
 	// 前向监控输入
-	ForwardReport     *ForwardMonitorInput
+	ForwardReport *ForwardMonitorInput
 
 	// 恢复检查
-	HasBackup         bool
-	LastBackupTime    time.Time
-	CanDegrade        bool
-	ManualOverride    bool
+	HasBackup      bool
+	LastBackupTime time.Time
+	CanDegrade     bool
+	ManualOverride bool
 }
 
 // BacktestGoldenResult 回测黄金集结果
 type BacktestGoldenResult struct {
-	TestPassed     bool
-	TestCount      int
-	FailCount      int
-	TestHash       string
-	GoldenHash     string
-	Regressed      bool
-	Description    string
+	TestPassed  bool
+	TestCount   int
+	FailCount   int
+	TestHash    string
+	GoldenHash  string
+	Regressed   bool
+	Description string
 }
 
 // ParadigmScoreInput 范式阶段门输入
 type ParadigmScoreInput struct {
-	Stage          string
-	Score          float64
-	GateThreshold  float64
-	Decision       string
-	Transitions    int
-	EvidenceCount  int
+	Stage         string
+	Score         float64
+	GateThreshold float64
+	Decision      string
+	Transitions   int
+	EvidenceCount int
 }
 
 // AIEvaluationInput AI 评测输入
 type AIEvaluationInput struct {
-	ModelVersion   string
-	Accuracy       float64
-	Consistency    float64
-	DriftDetected  bool
-	LastEvalDate   time.Time
-	Passed         bool
+	ModelVersion  string
+	Accuracy      float64
+	Consistency   float64
+	DriftDetected bool
+	LastEvalDate  time.Time
+	Passed        bool
 }
 
 // ForwardMonitorInput 前向监控输入
@@ -293,13 +292,30 @@ type ForwardMonitorInput struct {
 	Passed         bool
 }
 
+func missingInputGate(gateType GateType, name, input string) GateResult {
+	return GateResult{
+		Type:     gateType,
+		Name:     name,
+		Status:   GateBlock,
+		Score:    0,
+		Passed:   false,
+		Blocked:  true,
+		Checks:   0,
+		Failures: 1,
+		Message:  fmt.Sprintf("缺少必需的%s输入, 无法验证", input),
+		Recommendations: []string{
+			fmt.Sprintf("提供真实的%s输入后重新运行质量门", input),
+		},
+	}
+}
+
 // Evaluate 执行统一质量门评估
 func (uqg *UnifiedQualityGate) Evaluate(opts EvaluateOptions) *UnifiedQualityReport {
 	report := &UnifiedQualityReport{
-		ID:         fmt.Sprintf("uqr-%d", time.Now().UnixNano()),
-		RunID:      opts.RunID,
-		SourceID:   opts.SourceID,
-		SourceType: opts.SourceType,
+		ID:          fmt.Sprintf("uqr-%d", time.Now().UnixNano()),
+		RunID:       opts.RunID,
+		SourceID:    opts.SourceID,
+		SourceType:  opts.SourceType,
 		GeneratedAt: time.Now(),
 	}
 
@@ -369,9 +385,7 @@ func (uqg *UnifiedQualityGate) evaluateDataQuality(opts EvaluateOptions) GateRes
 	}
 
 	if len(opts.KlineData) == 0 {
-		result.Status = GateSkipped
-		result.Message = "无数据质量检查输入, 跳过"
-		return result
+		return missingInputGate(GateDataQuality, "数据质量门", "K 线数据")
 	}
 
 	totalIssues := 0
@@ -424,9 +438,7 @@ func (uqg *UnifiedQualityGate) evaluateBacktestGolden(opts EvaluateOptions) Gate
 	}
 
 	if opts.BacktestResults == nil {
-		result.Status = GateSkipped
-		result.Message = "无回测结果, 跳过"
-		return result
+		return missingInputGate(GateBacktestGolden, "回测黄金集门", "黄金回测结果")
 	}
 
 	result.Checks = opts.BacktestResults.TestCount
@@ -473,9 +485,7 @@ func (uqg *UnifiedQualityGate) evaluateParadigmStage(opts EvaluateOptions) GateR
 	}
 
 	if opts.ParadigmScore == nil {
-		result.Status = GateSkipped
-		result.Message = "无范式评分输入, 跳过"
-		return result
+		return missingInputGate(GateParadigmStage, "范式阶段门", "范式评分")
 	}
 
 	result.Checks = 1
@@ -516,9 +526,7 @@ func (uqg *UnifiedQualityGate) evaluateAIEvaluation(opts EvaluateOptions) GateRe
 	}
 
 	if opts.AIEvaluation == nil {
-		result.Status = GateSkipped
-		result.Message = "无 AI 评测结果, 跳过"
-		return result
+		return missingInputGate(GateAIEvaluation, "AI 评测门", "AI 评测")
 	}
 
 	result.Checks = 3
@@ -569,9 +577,7 @@ func (uqg *UnifiedQualityGate) evaluateForwardMonitoring(opts EvaluateOptions) G
 	}
 
 	if opts.ForwardReport == nil {
-		result.Status = GateSkipped
-		result.Message = "无前向监控结果, 跳过"
-		return result
+		return missingInputGate(GateForwardMonitoring, "前向监控门", "前向监控")
 	}
 
 	result.Checks = 4
@@ -614,66 +620,62 @@ func (uqg *UnifiedQualityGate) evaluateForwardMonitoring(opts EvaluateOptions) G
 func (uqg *UnifiedQualityGate) evaluateRecoveryReadiness(opts EvaluateOptions) GateResult {
 	start := time.Now()
 	result := GateResult{
-		Type: GateRecoveryReadiness,
-		Name: "恢复就绪门",
+		Type:   GateRecoveryReadiness,
+		Name:   "恢复就绪门",
 		Checks: 3,
 	}
 
-	blocked := false
 	result.Failures = 0
+	asOf := opts.AsOfDate
+	if asOf.IsZero() {
+		asOf = time.Now()
+	}
 
 	// 检查备份
 	if !opts.HasBackup {
 		result.Failures++
 		result.Recommendations = append(result.Recommendations,
-			"无有效备份, 建议立即创建备份")
+			"未验证到真实备份文件")
+	} else if opts.LastBackupTime.IsZero() {
+		result.Failures++
+		result.Recommendations = append(result.Recommendations,
+			"备份缺少可验证的更新时间")
+	} else if asOf.Sub(opts.LastBackupTime) > 24*time.Hour {
+		result.Failures++
+		result.Recommendations = append(result.Recommendations,
+			"最近备份已超过 24 小时")
 	}
 
 	// 检查降级能力
 	if !opts.CanDegrade {
 		result.Failures++
 		result.Recommendations = append(result.Recommendations,
-			"无法降级运行, 建议实现降级模式")
-	}
-
-	// 检查手动覆盖
-	if !opts.ManualOverride {
-		result.Failures++
+			"未配置可验证的降级运行模式")
 	}
 
 	score := 100.0
 	if !opts.HasBackup {
-		score -= 40
-	}
-	if !opts.CanDegrade {
+		score -= 50
+	} else if opts.LastBackupTime.IsZero() || asOf.Sub(opts.LastBackupTime) > 24*time.Hour {
 		score -= 30
 	}
-	if opts.ManualOverride {
-		score += 20
-	}
-	if score > 100 {
-		score = 100
+	if !opts.CanDegrade {
+		score -= 50
 	}
 	result.Score = score
 
 	switch {
-	case score < 60:
+	case result.Failures > 0:
 		result.Status = GateBlock
 		result.Passed = false
 		result.Blocked = true
-		blocked = true
-		result.Message = "系统不具备基本恢复能力"
-	case score < 80:
-		result.Status = GateWarn
-		result.Passed = true
-		result.Message = "恢复能力不完善, 建议加强"
+		result.Message = fmt.Sprintf("恢复就绪证据不完整 (%d 项失败)", result.Failures)
 	default:
 		result.Status = GatePass
 		result.Passed = true
 		result.Message = "恢复就绪检查通过"
 	}
 
-	_ = blocked
 	result.LatencyMs = time.Since(start).Milliseconds()
 	return result
 }
@@ -730,9 +732,6 @@ func (uqg *UnifiedQualityGate) computeOverallScore(report *UnifiedQualityReport)
 	totalWeight := 0.0
 
 	for _, gate := range report.Gates {
-		if gate.Status == GateSkipped {
-			continue
-		}
 		weight := weights[gate.Type]
 		totalScore += gate.Score * weight
 		totalWeight += weight
@@ -748,16 +747,11 @@ func (uqg *UnifiedQualityGate) computeOverallScore(report *UnifiedQualityReport)
 	return result
 }
 
-func (uqg *UnifiedQualityGate) determineOverallStatus(report *UnifiedQualityReport, opts EvaluateOptions) GateStatus {
-	// 有手动覆盖时不阻止
-	if opts.ManualOverride {
-		return GatePass
-	}
-
+func (uqg *UnifiedQualityGate) determineOverallStatus(report *UnifiedQualityReport, _ EvaluateOptions) GateStatus {
 	// 任一关键门阻止则整体阻止
 	hasBlocked := false
 	for _, gate := range report.Gates {
-		if gate.Blocked {
+		if gate.Blocked || gate.Status == GateSkipped || gate.Status == GateError {
 			hasBlocked = true
 			break
 		}
@@ -792,7 +786,7 @@ func (uqg *UnifiedQualityGate) appendGateIssues(report *UnifiedQualityReport, ga
 	}
 
 	severity := SeverityWarning
-	if gate.Blocked {
+	if gate.Blocked || gate.Status == GateError || gate.Status == GateSkipped {
 		severity = SeverityCritical
 	}
 
@@ -812,8 +806,8 @@ func (uqg *UnifiedQualityGate) appendGateIssues(report *UnifiedQualityReport, ga
 
 func (uqg *UnifiedQualityGate) buildRecoveryPlan(opts EvaluateOptions, report *UnifiedQualityReport) RecoveryPlan {
 	plan := RecoveryPlan{
-		Status:               "ready",
-		CanDegrade:           opts.CanDegrade,
+		Status:                "ready",
+		CanDegrade:            opts.CanDegrade,
 		ManualOverrideAllowed: opts.ManualOverride,
 	}
 

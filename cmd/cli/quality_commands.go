@@ -45,31 +45,19 @@ var qualityVerifyCmd = &cobra.Command{
 	RunE:  runQualityVerify,
 }
 
-var qualityDemoCmd = &cobra.Command{
-	Use:   "demo",
-	Short: "端到端可复现演示 (使用内置测试数据)",
-	Long: `运行完整的质量门演示流程:
-  1. 使用内置 K 线数据验证数据质量门
-  2. 运行黄金回测测试集
-  3. 模拟范式阶段评分
-  4. 生成 AI 评测结果
-  5. 汇总为统一质量报告`,
-	RunE: runQualityDemo,
-}
-
 func init() {
 	qualityCmd.AddCommand(qualityCheckCmd)
 	qualityCmd.AddCommand(qualityStatusCmd)
 	qualityCmd.AddCommand(qualityReportCmd)
 	qualityCmd.AddCommand(qualityVerifyCmd)
-	qualityCmd.AddCommand(qualityDemoCmd)
-
 	qualityCheckCmd.Flags().String("source-id", "", "来源 ID (如 paradigm 版本 ID)")
 	qualityCheckCmd.Flags().String("source-type", "system", "来源类型: paradigm/run/system")
 	qualityCheckCmd.Flags().Bool("skip-data", false, "跳过数据质量检查")
 	qualityCheckCmd.Flags().Bool("skip-backtest", false, "跳过回测黄金集检查")
 	qualityCheckCmd.Flags().Bool("skip-ai", false, "跳过 AI 评测检查")
 	qualityCheckCmd.Flags().Bool("skip-recovery", false, "跳过恢复就绪检查")
+	qualityCheckCmd.Flags().Bool("skip-paradigm", false, "跳过范式阶段检查")
+	qualityCheckCmd.Flags().Bool("skip-forward", false, "跳过前向监控检查")
 	qualityCheckCmd.Flags().Bool("json", false, "输出 JSON 格式")
 	qualityCheckCmd.Flags().Bool("block", false, "退出码: 有 block 时返回非零")
 	qualityCheckCmd.Flags().String("codes", "", "股票代码列表 (逗号分隔, 如 sh000001,sz399001)")
@@ -77,6 +65,8 @@ func init() {
 	qualityCheckCmd.Flags().String("start", "", "开始日期 (YYYYMMDD)")
 	qualityCheckCmd.Flags().String("end", "", "结束日期 (YYYYMMDD)")
 	qualityCheckCmd.Flags().Bool("golden", false, "运行黄金回测测试集")
+	qualityCheckCmd.Flags().String("backup-file", "", "实际备份文件路径（用于恢复就绪检查）")
+	qualityCheckCmd.Flags().String("degrade-mode", "", "已配置的降级模式: safe_mode/readonly/no_forward")
 }
 
 func runQualityCheck(cmd *cobra.Command, args []string) error {
@@ -86,6 +76,8 @@ func runQualityCheck(cmd *cobra.Command, args []string) error {
 	skipBacktest, _ := cmd.Flags().GetBool("skip-backtest")
 	skipAI, _ := cmd.Flags().GetBool("skip-ai")
 	skipRecovery, _ := cmd.Flags().GetBool("skip-recovery")
+	skipParadigm, _ := cmd.Flags().GetBool("skip-paradigm")
+	skipForward, _ := cmd.Flags().GetBool("skip-forward")
 	jsonOut, _ := cmd.Flags().GetBool("json")
 	blockExit, _ := cmd.Flags().GetBool("block")
 	codesStr, _ := cmd.Flags().GetString("codes")
@@ -93,6 +85,8 @@ func runQualityCheck(cmd *cobra.Command, args []string) error {
 	startDate, _ := cmd.Flags().GetString("start")
 	endDate, _ := cmd.Flags().GetString("end")
 	runGolden, _ := cmd.Flags().GetBool("golden")
+	backupFile, _ := cmd.Flags().GetString("backup-file")
+	degradeMode, _ := cmd.Flags().GetString("degrade-mode")
 
 	if sourceID == "" {
 		sourceID = fmt.Sprintf("manual-%d", time.Now().Unix())
@@ -102,18 +96,27 @@ func runQualityCheck(cmd *cobra.Command, args []string) error {
 	uqg := quality.NewUnifiedQualityGate(config)
 
 	opts := quality.EvaluateOptions{
-		SourceID:       sourceID,
-		SourceType:     sourceType,
-		RunID:          fmt.Sprintf("run-%d", time.Now().UnixNano()),
+		SourceID:        sourceID,
+		SourceType:      sourceType,
+		RunID:           fmt.Sprintf("run-%d", time.Now().UnixNano()),
 		SkipDataQuality: skipData,
-		SkipBacktest:   skipBacktest,
-		SkipAI:         skipAI,
-		SkipRecovery:   skipRecovery,
-		AsOfDate:       time.Now(),
-		HasBackup:      true,
-		LastBackupTime: time.Now().Add(-1 * time.Hour),
-		CanDegrade:     true,
-		ManualOverride: true,
+		SkipBacktest:    skipBacktest,
+		SkipAI:          skipAI,
+		SkipRecovery:    skipRecovery,
+		AsOfDate:        time.Now(),
+	}
+	if skipParadigm {
+		config.EnableParadigmStage = false
+	}
+	if skipForward {
+		config.EnableForwardMonitoring = false
+	}
+	uqg = quality.NewUnifiedQualityGate(config)
+
+	if !skipRecovery {
+		if err := populateRecoveryState(backupFile, degradeMode, &opts); err != nil {
+			return err
+		}
 	}
 
 	// 如果指定了股票代码, 从数据库获取真实 K 线数据
@@ -122,9 +125,9 @@ func runQualityCheck(cmd *cobra.Command, args []string) error {
 		ktype := tdx.ParseKlineType(ktypeStr)
 		dataSource, err := newQualityDataSource()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "⚠️  无法连接数据库, 使用空数据: %v\n", err)
+			return fmt.Errorf("连接真实 K 线数据库: %w", err)
 		} else if err := dataSource.FetchKlineData(codes, ktype, startDate, endDate, &opts); err != nil {
-			fmt.Fprintf(os.Stderr, "⚠️  数据获取部分失败: %v\n", err)
+			return fmt.Errorf("获取真实 K 线数据: %w", err)
 		} else {
 			fmt.Printf("📊 已获取 %d 只股票的 K 线数据\n", len(codes))
 		}
@@ -154,10 +157,12 @@ func runQualityCheck(cmd *cobra.Command, args []string) error {
 	report := uqg.Evaluate(opts)
 
 	if jsonOut {
-		return printJSONReport(report)
+		if err := printJSONReport(report); err != nil {
+			return err
+		}
+	} else {
+		printQualityReport(report)
 	}
-
-	printQualityReport(report)
 
 	if blockExit && report.Blocked {
 		return fmt.Errorf("质量门被阻止: %s", report.Decision)
@@ -197,9 +202,7 @@ func runQualityStatus(cmd *cobra.Command, args []string) error {
 
 func runQualityReport(cmd *cobra.Command, args []string) error {
 	id := args[0]
-	fmt.Printf("查询质量报告: %s\n", id)
-	fmt.Println("注意: 当前报告存储为内存模式, 使用 'quality check --json' 生成报告")
-	return nil
+	return fmt.Errorf("无法查询质量报告 %q：统一质量报告尚未持久化", id)
 }
 
 func runQualityVerify(cmd *cobra.Command, args []string) error {
@@ -223,7 +226,7 @@ func runQualityVerify(cmd *cobra.Command, args []string) error {
 	for _, gate := range report.Gates {
 		if gate.Type == quality.GateDataQuality || gate.Type == quality.GateBacktestGolden {
 			printGateResult(gate)
-			if gate.Status == quality.GatePass || gate.Status == quality.GateSkipped {
+			if gate.Status == quality.GatePass {
 				verified++
 			}
 		}
@@ -373,6 +376,29 @@ func newQualityDataSource() (*quality.QualityDataSource, error) {
 	return &quality.QualityDataSource{Fetcher: adapter}, nil
 }
 
+func populateRecoveryState(backupFile, degradeMode string, opts *quality.EvaluateOptions) error {
+	if backupFile != "" {
+		info, err := os.Stat(backupFile)
+		if err != nil {
+			return fmt.Errorf("验证备份文件 %q: %w", backupFile, err)
+		}
+		if !info.Mode().IsRegular() || info.Size() == 0 {
+			return fmt.Errorf("备份文件 %q 不是非空普通文件", backupFile)
+		}
+		opts.HasBackup = true
+		opts.LastBackupTime = info.ModTime()
+	}
+
+	switch degradeMode {
+	case "":
+	case "safe_mode", "readonly", "no_forward":
+		opts.CanDegrade = true
+	default:
+		return fmt.Errorf("无效降级模式 %q", degradeMode)
+	}
+	return nil
+}
+
 // runQualityDemo 运行端到端可复现演示。
 func runQualityDemo(cmd *cobra.Command, args []string) error {
 	fmt.Println("╔══════════════════════════════════════════════════════════════════╗")
@@ -423,13 +449,13 @@ func runQualityDemo(cmd *cobra.Command, args []string) error {
 	}
 
 	opts := quality.EvaluateOptions{
-		SourceID:         fmt.Sprintf("demo-%d", time.Now().Unix()),
-		SourceType:       "demo",
-		RunID:            fmt.Sprintf("demo-run-%d", time.Now().UnixNano()),
-		KlineData:        klineData,
-		ExpectedDays:     expectedDays,
-		AsOfDate:         now,
-		BacktestResults:  btResult,
+		SourceID:        fmt.Sprintf("demo-%d", time.Now().Unix()),
+		SourceType:      "demo",
+		RunID:           fmt.Sprintf("demo-run-%d", time.Now().UnixNano()),
+		KlineData:       klineData,
+		ExpectedDays:    expectedDays,
+		AsOfDate:        now,
+		BacktestResults: btResult,
 		ParadigmScore: &quality.ParadigmScoreInput{
 			Stage:         "growth",
 			Score:         82.5,
@@ -454,10 +480,10 @@ func runQualityDemo(cmd *cobra.Command, args []string) error {
 			CriticalAlerts: 0,
 			Passed:         true,
 		},
-		HasBackup:         true,
-		LastBackupTime:    now.Add(-30 * time.Minute),
-		CanDegrade:        true,
-		ManualOverride:    false,
+		HasBackup:      true,
+		LastBackupTime: now.Add(-30 * time.Minute),
+		CanDegrade:     true,
+		ManualOverride: false,
 	}
 
 	// 4. 运行质量门评估

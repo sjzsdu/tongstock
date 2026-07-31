@@ -29,6 +29,17 @@ func TestUnifiedQualityGate_NoInput(t *testing.T) {
 	if report.Summary.TotalGates != 6 {
 		t.Errorf("总门数 = %d, 期望 6", report.Summary.TotalGates)
 	}
+	if !report.Blocked {
+		t.Error("缺少必需输入时必须阻止")
+	}
+	if report.Score >= config.MinOverallScore {
+		t.Errorf("缺少必需输入时分数 %.1f 不应达到通过阈值", report.Score)
+	}
+	for _, gate := range report.Gates {
+		if gate.Status == GateSkipped {
+			t.Errorf("%s 不应在缺少输入时被跳过", gate.Type)
+		}
+	}
 }
 
 func TestUnifiedQualityGate_WithKlineData(t *testing.T) {
@@ -42,13 +53,14 @@ func TestUnifiedQualityGate_WithKlineData(t *testing.T) {
 	}
 
 	opts := EvaluateOptions{
-		SourceID:   "test-kline",
-		SourceType: "system",
-		RunID:      "run-kline",
-		AsOfDate:   time.Now(),
-		HasBackup:  true,
-		CanDegrade: true,
-		KlineData:  map[string][]KlineRecord{"000001.SZ": records},
+		SourceID:       "test-kline",
+		SourceType:     "system",
+		RunID:          "run-kline",
+		AsOfDate:       time.Now(),
+		HasBackup:      true,
+		LastBackupTime: time.Now(),
+		CanDegrade:     true,
+		KlineData:      map[string][]KlineRecord{"000001.SZ": records},
 	}
 
 	report := uqg.Evaluate(opts)
@@ -73,12 +85,13 @@ func TestUnifiedQualityGate_WithBacktest(t *testing.T) {
 	uqg := NewUnifiedQualityGate(config)
 
 	opts := EvaluateOptions{
-		SourceID:   "test-backtest",
-		SourceType: "paradigm",
-		RunID:      "run-backtest",
-		AsOfDate:   time.Now(),
-		HasBackup:  true,
-		CanDegrade: true,
+		SourceID:       "test-backtest",
+		SourceType:     "paradigm",
+		RunID:          "run-backtest",
+		AsOfDate:       time.Now(),
+		HasBackup:      true,
+		LastBackupTime: time.Now(),
+		CanDegrade:     true,
 		BacktestResults: &BacktestGoldenResult{
 			TestPassed:  true,
 			TestCount:   5,
@@ -142,12 +155,13 @@ func TestUnifiedQualityGate_WithParadigm(t *testing.T) {
 	uqg := NewUnifiedQualityGate(config)
 
 	opts := EvaluateOptions{
-		SourceID:   "test-paradigm",
-		SourceType: "paradigm",
-		RunID:      "run-paradigm",
-		AsOfDate:   time.Now(),
-		HasBackup:  true,
-		CanDegrade: true,
+		SourceID:       "test-paradigm",
+		SourceType:     "paradigm",
+		RunID:          "run-paradigm",
+		AsOfDate:       time.Now(),
+		HasBackup:      true,
+		LastBackupTime: time.Now(),
+		CanDegrade:     true,
 		ParadigmScore: &ParadigmScoreInput{
 			Stage:         "acceleration",
 			Score:         75,
@@ -188,11 +202,11 @@ func TestUnifiedQualityGate_WithAI(t *testing.T) {
 		CanDegrade: true,
 		AIEvaluation: &AIEvaluationInput{
 			ModelVersion:  "1.0",
-			Accuracy:     0.85,
-			Consistency:  0.95,
+			Accuracy:      0.85,
+			Consistency:   0.95,
 			DriftDetected: false,
-			LastEvalDate: time.Now(),
-			Passed:       true,
+			LastEvalDate:  time.Now(),
+			Passed:        true,
 		},
 	}
 
@@ -253,6 +267,11 @@ func TestUnifiedQualityGate_WithForward(t *testing.T) {
 
 func TestUnifiedQualityGate_DegradationModes(t *testing.T) {
 	config := DefaultUnifiedGateConfig()
+	config.EnableDataQuality = false
+	config.EnableBacktestGolden = false
+	config.EnableParadigmStage = false
+	config.EnableAIEvaluation = false
+	config.EnableForwardMonitoring = false
 	uqg := NewUnifiedQualityGate(config)
 
 	tests := []struct {
@@ -274,6 +293,12 @@ func TestUnifiedQualityGate_DegradationModes(t *testing.T) {
 				RunID:      "run-" + tt.name,
 				AsOfDate:   time.Now(),
 				HasBackup:  tt.hasBackup,
+				LastBackupTime: func() time.Time {
+					if tt.hasBackup {
+						return time.Now()
+					}
+					return time.Time{}
+				}(),
 				CanDegrade: tt.canDegrade,
 			}
 
@@ -286,7 +311,7 @@ func TestUnifiedQualityGate_DegradationModes(t *testing.T) {
 	}
 }
 
-func TestUnifiedQualityGate_ManualOverride(t *testing.T) {
+func TestUnifiedQualityGate_ManualOverrideCannotBypassFailure(t *testing.T) {
 	config := DefaultUnifiedGateConfig()
 	uqg := NewUnifiedQualityGate(config)
 
@@ -302,11 +327,11 @@ func TestUnifiedQualityGate_ManualOverride(t *testing.T) {
 
 	report := uqg.Evaluate(opts)
 
-	if report.Blocked {
-		t.Error("有手动覆盖时不应被阻止")
+	if !report.Blocked {
+		t.Error("手动覆盖不能绕过质量门失败")
 	}
 	if !report.RecoveryPlan.ManualOverrideAllowed {
-		t.Error("恢复计划应允许手动覆盖")
+		t.Error("恢复计划应记录手动覆盖请求")
 	}
 }
 

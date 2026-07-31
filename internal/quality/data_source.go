@@ -1,6 +1,8 @@
 package quality
 
 import (
+	"errors"
+	"fmt"
 	"time"
 )
 
@@ -38,25 +40,34 @@ func (f KlineDataFetcherFunc) GetKline(code string, ktype uint8, startDate, endD
 // FetchKlineData 将一组股票代码的 K 线数据填入 EvaluateOptions。
 func (ds *QualityDataSource) FetchKlineData(codes []string, ktype uint8, startDate, endDate string, opts *EvaluateOptions) error {
 	if ds == nil || ds.Fetcher == nil {
-		return nil
+		return errors.New("K 线数据源未配置")
+	}
+	if opts == nil {
+		return errors.New("质量门输入不能为空")
 	}
 	if opts.KlineData == nil {
 		opts.KlineData = make(map[string][]KlineRecord, len(codes))
 	}
+	var fetchErrors []error
 	for _, code := range codes {
 		records, err := ds.Fetcher.GetKline(code, ktype, startDate, endDate)
 		if err != nil {
+			fetchErrors = append(fetchErrors, fmt.Errorf("%s: %w", code, err))
+			continue
+		}
+		if len(records) == 0 {
+			fetchErrors = append(fetchErrors, fmt.Errorf("%s: 未返回 K 线数据", code))
 			continue
 		}
 		opts.KlineData[code] = records
 	}
-	return nil
+	return errors.Join(fetchErrors...)
 }
 
 // FetchKlineDataForCode 获取单只股票的 K 线数据。
 func (ds *QualityDataSource) FetchKlineDataForCode(code string, ktype uint8, startDate, endDate string) ([]KlineRecord, error) {
 	if ds == nil || ds.Fetcher == nil {
-		return nil, nil
+		return nil, errors.New("K 线数据源未配置")
 	}
 	return ds.Fetcher.GetKline(code, ktype, startDate, endDate)
 }
