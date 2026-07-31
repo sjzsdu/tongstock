@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sjzsdu/tongstock/internal/backtest"
 	"github.com/sjzsdu/tongstock/internal/experiment"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
 	"github.com/sjzsdu/tongstock/pkg/storage"
@@ -77,6 +78,73 @@ func TestParadigmBacktestAPIRealSQLiteEndToEnd(t *testing.T) {
 	if !strings.Contains(evidenceResponse.Body.String(), `"name":"transactions"`) {
 		t.Fatalf("transaction artifact not retrievable by experiment_id: %s", evidenceResponse.Body.String())
 	}
+
+	cardRequest := httptest.NewRequest(http.MethodGet,
+		"/paradigm/p-api-real/evidence?experiment_id="+result.ExperimentID, nil)
+	cardResponse := httptest.NewRecorder()
+	router.ServeHTTP(cardResponse, cardRequest)
+	if cardResponse.Code != http.StatusOK {
+		t.Fatalf("evidence card status = %d, body = %s", cardResponse.Code, cardResponse.Body.String())
+	}
+	var card paradigms.EvidenceCard
+	if err := json.Unmarshal(cardResponse.Body.Bytes(), &card); err != nil {
+		t.Fatal(err)
+	}
+	if !card.Available || card.ExperimentID != result.ExperimentID ||
+		card.SnapshotID != result.SnapshotID || card.RunID != result.RunID {
+		t.Fatalf("evidence provenance is incomplete: %+v", card)
+	}
+	if card.Lineage == nil || card.Lineage.SourceHash == "" ||
+		card.Lineage.ResultHash != result.ResultHash {
+		t.Fatalf("evidence lineage is not tied to frozen inputs: %+v", card.Lineage)
+	}
+	if len(card.TradeSamples) == 0 {
+		t.Fatal("real completed trades missing from evidence")
+	}
+	transactionArtifact := artifactNamed(runs[0].Artifacts, "transactions")
+	var persistedTransactions []evidenceTransactionSegment
+	if err := json.Unmarshal(transactionArtifact.Content, &persistedTransactions); err != nil {
+		t.Fatal(err)
+	}
+	var persistedTrades []backtest.CompletedTrade
+	for _, segment := range persistedTransactions {
+		persistedTrades = append(persistedTrades, segment.Trades...)
+	}
+	if len(card.TradeSamples) != len(persistedTrades) {
+		t.Fatalf("evidence trades = %d, persisted trades = %d",
+			len(card.TradeSamples), len(persistedTrades))
+	}
+	if card.TradeSamples[0].NetPnL != persistedTrades[0].NetPnL ||
+		card.TradeSamples[0].BuyPrice != persistedTrades[0].BuyPrice {
+		t.Fatalf("evidence trade does not match persisted artifact: %+v vs %+v",
+			card.TradeSamples[0], persistedTrades[0])
+	}
+	for _, trade := range card.TradeSamples {
+		if trade.BuyExecutionDate.IsZero() || trade.SellExecutionDate.IsZero() ||
+			trade.Quantity <= 0 || trade.BuyPrice <= 0 || trade.SellPrice <= 0 {
+			t.Fatalf("fabricated or incomplete trade projection: %+v", trade)
+		}
+	}
+	if card.RobustnessScore != nil || card.ParamSensitivity != nil {
+		t.Fatalf("unmeasured robustness values must remain unavailable: %+v", card)
+	}
+	if strings.Contains(strings.ToLower(cardResponse.Body.String()), "synthetic") ||
+		strings.Contains(cardResponse.Body.String(), "合成") {
+		t.Fatalf("synthetic evidence leaked into response: %s", cardResponse.Body.String())
+	}
+	if card.PromotionEligible {
+		t.Fatal("missing robustness and parameter sweep evidence must block promotion")
+	}
+
+	transitionRequest := httptest.NewRequest(http.MethodPost, "/paradigm/p-api-real/transition",
+		bytes.NewBufferString(`{"to":"verified","reason":"should be blocked"}`))
+	transitionRequest.Header.Set("Content-Type", "application/json")
+	transitionResponse := httptest.NewRecorder()
+	router.ServeHTTP(transitionResponse, transitionRequest)
+	if transitionResponse.Code != http.StatusConflict {
+		t.Fatalf("incomplete evidence transition status = %d, body = %s",
+			transitionResponse.Code, transitionResponse.Body.String())
+	}
 }
 
 func TestParadigmBacktestAPIInsufficientRealDataReturns4xx(t *testing.T) {
@@ -105,6 +173,32 @@ func TestParadigmBacktestAPIInsufficientRealDataReturns4xx(t *testing.T) {
 	}
 	if _, exists := failure["metrics"]; exists {
 		t.Fatalf("insufficient data must not return a zero-valued report: %s", response.Body.String())
+	}
+}
+
+func TestParadigmEvidenceWithoutExperimentIsExplicitlyUnavailable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	_, paradigmStore, api := newParadigmExperimentTestServer(t, 140)
+	if err := paradigmStore.Save(testAPIParadigm()); err != nil {
+		t.Fatal(err)
+	}
+	router := gin.New()
+	api.SetupParadigmRoutes(&router.RouterGroup)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet,
+		"/paradigm/p-api-real/evidence", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	var card paradigms.EvidenceCard
+	if err := json.Unmarshal(response.Body.Bytes(), &card); err != nil {
+		t.Fatal(err)
+	}
+	if card.Available || card.PromotionEligible || len(card.UnavailableReasons) == 0 {
+		t.Fatalf("missing evidence must be explicit and block promotion: %+v", card)
+	}
+	if card.InSample != nil || card.CostAnalysis != nil || len(card.TradeSamples) != 0 {
+		t.Fatalf("missing evidence emitted zero-valued or synthetic facts: %+v", card)
 	}
 }
 
@@ -148,6 +242,11 @@ func testAPIParadigm() *paradigms.Paradigm {
 		ID: "p-api-real", StockCode: "600001", Name: "真实 SQLite API 范式",
 		BuyConds: []paradigms.Condition{
 			{Indicator: "close", Operator: "gt", Value: "0"},
+		},
+		SellConds: paradigms.SellConditions{
+			TakeProfit: []paradigms.Condition{
+				{Indicator: "close", Operator: "gt", Value: "0"},
+			},
 		},
 	}
 }

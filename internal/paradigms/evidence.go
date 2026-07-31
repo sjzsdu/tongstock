@@ -1,82 +1,55 @@
 package paradigms
 
-import (
-	"fmt"
-	"time"
-)
+import "time"
 
-// ============================================================================
-// 证据卡 (Evidence Card)
-//
-// 统一展示范式的全部证据，包括样本内/外结果、成本、回撤、置信区间、
-// 参数敏感性、集中度、反例、数据时间和血缘。
-//
-// 设计原则:
-// 1. 反证和风险不被折叠隐藏 — CounterEvidence 始终展示
-// 2. 任何收益结论附近都有样本量与区间 — ConfidenceInterval 伴随统计量
-// 3. 可从指标下钻到样本交易 — TradeSample 可列表展示
-// ============================================================================
-
-// EvidenceCard 范式证据卡
+// EvidenceCard 只承载可追溯的实验事实。无法从冻结快照、持久化运行或
+// 交易制品证明的字段必须保持 nil，并在 UnavailableReasons 中说明。
 type EvidenceCard struct {
-	// 基础信息
-	ParadigmID   string    `json:"paradigm_id"`
-	ParadigmName string    `json:"paradigm_name"`
-	StockCode    string    `json:"stock_code"`
-	StockName    string    `json:"stock_name"`
-	GeneratedAt  time.Time `json:"generated_at"`
+	ParadigmID        string    `json:"paradigm_id"`
+	ParadigmName      string    `json:"paradigm_name"`
+	StockCode         string    `json:"stock_code"`
+	StockName         string    `json:"stock_name"`
+	GeneratedAt       time.Time `json:"generated_at"`
+	Available         bool      `json:"available"`
+	PromotionEligible bool      `json:"promotion_eligible"`
 
-	// 样本内结果
-	InSample SampleResult `json:"in_sample"`
+	UnavailableReasons []string `json:"unavailable_reasons,omitempty"`
+	PromotionBlockers  []string `json:"promotion_blockers,omitempty"`
 
-	// 样本外结果
-	OutOfSample SampleResult `json:"out_of_sample"`
+	ExperimentID string `json:"experiment_id,omitempty"`
+	RunID        string `json:"run_id,omitempty"`
+	SnapshotID   string `json:"snapshot_id,omitempty"`
+	EvidenceHash string `json:"evidence_hash,omitempty"`
+	ResultHash   string `json:"result_hash,omitempty"`
 
-	// 置信区间
-	ConfidenceInterval CIResult `json:"confidence_interval"`
-
-	// 成本分析
-	CostAnalysis CostBreakdown `json:"cost_analysis"`
-
-	// 回撤分析
-	DrawdownAnalysis DrawdownInfo `json:"drawdown_analysis"`
-
-	// 稳健性评分
-	RobustnessScore *ScoreResult `json:"robustness_score,omitempty"`
-
-	// 参数敏感性
-	ParamSensitivity ParamSensitivityInfo `json:"param_sensitivity"`
-
-	// 集中度分析
-	Concentration ConcentrationInfo `json:"concentration"`
-
-	// 反证与风险 (始终展示，不折叠)
-	CounterEvidence []CounterExample `json:"counter_evidence"`
-	RiskFlags       []RiskFlag       `json:"risk_flags"`
-
-	// 数据血缘
-	Lineage DataLineage `json:"lineage"`
-
-	// 交易样本 (下钻用)
-	TradeSamples []TradeRecord `json:"trade_samples,omitempty"`
-
-	// 状态分层
-	StageGateDecision *GateDecision `json:"stage_gate_decision,omitempty"`
+	InSample           *SampleResult         `json:"in_sample,omitempty"`
+	OutOfSample        *SampleResult         `json:"out_of_sample,omitempty"`
+	ConfidenceInterval *CIResult             `json:"confidence_interval,omitempty"`
+	CostAnalysis       *CostBreakdown        `json:"cost_analysis,omitempty"`
+	DrawdownAnalysis   *DrawdownInfo         `json:"drawdown_analysis,omitempty"`
+	RobustnessScore    *ScoreResult          `json:"robustness_score,omitempty"`
+	ParamSensitivity   *ParamSensitivityInfo `json:"param_sensitivity,omitempty"`
+	Concentration      *ConcentrationInfo    `json:"concentration,omitempty"`
+	CounterEvidence    []CounterExample      `json:"counter_evidence"`
+	RiskFlags          []RiskFlag            `json:"risk_flags"`
+	Lineage            *DataLineage          `json:"lineage,omitempty"`
+	TradeSamples       []TradeRecord         `json:"trade_samples,omitempty"`
+	StageGateDecision  *GateDecision         `json:"stage_gate_decision,omitempty"`
 }
 
-// SampleResult 样本内/外结果
 type SampleResult struct {
-	Period       string  `json:"period"`        // "in_sample", "out_of_sample"
-	SampleSize   int     `json:"sample_size"`   // 样本量
-	TotalReturn  float64 `json:"total_return"`  // 总收益率
-	AnnualReturn float64 `json:"annual_return"` // 年化收益率
-	SharpeRatio  float64 `json:"sharpe_ratio"`  // Sharpe 比率
-	WinRate      float64 `json:"win_rate"`      // 胜率
-	MaxDrawdown  float64 `json:"max_drawdown"`  // 最大回撤
-	TradesCount  int     `json:"trades_count"`  // 交易次数
+	Period       string   `json:"period"`
+	SampleSize   int      `json:"sample_size"`
+	TotalReturn  *float64 `json:"total_return,omitempty"`
+	AnnualReturn *float64 `json:"annual_return,omitempty"`
+	SharpeRatio  *float64 `json:"sharpe_ratio,omitempty"`
+	WinRate      *float64 `json:"win_rate,omitempty"`
+	MaxDrawdown  *float64 `json:"max_drawdown,omitempty"`
+	TradesCount  int      `json:"trades_count"`
+	GrossPnL     *float64 `json:"gross_pnl,omitempty"`
+	NetPnL       *float64 `json:"net_pnl,omitempty"`
 }
 
-// CIResult 置信区间结果
 type CIResult struct {
 	Period      string   `json:"period"`
 	SampleSize  int      `json:"sample_size"`
@@ -86,45 +59,38 @@ type CIResult struct {
 	CI95Width   float64  `json:"ci_95_width"`
 	TStatistic  float64  `json:"t_statistic"`
 	PValue      float64  `json:"p_value"`
-	Significant bool     `json:"significant"` // p < 0.05
+	Significant bool     `json:"significant"`
+	Method      string   `json:"method"`
 	Notes       []string `json:"notes,omitempty"`
 }
 
-// CostBreakdown 成本分解
 type CostBreakdown struct {
-	GrossReturn     float64 `json:"gross_return"`      // 毛收益
-	NetReturn       float64 `json:"net_return"`        // 净收益
-	TotalCost       float64 `json:"total_cost"`        // 总成本
-	CostPerTrade    float64 `json:"cost_per_trade"`    // 每笔成本
-	CostRatio       float64 `json:"cost_ratio"`        // 成本/收益比
-	NetRetention    float64 `json:"net_retention"`     // 净收益保留率
-	SlippageCost    float64 `json:"slippage_cost"`     // 滑点成本
-	CommissionCost  float64 `json:"commission_cost"`   // 佣金成本
-	TaxCost         float64 `json:"tax_cost"`          // 税费成本
-	BreakEvenTrades int     `json:"break_even_trades"` // 盈亏平衡交易数
+	GrossReturn    *float64 `json:"gross_return,omitempty"`
+	NetReturn      *float64 `json:"net_return,omitempty"`
+	TotalCost      float64  `json:"total_cost"`
+	CostPerTrade   *float64 `json:"cost_per_trade,omitempty"`
+	CostRatio      *float64 `json:"cost_ratio,omitempty"`
+	NetRetention   *float64 `json:"net_retention,omitempty"`
+	SlippageCost   float64  `json:"slippage_cost"`
+	CommissionCost float64  `json:"commission_cost"`
+	TaxCost        float64  `json:"tax_cost"`
+	TransferFee    float64  `json:"transfer_fee"`
 }
 
-// DrawdownInfo 回撤信息
 type DrawdownInfo struct {
-	MaxDrawdown     float64   `json:"max_drawdown"`
-	MaxDDDuration   int       `json:"max_dd_duration_days"`
-	CurrentDrawdown float64   `json:"current_drawdown"`
-	DrawdownRatio   float64   `json:"drawdown_ratio"` // DD / Return
-	RecoveryDays    int       `json:"recovery_days,omitempty"`
-	MaxDDDate       time.Time `json:"max_dd_date,omitempty"`
-	Warning         string    `json:"warning,omitempty"`
+	MaxDrawdown   float64  `json:"max_drawdown"`
+	DrawdownRatio *float64 `json:"drawdown_ratio,omitempty"`
+	Warning       string   `json:"warning,omitempty"`
 }
 
-// ParamSensitivityInfo 参数敏感性信息
 type ParamSensitivityInfo struct {
-	SensitivityIndex  float64      `json:"sensitivity_index"` // 0-1, 越低越稳定
+	SensitivityIndex  float64      `json:"sensitivity_index"`
 	PerturbationPass  bool         `json:"perturbation_pass"`
 	PerturbationDelta float64      `json:"perturbation_delta"`
 	NearbyParams      []ParamSweep `json:"nearby_params"`
 	Warning           string       `json:"warning,omitempty"`
 }
 
-// ParamSweep 参数扫描结果
 type ParamSweep struct {
 	ParamName  string  `json:"param_name"`
 	ParamValue float64 `json:"param_value"`
@@ -132,501 +98,78 @@ type ParamSweep struct {
 	ChangePct  float64 `json:"change_pct"`
 }
 
-// ConcentrationInfo 集中度信息
 type ConcentrationInfo struct {
 	MaxPositionWeight    float64            `json:"max_position_weight"`
-	ConcentrationIndex   float64            `json:"concentration_index"` // HHI
+	ConcentrationIndex   float64            `json:"concentration_index"`
 	TopHoldings          []HoldingItem      `json:"top_holdings"`
 	SectorExposure       map[string]float64 `json:"sector_exposure,omitempty"`
 	DiversificationScore float64            `json:"diversification_score"`
 }
 
-// HoldingItem 持仓项
 type HoldingItem struct {
 	StockCode string  `json:"stock_code"`
 	StockName string  `json:"stock_name"`
 	Weight    float64 `json:"weight"`
 }
 
-// CounterExample 反例 (始终展示，不折叠)
 type CounterExample struct {
-	Type        string  `json:"type"`        // "fail_case", "underperform", "regime_change"
-	Description string  `json:"description"` // 反例描述
-	Period      string  `json:"period"`      // 反例时间段
-	Return      float64 `json:"return"`      // 反例期间收益
-	Reason      string  `json:"reason"`      // 失败原因分析
-	Severity    string  `json:"severity"`    // "critical", "high", "medium", "low"
+	Type        string   `json:"type"`
+	Description string   `json:"description"`
+	Period      string   `json:"period"`
+	Return      *float64 `json:"return,omitempty"`
+	Reason      string   `json:"reason"`
+	Severity    string   `json:"severity"`
 }
 
-// RiskFlag 风险标记 (始终展示)
 type RiskFlag struct {
-	Category   string `json:"category"` // "leverage", "liquidity", "regulatory", "correlation"
-	Level      string `json:"level"`    // "critical", "high", "medium", "low"
+	Category   string `json:"category"`
+	Level      string `json:"level"`
 	Message    string `json:"message"`
 	Mitigation string `json:"mitigation,omitempty"`
 }
 
-// DataLineage 数据血缘
 type DataLineage struct {
-	DataSource    string         `json:"data_source"`
-	DataVersion   string         `json:"data_version"`
-	DataRange     string         `json:"data_range"`
-	DataStart     time.Time      `json:"data_start"`
-	DataEnd       time.Time      `json:"data_end"`
-	LastUpdated   time.Time      `json:"last_updated"`
-	GeneratedBy   string         `json:"generated_by"`
-	GeneratedAt   time.Time      `json:"generated_at"`
-	SourceHash    string         `json:"source_hash"`
-	VersionID     string         `json:"version_id"`
-	ParentID      string         `json:"parent_id,omitempty"`
-	ReviewHistory []ReviewRecord `json:"review_history,omitempty"`
+	DataSource          string            `json:"data_source"`
+	DataVersion         string            `json:"data_version"`
+	DataRange           string            `json:"data_range"`
+	DataStart           time.Time         `json:"data_start"`
+	DataEnd             time.Time         `json:"data_end"`
+	LastUpdated         time.Time         `json:"last_updated"`
+	GeneratedBy         string            `json:"generated_by"`
+	GeneratedAt         time.Time         `json:"generated_at"`
+	SourceHash          string            `json:"source_hash"`
+	SnapshotID          string            `json:"snapshot_id"`
+	ExperimentID        string            `json:"experiment_id"`
+	RunID               string            `json:"run_id"`
+	ResultHash          string            `json:"result_hash"`
+	ArtifactHashes      map[string]string `json:"artifact_hashes"`
+	KlineManifestHashes map[string]string `json:"kline_manifest_hashes"`
+	ReviewHistory       []ReviewRecord    `json:"review_history,omitempty"`
 }
 
-// ReviewRecord 审查记录
 type ReviewRecord struct {
 	Reviewer  string    `json:"reviewer"`
-	Action    string    `json:"action"` // "create", "review", "promote", "reject", "override"
+	Action    string    `json:"action"`
 	Note      string    `json:"note,omitempty"`
 	Rating    int       `json:"rating,omitempty"`
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// TradeRecord 交易记录 (用于下钻)
+// TradeRecord 是真实 CompletedTrade 的展示投影，不生成或补齐任何交易。
 type TradeRecord struct {
-	TradeID     string    `json:"trade_id"`
-	Date        time.Time `json:"date"`
-	Side        string    `json:"side"` // "buy", "sell"
-	Price       float64   `json:"price"`
-	SignalType  string    `json:"signal_type"` // 触发信号
-	HoldingDays int       `json:"holding_days"`
-	Return      float64   `json:"return"`
-	Reason      string    `json:"reason,omitempty"`
-}
-
-// ============================================================================
-// 证据卡构建器
-// ============================================================================
-
-// BacktestResult 回测结果 (paradigms 包内部使用)
-type BacktestResult struct {
-	ParadigmID  string  `json:"paradigm_id"`
-	StockCode   string  `json:"stock_code"`
-	SampleSize  int     `json:"sample_size"`
-	WinRate5    float64 `json:"win_rate_5"`
-	WinRate10   float64 `json:"win_rate_10"`
-	WinRate20   float64 `json:"win_rate_20"`
-	AvgReturn5  float64 `json:"avg_return_5"`
-	AvgReturn10 float64 `json:"avg_return_10"`
-	AvgReturn20 float64 `json:"avg_return_20"`
-	MaxDrawdown float64 `json:"max_drawdown"`
-	Error       string  `json:"error,omitempty"`
-}
-
-// EvidenceBuilder 证据卡构建器
-type EvidenceBuilder struct {
-	config ScoringConfig
-}
-
-// NewEvidenceBuilder 创建证据卡构建器
-func NewEvidenceBuilder() *EvidenceBuilder {
-	return &EvidenceBuilder{
-		config: DefaultScoringConfig(),
-	}
-}
-
-// BuildFromParadigm 从范式构建证据卡
-func (eb *EvidenceBuilder) BuildFromParadigm(p *Paradigm, backtestResp *BacktestResult) *EvidenceCard {
-	card := &EvidenceCard{
-		ParadigmID:   p.ID,
-		ParadigmName: p.Name,
-		StockCode:    p.StockCode,
-		StockName:    p.StockName,
-		GeneratedAt:  time.Now(),
-	}
-
-	// 1. 样本内结果 (使用回测的短周期作为样本内代理)
-	if backtestResp != nil {
-		card.InSample = SampleResult{
-			Period:       "in_sample",
-			SampleSize:   backtestResp.SampleSize,
-			TotalReturn:  backtestResp.AvgReturn5,
-			AnnualReturn: backtestResp.AvgReturn5 * 252 / 5,
-			SharpeRatio:  eb.computeSharpe(backtestResp.AvgReturn5, backtestResp.MaxDrawdown),
-			WinRate:      backtestResp.WinRate5,
-			MaxDrawdown:  backtestResp.MaxDrawdown,
-			TradesCount:  backtestResp.SampleSize,
-		}
-
-		// 样本外结果 (使用更长周期作为样本外代理)
-		card.OutOfSample = SampleResult{
-			Period:       "out_of_sample",
-			SampleSize:   backtestResp.SampleSize,
-			TotalReturn:  backtestResp.AvgReturn20,
-			AnnualReturn: backtestResp.AvgReturn20 * 252 / 20,
-			SharpeRatio:  eb.computeSharpe(backtestResp.AvgReturn20, backtestResp.MaxDrawdown),
-			WinRate:      backtestResp.WinRate20,
-			MaxDrawdown:  backtestResp.MaxDrawdown,
-			TradesCount:  backtestResp.SampleSize,
-		}
-	}
-
-	// 2. 置信区间
-	card.ConfidenceInterval = eb.computeConfidenceInterval(card.InSample)
-
-	// 3. 成本分析
-	card.CostAnalysis = eb.computeCostAnalysis(card.InSample)
-
-	// 4. 回撤分析
-	card.DrawdownAnalysis = DrawdownInfo{
-		MaxDrawdown:     card.InSample.MaxDrawdown,
-		DrawdownRatio:   eb.computeDrawdownRatio(card.InSample.MaxDrawdown, card.InSample.AnnualReturn),
-		CurrentDrawdown: 0,
-	}
-	if card.DrawdownAnalysis.DrawdownRatio > 1.0 {
-		card.DrawdownAnalysis.Warning = "回撤收益比超过 100%，风险调整后收益较差"
-	}
-
-	// 5. 稳健性评分
-	scorer := NewRobustnessScorer(eb.config)
-	scoreInput := ScoreInput{
-		SampleOutReturn:      card.OutOfSample.AnnualReturn,
-		SampleOutSharpe:      card.OutOfSample.SharpeRatio,
-		SampleOutReturnCI:    [2]float64{card.ConfidenceInterval.CI95Lower, card.ConfidenceInterval.CI95Upper},
-		SampleSize:           card.OutOfSample.SampleSize,
-		MaxDrawdown:          card.InSample.MaxDrawdown,
-		MaxDrawdownDuration:  0,
-		DrawdownRatio:        card.DrawdownAnalysis.DrawdownRatio,
-		WindowConsistency:    0.7,
-		StateConsistency:     0.7,
-		DirectionConsistency: 0.8,
-		ParamSensitivity:     0.2,
-		PerturbationPass:     true,
-		GrossReturn:          card.InSample.TotalReturn,
-		NetReturn:            card.CostAnalysis.NetReturn,
-		CostRatio:            card.CostAnalysis.CostRatio,
-		MaxPositionWeight:    0.10,
-		ConcentrationIndex:   0.15,
-	}
-	card.RobustnessScore = scorer.Score(scoreInput)
-
-	// 6. 参数敏感性
-	card.ParamSensitivity = ParamSensitivityInfo{
-		SensitivityIndex:  0.2,
-		PerturbationPass:  true,
-		PerturbationDelta: 0.05,
-	}
-
-	// 7. 集中度
-	card.Concentration = ConcentrationInfo{
-		MaxPositionWeight:    0.10,
-		ConcentrationIndex:   0.15,
-		DiversificationScore: 0.85,
-	}
-
-	// 8. 反证与风险 (生成反例)
-	card.CounterEvidence = eb.generateCounterEvidence(p, backtestResp)
-	card.RiskFlags = eb.generateRiskFlags(card)
-
-	// 9. 数据血缘
-	card.Lineage = DataLineage{
-		DataSource:  "tdx_kline",
-		DataVersion: "1.0",
-		DataRange:   "120d",
-		LastUpdated: time.Now(),
-		GeneratedBy: p.Source.Model,
-		GeneratedAt: time.Now(),
-		SourceHash:  p.Source.CacheKey,
-		VersionID:   p.ID,
-		ReviewHistory: []ReviewRecord{
-			{
-				Reviewer:  p.Source.AgentVersion,
-				Action:    "create",
-				Timestamp: p.CreatedAt,
-			},
-		},
-	}
-	if p.ReviewStatus == "reviewed" {
-		card.Lineage.ReviewHistory = append(card.Lineage.ReviewHistory, ReviewRecord{
-			Reviewer:  "human",
-			Action:    "review",
-			Rating:    p.ReviewRating,
-			Note:      p.ReviewNote,
-			Timestamp: p.UpdatedAt,
-		})
-	}
-
-	// 10. 样本交易 (基于回测统计合成下钻样本，用于"指标→交易"可追溯)
-	card.TradeSamples = eb.synthesizeTradeSamples(p, backtestResp)
-
-	// 11. 阶段门决策
-	if card.RobustnessScore != nil {
-		gate := NewStageGate(eb.config)
-		card.StageGateDecision = gate.Evaluate(card.RobustnessScore)
-	}
-
-	return card
-}
-
-// ============================================================================
-// 辅助计算方法
-// ============================================================================
-
-func (eb *EvidenceBuilder) computeSharpe(avgReturn, maxDD float64) float64 {
-	if maxDD <= 0 {
-		return 0
-	}
-	return avgReturn / maxDD
-}
-
-func (eb *EvidenceBuilder) computeConfidenceInterval(sr SampleResult) CIResult {
-	se := 0.1 // 标准误估计
-	mean := sr.AnnualReturn
-	ci95Lower := mean - 1.96*se
-	ci95Upper := mean + 1.96*se
-
-	pValue := 1.0
-	if sr.SampleSize > 30 {
-		// 简化 p-value 计算
-		tStat := mean / se
-		if tStat > 2 {
-			pValue = 0.05
-		} else if tStat > 1 {
-			pValue = 0.10
-		}
-	}
-
-	notes := []string{}
-	if sr.SampleSize < 30 {
-		notes = append(notes, "样本量不足 30，统计显著性有限")
-	}
-	if mean < 0 {
-		notes = append(notes, "样本外收益为负，策略表现低于随机")
-	}
-
-	return CIResult{
-		Period:      "out_of_sample",
-		SampleSize:  sr.SampleSize,
-		MeanReturn:  mean,
-		CI95Lower:   ci95Lower,
-		CI95Upper:   ci95Upper,
-		CI95Width:   ci95Upper - ci95Lower,
-		TStatistic:  mean / (se + 1e-9),
-		PValue:      pValue,
-		Significant: pValue < 0.05,
-		Notes:       notes,
-	}
-}
-
-func (eb *EvidenceBuilder) computeCostAnalysis(sr SampleResult) CostBreakdown {
-	gross := sr.TotalReturn
-	costRatio := 0.15 // 默认 15% 成本
-	net := gross * (1 - costRatio)
-
-	return CostBreakdown{
-		GrossReturn:     gross,
-		NetReturn:       net,
-		TotalCost:       gross * costRatio,
-		CostPerTrade:    gross * costRatio / float64(maxInt(sr.TradesCount, 1)),
-		CostRatio:       costRatio,
-		NetRetention:    1 - costRatio,
-		SlippageCost:    gross * 0.08,
-		CommissionCost:  gross * 0.05,
-		TaxCost:         gross * 0.02,
-		BreakEvenTrades: 0,
-	}
-}
-
-func (eb *EvidenceBuilder) computeDrawdownRatio(maxDD, annualReturn float64) float64 {
-	if annualReturn == 0 {
-		return 0
-	}
-	return maxDD / abs(annualReturn)
-}
-
-// synthesizeTradeSamples 基于回测统计合成代表性交易样本
-// 目的: 提供"指标 → 单笔交易"的下钻路径，使样本量、收益、回撤可追溯
-func (eb *EvidenceBuilder) synthesizeTradeSamples(p *Paradigm, bt *BacktestResult) []TradeRecord {
-	if bt == nil || bt.SampleSize <= 0 {
-		return nil
-	}
-
-	// 最多展示 20 笔代表性交易
-	n := 20
-	if bt.SampleSize < n {
-		n = bt.SampleSize
-	}
-
-	signalType := "paradigm_signal"
-	if len(p.BuyConds) > 0 {
-		signalType = p.BuyConds[0].Indicator
-	}
-
-	avgReturn := bt.AvgReturn5
-	if avgReturn == 0 {
-		avgReturn = bt.AvgReturn10
-	}
-	if avgReturn == 0 {
-		avgReturn = bt.AvgReturn20
-	}
-
-	winRate := bt.WinRate5
-	if winRate == 0 {
-		winRate = bt.WinRate10
-	}
-	if winRate == 0 {
-		winRate = bt.WinRate20
-	}
-
-	now := time.Now()
-	samples := make([]TradeRecord, 0, n)
-	// 生成 n 笔交易，按胜率分配盈亏
-	wins := int(float64(n) * winRate)
-	losses := n - wins
-
-	for i := 0; i < n; i++ {
-		isWin := i < wins
-		holdingDays := 5
-		if i%3 == 0 {
-			holdingDays = 10
-		}
-		if i%5 == 0 {
-			holdingDays = 20
-		}
-
-		ret := avgReturn
-		if isWin {
-			ret = avgReturn + 0.005*float64(holdingDays)
-		} else {
-			ret = -bt.MaxDrawdown / float64(n) * 2
-			if ret > 0 {
-				ret = -0.005
-			}
-		}
-
-		price := 10.0 + float64(i)*0.1
-		date := now.AddDate(0, 0, -(n-i)*holdingDays)
-
-		samples = append(samples, TradeRecord{
-			TradeID:     fmt.Sprintf("%s-%s-%d", p.ID, p.StockCode, i+1),
-			Date:        date,
-			Side:        p.Side,
-			Price:       price,
-			SignalType:  signalType,
-			HoldingDays: holdingDays,
-			Return:      ret,
-			Reason:      fmt.Sprintf("样本交易 #%d (合成)", i+1),
-		})
-	}
-	_ = losses
-	return samples
-}
-
-func (eb *EvidenceBuilder) generateCounterEvidence(p *Paradigm, bt *BacktestResult) []CounterExample {
-	var examples []CounterExample
-
-	// 如果回测中有亏损窗口，生成反例
-	if bt != nil && bt.SampleSize > 0 {
-		// 短周期胜率低于长周期 → 短期表现不佳
-		if bt.WinRate5 < bt.WinRate20 {
-			examples = append(examples, CounterExample{
-				Type:        "fail_case",
-				Description: "短周期胜率显著低于长周期",
-				Period:      "5d vs 20d",
-				Return:      bt.AvgReturn5,
-				Reason:      fmt.Sprintf("5日胜率 %.1f%% < 20日胜率 %.1f%%", bt.WinRate5*100, bt.WinRate20*100),
-				Severity:    "medium",
-			})
-		}
-
-		// 高回撤 → 风险反例
-		if bt.MaxDrawdown > 0.10 {
-			examples = append(examples, CounterExample{
-				Type:        "risk_case",
-				Description: "回撤超过 10% 阈值",
-				Period:      "full_period",
-				Return:      -bt.MaxDrawdown,
-				Reason:      fmt.Sprintf("最大回撤 %.2f%% 超过可接受范围", bt.MaxDrawdown*100),
-				Severity:    "high",
-			})
-		}
-	}
-
-	// 如果有否定条件，作为反证
-	if len(p.Invalid) > 0 {
-		for _, rule := range p.Invalid {
-			examples = append(examples, CounterExample{
-				Type:        "invalidation_rule",
-				Description: "否定条件: " + rule,
-				Period:      "current",
-				Return:      0,
-				Reason:      "若触发此条件，范式失效",
-				Severity:    "medium",
-			})
-		}
-	}
-
-	return examples
-}
-
-func (eb *EvidenceBuilder) generateRiskFlags(card *EvidenceCard) []RiskFlag {
-	var flags []RiskFlag
-
-	// 回撤风险
-	if card.DrawdownAnalysis.MaxDrawdown > 0.15 {
-		flags = append(flags, RiskFlag{
-			Category:   "drawdown",
-			Level:      "critical",
-			Message:    "最大回撤超过 15% 阈值",
-			Mitigation: "考虑降低仓位或使用止损规则",
-		})
-	}
-
-	// 成本风险
-	if card.CostAnalysis.CostRatio > 0.30 {
-		flags = append(flags, RiskFlag{
-			Category:   "cost",
-			Level:      "high",
-			Message:    "成本占比超过 30%",
-			Mitigation: "减少交易频率或优化成交方式",
-		})
-	}
-
-	// 集中度风险
-	if card.Concentration.MaxPositionWeight > 0.15 {
-		flags = append(flags, RiskFlag{
-			Category:   "concentration",
-			Level:      "medium",
-			Message:    "单票权重超过 15%",
-			Mitigation: "分散持仓至多只标的",
-		})
-	}
-
-	// 低置信度
-	if !card.ConfidenceInterval.Significant {
-		flags = append(flags, RiskFlag{
-			Category:   "statistical",
-			Level:      "medium",
-			Message:    "样本外收益统计不显著",
-			Mitigation: "增加样本量或延长回测周期",
-		})
-	}
-
-	// 样本量不足
-	if card.InSample.SampleSize < 30 {
-		flags = append(flags, RiskFlag{
-			Category:   "sample_size",
-			Level:      "high",
-			Message:    "样本量不足 30",
-			Mitigation: "使用更长的回测周期或更多标的",
-		})
-	}
-
-	return flags
-}
-
-func abs(x float64) float64 {
-	if x < 0 {
-		return -x
-	}
-	return x
+	TradeID           string    `json:"trade_id"`
+	Window            int       `json:"window"`
+	Segment           string    `json:"segment"`
+	StockCode         string    `json:"stock_code"`
+	BuySignalDate     time.Time `json:"buy_signal_date"`
+	BuyExecutionDate  time.Time `json:"buy_execution_date"`
+	SellSignalDate    time.Time `json:"sell_signal_date"`
+	SellExecutionDate time.Time `json:"sell_execution_date"`
+	Quantity          int       `json:"quantity"`
+	BuyPrice          float64   `json:"buy_price"`
+	SellPrice         float64   `json:"sell_price"`
+	GrossPnL          float64   `json:"gross_pnl"`
+	NetPnL            float64   `json:"net_pnl"`
+	TotalCost         float64   `json:"total_cost"`
+	Return            *float64  `json:"return,omitempty"`
 }

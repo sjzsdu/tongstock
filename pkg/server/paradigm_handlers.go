@@ -570,6 +570,21 @@ func (s *Server) handleParadigmReview(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if req.ReviewStatus == paradigms.StateVerified || req.ReviewStatus == paradigms.StatePromoted {
+		evidence, evidenceErr := s.latestParadigmExperimentEvidence(id, "")
+		if evidenceErr != nil {
+			c.JSON(http.StatusConflict, gin.H{"error": "无法验证真实证据: " + evidenceErr.Error()})
+			return
+		}
+		if !evidence.PromotionEligible {
+			c.JSON(http.StatusConflict, gin.H{
+				"error":              "真实证据不完整，禁止将范式标记为已验证或已晋级",
+				"promotion_blockers": evidence.PromotionBlockers,
+				"evidence":           evidence,
+			})
+			return
+		}
+	}
 
 	pCopy := *p
 	if req.ReviewStatus != "" {
@@ -1549,7 +1564,13 @@ func (s *Server) handleParadigmEvidence(c *gin.Context) {
 
 	evidence, err := s.latestParadigmExperimentEvidence(id, c.Query("experiment_id"))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		status := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "does not belong") {
+			status = http.StatusNotFound
+		} else if strings.Contains(err.Error(), "not initialized") {
+			status = http.StatusServiceUnavailable
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, evidence)
@@ -1684,6 +1705,30 @@ func (s *Server) handleParadigmTransition(c *gin.Context) {
 	if req.To == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "to is required"})
 		return
+	}
+	if req.To == paradigms.StateVerified || req.To == paradigms.StatePromoted {
+		evidence, evidenceErr := s.latestParadigmExperimentEvidence(id, "")
+		if evidenceErr != nil {
+			c.JSON(http.StatusConflict, gin.H{"error": "无法验证真实证据: " + evidenceErr.Error()})
+			return
+		}
+		if !evidence.PromotionEligible {
+			c.JSON(http.StatusConflict, gin.H{
+				"error":              "真实证据不完整，禁止晋级",
+				"promotion_blockers": evidence.PromotionBlockers,
+				"evidence":           evidence,
+			})
+			return
+		}
+		if req.EvidenceHash == "" {
+			req.EvidenceHash = evidence.EvidenceHash
+		} else if req.EvidenceHash != evidence.EvidenceHash {
+			c.JSON(http.StatusConflict, gin.H{
+				"error":                  "evidence_hash 与最新持久化真实证据不一致",
+				"expected_evidence_hash": evidence.EvidenceHash,
+			})
+			return
+		}
 	}
 	p, rec, ver, err := s.paradigmStore.Transition(id, req.To, req.Reason, req.Actor, req.EvidenceHash, req.Auto)
 	if err != nil {

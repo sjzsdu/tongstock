@@ -670,12 +670,14 @@ export interface ParadigmBacktestItem {
 export interface SampleResult {
   period: string;
   sample_size: number;
-  total_return: number;
-  annual_return: number;
-  sharpe_ratio: number;
-  win_rate: number;
-  max_drawdown: number;
+  total_return?: number;
+  annual_return?: number;
+  sharpe_ratio?: number;
+  win_rate?: number;
+  max_drawdown?: number;
   trades_count: number;
+  gross_pnl?: number;
+  net_pnl?: number;
 }
 
 export interface CIResult {
@@ -692,25 +694,21 @@ export interface CIResult {
 }
 
 export interface CostBreakdown {
-  gross_return: number;
-  net_return: number;
+  gross_return?: number;
+  net_return?: number;
   total_cost: number;
-  cost_per_trade: number;
-  cost_ratio: number;
-  net_retention: number;
+  cost_per_trade?: number;
+  cost_ratio?: number;
+  net_retention?: number;
   slippage_cost: number;
   commission_cost: number;
   tax_cost: number;
-  break_even_trades: number;
+  transfer_fee: number;
 }
 
 export interface DrawdownInfo {
   max_drawdown: number;
-  max_dd_duration_days: number;
-  current_drawdown: number;
-  drawdown_ratio: number;
-  recovery_days?: number;
-  max_dd_date?: string;
+  drawdown_ratio?: number;
   warning?: string;
 }
 
@@ -776,7 +774,7 @@ export interface CounterExample {
   type: string;
   description: string;
   period: string;
-  return: number;
+  return?: number;
   reason: string;
   severity: string;
 }
@@ -806,20 +804,31 @@ export interface DataLineage {
   generated_by: string;
   generated_at: string;
   source_hash: string;
-  version_id: string;
-  parent_id?: string;
+  snapshot_id: string;
+  experiment_id: string;
+  run_id: string;
+  result_hash: string;
+  artifact_hashes: Record<string, string>;
+  kline_manifest_hashes: Record<string, string>;
   review_history?: ReviewRecord[];
 }
 
 export interface TradeRecord {
   trade_id: string;
-  date: string;
-  side: string;
-  price: number;
-  signal_type: string;
-  holding_days: number;
-  return: number;
-  reason?: string;
+  window: number;
+  segment: string;
+  stock_code: string;
+  buy_signal_date: string;
+  buy_execution_date: string;
+  sell_signal_date: string;
+  sell_execution_date: string;
+  quantity: number;
+  buy_price: number;
+  sell_price: number;
+  gross_pnl: number;
+  net_pnl: number;
+  total_cost: number;
+  return?: number;
 }
 
 export interface GateDecision {
@@ -837,17 +846,26 @@ export interface EvidenceCard {
   stock_code: string;
   stock_name: string;
   generated_at: string;
-  in_sample: SampleResult;
-  out_of_sample: SampleResult;
-  confidence_interval: CIResult;
-  cost_analysis: CostBreakdown;
-  drawdown_analysis: DrawdownInfo;
+  available: boolean;
+  promotion_eligible: boolean;
+  unavailable_reasons?: string[];
+  promotion_blockers?: string[];
+  experiment_id?: string;
+  run_id?: string;
+  snapshot_id?: string;
+  evidence_hash?: string;
+  result_hash?: string;
+  in_sample?: SampleResult;
+  out_of_sample?: SampleResult;
+  confidence_interval?: CIResult;
+  cost_analysis?: CostBreakdown;
+  drawdown_analysis?: DrawdownInfo;
   robustness_score?: ScoreResult;
-  param_sensitivity: ParamSensitivityInfo;
-  concentration: ConcentrationInfo;
+  param_sensitivity?: ParamSensitivityInfo;
+  concentration?: ConcentrationInfo;
   counter_evidence: CounterExample[];
   risk_flags: RiskFlag[];
-  lineage: DataLineage;
+  lineage?: DataLineage;
   trade_samples?: TradeRecord[];
   stage_gate_decision?: GateDecision;
 }

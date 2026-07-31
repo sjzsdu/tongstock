@@ -49,12 +49,6 @@ type paradigmBacktestResponse struct {
 	Artifacts       []experiment.Artifact `json:"artifacts"`
 }
 
-type paradigmExperimentEvidence struct {
-	Paradigm   *paradigms.Paradigm         `json:"paradigm"`
-	Experiment *experiment.Experiment      `json:"experiment"`
-	Runs       []*experiment.ExperimentRun `json:"runs"`
-}
-
 func (s *Server) handleParadigmBacktest(c *gin.Context) {
 	if s.paradigmStore == nil || s.paradigmSnapshots == nil || s.experimentRegistry == nil || s.storage == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "paradigm experiment storage is not initialized"})
@@ -256,7 +250,7 @@ func (s *Server) handleParadigmExperimentGet(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"experiment": exp, "runs": runs})
 }
 
-func (s *Server) latestParadigmExperimentEvidence(paradigmID, requestedExperimentID string) (*paradigmExperimentEvidence, error) {
+func (s *Server) latestParadigmExperimentEvidence(paradigmID, requestedExperimentID string) (*paradigms.EvidenceCard, error) {
 	if s.experimentRegistry == nil {
 		return nil, fmt.Errorf("experiment registry is not initialized")
 	}
@@ -285,14 +279,37 @@ func (s *Server) latestParadigmExperimentEvidence(paradigmID, requestedExperimen
 			}
 		}
 		if exp == nil {
-			return nil, fmt.Errorf("no persisted experiment evidence for paradigm %s", paradigmID)
+			return unavailableParadigmEvidence(p, "没有与该范式关联的持久化实验"), nil
 		}
 	}
 	runs, err := s.experimentRegistry.ListRuns(exp.ID)
 	if err != nil {
 		return nil, err
 	}
-	return &paradigmExperimentEvidence{Paradigm: p, Experiment: exp, Runs: runs}, nil
+	var run *experiment.ExperimentRun
+	for i := len(runs) - 1; i >= 0; i-- {
+		if runs[i].Status == experiment.RunCompleted {
+			run = runs[i]
+			break
+		}
+	}
+	if run == nil {
+		card := unavailableParadigmEvidence(p, "实验没有成功完成的持久化运行")
+		card.ExperimentID = exp.ID
+		card.SnapshotID = exp.Config.DataSnapshotID
+		return card, nil
+	}
+	if s.paradigmSnapshots == nil {
+		return nil, fmt.Errorf("snapshot store is not initialized")
+	}
+	if err := s.paradigmSnapshots.VerifyContent(exp.Config.DataSnapshotID); err != nil {
+		return nil, fmt.Errorf("verify evidence snapshot: %w", err)
+	}
+	snapshot, err := s.paradigmSnapshots.GetByID(exp.Config.DataSnapshotID)
+	if err != nil {
+		return nil, fmt.Errorf("load evidence snapshot: %w", err)
+	}
+	return buildParadigmEvidence(p, exp, run, snapshot)
 }
 
 func paradigmIDFromExperiment(exp *experiment.Experiment) string {

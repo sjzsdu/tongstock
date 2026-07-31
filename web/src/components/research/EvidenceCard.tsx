@@ -26,11 +26,13 @@ interface Props {
   card: EvidenceCardType;
 }
 
-function formatPercent(v: number, decimals = 2): string {
+function formatPercent(v: number | undefined, decimals = 2): string {
+  if (v === undefined) return '未知';
   return `${(v * 100).toFixed(decimals)}%`;
 }
 
-function formatNumber(v: number, decimals = 2): string {
+function formatNumber(v: number | undefined, decimals = 2): string {
+  if (v === undefined) return '未知';
   return v.toFixed(decimals);
 }
 
@@ -60,9 +62,30 @@ function ScoreBar({ score }: { score: number }) {
 }
 
 export default function EvidenceCardView({ card }: Props) {
-  const sampleSizeNote = card.in_sample.sample_size < 30
-    ? <Tag color="orange">样本量不足 ({card.in_sample.sample_size}/30)</Tag>
+  const sampleSizeNote = (card.in_sample?.sample_size ?? 0) < 30
+    ? <Tag color="orange">样本量不足 ({card.in_sample?.sample_size ?? 0}/30)</Tag>
     : null;
+  if (!card.available) {
+    return (
+      <Alert
+        type="error"
+        showIcon
+        message="真实证据不可用"
+        description={
+          <Space direction="vertical">
+            {(card.unavailable_reasons ?? ['没有完整的持久化实验证据']).map(reason => <Text key={reason}>{reason}</Text>)}
+            <Text type="secondary">该范式当前不能晋级。</Text>
+          </Space>
+        }
+      />
+    );
+  }
+  const inSample = card.in_sample!;
+  const outOfSample = card.out_of_sample!;
+  const confidence = card.confidence_interval;
+  const costs = card.cost_analysis!;
+  const drawdown = card.drawdown_analysis!;
+  const lineage = card.lineage!;
 
   const counterColumns: ColumnsType<CounterExample> = [
     {
@@ -79,8 +102,8 @@ export default function EvidenceCardView({ card }: Props) {
       dataIndex: 'return',
       key: 'return',
       width: 100,
-      render: (r: number) => (
-        <Text style={{ color: r >= 0 ? '#52c41a' : '#ff4d4f' }}>
+      render: (r?: number) => (
+        <Text style={{ color: r !== undefined && r >= 0 ? '#52c41a' : '#ff4d4f' }}>
           {formatPercent(r)}
         </Text>
       ),
@@ -96,29 +119,24 @@ export default function EvidenceCardView({ card }: Props) {
   ];
 
   const tradeColumns: ColumnsType<TradeRecord> = [
-    { title: '日期', dataIndex: 'date', key: 'date', width: 110 },
-    {
-      title: '方向',
-      dataIndex: 'side',
-      key: 'side',
-      width: 60,
-      render: (s: string) => <Tag color={s === 'buy' ? 'green' : 'red'}>{s === 'buy' ? '买' : '卖'}</Tag>,
-    },
-    { title: '价格', dataIndex: 'price', key: 'price', width: 80, render: (v: number) => formatNumber(v) },
-    { title: '信号', dataIndex: 'signal_type', key: 'signal_type', width: 120 },
-    { title: '持仓天数', dataIndex: 'holding_days', key: 'holding_days', width: 90 },
+    { title: '买入执行日', dataIndex: 'buy_execution_date', key: 'buy_execution_date', width: 120, render: (v: string) => new Date(v).toLocaleDateString() },
+    { title: '卖出执行日', dataIndex: 'sell_execution_date', key: 'sell_execution_date', width: 120, render: (v: string) => new Date(v).toLocaleDateString() },
+    { title: '分段', dataIndex: 'segment', key: 'segment', width: 80 },
+    { title: '数量', dataIndex: 'quantity', key: 'quantity', width: 80 },
+    { title: '买价', dataIndex: 'buy_price', key: 'buy_price', width: 80, render: (v: number) => formatNumber(v) },
+    { title: '卖价', dataIndex: 'sell_price', key: 'sell_price', width: 80, render: (v: number) => formatNumber(v) },
     {
       title: '收益',
       dataIndex: 'return',
       key: 'return',
       width: 100,
-      render: (r: number) => (
-        <Text style={{ color: r >= 0 ? '#52c41a' : '#ff4d4f' }}>
+      render: (r?: number) => (
+        <Text style={{ color: r !== undefined && r >= 0 ? '#52c41a' : '#ff4d4f' }}>
           {formatPercent(r)}
         </Text>
       ),
     },
-    { title: '备注', dataIndex: 'reason', key: 'reason' },
+    { title: '净盈亏', dataIndex: 'net_pnl', key: 'net_pnl', render: (v: number) => formatNumber(v) },
   ];
 
   const scoreColumns: ColumnsType<ScoreComponent> = [
@@ -160,6 +178,20 @@ export default function EvidenceCardView({ card }: Props) {
         </Space>
       </Card>
 
+      {!card.promotion_eligible && (
+        <Alert
+          type="warning"
+          showIcon
+          message="证据可追溯，但尚不满足晋级条件"
+          description={
+            <Space direction="vertical">
+              {(card.promotion_blockers ?? []).map(reason => <Text key={reason}>{reason}</Text>)}
+              <Text type="secondary">缺失指标保持“未知”，不会用默认值补齐。</Text>
+            </Space>
+          }
+        />
+      )}
+
       {/* 样本内/外对比 */}
       <Row gutter={[16, 16]}>
         <Col xs={12}>
@@ -173,19 +205,19 @@ export default function EvidenceCardView({ card }: Props) {
             size="small"
           >
             <Descriptions column={1} size="small">
-              <Descriptions.Item label="样本量">{card.in_sample.sample_size}</Descriptions.Item>
+              <Descriptions.Item label="样本量">{inSample.sample_size}</Descriptions.Item>
               <Descriptions.Item label="总收益">
-                <Text style={{ color: card.in_sample.total_return >= 0 ? '#52c41a' : '#ff4d4f' }}>
-                  {formatPercent(card.in_sample.total_return)}
+                <Text style={{ color: inSample.total_return !== undefined && inSample.total_return >= 0 ? '#52c41a' : '#ff4d4f' }}>
+                  {formatPercent(inSample.total_return)}
                 </Text>
               </Descriptions.Item>
               <Descriptions.Item label="年化">
-                <Text strong>{formatPercent(card.in_sample.annual_return)}</Text>
+                <Text strong>{formatPercent(inSample.annual_return)}</Text>
               </Descriptions.Item>
-              <Descriptions.Item label="Sharpe">{formatNumber(card.in_sample.sharpe_ratio)}</Descriptions.Item>
-              <Descriptions.Item label="胜率">{formatPercent(card.in_sample.win_rate)}</Descriptions.Item>
+              <Descriptions.Item label="Sharpe">{formatNumber(inSample.sharpe_ratio)}</Descriptions.Item>
+              <Descriptions.Item label="胜率">{formatPercent(inSample.win_rate)}</Descriptions.Item>
               <Descriptions.Item label="最大回撤">
-                <Text type="danger">{formatPercent(card.in_sample.max_drawdown)}</Text>
+                <Text type="danger">{formatPercent(inSample.max_drawdown)}</Text>
               </Descriptions.Item>
             </Descriptions>
           </Card>
@@ -201,19 +233,19 @@ export default function EvidenceCardView({ card }: Props) {
             size="small"
           >
             <Descriptions column={1} size="small">
-              <Descriptions.Item label="样本量">{card.out_of_sample.sample_size}</Descriptions.Item>
+              <Descriptions.Item label="样本量">{outOfSample.sample_size}</Descriptions.Item>
               <Descriptions.Item label="总收益">
-                <Text style={{ color: card.out_of_sample.total_return >= 0 ? '#52c41a' : '#ff4d4f' }}>
-                  {formatPercent(card.out_of_sample.total_return)}
+                <Text style={{ color: outOfSample.total_return !== undefined && outOfSample.total_return >= 0 ? '#52c41a' : '#ff4d4f' }}>
+                  {formatPercent(outOfSample.total_return)}
                 </Text>
               </Descriptions.Item>
               <Descriptions.Item label="年化">
-                <Text strong>{formatPercent(card.out_of_sample.annual_return)}</Text>
+                <Text strong>{formatPercent(outOfSample.annual_return)}</Text>
               </Descriptions.Item>
-              <Descriptions.Item label="Sharpe">{formatNumber(card.out_of_sample.sharpe_ratio)}</Descriptions.Item>
-              <Descriptions.Item label="胜率">{formatPercent(card.out_of_sample.win_rate)}</Descriptions.Item>
+              <Descriptions.Item label="Sharpe">{formatNumber(outOfSample.sharpe_ratio)}</Descriptions.Item>
+              <Descriptions.Item label="胜率">{formatPercent(outOfSample.win_rate)}</Descriptions.Item>
               <Descriptions.Item label="最大回撤">
-                <Text type="danger">{formatPercent(card.out_of_sample.max_drawdown)}</Text>
+                <Text type="danger">{formatPercent(outOfSample.max_drawdown)}</Text>
               </Descriptions.Item>
             </Descriptions>
           </Card>
@@ -231,22 +263,22 @@ export default function EvidenceCardView({ card }: Props) {
               <Text type="secondary">95% CI 均值</Text>
               <div>
                 <Text strong style={{ fontSize: 18 }}>
-                  {formatPercent(card.confidence_interval.mean_return)}
+                  {formatPercent(confidence?.mean_return)}
                 </Text>
               </div>
               <Text type="secondary">
-                [{formatPercent(card.confidence_interval.ci_95_lower)}, {formatPercent(card.confidence_interval.ci_95_upper)}]
+                [{formatPercent(confidence?.ci_95_lower)}, {formatPercent(confidence?.ci_95_upper)}]
               </Text>
             </div>
             <div style={{ textAlign: 'center' }}>
-              {card.confidence_interval.significant
+              {confidence?.significant
                 ? <Tag color="green">{'统计显著 (p < 0.05)'}</Tag>
                 : <Tag color="orange">统计不显著</Tag>
               }
             </div>
-            {card.confidence_interval.notes && card.confidence_interval.notes.length > 0 && (
+            {confidence?.notes && confidence.notes.length > 0 && (
               <div style={{ marginTop: 8 }}>
-                {card.confidence_interval.notes.map((n, i) => (
+                {confidence.notes.map((n, i) => (
                   <Alert key={i} message={n} type="warning" style={{ marginBottom: 4 }} />
                 ))}
               </div>
@@ -259,16 +291,16 @@ export default function EvidenceCardView({ card }: Props) {
             size="small"
           >
             <Descriptions column={1} size="small">
-              <Descriptions.Item label="毛收益">{formatPercent(card.cost_analysis.gross_return)}</Descriptions.Item>
+              <Descriptions.Item label="毛收益">{formatPercent(costs.gross_return)}</Descriptions.Item>
               <Descriptions.Item label="净收益">
-                <Text strong style={{ color: card.cost_analysis.net_return >= 0 ? '#52c41a' : '#ff4d4f' }}>
-                  {formatPercent(card.cost_analysis.net_return)}
+                <Text strong style={{ color: costs.net_return !== undefined && costs.net_return >= 0 ? '#52c41a' : '#ff4d4f' }}>
+                  {formatPercent(costs.net_return)}
                 </Text>
               </Descriptions.Item>
               <Descriptions.Item label="成本占比">
-                <Text type="warning">{formatPercent(card.cost_analysis.cost_ratio)}</Text>
+                <Text type="warning">{formatPercent(costs.cost_ratio)}</Text>
               </Descriptions.Item>
-              <Descriptions.Item label="净保留率">{formatPercent(card.cost_analysis.net_retention)}</Descriptions.Item>
+              <Descriptions.Item label="净保留率">{formatPercent(costs.net_retention)}</Descriptions.Item>
             </Descriptions>
           </Card>
         </Col>
@@ -279,17 +311,16 @@ export default function EvidenceCardView({ card }: Props) {
           >
             <Descriptions column={1} size="small">
               <Descriptions.Item label="最大回撤">
-                <Text type="danger">{formatPercent(card.drawdown_analysis.max_drawdown)}</Text>
+                <Text type="danger">{formatPercent(drawdown.max_drawdown)}</Text>
               </Descriptions.Item>
               <Descriptions.Item label="回撤/收益比">
-                <Text style={{ color: card.drawdown_analysis.drawdown_ratio > 1 ? '#ff4d4f' : undefined }}>
-                  {formatNumber(card.drawdown_analysis.drawdown_ratio)}
+                <Text style={{ color: drawdown.drawdown_ratio !== undefined && drawdown.drawdown_ratio > 1 ? '#ff4d4f' : undefined }}>
+                  {formatNumber(drawdown.drawdown_ratio)}
                 </Text>
               </Descriptions.Item>
-              <Descriptions.Item label="当前回撤">{formatPercent(card.drawdown_analysis.current_drawdown)}</Descriptions.Item>
             </Descriptions>
-            {card.drawdown_analysis.warning && (
-              <Alert message={card.drawdown_analysis.warning} type="warning" style={{ marginTop: 8 }} />
+            {drawdown.warning && (
+              <Alert message={drawdown.warning} type="warning" style={{ marginTop: 8 }} />
             )}
           </Card>
         </Col>
@@ -395,14 +426,16 @@ export default function EvidenceCardView({ card }: Props) {
         size="small"
       >
         <Descriptions column={2} size="small">
-          <Descriptions.Item label="数据源">{card.lineage.data_source}</Descriptions.Item>
-          <Descriptions.Item label="数据版本">{card.lineage.data_version}</Descriptions.Item>
-          <Descriptions.Item label="数据范围">{card.lineage.data_range}</Descriptions.Item>
+          <Descriptions.Item label="数据源">{lineage.data_source}</Descriptions.Item>
+          <Descriptions.Item label="快照 ID">{lineage.snapshot_id}</Descriptions.Item>
+          <Descriptions.Item label="实验 ID">{lineage.experiment_id}</Descriptions.Item>
+          <Descriptions.Item label="运行 ID">{lineage.run_id}</Descriptions.Item>
+          <Descriptions.Item label="数据范围">{lineage.data_range}</Descriptions.Item>
           <Descriptions.Item label="更新时间">
-            {new Date(card.lineage.last_updated).toLocaleString()}
+            {new Date(lineage.last_updated).toLocaleString()}
           </Descriptions.Item>
-          <Descriptions.Item label="生成者">{card.lineage.generated_by}</Descriptions.Item>
-          <Descriptions.Item label="版本ID">{card.lineage.version_id}</Descriptions.Item>
+          <Descriptions.Item label="结果哈希">{lineage.result_hash}</Descriptions.Item>
+          <Descriptions.Item label="快照哈希">{lineage.source_hash}</Descriptions.Item>
         </Descriptions>
       </Card>
 
