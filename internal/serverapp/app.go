@@ -19,6 +19,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sjzsdu/tongstock/internal/agents"
 	"github.com/sjzsdu/tongstock/internal/app/stockdata"
+	"github.com/sjzsdu/tongstock/internal/ledger"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
 	"github.com/sjzsdu/tongstock/internal/serviceproc"
 	"github.com/sjzsdu/tongstock/pkg/config"
@@ -192,10 +193,15 @@ func NewApp(cfg *config.Config, opts Options) (_ *App, err error) {
 		app.setModule("newsfeed", "ready", "")
 	}
 
+	forwardLedger, err := ledger.NewSQLiteSignalLedger(app.storage)
+	if err != nil {
+		return nil, fmt.Errorf("初始化持久化前向账本失败: %w", err)
+	}
 	app.api = server.NewServer(server.Dependencies{
 		StockData: app.data, UnifiedData: app.stockData, History: historyStore, Watchlist: watchlistStore,
 		Trading: tradingStore, StockPool: stockpoolStore, StockInfo: stockinfoStore,
-		Newsfeed: newsHandler, Diagnostics: server.DiagnosticsFunc(app.Diagnostics), Storage: app.storage,
+		Newsfeed: newsHandler, Diagnostics: server.DiagnosticsFunc(app.Diagnostics),
+		Storage: app.storage, Ledger: forwardLedger,
 	})
 
 	app.configureOptionalModules()

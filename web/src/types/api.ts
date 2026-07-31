@@ -1214,6 +1214,18 @@ export interface ConstraintsSnapshot {
   commission_rate: number;
   slippage_bps: number;
   stamp_duty_rate: number;
+  min_commission: number;
+  transfer_fee_rate: number;
+}
+
+export interface ForwardPositionState {
+  stock_code: string;
+  quantity: number;
+  average_price: number;
+  accrued_buy_fees: number;
+  buy_date: string;
+  last_price: number;
+  updated_at: string;
 }
 
 export interface ForwardRun {
@@ -1234,6 +1246,8 @@ export interface ForwardRun {
   max_drawdown: number;
   win_rate: number;
   sharpe_ratio: number;
+  positions: Record<string, ForwardPositionState>;
+  equity_curve: EquityPoint[];
   constraints_snapshot: ConstraintsSnapshot;
   created_at: string;
   updated_at: string;
@@ -1256,14 +1270,31 @@ export interface SignalSource {
 
 export interface ExecutionRecord {
   status: string; // pending / filled / partial / rejected / cancelled
+  market: ExecutionMarket;
   exec_price: number;
   exec_qty: number;
   fee: number;
+  gross_pnl: number;
   pnl: number;
   hold_qty: number;
   hold_cost: number;
   reject_reason?: string;
   executed_at: string;
+}
+
+export interface ExecutionMarket {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  pre_close: number;
+  volume: number;
+  amount: number;
+  limit_up: number;
+  limit_down: number;
+  suspended: boolean;
+  board: string;
 }
 
 export interface SignalEntry {
@@ -1273,19 +1304,30 @@ export interface SignalEntry {
   stock_code: string;
   direction: string;
   signal_date: string;
-  execution_date: string;
+  execution_date?: string;
   price: number;
   pre_close: number;
   limit_up: number;
   limit_down: number;
   suspended: boolean;
   board: string;
+  market: ExecutionMarket;
   confidence: number;
   data_snapshot: DataSnapshot;
   source: SignalSource;
   execution?: ExecutionRecord;
   content_hash: string;
   created_at: string;
+}
+
+export interface ForwardSignalAppendRequest {
+  id: string;
+  paradigm_version_id?: string;
+  stock_code: string;
+  direction: 'buy' | 'sell';
+  signal_date: string;
+  confidence?: number;
+  source?: SignalSource;
 }
 
 export interface ForwardRunCreateRequest {

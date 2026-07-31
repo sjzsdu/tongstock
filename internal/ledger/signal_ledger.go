@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/sjzsdu/tongstock/internal/trading"
+	"github.com/sjzsdu/tongstock/pkg/storage"
 )
 
 // ============================================================================
@@ -33,22 +34,38 @@ type SignalEntry struct {
 	Direction         string          `json:"direction"` // buy / sell
 	SignalDate        time.Time       `json:"signal_date"`
 	ExecutionDate     time.Time       `json:"execution_date"`
-	Price             float64         `json:"price"`       // 信号生成时的价格
-	PreClose          float64         `json:"pre_close"`   // 前收盘价 (用于计算涨跌停)
-	LimitUp           float64         `json:"limit_up"`    // 当日涨停价
-	LimitDown         float64         `json:"limit_down"`  // 当日跌停价
+	Price             float64         `json:"price"`      // 信号生成时的价格
+	PreClose          float64         `json:"pre_close"`  // 前收盘价 (用于计算涨跌停)
+	LimitUp           float64         `json:"limit_up"`   // 当日涨停价
+	LimitDown         float64         `json:"limit_down"` // 当日跌停价
 	Suspended         bool            `json:"suspended"`
 	Board             string          `json:"board"`
+	Market            ExecutionMarket `json:"market"`
 	Confidence        float64         `json:"confidence"`
 	// DataSnapshot 记录信号生成时的数据版本哈希, 确保不可回填
-	DataSnapshot      DataSnapshot   `json:"data_snapshot"`
+	DataSnapshot DataSnapshot `json:"data_snapshot"`
 	// Source 记录触发信号的规则与上下文
-	Source            SignalSource   `json:"source"`
+	Source SignalSource `json:"source"`
 	// Execution 记录 Paper Trade 的执行结果 (nil = 尚未尝试)
-	Execution         *ExecutionRecord `json:"execution,omitempty"`
+	Execution *ExecutionRecord `json:"execution,omitempty"`
 	// ContentHash 基于所有字段计算, 用于不可回填校验
-	ContentHash       string          `json:"content_hash"`
-	CreatedAt         time.Time       `json:"created_at"`
+	ContentHash string    `json:"content_hash"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type ExecutionMarket struct {
+	Date      time.Time `json:"date"`
+	Open      float64   `json:"open"`
+	High      float64   `json:"high"`
+	Low       float64   `json:"low"`
+	Close     float64   `json:"close"`
+	PreClose  float64   `json:"pre_close"`
+	Volume    float64   `json:"volume"`
+	Amount    float64   `json:"amount"`
+	LimitUp   float64   `json:"limit_up"`
+	LimitDown float64   `json:"limit_down"`
+	Suspended bool      `json:"suspended"`
+	Board     string    `json:"board"`
 }
 
 // DataSnapshot 信号生成时的数据快照, 用于确保不可回填。
@@ -61,29 +78,31 @@ type DataSnapshot struct {
 	RuleSetID string `json:"rule_set_id"`
 	// DataHash 当时代理人看到的数据哈希 (例如 K 线数据的摘要哈希)
 	DataHash string `json:"data_hash"`
-	// CapturedAt 快照采集时间 (必须 <= SignalDate)
+	// CapturedAt 服务端实际采集时间
 	CapturedAt time.Time `json:"captured_at"`
 }
 
 // SignalSource 触发信号的规则与上下文
 type SignalSource struct {
-	RuleID       string            `json:"rule_id"`
-	RuleDesc     string            `json:"rule_desc"`
-	TriggeredBy  string            `json:"triggered_by"` // 规则描述 (可读)
-	ContextTags  map[string]string `json:"context_tags,omitempty"`
+	RuleID      string            `json:"rule_id"`
+	RuleDesc    string            `json:"rule_desc"`
+	TriggeredBy string            `json:"triggered_by"` // 规则描述 (可读)
+	ContextTags map[string]string `json:"context_tags,omitempty"`
 }
 
 // ExecutionRecord Paper Trade 执行结果
 type ExecutionRecord struct {
-	Status       string    `json:"status"` // pending / filled / partial / rejected / cancelled
-	ExecPrice    float64   `json:"exec_price"`
-	ExecQty      int       `json:"exec_qty"`
-	Fee          float64   `json:"fee"`
-	PnL          float64   `json:"pnl"`      // 已实现盈亏
-	HoldQty      int       `json:"hold_qty"` // 持仓数量 (T+1)
-	HoldCost     float64   `json:"hold_cost"` // 持仓成本
-	RejectReason string    `json:"reject_reason,omitempty"`
-	ExecutedAt   time.Time `json:"executed_at"`
+	Status       string          `json:"status"` // pending / filled / partial / rejected / cancelled
+	Market       ExecutionMarket `json:"market"`
+	ExecPrice    float64         `json:"exec_price"`
+	ExecQty      int             `json:"exec_qty"`
+	Fee          float64         `json:"fee"`
+	GrossPnL     float64         `json:"gross_pnl"`
+	PnL          float64         `json:"pnl"`       // 已实现盈亏
+	HoldQty      int             `json:"hold_qty"`  // 持仓数量 (T+1)
+	HoldCost     float64         `json:"hold_cost"` // 持仓成本
+	RejectReason string          `json:"reject_reason,omitempty"`
+	ExecutedAt   time.Time       `json:"executed_at"`
 }
 
 // ============================================================================
@@ -92,27 +111,29 @@ type ExecutionRecord struct {
 
 // ForwardRun 描述范式的一次 Paper Trading 运行
 type ForwardRun struct {
-	ID                string    `json:"id"`
-	ParadigmVersionID string    `json:"paradigm_version_id"`
-	StartDate         time.Time `json:"start_date"`
-	EndDate           *time.Time `json:"end_date,omitempty"`
-	Status            string    `json:"status"` // active / completed / stopped
-	InitialCash       float64   `json:"initial_cash"`
-	FinalCash         float64   `json:"final_cash"`
-	FinalPositionValue float64  `json:"final_position_value"`
-	TotalPnL          float64   `json:"total_pnl"`
-	TotalReturn       float64   `json:"total_return"` // (final_value - initial_cash) / initial_cash
-	SignalCount       int       `json:"signal_count"`
-	FilledCount       int       `json:"filled_count"`
-	RejectedCount     int       `json:"rejected_count"`
-	ExecutedCount     int       `json:"executed_count"`
-	MaxDrawdown       float64   `json:"max_drawdown"`
-	WinRate           float64   `json:"win_rate"`
-	SharpeRatio       float64   `json:"sharpe_ratio"`
+	ID                 string                   `json:"id"`
+	ParadigmVersionID  string                   `json:"paradigm_version_id"`
+	StartDate          time.Time                `json:"start_date"`
+	EndDate            *time.Time               `json:"end_date,omitempty"`
+	Status             string                   `json:"status"` // active / completed / stopped
+	InitialCash        float64                  `json:"initial_cash"`
+	FinalCash          float64                  `json:"final_cash"`
+	FinalPositionValue float64                  `json:"final_position_value"`
+	TotalPnL           float64                  `json:"total_pnl"`
+	TotalReturn        float64                  `json:"total_return"` // (final_value - initial_cash) / initial_cash
+	SignalCount        int                      `json:"signal_count"`
+	FilledCount        int                      `json:"filled_count"`
+	RejectedCount      int                      `json:"rejected_count"`
+	ExecutedCount      int                      `json:"executed_count"`
+	MaxDrawdown        float64                  `json:"max_drawdown"`
+	WinRate            float64                  `json:"win_rate"`
+	SharpeRatio        float64                  `json:"sharpe_ratio"`
+	Positions          map[string]PositionState `json:"positions"`
+	EquityCurve        []EquityPoint            `json:"equity_curve"`
 	// ConstraintsSnapshot 记录运行使用的约束配置, 用于复现
 	ConstraintsSnapshot ConstraintsSnapshot `json:"constraints_snapshot"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	CreatedAt           time.Time           `json:"created_at"`
+	UpdatedAt           time.Time           `json:"updated_at"`
 }
 
 // ConstraintsSnapshot 前向运行使用的约束配置快照
@@ -125,6 +146,18 @@ type ConstraintsSnapshot struct {
 	CommissionRate   float64 `json:"commission_rate"`
 	SlippageBps      float64 `json:"slippage_bps"`
 	StampDutyRate    float64 `json:"stamp_duty_rate"`
+	MinCommission    float64 `json:"min_commission"`
+	TransferFeeRate  float64 `json:"transfer_fee_rate"`
+}
+
+type PositionState struct {
+	StockCode      string    `json:"stock_code"`
+	Quantity       int       `json:"quantity"`
+	AveragePrice   float64   `json:"average_price"`
+	AccruedBuyFees float64   `json:"accrued_buy_fees"`
+	BuyDate        time.Time `json:"buy_date"`
+	LastPrice      float64   `json:"last_price"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // ============================================================================
@@ -133,14 +166,15 @@ type ConstraintsSnapshot struct {
 
 // SignalLedger 只追加、不可回填的信号账本
 type SignalLedger struct {
-	mu     sync.RWMutex
+	mu      sync.RWMutex
+	storage *storage.Storage
 	entries map[string]SignalEntry // entry.ID -> entry
-	runs   map[string]*ForwardRun
+	runs    map[string]*ForwardRun
 	// 索引
-	byRun       map[string][]string
-	byParadigm  map[string][]string
-	byStock     map[string][]string
-	byDate      map[string][]string // yyyy-mm-dd -> entry IDs
+	byRun      map[string][]string
+	byParadigm map[string][]string
+	byStock    map[string][]string
+	byDate     map[string][]string // yyyy-mm-dd -> entry IDs
 }
 
 // NewSignalLedger 创建空账本
@@ -196,12 +230,22 @@ func (l *SignalLedger) NewForwardRun(
 			CommissionRate:   costModel.CommissionRate,
 			SlippageBps:      costModel.SlippageBps,
 			StampDutyRate:    costModel.StampDutyRate,
+			MinCommission:    costModel.MinCommission,
+			TransferFeeRate:  costModel.TransferFeeRate,
 		},
-		CreatedAt: startDate,
-		UpdatedAt: startDate,
+		Positions: map[string]PositionState{},
+		EquityCurve: []EquityPoint{{
+			Date: startDate, Cash: initialCash, Total: initialCash,
+		}},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 
 	l.runs[runID] = run
+	if err := l.saveRunLocked(run); err != nil {
+		delete(l.runs, runID)
+		return nil, err
+	}
 	return run, nil
 }
 
@@ -213,8 +257,30 @@ func (l *SignalLedger) AppendSignal(entry SignalEntry) error {
 	if entry.ID == "" {
 		return fmt.Errorf("signal ID is required")
 	}
-	if _, exists := l.entries[entry.ID]; exists {
-		return fmt.Errorf("signal %s already exists (ledger is append-only)", entry.ID)
+	if existing, exists := l.entries[entry.ID]; exists {
+		if signalIdentityHash(existing) == signalIdentityHash(entry) {
+			return nil
+		}
+		return fmt.Errorf("signal %s already exists with different immutable content", entry.ID)
+	}
+	run, ok := l.runs[entry.RunID]
+	if !ok {
+		return fmt.Errorf("run %s not found", entry.RunID)
+	}
+	if entry.ParadigmVersionID != run.ParadigmVersionID {
+		return fmt.Errorf("signal paradigm version does not match run")
+	}
+	if entry.SignalDate.Before(run.StartDate) {
+		return fmt.Errorf("signal date is before forward run start")
+	}
+	if !entry.ExecutionDate.IsZero() && entry.ExecutionDate.Before(entry.SignalDate) {
+		return fmt.Errorf("execution date is before signal date")
+	}
+	if entry.DataSnapshot.DataHash == "" {
+		return fmt.Errorf("server-captured data hash is required")
+	}
+	if entry.DataSnapshot.CapturedAt.IsZero() {
+		return fmt.Errorf("server-captured data timestamp is required")
 	}
 
 	// 计算 content hash 确保不可回填
@@ -224,19 +290,14 @@ func (l *SignalLedger) AppendSignal(entry SignalEntry) error {
 	hash := computeSignalHash(entry)
 	entry.ContentHash = hash
 
-	l.entries[entry.ID] = entry
-	l.byRun[entry.RunID] = append(l.byRun[entry.RunID], entry.ID)
-	l.byParadigm[entry.ParadigmVersionID] = append(l.byParadigm[entry.ParadigmVersionID], entry.ID)
-	l.byStock[entry.StockCode] = append(l.byStock[entry.StockCode], entry.ID)
-
-	dateKey := entry.SignalDate.Format("2006-01-02")
-	l.byDate[dateKey] = append(l.byDate[dateKey], entry.ID)
-
-	// 更新 run 统计
-	if run, ok := l.runs[entry.RunID]; ok {
-		run.SignalCount++
-		run.UpdatedAt = time.Now()
+	runCopy := *run
+	runCopy.SignalCount++
+	runCopy.UpdatedAt = time.Now()
+	if err := l.saveAppendedSignalLocked(entry, &runCopy, run.UpdatedAt); err != nil {
+		return err
 	}
+	l.indexSignal(entry)
+	l.runs[run.ID] = &runCopy
 
 	return nil
 }
@@ -250,10 +311,19 @@ func (l *SignalLedger) UpdateExecution(entryID string, execution ExecutionRecord
 	if !ok {
 		return fmt.Errorf("signal %s not found", entryID)
 	}
+	if entry.Execution != nil {
+		if executionEqual(*entry.Execution, execution) {
+			return nil
+		}
+		return fmt.Errorf("signal %s execution is immutable once recorded", entryID)
+	}
 
 	// 重新计算 hash, 确保 Execution 的修改被纳入
 	entry.Execution = &execution
 	entry.ContentHash = computeSignalHash(entry)
+	if err := l.saveSignalLocked(entry); err != nil {
+		return err
+	}
 	l.entries[entryID] = entry
 
 	// 更新 run 统计
@@ -266,9 +336,96 @@ func (l *SignalLedger) UpdateExecution(entryID string, execution ExecutionRecord
 			run.RejectedCount++
 		}
 		run.UpdatedAt = time.Now()
+		if err := l.saveRunLocked(run); err != nil {
+			return err
+		}
 	}
 
 	return nil
+}
+
+func executionEqual(a, b ExecutionRecord) bool {
+	left, _ := json.Marshal(a)
+	right, _ := json.Marshal(b)
+	return string(left) == string(right)
+}
+
+// RecordExecutionState 原子记录不可变成交结果与该成交后的账户、持仓和权益。
+func (l *SignalLedger) RecordExecutionState(
+	entryID string,
+	execution ExecutionRecord,
+	cash float64,
+	positions map[string]PositionState,
+	point EquityPoint,
+) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	entry, ok := l.entries[entryID]
+	if !ok {
+		return fmt.Errorf("signal %s not found", entryID)
+	}
+	if entry.Execution != nil {
+		if executionEqual(*entry.Execution, execution) {
+			return nil
+		}
+		return fmt.Errorf("signal %s execution is immutable once recorded", entryID)
+	}
+	run, ok := l.runs[entry.RunID]
+	if !ok {
+		return fmt.Errorf("run %s not found", entry.RunID)
+	}
+	runCopy := *run
+	runCopy.Positions = clonePositions(positions)
+	runCopy.FinalCash = cash
+	runCopy.FinalPositionValue = point.Value
+	runCopy.TotalPnL = point.Total - run.InitialCash
+	if run.InitialCash > 0 {
+		runCopy.TotalReturn = runCopy.TotalPnL / run.InitialCash
+	}
+	runCopy.ExecutedCount++
+	switch execution.Status {
+	case "filled", "partial":
+		runCopy.FilledCount++
+	case "rejected":
+		runCopy.RejectedCount++
+	}
+	runCopy.EquityCurve = append(append([]EquityPoint(nil), run.EquityCurve...), point)
+	runCopy.MaxDrawdown = maxEquityDrawdown(runCopy.EquityCurve)
+	runCopy.UpdatedAt = time.Now()
+
+	previousHash := entry.ContentHash
+	entry.Execution = &execution
+	entry.ContentHash = computeSignalHash(entry)
+	if err := l.saveExecutionStateLocked(entry, &runCopy, previousHash, run.UpdatedAt); err != nil {
+		return err
+	}
+	l.entries[entryID] = entry
+	l.runs[run.ID] = &runCopy
+	return nil
+}
+
+func clonePositions(values map[string]PositionState) map[string]PositionState {
+	result := make(map[string]PositionState, len(values))
+	for key, value := range values {
+		result[key] = value
+	}
+	return result
+}
+
+func maxEquityDrawdown(points []EquityPoint) float64 {
+	var peak, maximum float64
+	for _, point := range points {
+		if point.Total > peak {
+			peak = point.Total
+		}
+		if peak > 0 {
+			drawdown := (peak - point.Total) / peak
+			if drawdown > maximum {
+				maximum = drawdown
+			}
+		}
+	}
+	return maximum
 }
 
 // GetSignal 获取单条信号 (验证 hash)
@@ -380,101 +537,54 @@ func (l *SignalLedger) FinalizeRun(runID string, endDate time.Time) (*ForwardRun
 	if !ok {
 		return nil, fmt.Errorf("run %s not found", runID)
 	}
-
-	// 计算已实现 P&L 和胜率
-	entries := make([]SignalEntry, 0)
-	for _, id := range l.byRun[runID] {
-		if e, ok := l.entries[id]; ok {
-			entries = append(entries, e)
-		}
-	}
-
-	var totalPnL float64
 	var wins, losses int
-	var peakEquity float64
-	equityCurve := []float64{run.InitialCash}
-	cash := run.InitialCash
-	var positionValue float64
-
-	for _, e := range entries {
-		if e.Execution == nil {
+	for _, id := range l.byRun[runID] {
+		entry := l.entries[id]
+		if entry.Direction != string(trading.OrderSell) || entry.Execution == nil ||
+			(entry.Execution.Status != "filled" && entry.Execution.Status != "partial") {
 			continue
 		}
-		if e.Execution.Status == "filled" || e.Execution.Status == "partial" {
-			totalPnL += e.Execution.PnL
-			if e.Execution.PnL > 0 {
-				wins++
-			} else if e.Execution.PnL < 0 {
-				losses++
-			}
-			// 更新现金
-			if e.Direction == "buy" {
-				cash -= e.Execution.ExecPrice * float64(e.Execution.ExecQty) + e.Execution.Fee
-			} else {
-				cash += e.Execution.ExecPrice * float64(e.Execution.ExecQty) - e.Execution.Fee
-			}
+		if entry.Execution.PnL > 0 {
+			wins++
+		} else {
+			losses++
 		}
-	}
-
-	// 计算当前持仓市值 (简化: 用最后价格估算)
-	for _, e := range entries {
-		if e.Execution != nil && e.Direction == "buy" && e.Execution.Status == "filled" {
-			positionValue += e.Price * float64(e.Execution.HoldQty)
-		}
-	}
-
-	finalValue := cash + positionValue
-	run.FinalCash = cash
-	run.FinalPositionValue = positionValue
-	run.TotalPnL = totalPnL
-	run.TotalReturn = (finalValue - run.InitialCash) / run.InitialCash
-	if run.InitialCash > 0 {
-		run.TotalReturn = finalValue/run.InitialCash - 1
 	}
 	if wins+losses > 0 {
 		run.WinRate = float64(wins) / float64(wins+losses)
 	}
+	run.MaxDrawdown = maxEquityDrawdown(run.EquityCurve)
 	run.Status = "completed"
 	run.EndDate = &endDate
 	run.UpdatedAt = time.Now()
-
-	// 计算最大回撤 (简化: 基于权益曲线)
-	for _, v := range equityCurve {
-		if v > peakEquity {
-			peakEquity = v
-		}
-		if peakEquity > 0 {
-			drawdown := (peakEquity - v) / peakEquity
-			if drawdown > run.MaxDrawdown {
-				run.MaxDrawdown = drawdown
-			}
-		}
+	if err := l.saveRunLocked(run); err != nil {
+		return nil, err
 	}
-
 	return run, nil
 }
 
 // computeSignalHash 基于信号全部内容计算不可回填哈希
 func computeSignalHash(entry SignalEntry) string {
 	data, _ := json.Marshal(struct {
-		ID                string          `json:"id"`
-		RunID             string          `json:"run_id"`
-		ParadigmVersionID string          `json:"paradigm_version_id"`
-		StockCode         string          `json:"stock_code"`
-		Direction         string          `json:"direction"`
-		SignalDate        time.Time       `json:"signal_date"`
-		ExecutionDate     time.Time       `json:"execution_date"`
-		Price             float64         `json:"price"`
-		PreClose          float64         `json:"pre_close"`
-		LimitUp           float64         `json:"limit_up"`
-		LimitDown         float64         `json:"limit_down"`
-		Suspended         bool            `json:"suspended"`
-		Board             string          `json:"board"`
-		Confidence        float64         `json:"confidence"`
-		DataSnapshot      DataSnapshot    `json:"data_snapshot"`
-		Source            SignalSource    `json:"source"`
+		ID                string           `json:"id"`
+		RunID             string           `json:"run_id"`
+		ParadigmVersionID string           `json:"paradigm_version_id"`
+		StockCode         string           `json:"stock_code"`
+		Direction         string           `json:"direction"`
+		SignalDate        time.Time        `json:"signal_date"`
+		ExecutionDate     time.Time        `json:"execution_date"`
+		Price             float64          `json:"price"`
+		PreClose          float64          `json:"pre_close"`
+		LimitUp           float64          `json:"limit_up"`
+		LimitDown         float64          `json:"limit_down"`
+		Suspended         bool             `json:"suspended"`
+		Board             string           `json:"board"`
+		Market            ExecutionMarket  `json:"market"`
+		Confidence        float64          `json:"confidence"`
+		DataSnapshot      DataSnapshot     `json:"data_snapshot"`
+		Source            SignalSource     `json:"source"`
 		Execution         *ExecutionRecord `json:"execution,omitempty"`
-		CreatedAt         time.Time       `json:"created_at"`
+		CreatedAt         time.Time        `json:"created_at"`
 	}{
 		ID:                entry.ID,
 		RunID:             entry.RunID,
@@ -489,6 +599,7 @@ func computeSignalHash(entry SignalEntry) string {
 		LimitDown:         entry.LimitDown,
 		Suspended:         entry.Suspended,
 		Board:             entry.Board,
+		Market:            entry.Market,
 		Confidence:        entry.Confidence,
 		DataSnapshot:      entry.DataSnapshot,
 		Source:            entry.Source,
@@ -497,6 +608,13 @@ func computeSignalHash(entry SignalEntry) string {
 	})
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+func signalIdentityHash(entry SignalEntry) string {
+	entry.Execution = nil
+	entry.ContentHash = ""
+	entry.CreatedAt = time.Time{}
+	return computeSignalHash(entry)
 }
 
 // ValidateSignals 校验账本中所有信号的哈希完整性

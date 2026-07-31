@@ -40,8 +40,8 @@ func TestMigrateLegacySQLitePreservesData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 9 {
-		t.Fatalf("schema version = %d, want 9", version)
+	if version != 10 {
+		t.Fatalf("schema version = %d, want 10", version)
 	}
 }
 

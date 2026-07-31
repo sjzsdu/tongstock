@@ -106,6 +106,7 @@ type Dependencies struct {
 	Newsfeed    *NewsfeedHandler
 	Diagnostics DiagnosticsProvider
 	Storage     *storage.Storage
+	Ledger      *ledger.SignalLedger
 }
 
 // NewServer creates a transport adapter from explicitly composed modules.
@@ -119,7 +120,7 @@ func NewServer(deps Dependencies) *Server {
 		stockpoolDB:           deps.StockPool,
 		stockinfoDB:           deps.StockInfo,
 		stockSearchIndexCache: stockSearchIndexCache{},
-		ledger:                ledger.NewSignalLedger(),
+		ledger:                deps.Ledger,
 		newsfeedHandler:       deps.Newsfeed,
 		diagnostics:           deps.Diagnostics,
 		storage:               deps.Storage,
@@ -127,6 +128,9 @@ func NewServer(deps Dependencies) *Server {
 	if deps.Storage != nil {
 		s.paradigmSnapshots = paradigm.NewDatasetSnapshotStore(deps.Storage)
 		s.experimentRegistry, _ = experiment.NewSQLiteRegistry(deps.Storage)
+	}
+	if s.ledger == nil {
+		s.ledger = ledger.NewSignalLedger()
 	}
 	return s
 }

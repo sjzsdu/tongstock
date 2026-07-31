@@ -56,6 +56,7 @@ import type {
   ForwardRunCompareRequest,
   ComparisonReport,
   SignalEntry,
+  ForwardSignalAppendRequest,
   EquityPoint,
   MonitoringReport,
   MonitoringRunRequest,
@@ -728,7 +729,7 @@ export const api = {
 	forwardRunSignals: (runId: string) =>
 		fetchJSON<{ signals: SignalEntry[]; total: number }>(`/api/forward/runs/${runId}/signals`),
 
-	forwardSignalAppend: (runId: string, payload: Partial<SignalEntry>) =>
+	forwardSignalAppend: (runId: string, payload: ForwardSignalAppendRequest) =>
 		fetchJSON<{ signal: SignalEntry }>(`/api/forward/runs/${runId}/signals`, {
 			method: 'POST',
 			body: JSON.stringify(payload),

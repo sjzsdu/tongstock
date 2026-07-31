@@ -8,6 +8,36 @@ import (
 	"github.com/sjzsdu/tongstock/internal/trading"
 )
 
+func newTestRun(t *testing.T, ledger *SignalLedger, version string, start time.Time) *ForwardRun {
+	t.Helper()
+	run, err := ledger.NewForwardRun(
+		version, start, 1_000_000,
+		trading.DefaultTradingConstraints(), trading.DefaultCostModel(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return run
+}
+
+func completeTestSignal(entry SignalEntry) SignalEntry {
+	if entry.DataSnapshot.DataHash == "" {
+		entry.DataSnapshot.DataHash = "server-captured-test-hash"
+	}
+	if entry.DataSnapshot.CapturedAt.IsZero() || entry.DataSnapshot.CapturedAt.After(entry.SignalDate) {
+		entry.DataSnapshot.CapturedAt = entry.SignalDate
+	}
+	if entry.Market.Date.IsZero() {
+		entry.Market = ExecutionMarket{
+			Date: entry.ExecutionDate, Open: entry.Price, High: entry.Price,
+			Low: entry.Price, Close: entry.Price, PreClose: entry.PreClose,
+			LimitUp: entry.LimitUp, LimitDown: entry.LimitDown,
+			Suspended: entry.Suspended, Board: entry.Board, Volume: 1,
+		}
+	}
+	return entry
+}
+
 // ============================================================================
 // SignalLedger 测试
 // ============================================================================
@@ -24,22 +54,24 @@ func TestNewSignalLedger(t *testing.T) {
 
 func TestAppendSignal(t *testing.T) {
 	ledger := NewSignalLedger()
+	start := time.Date(2024, 1, 15, 0, 0, 0, 0, time.Local)
+	run := newTestRun(t, ledger, "pv-001", start)
 
-	entry := SignalEntry{
-		ID:        "sig-001",
-		RunID:     "fr-test-20240115",
+	entry := completeTestSignal(SignalEntry{
+		ID:                "sig-001",
+		RunID:             run.ID,
 		ParadigmVersionID: "pv-001",
-		StockCode: "600000",
-		Direction: "buy",
-		SignalDate:   time.Date(2024, 1, 15, 0, 0, 0, 0, time.Local),
-		ExecutionDate: time.Date(2024, 1, 16, 0, 0, 0, 0, time.Local),
-		Price:         10.50,
-		PreClose:      10.00,
-		LimitUp:       11.00,
-		LimitDown:     9.00,
-		Suspended:     false,
-		Board:         "main",
-		Confidence:    0.85,
+		StockCode:         "600000",
+		Direction:         "buy",
+		SignalDate:        time.Date(2024, 1, 15, 0, 0, 0, 0, time.Local),
+		ExecutionDate:     time.Date(2024, 1, 16, 0, 0, 0, 0, time.Local),
+		Price:             10.50,
+		PreClose:          10.00,
+		LimitUp:           11.00,
+		LimitDown:         9.00,
+		Suspended:         false,
+		Board:             "main",
+		Confidence:        0.85,
 		DataSnapshot: DataSnapshot{
 			DatasetID:    "ds-v1",
 			FeatureSetID: "fs-v2",
@@ -52,7 +84,7 @@ func TestAppendSignal(t *testing.T) {
 			RuleDesc:    "突破前高放量",
 			TriggeredBy: "close > high_20 && volume > avg_volume_5 * 1.5",
 		},
-	}
+	})
 
 	if err := ledger.AppendSignal(entry); err != nil {
 		t.Fatalf("AppendSignal failed: %v", err)
@@ -73,49 +105,57 @@ func TestAppendSignal(t *testing.T) {
 
 func TestAppendSignalDuplicate(t *testing.T) {
 	ledger := NewSignalLedger()
+	now := time.Now()
+	run := newTestRun(t, ledger, "pv-001", now)
 
-	entry := SignalEntry{
-		ID:        "sig-001",
-		RunID:     "fr-test",
+	entry := completeTestSignal(SignalEntry{
+		ID:                "sig-001",
+		RunID:             run.ID,
 		ParadigmVersionID: "pv-001",
-		StockCode: "600000",
-		Direction: "buy",
-		SignalDate:   time.Now(),
-		ExecutionDate: time.Now(),
-		Price:         10.0,
+		StockCode:         "600000",
+		Direction:         "buy",
+		SignalDate:        time.Now(),
+		ExecutionDate:     time.Now(),
+		Price:             10.0,
 		DataSnapshot: DataSnapshot{
-			DatasetID: "ds-v1",
+			DatasetID:  "ds-v1",
 			CapturedAt: time.Now(),
 		},
-	}
+	})
 
 	if err := ledger.AppendSignal(entry); err != nil {
 		t.Fatal(err)
 	}
 
-	// 重复追加应该失败
+	// 同一个不可变信号的重试是幂等的。
+	if err := ledger.AppendSignal(entry); err != nil {
+		t.Fatalf("identical retry should be idempotent: %v", err)
+	}
+	entry.Price = 10.1
 	if err := ledger.AppendSignal(entry); err == nil {
-		t.Error("expected error for duplicate signal")
+		t.Error("expected conflict for same ID with different immutable content")
 	}
 }
 
 func TestGetSignalHashValidation(t *testing.T) {
 	ledger := NewSignalLedger()
+	now := time.Now()
+	run := newTestRun(t, ledger, "pv-001", now)
 
-	entry := SignalEntry{
-		ID:        "sig-001",
-		RunID:     "fr-test",
+	entry := completeTestSignal(SignalEntry{
+		ID:                "sig-001",
+		RunID:             run.ID,
 		ParadigmVersionID: "pv-001",
-		StockCode: "600000",
-		Direction: "buy",
-		SignalDate:   time.Now(),
-		ExecutionDate: time.Now(),
-		Price:         10.0,
+		StockCode:         "600000",
+		Direction:         "buy",
+		SignalDate:        time.Now(),
+		ExecutionDate:     time.Now(),
+		Price:             10.0,
 		DataSnapshot: DataSnapshot{
-			DatasetID: "ds-v1",
+			DatasetID:  "ds-v1",
 			CapturedAt: time.Now(),
 		},
-	}
+	})
 
 	if err := ledger.AppendSignal(entry); err != nil {
 		t.Fatal(err)
@@ -136,31 +176,33 @@ func TestGetSignalHashValidation(t *testing.T) {
 
 func TestUpdateExecution(t *testing.T) {
 	ledger := NewSignalLedger()
+	now := time.Now()
+	run := newTestRun(t, ledger, "pv-001", now)
 
-	entry := SignalEntry{
-		ID:        "sig-001",
-		RunID:     "fr-test",
+	entry := completeTestSignal(SignalEntry{
+		ID:                "sig-001",
+		RunID:             run.ID,
 		ParadigmVersionID: "pv-001",
-		StockCode: "600000",
-		Direction: "buy",
-		SignalDate:   time.Now(),
-		ExecutionDate: time.Now(),
-		Price:         10.0,
+		StockCode:         "600000",
+		Direction:         "buy",
+		SignalDate:        time.Now(),
+		ExecutionDate:     time.Now(),
+		Price:             10.0,
 		DataSnapshot: DataSnapshot{
-			DatasetID: "ds-v1",
+			DatasetID:  "ds-v1",
 			CapturedAt: time.Now(),
 		},
-	}
+	})
 
 	if err := ledger.AppendSignal(entry); err != nil {
 		t.Fatal(err)
 	}
 
 	exec := ExecutionRecord{
-		Status:    "filled",
-		ExecPrice: 10.1,
-		ExecQty:   1000,
-		Fee:       5.0,
+		Status:     "filled",
+		ExecPrice:  10.1,
+		ExecQty:    1000,
+		Fee:        5.0,
 		ExecutedAt: time.Now(),
 	}
 
@@ -186,9 +228,9 @@ func TestUpdateExecution(t *testing.T) {
 func TestListByRun(t *testing.T) {
 	ledger := NewSignalLedger()
 
-	runID := "fr-test-20240115"
 	date1 := time.Date(2024, 1, 15, 0, 0, 0, 0, time.Local)
 	date2 := time.Date(2024, 1, 16, 0, 0, 0, 0, time.Local)
+	runID := newTestRun(t, ledger, "pv-001", date1).ID
 
 	entries := []SignalEntry{
 		{
@@ -206,6 +248,7 @@ func TestListByRun(t *testing.T) {
 	}
 
 	for _, e := range entries {
+		e = completeTestSignal(e)
 		if err := ledger.AppendSignal(e); err != nil {
 			t.Fatal(err)
 		}
@@ -223,22 +266,25 @@ func TestListByRun(t *testing.T) {
 
 func TestValidateSignals(t *testing.T) {
 	ledger := NewSignalLedger()
+	now := time.Now()
+	run := newTestRun(t, ledger, "pv-001", now)
 
-	entry := SignalEntry{
-		ID:        "sig-001",
-		RunID:     "fr-test",
+	entry := completeTestSignal(SignalEntry{
+		ID:                "sig-001",
+		RunID:             run.ID,
 		ParadigmVersionID: "pv-001",
-		StockCode: "600000",
-		Direction: "buy",
-		SignalDate:   time.Now(),
-		ExecutionDate: time.Now(),
-		Price:         10.0,
+		StockCode:         "600000",
+		Direction:         "buy",
+		SignalDate:        time.Now(),
+		ExecutionDate:     time.Now(),
+		Price:             10.0,
 		DataSnapshot: DataSnapshot{
-			DatasetID: "ds-v1",
+			DatasetID:  "ds-v1",
 			CapturedAt: time.Now(),
 		},
-	}
+	})
 
+	entry = completeTestSignal(entry)
 	if err := ledger.AppendSignal(entry); err != nil {
 		t.Fatal(err)
 	}
@@ -309,18 +355,19 @@ func TestFinalizeRun(t *testing.T) {
 
 	// 追加一条已执行的信号
 	entry := SignalEntry{
-		ID:        "sig-001",
-		RunID:     run.ID,
+		ID:                "sig-001",
+		RunID:             run.ID,
 		ParadigmVersionID: "pv-001",
-		StockCode: "600000",
-		Direction: "buy",
-		SignalDate:   startDate,
-		ExecutionDate: startDate.AddDate(0, 0, 1),
-		Price:         10.0,
+		StockCode:         "600000",
+		Direction:         "buy",
+		SignalDate:        startDate,
+		ExecutionDate:     startDate.AddDate(0, 0, 1),
+		Price:             10.0,
 		DataSnapshot: DataSnapshot{
 			DatasetID: "ds", CapturedAt: startDate,
 		},
 	}
+	entry = completeTestSignal(entry)
 	if err := ledger.AppendSignal(entry); err != nil {
 		t.Fatal(err)
 	}
@@ -392,18 +439,19 @@ func TestExecuteSignalBuy(t *testing.T) {
 	entry := SignalEntry{
 		ID: "sig-001", RunID: run.ID, ParadigmVersionID: "pv-001",
 		StockCode: "600000", Direction: "buy",
-		SignalDate:   startDate,
+		SignalDate:    startDate,
 		ExecutionDate: startDate.AddDate(0, 0, 1),
-		Price: 10.0, PreClose: 9.5,
+		Price:         10.0, PreClose: 9.5,
 		LimitUp: 10.45, LimitDown: 8.55,
 		Suspended: false, Board: "main",
 		DataSnapshot: DataSnapshot{DatasetID: "ds", CapturedAt: startDate},
 	}
+	entry = completeTestSignal(entry)
 	if err := ledger.AppendSignal(entry); err != nil {
 		t.Fatal(err)
 	}
 
-	exec, err := engine.ExecuteSignal(entry)
+	exec, err := engine.ExecuteSignal(entry, entry.Market)
 	if err != nil {
 		t.Fatalf("ExecuteSignal failed: %v", err)
 	}
@@ -439,18 +487,19 @@ func TestExecuteSignalRejected(t *testing.T) {
 	entry := SignalEntry{
 		ID: "sig-suspended", RunID: run.ID, ParadigmVersionID: "pv-001",
 		StockCode: "600000", Direction: "buy",
-		SignalDate:   startDate,
+		SignalDate:    startDate,
 		ExecutionDate: startDate.AddDate(0, 0, 1),
-		Price: 10.0, PreClose: 9.5,
+		Price:         10.0, PreClose: 9.5,
 		LimitUp: 10.45, LimitDown: 8.55,
 		Suspended: true, Board: "main",
 		DataSnapshot: DataSnapshot{DatasetID: "ds", CapturedAt: startDate},
 	}
+	entry = completeTestSignal(entry)
 	if err := ledger.AppendSignal(entry); err != nil {
 		t.Fatal(err)
 	}
 
-	exec, err := engine.ExecuteSignal(entry)
+	exec, err := engine.ExecuteSignal(entry, entry.Market)
 	if err != nil {
 		t.Fatalf("ExecuteSignal failed: %v", err)
 	}
@@ -481,19 +530,22 @@ func TestExecuteAllPending(t *testing.T) {
 		entry := SignalEntry{
 			ID: fmt.Sprintf("sig-%03d", i), RunID: run.ID, ParadigmVersionID: "pv-001",
 			StockCode: "600000", Direction: "buy",
-			SignalDate:   startDate.AddDate(0, 0, i),
+			SignalDate:    startDate.AddDate(0, 0, i),
 			ExecutionDate: startDate.AddDate(0, 0, i+1),
-			Price: 10.0 + float64(i)*0.1, PreClose: 9.5,
+			Price:         10.0 + float64(i)*0.1, PreClose: 9.5,
 			LimitUp: 10.45, LimitDown: 8.55,
 			Suspended: false, Board: "main",
 			DataSnapshot: DataSnapshot{DatasetID: "ds", CapturedAt: startDate},
 		}
+		entry = completeTestSignal(entry)
 		if err := ledger.AppendSignal(entry); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	executed, rejected, err := engine.ExecuteAllPending()
+	executed, rejected, err := engine.ExecuteAllPending(
+		func(entry SignalEntry) (ExecutionMarket, error) { return entry.Market, nil },
+	)
 	if err != nil {
 		t.Fatalf("ExecuteAllPending failed: %v", err)
 	}

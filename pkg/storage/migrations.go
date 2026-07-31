@@ -497,6 +497,41 @@ CREATE INDEX IF NOT EXISTS idx_experiment_artifact_run
 	ON experiment_run_artifact(run_id, type, name);
 `,
 	},
+	{
+		version: 10,
+		name:    "persistent_forward_ledger",
+		sql: `
+CREATE TABLE IF NOT EXISTS forward_run (
+	id TEXT PRIMARY KEY,
+	paradigm_version_id TEXT NOT NULL,
+	start_date_ns INTEGER NOT NULL,
+	status TEXT NOT NULL,
+	updated_at_ns INTEGER NOT NULL,
+	data_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_forward_run_created
+	ON forward_run(start_date_ns DESC);
+CREATE INDEX IF NOT EXISTS idx_forward_run_paradigm
+	ON forward_run(paradigm_version_id, start_date_ns DESC);
+
+CREATE TABLE IF NOT EXISTS forward_signal (
+	id TEXT PRIMARY KEY,
+	run_id TEXT NOT NULL,
+	paradigm_version_id TEXT NOT NULL,
+	stock_code TEXT NOT NULL,
+	signal_date_ns INTEGER NOT NULL,
+	content_hash TEXT NOT NULL,
+	data_json TEXT NOT NULL,
+	FOREIGN KEY (run_id) REFERENCES forward_run(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_forward_signal_run
+	ON forward_signal(run_id, signal_date_ns, id);
+CREATE INDEX IF NOT EXISTS idx_forward_signal_paradigm
+	ON forward_signal(paradigm_version_id, signal_date_ns, id);
+CREATE INDEX IF NOT EXISTS idx_forward_signal_stock
+	ON forward_signal(stock_code, signal_date_ns, id);
+`,
+	},
 }
 
 // Migrate upgrades the SQLite database transactionally. Store constructors

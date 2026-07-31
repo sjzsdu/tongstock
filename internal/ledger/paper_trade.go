@@ -17,11 +17,12 @@ import (
 
 // PaperTradeEngine 前向 Paper Trading 引擎
 type PaperTradeEngine struct {
-	mu       sync.Mutex
-	ledger   *SignalLedger
-	engine   *trading.ExecutionEngine
-	runID    string
-	executed map[string]bool
+	mu        sync.Mutex
+	ledger    *SignalLedger
+	engine    *trading.ExecutionEngine
+	runID     string
+	executed  map[string]bool
+	positions map[string]PositionState
 }
 
 // NewPaperTradeEngine 创建前向交易引擎
@@ -33,18 +34,40 @@ func NewPaperTradeEngine(
 	initialCash float64,
 ) (*PaperTradeEngine, error) {
 	engine := trading.NewExecutionEngine(constraints, costModel)
-	engine.SetCash(initialCash)
+	run, err := ledger.GetRun(runID)
+	if err != nil {
+		return nil, err
+	}
+	cash := run.FinalCash
+	if cash == 0 && len(run.EquityCurve) == 0 {
+		cash = initialCash
+	}
+	engine.SetCash(cash)
+	positions := clonePositions(run.Positions)
+	for code, position := range positions {
+		engine.SetPosition(code, position.Quantity, position.BuyDate)
+	}
+	executed := make(map[string]bool)
+	for _, entry := range ledger.ListByRun(runID) {
+		if entry.Execution != nil {
+			executed[entry.ID] = true
+		}
+	}
 
 	return &PaperTradeEngine{
-		ledger:   ledger,
-		engine:   engine,
-		runID:    runID,
-		executed: make(map[string]bool),
+		ledger:    ledger,
+		engine:    engine,
+		runID:     runID,
+		executed:  executed,
+		positions: positions,
 	}, nil
 }
 
-// ExecuteSignal 执行一条信号 (遵守 A 股约束)
-func (pt *PaperTradeEngine) ExecuteSignal(entry SignalEntry) (*ExecutionRecord, error) {
+// ExecuteSignal 使用执行时由服务端读取的真实行情执行一条信号。
+func (pt *PaperTradeEngine) ExecuteSignal(
+	entry SignalEntry,
+	market ExecutionMarket,
+) (*ExecutionRecord, error) {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
 
@@ -55,17 +78,18 @@ func (pt *PaperTradeEngine) ExecuteSignal(entry SignalEntry) (*ExecutionRecord, 
 	quantity := pt.calcQuantity(entry)
 
 	snapshot := trading.MarketSnapshot{
-		Date:      entry.ExecutionDate,
-		StockCode: entry.StockCode,
-		Open:      entry.Price,
-		High:      entry.Price,
-		Low:       entry.Price,
-		Close:     entry.Price,
-		PreClose:  entry.PreClose,
-		Suspended: entry.Suspended,
-		LimitUp:   entry.LimitUp,
-		LimitDown: entry.LimitDown,
-		Board:     trading.Board(entry.Board),
+		Date:           market.Date,
+		StockCode:      entry.StockCode,
+		Open:           market.Open,
+		High:           market.High,
+		Low:            market.Low,
+		Close:          market.Close,
+		ExecutionPrice: market.Open,
+		PreClose:       market.PreClose,
+		Suspended:      market.Suspended,
+		LimitUp:        market.LimitUp,
+		LimitDown:      market.LimitDown,
+		Board:          trading.Board(market.Board),
 	}
 
 	order := trading.Order{
@@ -74,14 +98,15 @@ func (pt *PaperTradeEngine) ExecuteSignal(entry SignalEntry) (*ExecutionRecord, 
 		Side:          trading.OrderSide(entry.Direction),
 		Type:          trading.OrderMarket,
 		Quantity:      quantity,
+		SignalPrice:   entry.Price,
 		SignalDate:    entry.SignalDate,
-		ExecutionDate: entry.ExecutionDate,
+		ExecutionDate: market.Date,
 	}
 
 	result := pt.engine.Execute(order, snapshot)
 
 	exec := &ExecutionRecord{
-		ExecutedAt: entry.ExecutionDate,
+		Market: market, ExecutedAt: market.Date,
 	}
 
 	if result.Rejected {
@@ -93,16 +118,56 @@ func (pt *PaperTradeEngine) ExecuteSignal(entry SignalEntry) (*ExecutionRecord, 
 		exec.ExecQty = result.Fill.Quantity
 		exec.Fee = result.Fill.Cost.Total
 
-		pos, _ := pt.engine.GetPosition(entry.StockCode)
-		exec.HoldQty = pos.Quantity
-		exec.HoldCost = float64(pos.BuyDate.Unix())
-
-		if entry.Direction == "sell" {
-			exec.PnL = exec.ExecPrice*float64(exec.ExecQty) - exec.Fee
+		prior := pt.positions[entry.StockCode]
+		if entry.Direction == string(trading.OrderBuy) {
+			totalQty := prior.Quantity + exec.ExecQty
+			totalRawCost := prior.AveragePrice*float64(prior.Quantity) +
+				exec.ExecPrice*float64(exec.ExecQty)
+			buyDate := prior.BuyDate
+			if prior.Quantity == 0 || buyDate.IsZero() {
+				buyDate = market.Date
+			}
+			prior = PositionState{
+				StockCode: entry.StockCode, Quantity: totalQty,
+				AveragePrice:   totalRawCost / float64(totalQty),
+				AccruedBuyFees: prior.AccruedBuyFees + exec.Fee,
+				BuyDate:        buyDate, LastPrice: market.Close,
+				UpdatedAt: market.Date,
+			}
+			pt.positions[entry.StockCode] = prior
+		} else {
+			if prior.Quantity <= 0 {
+				return nil, fmt.Errorf("persisted position missing for filled sell %s", entry.ID)
+			}
+			allocatedBuyFees := prior.AccruedBuyFees * float64(exec.ExecQty) / float64(prior.Quantity)
+			exec.GrossPnL = (exec.ExecPrice - prior.AveragePrice) * float64(exec.ExecQty)
+			exec.PnL = exec.GrossPnL - allocatedBuyFees - exec.Fee
+			prior.Quantity -= exec.ExecQty
+			prior.AccruedBuyFees -= allocatedBuyFees
+			prior.LastPrice = market.Close
+			prior.UpdatedAt = market.Date
+			if prior.Quantity <= 0 {
+				delete(pt.positions, entry.StockCode)
+			} else {
+				pt.positions[entry.StockCode] = prior
+			}
+		}
+		if position, ok := pt.positions[entry.StockCode]; ok {
+			exec.HoldQty = position.Quantity
+			exec.HoldCost = position.AveragePrice
 		}
 	}
 
-	if err := pt.ledger.UpdateExecution(entry.ID, *exec); err != nil {
+	if position, ok := pt.positions[entry.StockCode]; ok {
+		position.LastPrice = market.Close
+		pt.positions[entry.StockCode] = position
+	}
+	point := EquityPoint{Date: market.Date, Cash: pt.engine.Cash()}
+	for _, position := range pt.positions {
+		point.Value += position.LastPrice * float64(position.Quantity)
+	}
+	point.Total = point.Cash + point.Value
+	if err := pt.ledger.RecordExecutionState(entry.ID, *exec, point.Cash, pt.positions, point); err != nil {
 		return nil, fmt.Errorf("failed to update ledger: %w", err)
 	}
 
@@ -110,8 +175,10 @@ func (pt *PaperTradeEngine) ExecuteSignal(entry SignalEntry) (*ExecutionRecord, 
 	return exec, nil
 }
 
-// ExecuteAllPending 执行账本中该 run 的所有未执行信号
-func (pt *PaperTradeEngine) ExecuteAllPending() (int, int, error) {
+type ExecutionMarketLoader func(SignalEntry) (ExecutionMarket, error)
+
+// ExecuteAllPending 使用调用方在执行时加载的市场数据执行所有待处理信号。
+func (pt *PaperTradeEngine) ExecuteAllPending(loadMarket ExecutionMarketLoader) (int, int, error) {
 	entries := pt.ledger.ListByRun(pt.runID)
 	executed := 0
 	rejected := 0
@@ -124,7 +191,11 @@ func (pt *PaperTradeEngine) ExecuteAllPending() (int, int, error) {
 			continue
 		}
 
-		exec, err := pt.ExecuteSignal(entry)
+		market, err := loadMarket(entry)
+		if err != nil {
+			return executed, rejected, fmt.Errorf("loading execution market for %s: %w", entry.ID, err)
+		}
+		exec, err := pt.ExecuteSignal(entry, market)
 		if err != nil {
 			return executed, rejected, fmt.Errorf("executing signal %s: %w", entry.ID, err)
 		}
@@ -138,7 +209,10 @@ func (pt *PaperTradeEngine) ExecuteAllPending() (int, int, error) {
 }
 
 // ExecuteByDate 执行指定日期范围内的信号
-func (pt *PaperTradeEngine) ExecuteByDate(from, to time.Time) (int, int, error) {
+func (pt *PaperTradeEngine) ExecuteByDate(
+	from, to time.Time,
+	loadMarket ExecutionMarketLoader,
+) (int, int, error) {
 	entries := pt.ledger.ListByRun(pt.runID)
 	executed := 0
 	rejected := 0
@@ -154,7 +228,11 @@ func (pt *PaperTradeEngine) ExecuteByDate(from, to time.Time) (int, int, error) 
 			continue
 		}
 
-		exec, err := pt.ExecuteSignal(entry)
+		market, err := loadMarket(entry)
+		if err != nil {
+			return executed, rejected, fmt.Errorf("loading execution market for %s: %w", entry.ID, err)
+		}
+		exec, err := pt.ExecuteSignal(entry, market)
 		if err != nil {
 			return executed, rejected, fmt.Errorf("executing signal %s: %w", entry.ID, err)
 		}
@@ -169,59 +247,11 @@ func (pt *PaperTradeEngine) ExecuteByDate(from, to time.Time) (int, int, error) 
 
 // GetEquityCurve 获取权益曲线
 func (pt *PaperTradeEngine) GetEquityCurve() []EquityPoint {
-	pt.mu.Lock()
-	defer pt.mu.Unlock()
-
-	entries := pt.ledger.ListByRun(pt.runID)
-	var cash float64
-	positions := make(map[string]PositionSnapshot)
-	var points []EquityPoint
-
 	run, err := pt.ledger.GetRun(pt.runID)
-	if err == nil {
-		cash = run.InitialCash
+	if err != nil {
+		return nil
 	}
-
-	for _, e := range entries {
-		if e.Execution == nil {
-			continue
-		}
-		switch e.Execution.Status {
-		case "filled", "partial":
-			if e.Direction == "buy" {
-				cash -= e.Execution.ExecPrice*float64(e.Execution.ExecQty) + e.Execution.Fee
-				positions[e.StockCode] = PositionSnapshot{
-					Quantity: e.Execution.ExecQty,
-					Cost:     e.Execution.ExecPrice,
-					Date:     e.ExecutionDate,
-				}
-			} else {
-				cash += e.Execution.ExecPrice*float64(e.Execution.ExecQty) - e.Execution.Fee
-				if pos, ok := positions[e.StockCode]; ok {
-					pos.Quantity -= e.Execution.ExecQty
-					if pos.Quantity <= 0 {
-						delete(positions, e.StockCode)
-					} else {
-						positions[e.StockCode] = pos
-					}
-				}
-			}
-		}
-
-		var positionValue float64
-		for _, pos := range positions {
-			positionValue += e.Price * float64(pos.Quantity)
-		}
-
-		points = append(points, EquityPoint{
-			Date:  e.SignalDate,
-			Cash:  cash,
-			Value: positionValue,
-			Total: cash + positionValue,
-		})
-	}
-
-	return points
+	return append([]EquityPoint(nil), run.EquityCurve...)
 }
 
 // calcQuantity 基于方向和可用资金/持仓计算下单数量
