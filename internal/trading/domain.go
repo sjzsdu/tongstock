@@ -223,6 +223,7 @@ type Order struct {
 	Type          OrderType `json:"type"`
 	Quantity      int       `json:"quantity"`
 	LimitPrice    float64   `json:"limit_price,omitempty"`
+	SignalPrice   float64   `json:"signal_price,omitempty"`
 	SignalDate    time.Time `json:"signal_date"`    // 信号产生日期
 	ExecutionDate time.Time `json:"execution_date"` // 预期执行日期
 	Reason        string    `json:"reason"`
@@ -259,18 +260,19 @@ const (
 
 // MarketSnapshot 某时点的市场快照。
 type MarketSnapshot struct {
-	Date      time.Time `json:"date"`
-	StockCode string    `json:"stock_code"`
-	Open      float64   `json:"open"`
-	High      float64   `json:"high"`
-	Low       float64   `json:"low"`
-	Close     float64   `json:"close"`
-	PreClose  float64   `json:"pre_close"`  // 前收盘价
-	Suspended bool      `json:"suspended"`  // 是否停牌
-	LimitUp   float64   `json:"limit_up"`   // 涨停价
-	LimitDown float64   `json:"limit_down"` // 跌停价
-	Board     Board     `json:"board"`
-	IPODays   int       `json:"ipo_days"` // 上市天数
+	Date           time.Time `json:"date"`
+	StockCode      string    `json:"stock_code"`
+	Open           float64   `json:"open"`
+	High           float64   `json:"high"`
+	Low            float64   `json:"low"`
+	Close          float64   `json:"close"`
+	ExecutionPrice float64   `json:"execution_price,omitempty"` // 指定本订单的成交基准价; 0 时兼容使用收盘价
+	PreClose       float64   `json:"pre_close"`                 // 前收盘价
+	Suspended      bool      `json:"suspended"`                 // 是否停牌
+	LimitUp        float64   `json:"limit_up"`                  // 涨停价
+	LimitDown      float64   `json:"limit_down"`                // 跌停价
+	Board          Board     `json:"board"`
+	IPODays        int       `json:"ipo_days"` // 上市天数
 }
 
 // CalculateLimits 基于前收盘价计算涨跌停价格。
@@ -306,13 +308,14 @@ type ExecutionResult struct {
 type RejectCode string
 
 const (
-	RejectPriceLimit    RejectCode = "price_limit"  // 涨跌停无法成交
-	RejectSuspended     RejectCode = "suspended"    // 停牌
-	RejectT1Restriction RejectCode = "t_1"          // T+1 限制
-	RejectInvalidQty    RejectCode = "invalid_qty"  // 数量不合法
-	RejectInsufficient  RejectCode = "insufficient" // 资金或持仓不足
-	RejectZeroQuantity  RejectCode = "zero_qty"     // 数量为 0
-	RejectBoardLimit    RejectCode = "board_limit"  // 板块涨跌停
+	RejectPriceLimit        RejectCode = "price_limit"         // 涨跌停无法成交
+	RejectSuspended         RejectCode = "suspended"           // 停牌
+	RejectT1Restriction     RejectCode = "t_1"                 // T+1 限制
+	RejectInvalidQty        RejectCode = "invalid_qty"         // 数量不合法
+	RejectInsufficient      RejectCode = "insufficient"        // 资金或持仓不足
+	RejectZeroQuantity      RejectCode = "zero_qty"            // 数量为 0
+	RejectBoardLimit        RejectCode = "board_limit"         // 板块涨跌停
+	RejectMissingMarketData RejectCode = "missing_market_data" // 缺少真实行情
 )
 
 func (r RejectCode) String() string {
@@ -331,6 +334,8 @@ func (r RejectCode) String() string {
 		return "交易数量为 0"
 	case RejectBoardLimit:
 		return "板块涨跌停限制"
+	case RejectMissingMarketData:
+		return "缺少真实行情, 拒绝执行"
 	default:
 		return string(r)
 	}
@@ -371,6 +376,11 @@ func (e *ExecutionEngine) SetCash(cash float64) {
 	e.cash = cash
 }
 
+// Cash 返回当前可用资金。
+func (e *ExecutionEngine) Cash() float64 {
+	return e.cash
+}
+
 // SetPosition 设置持仓。
 func (e *ExecutionEngine) SetPosition(stockCode string, quantity int, buyDate time.Time) {
 	e.positions[stockCode] = Position{Quantity: quantity, BuyDate: buyDate}
@@ -385,6 +395,16 @@ func (e *ExecutionEngine) GetPosition(stockCode string) (Position, bool) {
 // Execute 执行订单, 返回执行结果。
 func (e *ExecutionEngine) Execute(order Order, snapshot MarketSnapshot) ExecutionResult {
 	result := ExecutionResult{Order: order}
+	basePrice := snapshot.ExecutionPrice
+	if basePrice <= 0 {
+		basePrice = snapshot.Close
+	}
+	if basePrice <= 0 {
+		result.Rejected = true
+		result.RejectCode = RejectMissingMarketData
+		result.RejectMsg = "成交基准价缺失或无效"
+		return result
+	}
 
 	// Step 1: 数量校验
 	adjustedQty, valid := e.constraints.ValidateQuantity(order.Quantity)
@@ -417,14 +437,14 @@ func (e *ExecutionEngine) Execute(order Order, snapshot MarketSnapshot) Executio
 	inIPO := e.constraints.IPODays > 0 && snapshot.IPODays <= e.constraints.IPODays
 	if e.constraints.EnablePriceLimit && !inIPO {
 		if order.Side == OrderBuy {
-			if snapshot.Close >= snapshot.LimitUp {
+			if snapshot.LimitUp > 0 && basePrice >= snapshot.LimitUp {
 				result.Rejected = true
 				result.RejectCode = RejectPriceLimit
 				result.RejectMsg = fmt.Sprintf("涨停价 %.2f, 无法买入", snapshot.LimitUp)
 				return result
 			}
 		} else if order.Side == OrderSell {
-			if snapshot.Close <= snapshot.LimitDown {
+			if snapshot.LimitDown > 0 && basePrice <= snapshot.LimitDown {
 				result.Rejected = true
 				result.RejectCode = RejectPriceLimit
 				result.RejectMsg = fmt.Sprintf("跌停价 %.2f, 无法卖出", snapshot.LimitDown)
@@ -455,7 +475,7 @@ func (e *ExecutionEngine) Execute(order Order, snapshot MarketSnapshot) Executio
 
 	// Step 5: 资金检查 (买入)
 	if order.Side == OrderBuy {
-		estPrice := snapshot.Close * (1 + e.costModel.SlippageBps/10000.0)
+		estPrice := basePrice * (1 + e.costModel.SlippageBps/10000.0)
 		estCost := e.costModel.CalculateCost(OrderBuy, estPrice, adjustedQty)
 		required := estPrice*float64(adjustedQty) + estCost.Total
 		if required > e.cash {
@@ -467,7 +487,7 @@ func (e *ExecutionEngine) Execute(order Order, snapshot MarketSnapshot) Executio
 	}
 
 	// Step 6: 计算实际成交价 (含滑点)
-	execPrice := e.applySlippage(snapshot.Close, order.Side)
+	execPrice := e.applySlippage(basePrice, order.Side)
 
 	// Step 7: 扣减成本
 	cost := e.costModel.CalculateCost(order.Side, execPrice, adjustedQty)
@@ -480,10 +500,13 @@ func (e *ExecutionEngine) Execute(order Order, snapshot MarketSnapshot) Executio
 		Side:          order.Side,
 		Quantity:      adjustedQty,
 		Price:         execPrice,
-		SignalPrice:   snapshot.Close,
+		SignalPrice:   order.SignalPrice,
 		ExecutionDate: snapshot.Date,
 		Cost:          cost,
 		Status:        FillFilled,
+	}
+	if fill.SignalPrice <= 0 {
+		fill.SignalPrice = snapshot.Close
 	}
 
 	// Step 9: 更新持仓和资金
