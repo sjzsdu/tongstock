@@ -398,6 +398,45 @@ CREATE TABLE IF NOT EXISTS quality_gate_config (
 );
 `,
 	},
+	{
+		version: 8,
+		name:    "immutable_kline_snapshot_content",
+		sql: `
+CREATE TABLE IF NOT EXISTS snapshot_kline_manifest (
+	snapshot_id TEXT NOT NULL,
+	code TEXT NOT NULL,
+	ktype INTEGER NOT NULL,
+	start_date TEXT NOT NULL,
+	end_date TEXT NOT NULL,
+	row_count INTEGER NOT NULL,
+	content_hash TEXT NOT NULL,
+	PRIMARY KEY (snapshot_id, code, ktype),
+	FOREIGN KEY (snapshot_id) REFERENCES dataset_snapshot(id)
+);
+CREATE INDEX IF NOT EXISTS idx_snapshot_kline_manifest_snapshot
+	ON snapshot_kline_manifest(snapshot_id);
+
+CREATE TABLE IF NOT EXISTS snapshot_kline_bar (
+	snapshot_id TEXT NOT NULL,
+	code TEXT NOT NULL,
+	ktype INTEGER NOT NULL,
+	date TEXT NOT NULL,
+	open REAL NOT NULL,
+	high REAL NOT NULL,
+	low REAL NOT NULL,
+	close REAL NOT NULL,
+	volume REAL NOT NULL,
+	amount REAL NOT NULL,
+	PRIMARY KEY (snapshot_id, code, ktype, date),
+	FOREIGN KEY (snapshot_id) REFERENCES dataset_snapshot(id)
+);
+CREATE INDEX IF NOT EXISTS idx_snapshot_kline_bar_lookup
+	ON snapshot_kline_bar(snapshot_id, code, ktype, date);
+`,
+		after: func(tx *sql.Tx) error {
+			return ensureSQLiteColumn(tx, "dataset_snapshot", "content_hash", `TEXT NOT NULL DEFAULT ''`)
+		},
+	},
 }
 
 // Migrate upgrades the SQLite database transactionally. Store constructors

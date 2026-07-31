@@ -24,6 +24,20 @@ func setupSnapshotStore(t *testing.T) (*DatasetSnapshotStore, string) {
 	return NewDatasetSnapshotStore(s), path
 }
 
+func setupKlineSnapshotStore(t *testing.T) (*DatasetSnapshotStore, *storage.Storage) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "kline_snapshot_test.db")
+	s, err := storage.New(storage.Config{Driver: "sqlite3", DSN: path})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	if err := s.Migrate(); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	return NewDatasetSnapshotStore(s), s
+}
+
 func makeDataSource(srcType, version string, asOf time.Time) DataSource {
 	h := md5.Sum([]byte(version + srcType))
 	return DataSource{
@@ -127,6 +141,124 @@ func TestDatasetSnapshot_Immutability(t *testing.T) {
 	// DateRange 应保持一致
 	if loaded.DateRange.End != "2023-12-31" {
 		t.Errorf("DateRange.End should be 2023-12-31, got %s", loaded.DateRange.End)
+	}
+
+	replacement := *snap
+	replacement.Version = "v2"
+	replacement.Description = "must not replace"
+	if err := store.Create(&replacement); err == nil {
+		t.Fatal("duplicate snapshot ID must be rejected")
+	}
+	loaded, err = store.GetByID("snap-immutable")
+	if err != nil {
+		t.Fatalf("GetByID after duplicate: %v", err)
+	}
+	if loaded.Version != "v1" || loaded.Description == "must not replace" {
+		t.Fatal("immutable snapshot was changed by duplicate Create")
+	}
+}
+
+func TestDatasetSnapshot_CreateKlineSnapshotFreezesRealContent(t *testing.T) {
+	store, raw := setupKlineSnapshotStore(t)
+	rows := []struct {
+		code, date                     string
+		open, high, low, close, volume float64
+	}{
+		{"000001", "20240102", 10, 11, 9, 10.5, 1000},
+		{"000001", "20240103", 10.5, 12, 10, 11.5, 1200},
+		{"600000", "20240102", 8, 8.5, 7.8, 8.2, 900},
+		{"600000", "20240103", 8.2, 8.8, 8.1, 8.6, 1100},
+	}
+	for _, row := range rows {
+		if _, err := raw.DB().Exec(`INSERT INTO kline
+			(code, ktype, date, open, high, low, close, volume, amount)
+			VALUES (?, 9, ?, ?, ?, ?, ?, ?, ?)`,
+			row.code, row.date, row.open, row.high, row.low, row.close,
+			row.volume, row.close*row.volume); err != nil {
+			t.Fatalf("seed K line: %v", err)
+		}
+	}
+
+	snapshot := &DatasetSnapshot{
+		ID:        "snap-real-kline",
+		Version:   "v1",
+		DateRange: DateRange{Start: "2024-01-02", End: "2024-01-03"},
+		Universe:  []string{"600000", "000001"},
+		Market:    "ALL",
+	}
+	if err := store.CreateKlineSnapshot(snapshot, 9); err != nil {
+		t.Fatalf("CreateKlineSnapshot: %v", err)
+	}
+	if snapshot.ContentHash == "" || len(snapshot.KlineManifests) != 2 {
+		t.Fatalf("snapshot has no frozen content manifest: %+v", snapshot)
+	}
+	if err := store.VerifyContent(snapshot.ID); err != nil {
+		t.Fatalf("VerifyContent: %v", err)
+	}
+
+	before, err := store.GetFrozenKlines(snapshot.ID, "000001", 9)
+	if err != nil {
+		t.Fatalf("GetFrozenKlines: %v", err)
+	}
+	if len(before) != 2 || before[1].Close != 11.5 {
+		t.Fatalf("unexpected frozen bars: %+v", before)
+	}
+
+	// 修改可变的实时 K 线表，已冻结快照必须保持原值。
+	if _, err := raw.DB().Exec(`UPDATE kline SET close = 99 WHERE code = '000001' AND ktype = 9 AND date = '20240103'`); err != nil {
+		t.Fatalf("mutate live K line: %v", err)
+	}
+	after, err := store.GetFrozenKlines(snapshot.ID, "000001", 9)
+	if err != nil {
+		t.Fatalf("GetFrozenKlines after live mutation: %v", err)
+	}
+	if after[1].Close != before[1].Close {
+		t.Fatalf("frozen snapshot changed with live table: before %.2f after %.2f", before[1].Close, after[1].Close)
+	}
+
+	duplicate := *snapshot
+	duplicate.Version = "v2"
+	if err := store.CreateKlineSnapshot(&duplicate, 9); err == nil {
+		t.Fatal("duplicate frozen snapshot ID must be rejected")
+	}
+}
+
+func TestDatasetSnapshot_CreateKlineSnapshotRejectsMissingAndDetectsTampering(t *testing.T) {
+	store, raw := setupKlineSnapshotStore(t)
+	if _, err := raw.DB().Exec(`INSERT INTO kline
+		(code, ktype, date, open, high, low, close, volume, amount)
+		VALUES ('000001', 9, '20240102', 10, 11, 9, 10.5, 1000, 10500)`); err != nil {
+		t.Fatalf("seed K line: %v", err)
+	}
+
+	missing := &DatasetSnapshot{
+		ID:        "snap-missing-code",
+		Version:   "v1",
+		DateRange: DateRange{Start: "2024-01-02", End: "2024-01-03"},
+		Universe:  []string{"000001", "600000"},
+	}
+	if err := store.CreateKlineSnapshot(missing, 9); err == nil {
+		t.Fatal("snapshot with missing real data must fail")
+	}
+	if _, err := store.GetByID(missing.ID); err == nil {
+		t.Fatal("failed snapshot creation must roll back metadata")
+	}
+
+	valid := &DatasetSnapshot{
+		ID:        "snap-tamper",
+		Version:   "v1",
+		DateRange: DateRange{Start: "2024-01-02", End: "2024-01-03"},
+		Universe:  []string{"000001"},
+	}
+	if err := store.CreateKlineSnapshot(valid, 9); err != nil {
+		t.Fatalf("CreateKlineSnapshot: %v", err)
+	}
+	if _, err := raw.DB().Exec(`UPDATE snapshot_kline_bar SET close = 88
+		WHERE snapshot_id = ? AND code = '000001' AND ktype = 9`, valid.ID); err != nil {
+		t.Fatalf("tamper frozen K line: %v", err)
+	}
+	if _, err := store.GetFrozenKlines(valid.ID, "000001", 9); err == nil {
+		t.Fatal("tampered frozen content must fail hash verification")
 	}
 }
 

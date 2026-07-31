@@ -110,6 +110,34 @@ type DatasetSnapshot struct {
 	Sources []DataSource `json:"sources,omitempty"`
 	// Frozen 标记快照已冻结 (不可变), 由系统在创建后自动设置.
 	Frozen bool `json:"frozen,omitempty"`
+	// ContentHash 是所有冻结数据分片清单的哈希。空值表示旧版仅元数据快照，
+	// 不能作为可复现实验的数据输入。
+	ContentHash string `json:"content_hash,omitempty"`
+	// KlineManifests 记录冻结到快照内的真实 K 线分片。
+	KlineManifests []KlineSnapshotManifest `json:"kline_manifests,omitempty"`
+}
+
+// KlineSnapshotManifest 描述快照内一只证券的一种 K 线数据分片。
+type KlineSnapshotManifest struct {
+	Code        string `json:"code"`
+	KType       uint8  `json:"ktype"`
+	StartDate   string `json:"start_date"`
+	EndDate     string `json:"end_date"`
+	RowCount    int    `json:"row_count"`
+	ContentHash string `json:"content_hash"`
+}
+
+// SnapshotKlineBar 是不可变快照内保存的原始 K 线记录。
+type SnapshotKlineBar struct {
+	Code   string    `json:"code"`
+	KType  uint8     `json:"ktype"`
+	Date   time.Time `json:"date"`
+	Open   float64   `json:"open"`
+	High   float64   `json:"high"`
+	Low    float64   `json:"low"`
+	Close  float64   `json:"close"`
+	Volume float64   `json:"volume"`
+	Amount float64   `json:"amount"`
 }
 
 // DateRange is an inclusive date range.
