@@ -146,20 +146,20 @@ func (s *XueQiuSource) parseNewsItems(items []xueQiuStatus) []*newsfeed.NewsItem
 	var news []*newsfeed.NewsItem
 	for _, item := range items {
 		newsItem := &newsfeed.NewsItem{
-			ID:          generateID(),
-			Source:      newsfeed.SourceXueQiu,
-			NewsType:    newsfeed.NewsTypeDiscussion,
-			Title:       cleanText(item.Title),
-			Summary:     cleanText(item.Text),
-			Content:     cleanText(item.Text),
-			PublishTime: parseTime(item.CreateAt, []string{"2006-01-02T15:04:05.000Z"}),
-			HotScore:    item.ReplyCount + item.LikeCount,
-			Tags:        extractTags(item.Text),
+			ID:            generateID(),
+			Source:        newsfeed.SourceXueQiu,
+			NewsType:      newsfeed.NewsTypeDiscussion,
+			Title:         cleanText(item.Title),
+			Summary:       cleanText(item.Text),
+			Content:       cleanText(item.Text),
+			PublishTime:   parseTime(item.CreateAt, []string{"2006-01-02T15:04:05.000Z"}),
+			HotScore:      item.ReplyCount + item.LikeCount,
+			Tags:          extractTags(item.Text),
 			RelatedStocks: extractStockCodes(item.Text),
-			URL:         s.baseURL + item.Target,
-			OriginalID:  fmt.Sprintf("xq_%d", item.ID),
-			CreatedAt:   time.Now(),
-			UpdatedAt:   time.Now(),
+			URL:           s.baseURL + item.Target,
+			OriginalID:    fmt.Sprintf("xq_%d", item.ID),
+			CreatedAt:     time.Now(),
+			UpdatedAt:     time.Now(),
 		}
 		news = append(news, newsItem)
 	}

@@ -34,25 +34,6 @@ function agentDisplayName(id: string): string {
   return map[id] ?? id ?? '通用助手';
 }
 
-/** 解析 session 名中的 agent 部分（例如 web:analyst:stamp） */
-function extractAgentFromSession(session: string): string | null {
-  const parts = session.split(':');
-  if (parts.length >= 2) {
-    // 形如 web:agent:stamp 或 web:agent
-    if (parts[0] === 'web') return parts[1];
-  }
-  return null;
-}
-
-/** 友好的对话标题，避免暴露底层 session id */
-function conversationTitle(session: AgentSessionInfo): string {
-  const agent = session.agent ? agentDisplayName(session.agent) : '对话';
-  const time = session.updated_at
-    ? new Date(session.updated_at).toLocaleString()
-    : '';
-  return `${agent}${time ? ` · ${time}` : ''}`;
-}
-
 export default function AgentWeb() {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [sessions, setSessions] = useState<AgentSessionInfo[]>([]);
@@ -457,6 +438,3 @@ session: ${session}`}
     </Layout>
   );
 }
-
-// 保留给外部可能需要的辅助函数
-export { extractAgentFromSession, conversationTitle };

@@ -33,7 +33,7 @@ export default function Paradigms() {
     }
   };
 
-  useEffect(() => { load(); }, [filters]);
+  useEffect(() => { queueMicrotask(() => void load()); }, [filters]);
 
   const runBacktest = async (record: ParadigmItem) => {
     try {

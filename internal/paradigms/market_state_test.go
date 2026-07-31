@@ -280,14 +280,14 @@ func TestAddPerformance(t *testing.T) {
 	profile := NewEnvironmentProfile()
 
 	perf := LayerPerformance{
-		LayerID:    "market_trend",
-		LayerName:  "市场趋势",
-		Count:      50,
-		WinRate:    0.55,
-		AvgReturn:  0.08,
+		LayerID:     "market_trend",
+		LayerName:   "市场趋势",
+		Count:       50,
+		WinRate:     0.55,
+		AvgReturn:   0.08,
 		SharpeRatio: 1.5,
-		SampleSize: 252,
-		Confidence: 0.8,
+		SampleSize:  252,
+		Confidence:  0.8,
 	}
 
 	profile.AddPerformance(perf)
@@ -483,7 +483,7 @@ func TestGenerateLayeredReportEmpty(t *testing.T) {
 func TestLayerPerformanceIsValid(t *testing.T) {
 	valid := LayerPerformance{
 		SampleSize: 200,
-		Confidence:  0.85,
+		Confidence: 0.85,
 	}
 	if !valid.IsValid() {
 		t.Error("expected valid performance")
@@ -491,7 +491,7 @@ func TestLayerPerformanceIsValid(t *testing.T) {
 
 	invalid := LayerPerformance{
 		SampleSize: 10,
-		Confidence:  0.3,
+		Confidence: 0.3,
 	}
 	if invalid.IsValid() {
 		t.Error("expected invalid performance")

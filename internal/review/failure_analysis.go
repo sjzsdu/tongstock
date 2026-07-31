@@ -16,99 +16,99 @@ import (
 type FailureCategory string
 
 const (
-	FailureModelDegradation  FailureCategory = "model_degradation"  // 模型退化
-	FailureMarketRegime      FailureCategory = "market_regime"      // 市场切换
-	FailureDataQuality       FailureCategory = "data_quality"       // 数据质量
-	FailureExecution         FailureCategory = "execution"          // 执行失败
-	FailureRiskManagement    FailureCategory = "risk_management"    // 风险管理
-	FailureLiquidity         FailureCategory = "liquidity"          // 流动性
-	FailureUserDecision      FailureCategory = "user_decision"      // 用户决策
-	FailureSystemError       FailureCategory = "system_error"       // 系统错误
-	FailureOverfitting       FailureCategory = "overfitting"        // 过拟合
-	FailureParameterDrift    FailureCategory = "parameter_drift"    // 参数漂移
+	FailureModelDegradation FailureCategory = "model_degradation" // 模型退化
+	FailureMarketRegime     FailureCategory = "market_regime"     // 市场切换
+	FailureDataQuality      FailureCategory = "data_quality"      // 数据质量
+	FailureExecution        FailureCategory = "execution"         // 执行失败
+	FailureRiskManagement   FailureCategory = "risk_management"   // 风险管理
+	FailureLiquidity        FailureCategory = "liquidity"         // 流动性
+	FailureUserDecision     FailureCategory = "user_decision"     // 用户决策
+	FailureSystemError      FailureCategory = "system_error"      // 系统错误
+	FailureOverfitting      FailureCategory = "overfitting"       // 过拟合
+	FailureParameterDrift   FailureCategory = "parameter_drift"   // 参数漂移
 )
 
 // FailureSeverity 失败严重度
 type FailureSeverity string
 
 const (
-	SeverityInfo      FailureSeverity = "info"
-	SeverityWarning   FailureSeverity = "warning"
-	SeverityCritical  FailureSeverity = "critical"
+	SeverityInfo         FailureSeverity = "info"
+	SeverityWarning      FailureSeverity = "warning"
+	SeverityCritical     FailureSeverity = "critical"
 	SeverityCatastrophic FailureSeverity = "catastrophic"
 )
 
 // FailureEvent 失败事件
 type FailureEvent struct {
-	ID          string         `json:"id"`
+	ID          string          `json:"id"`
 	Category    FailureCategory `json:"category"`
 	Severity    FailureSeverity `json:"severity"`
-	Type        string         `json:"type"`
-	Title       string         `json:"title"`
-	Description string         `json:"description"`
+	Type        string          `json:"type"`
+	Title       string          `json:"title"`
+	Description string          `json:"description"`
 
 	// 关联对象
-	SourceID    string `json:"source_id"`
-	SourceType  string `json:"source_type"`
-	ParadigmID  string `json:"paradigm_id,omitempty"`
-	SignalID    string `json:"signal_id,omitempty"`
-	OrderID     string `json:"order_id,omitempty"`
+	SourceID   string `json:"source_id"`
+	SourceType string `json:"source_type"`
+	ParadigmID string `json:"paradigm_id,omitempty"`
+	SignalID   string `json:"signal_id,omitempty"`
+	OrderID    string `json:"order_id,omitempty"`
 
 	// 量化特征
-	Metric      string  `json:"metric"`
-	Expected    float64 `json:"expected"`
-	Actual      float64 `json:"actual"`
-	Deviation   float64 `json:"deviation"`
+	Metric    string  `json:"metric"`
+	Expected  float64 `json:"expected"`
+	Actual    float64 `json:"actual"`
+	Deviation float64 `json:"deviation"`
 
 	// 时间
-	DetectedAt  time.Time `json:"detected_at"`
-	ResolvedAt  *time.Time `json:"resolved_at,omitempty"`
-	Duration    int64     `json:"duration_minutes,omitempty"`
+	DetectedAt time.Time  `json:"detected_at"`
+	ResolvedAt *time.Time `json:"resolved_at,omitempty"`
+	Duration   int64      `json:"duration_minutes,omitempty"`
 
 	// 根因分析
-	RootCause   string   `json:"root_cause,omitempty"`
+	RootCause           string   `json:"root_cause,omitempty"`
 	ContributingFactors []string `json:"contributing_factors,omitempty"`
-	Correction  string   `json:"correction,omitempty"`
+	Correction          string   `json:"correction,omitempty"`
 
 	// 状态
-	Status      string `json:"status"` // open / investigating / resolved / mitigated
+	Status          string `json:"status"` // open / investigating / resolved / mitigated
 	RelatedReviewID string `json:"related_review_id,omitempty"`
 }
 
 // FailureAnalysisResult 失败分析结果
 type FailureAnalysisResult struct {
-	TotalFailures      int                        `json:"total_failures"`
-	OpenFailures       int                        `json:"open_failures"`
-	ByCategory         map[FailureCategory]int    `json:"by_category"`
-	BySeverity         map[FailureSeverity]int    `json:"by_severity"`
-	Patterns           []FailurePattern           `json:"patterns"`
-	TopCauses          []RootCauseItem            `json:"top_causes"`
-	FailureRate        float64                    `json:"failure_rate"`
-	MeanTimeToDetect   time.Duration              `json:"mean_time_to_detect"`
-	MeanTimeToResolve  time.Duration              `json:"mean_time_to_resolve"`
-	RecurringFailures  int                        `json:"recurring_failures"`
+	TotalFailures     int                     `json:"total_failures"`
+	OpenFailures      int                     `json:"open_failures"`
+	ByCategory        map[FailureCategory]int `json:"by_category"`
+	BySeverity        map[FailureSeverity]int `json:"by_severity"`
+	Patterns          []FailurePattern        `json:"patterns"`
+	TopCauses         []RootCauseItem         `json:"top_causes"`
+	FailureRate       float64                 `json:"failure_rate"`
+	MeanTimeToDetect  time.Duration           `json:"mean_time_to_detect"`
+	MeanTimeToResolve time.Duration           `json:"mean_time_to_resolve"`
+	RecurringFailures int                     `json:"recurring_failures"`
 }
 
 // FailurePattern 失败模式
 type FailurePattern struct {
-	ID              string          `json:"id"`
-	PatternType     string          `json:"pattern_type"`
-	Name            string          `json:"name"`
-	Description     string          `json:"description"`
-	OccurrenceCount int             `json:"occurrence_count"`
-	AffectedAreas   []string        `json:"affected_areas"`
-	DetectedPattern []float64       `json:"detected_pattern"`
-	Severity        string          `json:"severity"`
-	Recommendation  string          `json:"recommendation"`
+	ID              string    `json:"id"`
+	PatternType     string    `json:"pattern_type"`
+	Name            string    `json:"name"`
+	Description     string    `json:"description"`
+	OccurrenceCount int       `json:"occurrence_count"`
+	AffectedAreas   []string  `json:"affected_areas"`
+	DetectedPattern []float64 `json:"detected_pattern"`
+	Severity        string    `json:"severity"`
+	Recommendation  string    `json:"recommendation"`
 }
 
 // RootCauseItem 根因项目
 type RootCauseItem struct {
-	Factor      string  `json:"factor"`
-	Count       int     `json:"count"`
-	Percentage  float64 `json:"percentage"`
-	FirstSeen   time.Time `json:"first_seen"`
-	LastSeen    time.Time `json:"last_seen"`
+	Factor     string    `json:"factor"`
+	Count      int       `json:"count"`
+	Percentage float64   `json:"percentage"`
+	FirstSeen  time.Time `json:"first_seen"`
+	LastSeen   time.Time `json:"last_seen"`
 }
 
 // ============================================================================

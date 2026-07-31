@@ -14,9 +14,9 @@ type HoldingPeriodType string
 
 const (
 	HoldingIntraday  HoldingPeriodType = "intraday"
-	HoldingShort     HoldingPeriodType = "short"   // 1-5 days
-	HoldingMedium    HoldingPeriodType = "medium"  // 5-20 days
-	HoldingLong      HoldingPeriodType = "long"    // 20+ days
+	HoldingShort     HoldingPeriodType = "short"  // 1-5 days
+	HoldingMedium    HoldingPeriodType = "medium" // 5-20 days
+	HoldingLong      HoldingPeriodType = "long"   // 20+ days
 	HoldingUndefined HoldingPeriodType = "undefined"
 )
 
@@ -73,31 +73,31 @@ func HoldingPeriodToMaxDrawdown(hp HoldingPeriodType) float64 {
 type MarketRegime string
 
 const (
-	RegimeBull      MarketRegime = "bull"
-	RegimeBear      MarketRegime = "bear"
-	RegimeRange     MarketRegime = "range"
-	RegimeVolatile  MarketRegime = "volatile"
-	RegimeUnknown   MarketRegime = "unknown"
+	RegimeBull     MarketRegime = "bull"
+	RegimeBear     MarketRegime = "bear"
+	RegimeRange    MarketRegime = "range"
+	RegimeVolatile MarketRegime = "volatile"
+	RegimeUnknown  MarketRegime = "unknown"
 )
 
 // Metrics holds the mandatory evidence metrics for a paradigm.
 type Metrics struct {
-	SampleSize         int        `json:"sample_size"`          // total number of completed trades
-	HoldingPeriod      string     `json:"holding_period"`       // raw label, e.g. "short"
-	GrossReturn        float64    `json:"gross_return"`         // total gross return (%)
-	NetReturn          float64    `json:"net_return"`           // post-cost expected return (%)
-	AvgReturn          float64    `json:"avg_return"`           // average return per trade (%)
-	MedianReturn       float64    `json:"median_return"`        // median return per trade (%)
-	MaxDrawdown        float64    `json:"max_drawdown"`         // maximum drawdown (%)
-	StdDev             float64    `json:"std_dev"`              // return standard deviation
-	WinRate            float64    `json:"win_rate"`             // win rate (%)
-	ConfidenceInterval [2]float64 `json:"confidence_interval"`  // 95% CI [lower, upper]
-	ConfidenceLevel    float64    `json:"confidence_level"`     // e.g. 0.95
-	Top20Concentration float64    `json:"top20_concentration"`  // % of returns contributed by top 20%
-	Top10Concentration float64    `json:"top10_concentration"`  // % of returns contributed by top 10%
-	ParamSensitivity   float64    `json:"param_sensitivity"`    // sensitivity coefficient
-	RiskRewardRatio    float64    `json:"risk_reward_ratio"`    // avg return / |max drawdown|
-	SharpeRatio        float64    `json:"sharpe_ratio"`         // annualised if possible
+	SampleSize         int        `json:"sample_size"`         // total number of completed trades
+	HoldingPeriod      string     `json:"holding_period"`      // raw label, e.g. "short"
+	GrossReturn        float64    `json:"gross_return"`        // total gross return (%)
+	NetReturn          float64    `json:"net_return"`          // post-cost expected return (%)
+	AvgReturn          float64    `json:"avg_return"`          // average return per trade (%)
+	MedianReturn       float64    `json:"median_return"`       // median return per trade (%)
+	MaxDrawdown        float64    `json:"max_drawdown"`        // maximum drawdown (%)
+	StdDev             float64    `json:"std_dev"`             // return standard deviation
+	WinRate            float64    `json:"win_rate"`            // win rate (%)
+	ConfidenceInterval [2]float64 `json:"confidence_interval"` // 95% CI [lower, upper]
+	ConfidenceLevel    float64    `json:"confidence_level"`    // e.g. 0.95
+	Top20Concentration float64    `json:"top20_concentration"` // % of returns contributed by top 20%
+	Top10Concentration float64    `json:"top10_concentration"` // % of returns contributed by top 10%
+	ParamSensitivity   float64    `json:"param_sensitivity"`   // sensitivity coefficient
+	RiskRewardRatio    float64    `json:"risk_reward_ratio"`   // avg return / |max drawdown|
+	SharpeRatio        float64    `json:"sharpe_ratio"`        // annualised if possible
 }
 
 // WindowResult records performance over an independent rolling window.
@@ -122,18 +122,18 @@ type RegimeResult struct {
 
 // Evidence is the full evidence report for a paradigm.
 type Evidence struct {
-	ParadigmID  string          `json:"paradigm_id"`
-	GeneratedAt time.Time       `json:"generated_at"`
-	DataVersion string          `json:"data_version"`
-	Metrics     Metrics         `json:"metrics"`
-	Windows     []WindowResult  `json:"windows"`
-	Regimes     []RegimeResult  `json:"regimes"`
+	ParadigmID  string         `json:"paradigm_id"`
+	GeneratedAt time.Time      `json:"generated_at"`
+	DataVersion string         `json:"data_version"`
+	Metrics     Metrics        `json:"metrics"`
+	Windows     []WindowResult `json:"windows"`
+	Regimes     []RegimeResult `json:"regimes"`
 
 	// Red flags that block promotion regardless of metrics.
-	HasFutureData      bool `json:"has_future_data"`
+	HasFutureData       bool `json:"has_future_data"`
 	HasSurvivorshipBias bool `json:"has_survivorship_bias"`
-	SelectiveReporting bool `json:"selective_reporting"`
-	Overfitting        bool `json:"overfitting"`
+	SelectiveReporting  bool `json:"selective_reporting"`
+	Overfitting         bool `json:"overfitting"`
 }
 
 // AdmissionLevel is the classification assigned after evaluation.
@@ -148,13 +148,13 @@ const (
 
 // AdmissionResult is the outcome of an admission check.
 type AdmissionResult struct {
-	Eligible    bool             `json:"eligible"`
-	Level       AdmissionLevel   `json:"level"`
-	Score       float64          `json:"score"`
-	Reasons     []string         `json:"reasons"`
-	MustFix     []string         `json:"must_fix"`
-	Warnings    []string         `json:"warnings"`
-	Suggestions []string         `json:"suggestions"`
+	Eligible    bool           `json:"eligible"`
+	Level       AdmissionLevel `json:"level"`
+	Score       float64        `json:"score"`
+	Reasons     []string       `json:"reasons"`
+	MustFix     []string       `json:"must_fix"`
+	Warnings    []string       `json:"warnings"`
+	Suggestions []string       `json:"suggestions"`
 }
 
 // HoldingPeriodType returns the coarse holding-period type from metrics.
@@ -511,9 +511,9 @@ func inverseErf(x float64) float64 {
 		return 0
 	}
 	a := 0.147
-	t := 2.0 / (math.Pi*a) + math.Log(1-x*x)/2.0
+	t := 2.0/(math.Pi*a) + math.Log(1-x*x)/2.0
 	u := math.Log(1-x*x)/a + t*t/4.0
-	return sign * math.Sqrt(math.Sqrt(u) - t/2.0)
+	return sign * math.Sqrt(math.Sqrt(u)-t/2.0)
 }
 
 // topNConcentration returns the percentage of total return contributed by the top fraction of trades.

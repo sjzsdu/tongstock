@@ -222,7 +222,7 @@ func TestRetiredIsTerminal(t *testing.T) {
 
 func TestIsActive(t *testing.T) {
 	tests := []struct {
-		state State
+		state  State
 		active bool
 	}{
 		{StateHypothesis, false},

@@ -16,12 +16,12 @@ import (
 type FeedbackStatus string
 
 const (
-	FeedbackPending      FeedbackStatus = "pending"       // 待处理
-	FeedbackInProgress   FeedbackStatus = "in_progress"    // 进行中
-	FeedbackValidated    FeedbackStatus = "validated"     // 已验证
-	FeedbackRejected     FeedbackStatus = "rejected"      // 已拒绝
-	FeedbackImplemented  FeedbackStatus = "implemented"   // 已实施
-	FeedbackArchived     FeedbackStatus = "archived"      // 已归档
+	FeedbackPending     FeedbackStatus = "pending"     // 待处理
+	FeedbackInProgress  FeedbackStatus = "in_progress" // 进行中
+	FeedbackValidated   FeedbackStatus = "validated"   // 已验证
+	FeedbackRejected    FeedbackStatus = "rejected"    // 已拒绝
+	FeedbackImplemented FeedbackStatus = "implemented" // 已实施
+	FeedbackArchived    FeedbackStatus = "archived"    // 已归档
 )
 
 // FeedbackPriority 反馈优先级
@@ -38,74 +38,74 @@ const (
 type FeedbackType string
 
 const (
-	FeedbackHypothesis   FeedbackType = "hypothesis"   // 新假设
-	FeedbackParamUpdate  FeedbackType = "param_update"  // 参数更新
-	FeedbackStrategyRev  FeedbackType = "strategy_rev"  // 策略修订
-	FeedbackDataFix      FeedbackType = "data_fix"     // 数据修复
+	FeedbackHypothesis     FeedbackType = "hypothesis"      // 新假设
+	FeedbackParamUpdate    FeedbackType = "param_update"    // 参数更新
+	FeedbackStrategyRev    FeedbackType = "strategy_rev"    // 策略修订
+	FeedbackDataFix        FeedbackType = "data_fix"        // 数据修复
 	FeedbackProcessImprove FeedbackType = "process_improve" // 流程改进
-	FeedbackModelRetrain FeedbackType = "model_retrain"   // 模型重训练
+	FeedbackModelRetrain   FeedbackType = "model_retrain"   // 模型重训练
 )
 
 // ResearchFeedback 研究反馈项
 type ResearchFeedback struct {
-	ID          string         `json:"id"`
-	Type        FeedbackType   `json:"type"`
-	Status      FeedbackStatus `json:"status"`
-	Priority    FeedbackPriority `json:"priority"`
+	ID       string           `json:"id"`
+	Type     FeedbackType     `json:"type"`
+	Status   FeedbackStatus   `json:"status"`
+	Priority FeedbackPriority `json:"priority"`
 
 	// 来源
-	SourceReviewID   string `json:"source_review_id"`
-	SourceFindingID  string `json:"source_finding_id,omitempty"`
-	SourceFailureID  string `json:"source_failure_id,omitempty"`
-	SourcePatternID  string `json:"source_pattern_id,omitempty"`
+	SourceReviewID  string `json:"source_review_id"`
+	SourceFindingID string `json:"source_finding_id,omitempty"`
+	SourceFailureID string `json:"source_failure_id,omitempty"`
+	SourcePatternID string `json:"source_pattern_id,omitempty"`
 
 	// 内容
-	Title           string `json:"title"`
-	Description     string `json:"description"`
-	ExpectedImpact  string `json:"expected_impact"`
-	ValidationPlan  string `json:"validation_plan"`
+	Title          string `json:"title"`
+	Description    string `json:"description"`
+	ExpectedImpact string `json:"expected_impact"`
+	ValidationPlan string `json:"validation_plan"`
 
 	// 关联对象
 	TargetParadigmID string `json:"target_paradigm_id,omitempty"`
-	TargetVersion   string `json:"target_version,omitempty"`
-	NewVersion      string `json:"new_version,omitempty"`
+	TargetVersion    string `json:"target_version,omitempty"`
+	NewVersion       string `json:"new_version,omitempty"`
 
 	// 生命周期
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 	ValidatedAt     *time.Time `json:"validated_at,omitempty"`
-	ValidatedResult string   `json:"validated_result,omitempty"`
+	ValidatedResult string     `json:"validated_result,omitempty"`
 
 	// 评估
-	EffortEstimate  string  `json:"effort_estimate,omitempty"` // quick / moderate / extensive
-	ImpactScore     float64 `json:"impact_score,omitempty"`    // 0-100
+	EffortEstimate   string  `json:"effort_estimate,omitempty"`   // quick / moderate / extensive
+	ImpactScore      float64 `json:"impact_score,omitempty"`      // 0-100
 	FeasibilityScore float64 `json:"feasibility_score,omitempty"` // 0-100
 
 	// 日志
-	History         []FeedbackHistory `json:"history,omitempty"`
-	Author          string            `json:"author"`
-	Assignee        string            `json:"assignee,omitempty"`
+	History  []FeedbackHistory `json:"history,omitempty"`
+	Author   string            `json:"author"`
+	Assignee string            `json:"assignee,omitempty"`
 }
 
 // FeedbackHistory 反馈变更历史
 type FeedbackHistory struct {
-	Timestamp time.Time      `json:"timestamp"`
-	Actor     string         `json:"actor"`
-	Action    string         `json:"action"`
-	Note      string         `json:"note,omitempty"`
-	OldStatus string         `json:"old_status,omitempty"`
-	NewStatus string         `json:"new_status,omitempty"`
+	Timestamp time.Time `json:"timestamp"`
+	Actor     string    `json:"actor"`
+	Action    string    `json:"action"`
+	Note      string    `json:"note,omitempty"`
+	OldStatus string    `json:"old_status,omitempty"`
+	NewStatus string    `json:"new_status,omitempty"`
 }
 
 // FeedbackPortfolio 反馈组合
 type FeedbackPortfolio struct {
-	ID             string            `json:"id"`
-	GeneratedAt    time.Time         `json:"generated_at"`
-	TotalCount     int               `json:"total_count"`
-	PendingCount   int               `json:"pending_count"`
-	HighPriority   int               `json:"high_priority"`
-	Items          []ResearchFeedback `json:"items"`
-	Recommendations []string          `json:"recommendations"`
+	ID              string             `json:"id"`
+	GeneratedAt     time.Time          `json:"generated_at"`
+	TotalCount      int                `json:"total_count"`
+	PendingCount    int                `json:"pending_count"`
+	HighPriority    int                `json:"high_priority"`
+	Items           []ResearchFeedback `json:"items"`
+	Recommendations []string           `json:"recommendations"`
 }
 
 // ============================================================================
@@ -175,12 +175,12 @@ func (fg *FeedbackGenerator) GenerateFromReview(report *ReviewReport) FeedbackPo
 	}
 
 	portfolio := FeedbackPortfolio{
-		ID:           fmt.Sprintf("feedback-portfolio-%d", fg.idCounter),
-		GeneratedAt:  time.Now(),
-		TotalCount:   len(items),
-		PendingCount: pendingCount,
-		HighPriority: highPriority,
-		Items:        items,
+		ID:              fmt.Sprintf("feedback-portfolio-%d", fg.idCounter),
+		GeneratedAt:     time.Now(),
+		TotalCount:      len(items),
+		PendingCount:    pendingCount,
+		HighPriority:    highPriority,
+		Items:           items,
 		Recommendations: fg.buildPortfolioRecommendations(report, items),
 	}
 
@@ -195,23 +195,23 @@ func (fg *FeedbackGenerator) createFromFinding(report *ReviewReport, finding Rev
 	feedbackType := fg.deriveFeedbackType(finding.Category, finding.Metric)
 
 	feedback := ResearchFeedback{
-		ID:              fmt.Sprintf("feedback-finding-%d", fg.idCounter),
-		Type:            feedbackType,
-		Status:          FeedbackPending,
-		Priority:        priority,
-		SourceReviewID:  report.ID,
-		SourceFindingID: finding.ID,
-		Title:           fmt.Sprintf("[%s] %s", finding.Category, finding.Title),
-		Description:     finding.Description,
-		ExpectedImpact:  fg.estimateImpact(finding),
-		ValidationPlan:  fg.suggestValidation(feedbackType),
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
-		EffortEstimate:  fg.estimateEffort(feedbackType),
-		ImpactScore:     fg.computeImpactScore(finding),
-		Author:          report.Author,
+		ID:               fmt.Sprintf("feedback-finding-%d", fg.idCounter),
+		Type:             feedbackType,
+		Status:           FeedbackPending,
+		Priority:         priority,
+		SourceReviewID:   report.ID,
+		SourceFindingID:  finding.ID,
+		Title:            fmt.Sprintf("[%s] %s", finding.Category, finding.Title),
+		Description:      finding.Description,
+		ExpectedImpact:   fg.estimateImpact(finding),
+		ValidationPlan:   fg.suggestValidation(feedbackType),
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
+		EffortEstimate:   fg.estimateEffort(feedbackType),
+		ImpactScore:      fg.computeImpactScore(finding),
+		Author:           report.Author,
 		TargetParadigmID: report.SourceID,
-		TargetVersion:   report.SourceID,
+		TargetVersion:    report.SourceID,
 	}
 
 	return feedback
@@ -230,21 +230,21 @@ func (fg *FeedbackGenerator) createFromFailure(report *ReviewReport, failure Fai
 	}
 
 	feedback := ResearchFeedback{
-		ID:              fmt.Sprintf("feedback-failure-%d", fg.idCounter),
-		Type:            feedbackType,
-		Status:          FeedbackPending,
-		Priority:        priority,
-		SourceReviewID:  report.ID,
-		SourceFailureID: failure.ID,
-		Title:           fmt.Sprintf("[失败分析] %s", failure.Title),
-		Description:     description,
-		ExpectedImpact:  fmt.Sprintf("修复 %s 类别失败, 减少同类问题", failure.Category),
-		ValidationPlan:  fg.suggestValidation(feedbackType),
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
-		EffortEstimate:  fg.estimateEffort(feedbackType),
-		ImpactScore:     fg.computeFailureImpact(failure),
-		Author:          report.Author,
+		ID:               fmt.Sprintf("feedback-failure-%d", fg.idCounter),
+		Type:             feedbackType,
+		Status:           FeedbackPending,
+		Priority:         priority,
+		SourceReviewID:   report.ID,
+		SourceFailureID:  failure.ID,
+		Title:            fmt.Sprintf("[失败分析] %s", failure.Title),
+		Description:      description,
+		ExpectedImpact:   fmt.Sprintf("修复 %s 类别失败, 减少同类问题", failure.Category),
+		ValidationPlan:   fg.suggestValidation(feedbackType),
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
+		EffortEstimate:   fg.estimateEffort(feedbackType),
+		ImpactScore:      fg.computeFailureImpact(failure),
+		Author:           report.Author,
 		TargetParadigmID: failure.ParadigmID,
 	}
 
@@ -461,12 +461,12 @@ func (fg *FeedbackGenerator) computeImpactScore(finding ReviewFinding) float64 {
 
 	// 关键类别加成
 	categoryBoost := map[string]float64{
-		"performance":  10,
-		"model":        15,
-		"data":         10,
-		"execution":    5,
-		"market":       8,
-		"risk":         12,
+		"performance": 10,
+		"model":       15,
+		"data":        10,
+		"execution":   5,
+		"market":      8,
+		"risk":        12,
 	}
 	score += categoryBoost[finding.Category]
 

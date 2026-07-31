@@ -75,7 +75,7 @@ export default function Verified() {
     }
   };
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { queueMicrotask(() => void load()); }, []);
 
   const loadEvidence = async (id: string) => {
     setCurrentId(id);

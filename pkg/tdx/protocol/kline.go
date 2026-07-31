@@ -61,7 +61,7 @@ func (k klineStruct) Decode(bs []byte, ktype uint8) ([]*Kline, error) {
 
 	// TDX协议: 第一条K线使用绝对价格，后续使用增量编码
 	// 增量单位是厘 (0.001元)
-	const maxPrice = 1000000 // 单价上限100万元，A股不可能超过
+	const maxPrice = 1000000   // 单价上限100万元，A股不可能超过
 	const maxPriceChange = 5.0 // 单日价格变动上限500%
 
 	for i := 0; i < count && len(bs) >= 12; i++ {

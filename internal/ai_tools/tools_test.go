@@ -287,7 +287,7 @@ func TestExperimentReportTool_ListLatest(t *testing.T) {
 	repo := NewInMemoryExperimentRepo()
 	for i := 1; i <= 3; i++ {
 		repo.Add(&ExperimentSummary{
-			ID: "exp-" + string(rune('0'+i)),
+			ID:     "exp-" + string(rune('0'+i)),
 			Status: "completed",
 		})
 	}
@@ -415,13 +415,13 @@ func TestParadigmVersionTool_Evidence(t *testing.T) {
 	repo := NewInMemoryParadigmRepo()
 	repo.AddVersion(&ParadigmVersionInfo{ID: "v-1", ParadigmID: "p-1", Version: 1, State: "promoted"})
 	repo.AddEvidence(&ValidationEvidenceInfo{
-		ParadigmID:  "p-1",
+		ParadigmID:        "p-1",
 		ParadigmVersionID: "v-1",
-		NetReturn:   0.12,
-		MaxDrawdown: 0.08,
-		SharpeRatio: 1.5,
-		Passed:      true,
-		Level:       "gold",
+		NetReturn:         0.12,
+		MaxDrawdown:       0.08,
+		SharpeRatio:       1.5,
+		Passed:            true,
+		Level:             "gold",
 	})
 
 	tool := NewParadigmVersionTool(repo)
@@ -439,12 +439,12 @@ func TestParadigmVersionTool_EvidenceWithIssues(t *testing.T) {
 	repo := NewInMemoryParadigmRepo()
 	repo.AddVersion(&ParadigmVersionInfo{ID: "v-1", ParadigmID: "p-1", Version: 1})
 	repo.AddEvidence(&ValidationEvidenceInfo{
-		ParadigmID:  "p-1",
+		ParadigmID:        "p-1",
 		ParadigmVersionID: "v-1",
-		Passed:      false,
-		MustFix:     []string{"样本量不足", "最大回撤超限制"},
-		Warnings:    []string{"收益集中度偏高"},
-		Suggestions: []string{"修复must_fix后重新验证"},
+		Passed:            false,
+		MustFix:           []string{"样本量不足", "最大回撤超限制"},
+		Warnings:          []string{"收益集中度偏高"},
+		Suggestions:       []string{"修复must_fix后重新验证"},
 	})
 
 	tool := NewParadigmVersionTool(repo)

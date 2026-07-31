@@ -53,7 +53,7 @@ export default function Discover() {
   };
 
   useEffect(() => {
-    void load();
+	queueMicrotask(() => void load());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [side, reliability]);
 

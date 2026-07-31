@@ -21,39 +21,39 @@ import (
 
 // BasicStats 基础统计量。
 type BasicStats struct {
-	Count     int     `json:"count"`
-	Mean      float64 `json:"mean"`
-	Median    float64 `json:"median"`
-	StdDev    float64 `json:"std_dev"`
-	Min       float64 `json:"min"`
-	Max       float64 `json:"max"`
-	Skewness  float64 `json:"skewness"`
-	Kurtosis  float64 `json:"kurtosis"`
-	Sum       float64 `json:"sum"`
+	Count    int     `json:"count"`
+	Mean     float64 `json:"mean"`
+	Median   float64 `json:"median"`
+	StdDev   float64 `json:"std_dev"`
+	Min      float64 `json:"min"`
+	Max      float64 `json:"max"`
+	Skewness float64 `json:"skewness"`
+	Kurtosis float64 `json:"kurtosis"`
+	Sum      float64 `json:"sum"`
 }
 
 // DistributionAnalysis 收益分布分析。
 type DistributionAnalysis struct {
-	Stats    BasicStats `json:"stats"`
-	Histogram []Bucket `json:"histogram,omitempty"`
+	Stats     BasicStats         `json:"stats"`
+	Histogram []Bucket           `json:"histogram,omitempty"`
 	Quantiles map[string]float64 `json:"quantiles,omitempty"`
-	IsNormal bool      `json:"is_normal"` // 是否接近正态分布
+	IsNormal  bool               `json:"is_normal"` // 是否接近正态分布
 }
 
 // Bucket 直方图桶。
 type Bucket struct {
 	Range     [2]float64 `json:"range"`
-	Count     int       `json:"count"`
-	Frequency float64   `json:"frequency"`
+	Count     int        `json:"count"`
+	Frequency float64    `json:"frequency"`
 }
 
 // ConfidenceInterval 置信区间。
 type ConfidenceInterval struct {
-	Level float64   `json:"level"`
-	Lower float64   `json:"lower"`
-	Upper float64   `json:"upper"`
-	Mean  float64   `json:"mean"`
-	StdErr float64  `json:"std_err"`
+	Level  float64 `json:"level"`
+	Lower  float64 `json:"lower"`
+	Upper  float64 `json:"upper"`
+	Mean   float64 `json:"mean"`
+	StdErr float64 `json:"std_err"`
 }
 
 // ============================================================================
@@ -62,29 +62,29 @@ type ConfidenceInterval struct {
 
 // RiskMetrics 风险指标。
 type RiskMetrics struct {
-	MaxDrawdown     float64 `json:"max_drawdown"`      // 最大回撤
-	MaxDrawdownDuration int  `json:"max_drawdown_duration_days"` // 最大回撤持续天数
-	CurrentDrawdown float64 `json:"current_drawdown"`  // 当前回撤
-	VaR_95          float64 `json:"var_95"`           // 95% VaR
-	VaR_99          float64 `json:"var_99"`           // 99% VaR
-	CVaR_95         float64 `json:"cvar_95"`          // 95% CVaR (Expected Shortfall)
-	CVaR_99         float64 `json:"cvar_99"`          // 99% CVaR
-	DownsideDeviation float64 `json:"downside_deviation"` // 下行偏差
-	UlcerIndex      float64 `json:"ulcer_index"`       // Ulcer Index (回撤深度和持续时间)
-	TailRiskRatio   float64 `json:"tail_risk_ratio"`   // 尾部风险比率: 5%最坏/平均
+	MaxDrawdown         float64 `json:"max_drawdown"`               // 最大回撤
+	MaxDrawdownDuration int     `json:"max_drawdown_duration_days"` // 最大回撤持续天数
+	CurrentDrawdown     float64 `json:"current_drawdown"`           // 当前回撤
+	VaR_95              float64 `json:"var_95"`                     // 95% VaR
+	VaR_99              float64 `json:"var_99"`                     // 99% VaR
+	CVaR_95             float64 `json:"cvar_95"`                    // 95% CVaR (Expected Shortfall)
+	CVaR_99             float64 `json:"cvar_99"`                    // 99% CVaR
+	DownsideDeviation   float64 `json:"downside_deviation"`         // 下行偏差
+	UlcerIndex          float64 `json:"ulcer_index"`                // Ulcer Index (回撤深度和持续时间)
+	TailRiskRatio       float64 `json:"tail_risk_ratio"`            // 尾部风险比率: 5%最坏/平均
 }
 
 // DrawdownAnalysis 最大回撤详细分析。
 type DrawdownAnalysis struct {
-	MaxDrawdown    float64   `json:"max_drawdown"`
-	MaxDDStart     *time.Time `json:"max_dd_start,omitempty"`
-	MaxDDEnd       *time.Time `json:"max_dd_end,omitempty"`
-	MaxDDDuration  int       `json:"max_dd_duration_days"`
-	AvgDrawdown    float64   `json:"avg_drawdown"`
-	DrawdownFreq   float64   `json:"drawdown_frequency"` // 回撤频率
-	RecoveryDays   []int     `json:"recovery_days,omitempty"`
-	CurrentDrawdown float64  `json:"current_drawdown"`
-	CurrentDDBDays  int       `json:"current_dd_days"`
+	MaxDrawdown     float64    `json:"max_drawdown"`
+	MaxDDStart      *time.Time `json:"max_dd_start,omitempty"`
+	MaxDDEnd        *time.Time `json:"max_dd_end,omitempty"`
+	MaxDDDuration   int        `json:"max_dd_duration_days"`
+	AvgDrawdown     float64    `json:"avg_drawdown"`
+	DrawdownFreq    float64    `json:"drawdown_frequency"` // 回撤频率
+	RecoveryDays    []int      `json:"recovery_days,omitempty"`
+	CurrentDrawdown float64    `json:"current_drawdown"`
+	CurrentDDBDays  int        `json:"current_dd_days"`
 }
 
 // ============================================================================
@@ -93,14 +93,14 @@ type DrawdownAnalysis struct {
 
 // StabilityMetrics 稳定性指标。
 type StabilityMetrics struct {
-	TurnoverRate     float64 `json:"turnover_rate"`      // 换手率
-	AvgHoldDays      float64 `json:"avg_hold_days"`      // 平均持有天数
-	TradeFrequency   float64 `json:"trade_frequency"`    // 交易频率 (天/笔)
+	TurnoverRate       float64 `json:"turnover_rate"`       // 换手率
+	AvgHoldDays        float64 `json:"avg_hold_days"`       // 平均持有天数
+	TradeFrequency     float64 `json:"trade_frequency"`     // 交易频率 (天/笔)
 	StockConcentration float64 `json:"stock_concentration"` // 股票集中度
 	DateConcentration  float64 `json:"date_concentration"`  // 日期集中度
-	TopPctContrib    float64 `json:"top_pct_contrib"`    // Top 贡献百分比
-	CapacityEstimate float64 `json:"capacity_estimate"`  // 容量估算 (万元)
-	SharpeStability  float64 `json:"sharpe_stability"`   // 夏普稳定性 (滚动夏普的变异系数)
+	TopPctContrib      float64 `json:"top_pct_contrib"`     // Top 贡献百分比
+	CapacityEstimate   float64 `json:"capacity_estimate"`   // 容量估算 (万元)
+	SharpeStability    float64 `json:"sharpe_stability"`    // 夏普稳定性 (滚动夏普的变异系数)
 }
 
 // ============================================================================
@@ -109,34 +109,34 @@ type StabilityMetrics struct {
 
 // UnifiedReport 统一分析报告。
 type UnifiedReport struct {
-	GeneratedAt     time.Time             `json:"generated_at"`
-	SampleSize      int                   `json:"sample_size"`
-	IsEmpty         bool                  `json:"is_empty"`       // 是否空样本
-	IsSmallSample   bool                  `json:"is_small_sample"` // 是否小样本 (<20)
+	GeneratedAt   time.Time `json:"generated_at"`
+	SampleSize    int       `json:"sample_size"`
+	IsEmpty       bool      `json:"is_empty"`        // 是否空样本
+	IsSmallSample bool      `json:"is_small_sample"` // 是否小样本 (<20)
 
 	// 收益指标
-	TotalReturn     float64               `json:"total_return"`
-	AnnualReturn    float64               `json:"annual_return,omitempty"`
-	AvgReturn       float64               `json:"avg_return"`
-	WinRate         float64               `json:"win_rate"`
-	ProfitFactor    float64               `json:"profit_factor"`
-	SharpeRatio     float64               `json:"sharpe_ratio,omitempty"`
-	SortinoRatio    float64               `json:"sortino_ratio,omitempty"`
+	TotalReturn  float64 `json:"total_return"`
+	AnnualReturn float64 `json:"annual_return,omitempty"`
+	AvgReturn    float64 `json:"avg_return"`
+	WinRate      float64 `json:"win_rate"`
+	ProfitFactor float64 `json:"profit_factor"`
+	SharpeRatio  float64 `json:"sharpe_ratio,omitempty"`
+	SortinoRatio float64 `json:"sortino_ratio,omitempty"`
 
 	// 分布分析
-	Distribution    *DistributionAnalysis `json:"distribution,omitempty"`
-	ConfidenceInt   *ConfidenceInterval   `json:"confidence_interval,omitempty"`
+	Distribution  *DistributionAnalysis `json:"distribution,omitempty"`
+	ConfidenceInt *ConfidenceInterval   `json:"confidence_interval,omitempty"`
 
 	// 风险分析
-	Risk            *RiskMetrics          `json:"risk,omitempty"`
-	Drawdown        *DrawdownAnalysis     `json:"drawdown,omitempty"`
+	Risk     *RiskMetrics      `json:"risk,omitempty"`
+	Drawdown *DrawdownAnalysis `json:"drawdown,omitempty"`
 
 	// 稳定性
-	Stability       *StabilityMetrics     `json:"stability,omitempty"`
+	Stability *StabilityMetrics `json:"stability,omitempty"`
 
 	// 警告信息
-	Warnings        []string              `json:"warnings,omitempty"`
-	Notes           []string              `json:"notes,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
+	Notes    []string `json:"notes,omitempty"`
 }
 
 // ============================================================================
@@ -522,7 +522,7 @@ func normalInvCDF(p float64) float64 {
 		return -normalInvCDF(1 - p)
 	}
 
-	t := math.Sqrt(-2 * math.Log(1 - p))
+	t := math.Sqrt(-2 * math.Log(1-p))
 	c0 := 2.515517
 	c1 := 0.802853
 	c2 := 0.010328

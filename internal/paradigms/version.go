@@ -15,15 +15,15 @@ import (
 
 // SchemaVersion Schema 版本记录
 type SchemaVersion struct {
-	ID            string         `json:"id"`
-	SchemaID      string         `json:"schema_id"`
-	Version       int            `json:"version"`
-	ParentVersion int            `json:"parent_version"`
-	ChangeReason  string         `json:"change_reason"`
+	ID            string          `json:"id"`
+	SchemaID      string          `json:"schema_id"`
+	Version       int             `json:"version"`
+	ParentVersion int             `json:"parent_version"`
+	ChangeReason  string          `json:"change_reason"`
 	Snapshot      *ParadigmSchema `json:"snapshot"` // 不可变快照
-	CreatedAt     time.Time      `json:"created_at"`
-	CreatedBy     string         `json:"created_by,omitempty"`
-	Hash          string         `json:"hash"` // 内容哈希 (用于检测未变更)
+	CreatedAt     time.Time       `json:"created_at"`
+	CreatedBy     string          `json:"created_by,omitempty"`
+	Hash          string          `json:"hash"` // 内容哈希 (用于检测未变更)
 }
 
 // VersionStore 版本存储
@@ -241,11 +241,11 @@ func (s *ParadigmSchema) DeepCopy() *ParadigmSchema {
 
 // VersionDiff 版本差异
 type VersionDiff struct {
-	AddedRules   []string `json:"added_rules"`
-	RemovedRules []string `json:"removed_rules"`
-	ChangedRules []string `json:"changed_rules"`
-	AddedContext []string `json:"added_context"`
-	RemovedCtx   []string `json:"removed_context"`
+	AddedRules     []string `json:"added_rules"`
+	RemovedRules   []string `json:"removed_rules"`
+	ChangedRules   []string `json:"changed_rules"`
+	AddedContext   []string `json:"added_context"`
+	RemovedCtx     []string `json:"removed_context"`
 	FeatureChanges []string `json:"feature_changes"`
 }
 
@@ -346,7 +346,7 @@ func computeHash(schema *ParadigmSchema) string {
 	// 简单哈希 (实际应用中应使用 SHA-256)
 	hash := 0
 	for _, b := range data {
-		hash = (hash * 31 + int(b)) & 0x7FFFFFFF
+		hash = (hash*31 + int(b)) & 0x7FFFFFFF
 	}
 	return fmt.Sprintf("%x", hash)
 }

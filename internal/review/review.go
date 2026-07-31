@@ -21,8 +21,8 @@ import (
 type ReviewPeriod string
 
 const (
-	ReviewWeekly  ReviewPeriod = "weekly"
-	ReviewMonthly ReviewPeriod = "monthly"
+	ReviewWeekly    ReviewPeriod = "weekly"
+	ReviewMonthly   ReviewPeriod = "monthly"
 	ReviewQuarterly ReviewPeriod = "quarterly"
 )
 
@@ -39,9 +39,9 @@ const (
 type ReviewType string
 
 const (
-	ReviewPostMortem  ReviewType = "post_mortem"  // 事后复盘
-	ReviewRetrospective ReviewType = "retrospective" // 定期回顾
-	ReviewParamAudit  ReviewType = "param_audit"   // 参数审计
+	ReviewPostMortem      ReviewType = "post_mortem"      // 事后复盘
+	ReviewRetrospective   ReviewType = "retrospective"    // 定期回顾
+	ReviewParamAudit      ReviewType = "param_audit"      // 参数审计
 	ReviewFailureAnalysis ReviewType = "failure_analysis" // 失败分析
 )
 
@@ -60,13 +60,13 @@ const (
 
 // ReviewReport 结构化复盘报告
 type ReviewReport struct {
-	ID          string       `json:"id"`
-	Type        ReviewType   `json:"type"`
-	Period      ReviewPeriod `json:"period"`
-	Status      ReviewStatus `json:"status"`
-	Priority    ReviewPriority `json:"priority"`
-	SourceID    string       `json:"source_id"`   // paradigm_version_id 或 run_id
-	SourceType  string       `json:"source_type"` // paradigm / run / system
+	ID         string         `json:"id"`
+	Type       ReviewType     `json:"type"`
+	Period     ReviewPeriod   `json:"period"`
+	Status     ReviewStatus   `json:"status"`
+	Priority   ReviewPriority `json:"priority"`
+	SourceID   string         `json:"source_id"`   // paradigm_version_id 或 run_id
+	SourceType string         `json:"source_type"` // paradigm / run / system
 
 	// 时间范围
 	PeriodStart time.Time `json:"period_start"`
@@ -74,28 +74,28 @@ type ReviewReport struct {
 	GeneratedAt time.Time `json:"generated_at"`
 
 	// 核心发现
-	Findings      []ReviewFinding  `json:"findings"`
-	Failures      []FailureEvent   `json:"failures"`
-	Decisions     []ReviewDecision `json:"decisions"`
+	Findings  []ReviewFinding  `json:"findings"`
+	Failures  []FailureEvent   `json:"failures"`
+	Decisions []ReviewDecision `json:"decisions"`
 
 	// 统计摘要
-	Stats         ReviewStats `json:"stats"`
+	Stats ReviewStats `json:"stats"`
 
 	// 结构化输出
-	ExecutiveSummary string            `json:"executive_summary"`
-	ActionItems     []ActionItem      `json:"action_items"`
-	OpenQuestions   []string          `json:"open_questions"`
-	Recommendations  []string          `json:"recommendations"`
-	LessonsLearned  []string          `json:"lessons_learned"`
+	ExecutiveSummary string       `json:"executive_summary"`
+	ActionItems      []ActionItem `json:"action_items"`
+	OpenQuestions    []string     `json:"open_questions"`
+	Recommendations  []string     `json:"recommendations"`
+	LessonsLearned   []string     `json:"lessons_learned"`
 
 	// 反馈
-	FeedbackGenerated bool `json:"feedback_generated"`
+	FeedbackGenerated bool   `json:"feedback_generated"`
 	FeedbackID        string `json:"feedback_id,omitempty"`
 
 	// 操作人
-	Author      string `json:"author"`
-	ReviewedBy  string `json:"reviewed_by,omitempty"`
-	ApprovedBy  string `json:"approved_by,omitempty"`
+	Author     string `json:"author"`
+	ReviewedBy string `json:"reviewed_by,omitempty"`
+	ApprovedBy string `json:"approved_by,omitempty"`
 }
 
 // ReviewFinding 复盘发现
@@ -114,44 +114,44 @@ type ReviewFinding struct {
 
 // ReviewStats 复盘统计
 type ReviewStats struct {
-	TotalSignals     int     `json:"total_signals"`
-	ExecutedSignals  int     `json:"executed_signals"`
-	FailedSignals    int     `json:"failed_signals"`
-	UnexecutedSignals int    `json:"unexecuted_signals"`
-	ExecutionRate    float64 `json:"execution_rate"`
-	WinRate          float64 `json:"win_rate"`
-	AvgReturn        float64 `json:"avg_return"`
-	TotalPnL         float64 `json:"total_pnl"`
-	MaxDrawdown      float64 `json:"max_drawdown"`
-	SharpeRatio      float64 `json:"sharpe_ratio"`
-	StatusChanges    int     `json:"status_changes"`
-	ParamChanges     int     `json:"param_changes"`
-	DataQualityScore float64 `json:"data_quality_score"`
+	TotalSignals      int     `json:"total_signals"`
+	ExecutedSignals   int     `json:"executed_signals"`
+	FailedSignals     int     `json:"failed_signals"`
+	UnexecutedSignals int     `json:"unexecuted_signals"`
+	ExecutionRate     float64 `json:"execution_rate"`
+	WinRate           float64 `json:"win_rate"`
+	AvgReturn         float64 `json:"avg_return"`
+	TotalPnL          float64 `json:"total_pnl"`
+	MaxDrawdown       float64 `json:"max_drawdown"`
+	SharpeRatio       float64 `json:"sharpe_ratio"`
+	StatusChanges     int     `json:"status_changes"`
+	ParamChanges      int     `json:"param_changes"`
+	DataQualityScore  float64 `json:"data_quality_score"`
 }
 
 // ReviewDecision 复盘决策记录
 type ReviewDecision struct {
-	ID          string    `json:"id"`
-	Type        string    `json:"type"` // promote / degrade / suspend / reject / keep / revise
-	TargetID    string    `json:"target_id"`
-	Reason      string    `json:"reason"`
-	Rationale   string    `json:"rationale"`
-	ApprovedBy  string    `json:"approved_by"`
-	NewVersion  string    `json:"new_version,omitempty"`
-	OldVersion  string    `json:"old_version,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID         string    `json:"id"`
+	Type       string    `json:"type"` // promote / degrade / suspend / reject / keep / revise
+	TargetID   string    `json:"target_id"`
+	Reason     string    `json:"reason"`
+	Rationale  string    `json:"rationale"`
+	ApprovedBy string    `json:"approved_by"`
+	NewVersion string    `json:"new_version,omitempty"`
+	OldVersion string    `json:"old_version,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // ActionItem 行动项
 type ActionItem struct {
-	ID          string    `json:"id"`
-	Title       string    `json:"title"`
-	Description string    `json:"description"`
-	Priority    string    `json:"priority"`
-	Assignee    string    `json:"assignee"`
-	DueDate     time.Time `json:"due_date"`
-	Status      string    `json:"status"` // todo / in_progress / done
-	RelatedFindingID string `json:"related_finding_id"`
+	ID               string    `json:"id"`
+	Title            string    `json:"title"`
+	Description      string    `json:"description"`
+	Priority         string    `json:"priority"`
+	Assignee         string    `json:"assignee"`
+	DueDate          time.Time `json:"due_date"`
+	Status           string    `json:"status"` // todo / in_progress / done
+	RelatedFindingID string    `json:"related_finding_id"`
 }
 
 // ============================================================================
@@ -169,20 +169,20 @@ type ReviewInput struct {
 	Author      string       `json:"author"`
 
 	// 原始数据
-	SignalCount     int     `json:"signal_count"`
-	ExecutedCount   int     `json:"executed_count"`
-	FailedCount     int     `json:"failed_count"`
-	UnexecutedCount int     `json:"unexecuted_count"`
-	Returns         []float64 `json:"returns"`
-	PnL             float64 `json:"pnl"`
-	StatusChanges   int     `json:"status_changes"`
-	ParamChanges    int     `json:"param_changes"`
-	DataQualityScore float64 `json:"data_quality_score"`
+	SignalCount      int       `json:"signal_count"`
+	ExecutedCount    int       `json:"executed_count"`
+	FailedCount      int       `json:"failed_count"`
+	UnexecutedCount  int       `json:"unexecuted_count"`
+	Returns          []float64 `json:"returns"`
+	PnL              float64   `json:"pnl"`
+	StatusChanges    int       `json:"status_changes"`
+	ParamChanges     int       `json:"param_changes"`
+	DataQualityScore float64   `json:"data_quality_score"`
 
 	// 上下文
-	Failures        []FailureEvent  `json:"failures,omitempty"`
-	Decisions       []ReviewDecision `json:"decisions,omitempty"`
-	ExtraFindings   []ReviewFinding `json:"extra_findings,omitempty"`
+	Failures      []FailureEvent   `json:"failures,omitempty"`
+	Decisions     []ReviewDecision `json:"decisions,omitempty"`
+	ExtraFindings []ReviewFinding  `json:"extra_findings,omitempty"`
 }
 
 // ReviewGenerator 复盘生成器

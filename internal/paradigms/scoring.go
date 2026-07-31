@@ -3,6 +3,7 @@ package paradigms
 import (
 	"fmt"
 	"math"
+	"strings"
 	"time"
 )
 
@@ -630,5 +631,5 @@ func joinHardKillReasons(kills []HardKillResult) string {
 	for i, k := range kills {
 		reasons[i] = k.Reason
 	}
-	return joinStrings(reasons, "; ")
+	return strings.Join(reasons, "; ")
 }

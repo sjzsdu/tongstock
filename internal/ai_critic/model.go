@@ -24,12 +24,12 @@ import (
 type ReviewDimension string
 
 const (
-	DimDataLeakage    ReviewDimension = "data_leakage"    // 数据泄漏
-	DimSelectionBias  ReviewDimension = "selection_bias"  // 选择偏差
-	DimSampleSize     ReviewDimension = "sample_size"     // 样本不足
+	DimDataLeakage     ReviewDimension = "data_leakage"     // 数据泄漏
+	DimSelectionBias   ReviewDimension = "selection_bias"   // 选择偏差
+	DimSampleSize      ReviewDimension = "sample_size"      // 样本不足
 	DimCostSensitivity ReviewDimension = "cost_sensitivity" // 成本敏感
-	DimConcentration  ReviewDimension = "concentration"   // 集中度
-	DimNarrativeBias  ReviewDimension = "narrative_bias"  // 叙事后置
+	DimConcentration   ReviewDimension = "concentration"    // 集中度
+	DimNarrativeBias   ReviewDimension = "narrative_bias"   // 叙事后置
 	DimBaselineCompare ReviewDimension = "baseline_compare" // 与基线比较
 )
 
@@ -51,18 +51,18 @@ var HardThresholdSeverities = map[Severity]bool{
 
 // ReviewIssue 单个审查问题
 type ReviewIssue struct {
-	ID              string            `json:"id"`
-	Dimension       ReviewDimension   `json:"dimension"`
-	Severity        Severity          `json:"severity"`
-	Title           string            `json:"title"`
-	Description     string            `json:"description"`
-	Evidence        string            `json:"evidence,omitempty"`        // 支持证据
-	Recommendation  string            `json:"recommendation"`             // 建议
-	MetricName      string            `json:"metric_name,omitempty"`     // 关联的实验指标
-	MetricValue     float64           `json:"metric_value,omitempty"`    // 指标值
-	MetricThreshold  float64           `json:"metric_threshold,omitempty"` // 指标阈值
-	IsHardThreshold bool              `json:"is_hard_threshold"`         // 是否为硬门槛
-	CreatedAt       time.Time         `json:"created_at"`
+	ID              string          `json:"id"`
+	Dimension       ReviewDimension `json:"dimension"`
+	Severity        Severity        `json:"severity"`
+	Title           string          `json:"title"`
+	Description     string          `json:"description"`
+	Evidence        string          `json:"evidence,omitempty"`         // 支持证据
+	Recommendation  string          `json:"recommendation"`             // 建议
+	MetricName      string          `json:"metric_name,omitempty"`      // 关联的实验指标
+	MetricValue     float64         `json:"metric_value,omitempty"`     // 指标值
+	MetricThreshold float64         `json:"metric_threshold,omitempty"` // 指标阈值
+	IsHardThreshold bool            `json:"is_hard_threshold"`          // 是否为硬门槛
+	CreatedAt       time.Time       `json:"created_at"`
 }
 
 // IsHardThreshold 是否硬门槛
@@ -74,27 +74,27 @@ func (r *ReviewIssue) IsHardThresholdIssue() bool {
 type ReviewConclusion string
 
 const (
-	ConclusionPass           ReviewConclusion = "pass"           // 通过 (可晋级)
-	ConclusionPassWithNotes  ReviewConclusion = "pass_notes"     // 有条件通过 (附建议)
-	ConclusionFail            ReviewConclusion = "fail"           // 未通过 (需修正)
-	ConclusionBlock          ReviewConclusion = "block"          // 阻止 (硬门槛未过)
-	ConclusionNeedsReview    ReviewConclusion = "needs_review"   // 需要人工复核
+	ConclusionPass          ReviewConclusion = "pass"         // 通过 (可晋级)
+	ConclusionPassWithNotes ReviewConclusion = "pass_notes"   // 有条件通过 (附建议)
+	ConclusionFail          ReviewConclusion = "fail"         // 未通过 (需修正)
+	ConclusionBlock         ReviewConclusion = "block"        // 阻止 (硬门槛未过)
+	ConclusionNeedsReview   ReviewConclusion = "needs_review" // 需要人工复核
 )
 
 // ReviewOutcome 审查结果
 type ReviewOutcome struct {
-	ID           string           `json:"id"`
-	TargetID     string           `json:"target_id"`     // 被审查对象 ID
-	TargetType   string           `json:"target_type"`   // "candidate", "paradigm", "experiment"
-	Conclusion   ReviewConclusion `json:"conclusion"`
-	Issues       []ReviewIssue    `json:"issues"`
-	HardBlocked  bool             `json:"hard_blocked"`
-	ReviewedBy   string           `json:"reviewed_by"`   // 审查者
-	ReviewedAt   time.Time        `json:"reviewed_at"`
+	ID          string           `json:"id"`
+	TargetID    string           `json:"target_id"`   // 被审查对象 ID
+	TargetType  string           `json:"target_type"` // "candidate", "paradigm", "experiment"
+	Conclusion  ReviewConclusion `json:"conclusion"`
+	Issues      []ReviewIssue    `json:"issues"`
+	HardBlocked bool             `json:"hard_blocked"`
+	ReviewedBy  string           `json:"reviewed_by"` // 审查者
+	ReviewedAt  time.Time        `json:"reviewed_at"`
 	// 人工复核
-	HumanReview  *HumanReviewRecord `json:"human_review,omitempty"`
+	HumanReview *HumanReviewRecord `json:"human_review,omitempty"`
 	// 摘要
-	Summary     string           `json:"summary,omitempty"`
+	Summary string `json:"summary,omitempty"`
 }
 
 // Passed 审查是否通过
@@ -136,10 +136,10 @@ func (o *ReviewOutcome) GetCriticalIssues() []ReviewIssue {
 
 // HumanReviewRecord 人工复核记录
 type HumanReviewRecord struct {
-	ReviewerID   string   `json:"reviewer_id"`
-	Decision     string   `json:"decision"`   // "approved", "rejected", "waived", "deferred"
-	Notes        string   `json:"notes"`
-	WaivedIssues []string `json:"waived_issues,omitempty"` // 被豁免的问题 ID
+	ReviewerID   string    `json:"reviewer_id"`
+	Decision     string    `json:"decision"` // "approved", "rejected", "waived", "deferred"
+	Notes        string    `json:"notes"`
+	WaivedIssues []string  `json:"waived_issues,omitempty"` // 被豁免的问题 ID
 	ReviewedAt   time.Time `json:"reviewed_at"`
 }
 
@@ -155,26 +155,26 @@ func (h *HumanReviewRecord) IsValid() bool {
 
 // ReviewInput 审查输入
 type ReviewInput struct {
-	TargetID   string         `json:"target_id"`
-	TargetType string         `json:"target_type"`
+	TargetID   string `json:"target_id"`
+	TargetType string `json:"target_type"`
 	// 实验指标
-	Metrics    map[string]float64 `json:"metrics"`
+	Metrics map[string]float64 `json:"metrics"`
 	// 实验配置
-	Config     ReviewConfig   `json:"config"`
+	Config ReviewConfig `json:"config"`
 	// 实验结果
-	Results    ReviewResults  `json:"results"`
+	Results ReviewResults `json:"results"`
 }
 
 // ReviewConfig 审查用实验配置
 type ReviewConfig struct {
-	SplitType      string  `json:"split_type"`       // "fixed", "rolling", "expanding"
-	TrainRatio     float64 `json:"train_ratio"`      // 训练集比例
-	ValidRatio     float64 `json:"valid_ratio"`      // 验证集比例
-	EmbargoDays    int     `json:"embargo_days"`     // 隔离期 (天)
-	PurgeDays      int     `json:"purge_days"`       // 清洗期 (天)
-	FeatureCount   int     `json:"feature_count"`    // 使用特征数
+	SplitType      string   `json:"split_type"`       // "fixed", "rolling", "expanding"
+	TrainRatio     float64  `json:"train_ratio"`      // 训练集比例
+	ValidRatio     float64  `json:"valid_ratio"`      // 验证集比例
+	EmbargoDays    int      `json:"embargo_days"`     // 隔离期 (天)
+	PurgeDays      int      `json:"purge_days"`       // 清洗期 (天)
+	FeatureCount   int      `json:"feature_count"`    // 使用特征数
 	FeatureIDs     []string `json:"feature_ids"`      // 特征 ID 列表
-	DataSnapshotID string  `json:"data_snapshot_id"` // 数据快照 ID
+	DataSnapshotID string   `json:"data_snapshot_id"` // 数据快照 ID
 }
 
 // ReviewResults 审查用实验结果
@@ -189,11 +189,11 @@ type ReviewResults struct {
 	ProfitFactor      float64 `json:"profit_factor"`
 	GrossReturn       float64 `json:"gross_return"`
 	NetReturn         float64 `json:"net_return"`
-	CostRatio         float64 `json:"cost_ratio"`         // 成本占比
+	CostRatio         float64 `json:"cost_ratio"`          // 成本占比
 	MaxPositionWeight float64 `json:"max_position_weight"` // 最大单票仓位
-	Concentration     float64 `json:"concentration"`      // 集中度指数
-	BaselineReturn    float64 `json:"baseline_return"`    // 基线收益 (如沪深 300)
-	BaselineSharpe    float64 `json:"baseline_sharpe"`    // 基线夏普
+	Concentration     float64 `json:"concentration"`       // 集中度指数
+	BaselineReturn    float64 `json:"baseline_return"`     // 基线收益 (如沪深 300)
+	BaselineSharpe    float64 `json:"baseline_sharpe"`     // 基线夏普
 }
 
 // ============================================================================

@@ -55,8 +55,8 @@ func TestHoldingPeriodToMinSample(t *testing.T) {
 
 func TestHoldingPeriodToMaxDrawdown(t *testing.T) {
 	tests := []struct {
-		hp      HoldingPeriodType
-		maxDD   float64
+		hp    HoldingPeriodType
+		maxDD float64
 	}{
 		{HoldingIntraday, 5.0},
 		{HoldingShort, 10.0},
@@ -199,8 +199,8 @@ func TestMetricsMinSampleSize(t *testing.T) {
 
 func TestMetricsMaxDrawdownLimit(t *testing.T) {
 	tests := []struct {
-		hp     string
-		maxDD  float64
+		hp    string
+		maxDD float64
 	}{
 		{"intraday", 5.0},
 		{"short", 10.0},
@@ -262,8 +262,8 @@ func TestCheckAdmissionPass(t *testing.T) {
 func TestCheckAdmissionBlocker(t *testing.T) {
 	// A failing scenario with a blocker.
 	evidence := Evidence{
-		ParadigmID:       "test-paradigm",
-		HasFutureData:    true,
+		ParadigmID:    "test-paradigm",
+		HasFutureData: true,
 		Metrics: Metrics{
 			SampleSize:    60,
 			HoldingPeriod: "short",

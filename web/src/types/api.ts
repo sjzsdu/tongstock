@@ -1576,10 +1576,10 @@ export interface MonitoringReport {
 }
 
 export interface MonitoringRunRequest {
-  source?: string;
+  source: string;
   baseline_returns: number[];
   forward_returns: number[];
-  forward_dates?: string[];
+  forward_dates: string[];
   positions?: {
     code: string;
     name?: string;
@@ -1722,10 +1722,10 @@ export interface MonitoringReport {
 }
 
 export interface MonitoringRunRequest {
-  source?: string;
+  source: string;
   baseline_returns: number[];
   forward_returns: number[];
-  forward_dates?: string[];
+  forward_dates: string[];
   positions?: {
     code: string;
     name?: string;

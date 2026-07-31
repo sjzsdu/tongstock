@@ -15,33 +15,33 @@ import (
 type ConcentrationType string
 
 const (
-	ConcentrationPosition   ConcentrationType = "position"   // 持仓集中度
-	ConcentrationIndustry   ConcentrationType = "industry"   // 行业集中度
-	ConcentrationStock      ConcentrationType = "stock"      // 个股集中度
-	ConcentrationSector     ConcentrationType = "sector"     // 板块集中度
+	ConcentrationPosition    ConcentrationType = "position"    // 持仓集中度
+	ConcentrationIndustry    ConcentrationType = "industry"    // 行业集中度
+	ConcentrationStock       ConcentrationType = "stock"       // 个股集中度
+	ConcentrationSector      ConcentrationType = "sector"      // 板块集中度
 	ConcentrationCorrelation ConcentrationType = "correlation" // 相关性集中度
 )
 
 // ConcentrationResult 集中度检测结果
 type ConcentrationResult struct {
-	Type              ConcentrationType `json:"type"`
-	HHI               float64           `json:"hhi"`                // 赫芬达尔指数 (0-1)
-	EffectiveCount    float64           `json:"effective_count"`    // 有效标的数 (1/HHI)
-	IsConcentrated    bool              `json:"is_concentrated"`
-	Severity          string            `json:"severity"`
-	TopContributor    string            `json:"top_contributor"`    // 最大贡献者
-	TopWeight         float64           `json:"top_weight"`         // 最大贡献者权重
-	Threshold         float64           `json:"threshold"`
-	Breakdown         map[string]float64 `json:"breakdown"`         // 各成分权重
-	Description       string            `json:"description"`
-	DetectedAt        time.Time         `json:"detected_at"`
+	Type           ConcentrationType  `json:"type"`
+	HHI            float64            `json:"hhi"`             // 赫芬达尔指数 (0-1)
+	EffectiveCount float64            `json:"effective_count"` // 有效标的数 (1/HHI)
+	IsConcentrated bool               `json:"is_concentrated"`
+	Severity       string             `json:"severity"`
+	TopContributor string             `json:"top_contributor"` // 最大贡献者
+	TopWeight      float64            `json:"top_weight"`      // 最大贡献者权重
+	Threshold      float64            `json:"threshold"`
+	Breakdown      map[string]float64 `json:"breakdown"` // 各成分权重
+	Description    string             `json:"description"`
+	DetectedAt     time.Time          `json:"detected_at"`
 }
 
 // ConcentrationConfig 集中度配置
 type ConcentrationConfig struct {
 	// 赫芬达尔指数阈值
-	HHIWarningThreshold    float64 `json:"hhi_warning_threshold"`    // > 0.25 警告
-	HHIDangerThreshold     float64 `json:"hhi_danger_threshold"`     // > 0.50 危险
+	HHIWarningThreshold float64 `json:"hhi_warning_threshold"` // > 0.25 警告
+	HHIDangerThreshold  float64 `json:"hhi_danger_threshold"`  // > 0.50 危险
 
 	// 单标的权重阈值
 	MaxSingleWeightWarning float64 `json:"max_single_weight_warning"` // > 0.20 警告
@@ -144,18 +144,18 @@ func (m *ConcentrationMonitor) MonitorStockConcentration(positions []PositionIte
 	}
 
 	return []ConcentrationResult{{
-		Type:              ConcentrationStock,
-		HHI:               hhi,
-		EffectiveCount:    effectiveCount,
-		IsConcentrated:    isConcentrated,
-		Severity:          severity,
-		TopContributor:    topCode,
-		TopWeight:         topWeight,
-		Threshold:         m.Config.MaxSingleWeightWarning,
-		Breakdown:         weights,
-		Description:       fmt.Sprintf("个股集中度: HHI=%.3f, 有效标的=%.1f, 最大持仓 %s (%.1f%%) [%s]",
+		Type:           ConcentrationStock,
+		HHI:            hhi,
+		EffectiveCount: effectiveCount,
+		IsConcentrated: isConcentrated,
+		Severity:       severity,
+		TopContributor: topCode,
+		TopWeight:      topWeight,
+		Threshold:      m.Config.MaxSingleWeightWarning,
+		Breakdown:      weights,
+		Description: fmt.Sprintf("个股集中度: HHI=%.3f, 有效标的=%.1f, 最大持仓 %s (%.1f%%) [%s]",
 			hhi, effectiveCount, topCode, topWeight*100, severity),
-		DetectedAt:        time.Now(),
+		DetectedAt: time.Now(),
 	}}
 }
 
@@ -206,18 +206,18 @@ func (m *ConcentrationMonitor) MonitorIndustryConcentration(positions []Position
 	}
 
 	return ConcentrationResult{
-		Type:              ConcentrationIndustry,
-		HHI:               hhi,
-		EffectiveCount:    effectiveCount,
-		IsConcentrated:    isConcentrated,
-		Severity:          severity,
-		TopContributor:    topIndustry,
-		TopWeight:         topWeight,
-		Threshold:         m.Config.MaxIndustryWeight,
-		Breakdown:         weights,
-		Description:       fmt.Sprintf("行业集中度: HHI=%.3f, 有效行业=%.1f, 最大行业 %s (%.1f%%) [%s]",
+		Type:           ConcentrationIndustry,
+		HHI:            hhi,
+		EffectiveCount: effectiveCount,
+		IsConcentrated: isConcentrated,
+		Severity:       severity,
+		TopContributor: topIndustry,
+		TopWeight:      topWeight,
+		Threshold:      m.Config.MaxIndustryWeight,
+		Breakdown:      weights,
+		Description: fmt.Sprintf("行业集中度: HHI=%.3f, 有效行业=%.1f, 最大行业 %s (%.1f%%) [%s]",
 			hhi, effectiveCount, topIndustry, topWeight*100, severity),
-		DetectedAt:        time.Now(),
+		DetectedAt: time.Now(),
 	}
 }
 
@@ -262,18 +262,18 @@ func (m *ConcentrationMonitor) MonitorPositionConcentration(positions []Position
 	}
 
 	return ConcentrationResult{
-		Type:              ConcentrationPosition,
-		HHI:               hhi,
-		EffectiveCount:    effectiveCount,
-		IsConcentrated:    isConcentrated,
-		Severity:          severity,
-		TopContributor:    topCode,
-		TopWeight:         topWeight,
-		Threshold:         m.Config.HHIWarningThreshold,
-		Breakdown:         weights,
-		Description:       fmt.Sprintf("整体集中度: HHI=%.3f, 有效标的=%.1f (最少 %d) [%s]",
+		Type:           ConcentrationPosition,
+		HHI:            hhi,
+		EffectiveCount: effectiveCount,
+		IsConcentrated: isConcentrated,
+		Severity:       severity,
+		TopContributor: topCode,
+		TopWeight:      topWeight,
+		Threshold:      m.Config.HHIWarningThreshold,
+		Breakdown:      weights,
+		Description: fmt.Sprintf("整体集中度: HHI=%.3f, 有效标的=%.1f (最少 %d) [%s]",
 			hhi, effectiveCount, m.Config.MinEffectiveCount, severity),
-		DetectedAt:        time.Now(),
+		DetectedAt: time.Now(),
 	}
 }
 
@@ -281,11 +281,11 @@ func (m *ConcentrationMonitor) MonitorPositionConcentration(positions []Position
 // 基于收益率相关性矩阵检测持仓是否过度集中在相关资产
 func (m *ConcentrationMonitor) CalculateCorrelationClustering(returns [][]float64) CorrelationResult {
 	result := CorrelationResult{
-		Clusters:    make([]CorrelationCluster, 0),
-		HighCorrPairs: make([]CorrelatedPair, 0),
+		Clusters:       make([]CorrelationCluster, 0),
+		HighCorrPairs:  make([]CorrelatedPair, 0),
 		AvgCorrelation: 0,
-		IsClustered: false,
-		Severity:    "normal",
+		IsClustered:    false,
+		Severity:       "normal",
 	}
 
 	if len(returns) < 3 || len(returns[0]) < 5 {
@@ -371,8 +371,8 @@ type CorrelationResult struct {
 
 // CorrelationCluster 相关聚类
 type CorrelationCluster struct {
-	Members     []int   `json:"members"`
-	AvgCorr     float64 `json:"avg_correlation"`
+	Members []int   `json:"members"`
+	AvgCorr float64 `json:"avg_correlation"`
 }
 
 // CorrelatedPair 高相关对

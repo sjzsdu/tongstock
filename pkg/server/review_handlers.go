@@ -13,22 +13,22 @@ import (
 // ============================================================================
 
 var (
-	reviewGenerator    = review.NewReviewGenerator()
-	failureAnalyzer    = review.NewFailureAnalyzer()
-	feedbackGenerator  = review.NewFeedbackGenerator()
-	reviewStore        []*review.ReviewReport
-	feedbackStore      []*review.FeedbackPortfolio
+	reviewGenerator   = review.NewReviewGenerator()
+	failureAnalyzer   = review.NewFailureAnalyzer()
+	feedbackGenerator = review.NewFeedbackGenerator()
+	reviewStore       []*review.ReviewReport
+	feedbackStore     []*review.FeedbackPortfolio
 )
 
 // reviewGenerateRequest 复盘生成请求
 type reviewGenerateRequest struct {
-	SourceID         string    `json:"source_id" binding:"required"`
-	SourceType       string    `json:"source_type" binding:"required,oneof=paradigm run system"`
-	Type             string    `json:"type" binding:"required,oneof=post_mortem retrospective param_audit failure_analysis"`
-	Period           string    `json:"period" binding:"required,oneof=weekly monthly quarterly"`
-	PeriodStart      time.Time `json:"period_start"`
-	PeriodEnd        time.Time `json:"period_end"`
-	Author           string    `json:"author"`
+	SourceID    string    `json:"source_id" binding:"required"`
+	SourceType  string    `json:"source_type" binding:"required,oneof=paradigm run system"`
+	Type        string    `json:"type" binding:"required,oneof=post_mortem retrospective param_audit failure_analysis"`
+	Period      string    `json:"period" binding:"required,oneof=weekly monthly quarterly"`
+	PeriodStart time.Time `json:"period_start"`
+	PeriodEnd   time.Time `json:"period_end"`
+	Author      string    `json:"author"`
 
 	SignalCount      int       `json:"signal_count"`
 	ExecutedCount    int       `json:"executed_count"`
@@ -40,8 +40,8 @@ type reviewGenerateRequest struct {
 	ParamChanges     int       `json:"param_changes"`
 	DataQualityScore float64   `json:"data_quality_score"`
 
-	Failures         []review.FailureEvent `json:"failures,omitempty"`
-	Decisions        []review.ReviewDecision `json:"decisions,omitempty"`
+	Failures  []review.FailureEvent   `json:"failures,omitempty"`
+	Decisions []review.ReviewDecision `json:"decisions,omitempty"`
 }
 
 // reviewGenerateResponse 复盘生成响应
@@ -58,7 +58,7 @@ type reviewListResponse struct {
 // reviewFailureAnalysisResponse 失败分析响应
 type reviewFailureAnalysisResponse struct {
 	Analysis review.FailureAnalysisResult `json:"analysis"`
-	Failures []review.FailureEvent       `json:"failures"`
+	Failures []review.FailureEvent        `json:"failures"`
 }
 
 // reviewFeedbackResponse 反馈响应
@@ -74,9 +74,9 @@ type reviewFeedbackListResponse struct {
 
 // reviewFeedbackUpdateRequest 反馈更新请求
 type reviewFeedbackUpdateRequest struct {
-	Status  string `json:"status"`
-	Note    string `json:"note"`
-	Actor   string `json:"actor"`
+	Status string `json:"status"`
+	Note   string `json:"note"`
+	Actor  string `json:"actor"`
 }
 
 // ============================================================================
@@ -334,9 +334,9 @@ func (s *Server) handleReviewFeedbackImplement(c *gin.Context) {
 	portfolioID := c.Param("id")
 
 	var req struct {
-		ItemID      string `json:"item_id" binding:"required"`
-		NewVersion  string `json:"new_version" binding:"required"`
-		Actor       string `json:"actor"`
+		ItemID     string `json:"item_id" binding:"required"`
+		NewVersion string `json:"new_version" binding:"required"`
+		Actor      string `json:"actor"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

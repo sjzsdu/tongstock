@@ -15,9 +15,9 @@ import (
 type AlertLevel string
 
 const (
-	AlertLevelInfo    AlertLevel = "info"    // 信息 (仅供参考)
-	AlertLevelWarning AlertLevel = "warning" // 警告 (需要关注)
-	AlertLevelDanger  AlertLevel = "danger"  // 危险 (需要行动)
+	AlertLevelInfo     AlertLevel = "info"     // 信息 (仅供参考)
+	AlertLevelWarning  AlertLevel = "warning"  // 警告 (需要关注)
+	AlertLevelDanger   AlertLevel = "danger"   // 危险 (需要行动)
 	AlertLevelCritical AlertLevel = "critical" // 严重 (立即行动)
 )
 
@@ -25,40 +25,40 @@ const (
 type AlertCategory string
 
 const (
-	CategoryDrift        AlertCategory = "drift"
-	CategoryDecay        AlertCategory = "decay"
+	CategoryDrift         AlertCategory = "drift"
+	CategoryDecay         AlertCategory = "decay"
 	CategoryConcentration AlertCategory = "concentration"
-	CategorySystem       AlertCategory = "system"
+	CategorySystem        AlertCategory = "system"
 )
 
 // AlertStatus 预警状态
 type AlertStatus string
 
 const (
-	AlertStatusActive    AlertStatus = "active"
-	AlertStatusAcked     AlertStatus = "acknowledged"
-	AlertStatusResolved  AlertStatus = "resolved"
+	AlertStatusActive     AlertStatus = "active"
+	AlertStatusAcked      AlertStatus = "acknowledged"
+	AlertStatusResolved   AlertStatus = "resolved"
 	AlertStatusSuppressed AlertStatus = "suppressed"
 )
 
 // Alert 预警事件
 type Alert struct {
-	ID          string        `json:"id"`
-	Category    AlertCategory `json:"category"`
-	Level       AlertLevel    `json:"level"`
-	Status      AlertStatus   `json:"status"`
-	Title       string        `json:"title"`
-	Message     string        `json:"message"`
-	Source      string        `json:"source"`      // 数据源标识 (paradigm_version_id 等)
-	MetricName  string        `json:"metric_name"`
-	MetricValue float64       `json:"metric_value"`
-	Threshold   float64       `json:"threshold"`
+	ID          string                 `json:"id"`
+	Category    AlertCategory          `json:"category"`
+	Level       AlertLevel             `json:"level"`
+	Status      AlertStatus            `json:"status"`
+	Title       string                 `json:"title"`
+	Message     string                 `json:"message"`
+	Source      string                 `json:"source"` // 数据源标识 (paradigm_version_id 等)
+	MetricName  string                 `json:"metric_name"`
+	MetricValue float64                `json:"metric_value"`
+	Threshold   float64                `json:"threshold"`
 	Metadata    map[string]interface{} `json:"metadata,omitempty"`
-	CreatedAt   time.Time     `json:"created_at"`
-	UpdatedAt   time.Time     `json:"updated_at"`
-	AckedAt     *time.Time    `json:"acked_at,omitempty"`
-	ResolvedAt  *time.Time    `json:"resolved_at,omitempty"`
-	AckedBy     string        `json:"acked_by,omitempty"`
+	CreatedAt   time.Time              `json:"created_at"`
+	UpdatedAt   time.Time              `json:"updated_at"`
+	AckedAt     *time.Time             `json:"acked_at,omitempty"`
+	ResolvedAt  *time.Time             `json:"resolved_at,omitempty"`
+	AckedBy     string                 `json:"acked_by,omitempty"`
 }
 
 // AlertConfig 预警配置
@@ -67,7 +67,7 @@ type AlertConfig struct {
 	CooldownMinutes int `json:"cooldown_minutes"`
 
 	// 升级规则
-	PromoteToDangerThreshold  int `json:"promote_to_danger_threshold"`  // N 次 warning 升级为 danger
+	PromoteToDangerThreshold   int `json:"promote_to_danger_threshold"`   // N 次 warning 升级为 danger
 	PromoteToCriticalThreshold int `json:"promote_to_critical_threshold"` // N 次 danger 升级为 critical
 
 	// 抑制规则
@@ -77,17 +77,17 @@ type AlertConfig struct {
 // NewAlertConfig 创建默认预警配置
 func NewAlertConfig() AlertConfig {
 	return AlertConfig{
-		CooldownMinutes:           30,
-		PromoteToDangerThreshold:  3,
+		CooldownMinutes:            30,
+		PromoteToDangerThreshold:   3,
 		PromoteToCriticalThreshold: 5,
-		AutoSuppressMinutes:       60,
+		AutoSuppressMinutes:        60,
 	}
 }
 
 // AlertEngine 预警引擎
 type AlertEngine struct {
-	Config AlertConfig
-	alerts []Alert
+	Config  AlertConfig
+	alerts  []Alert
 	counter int
 }
 
@@ -150,26 +150,26 @@ func (e *AlertEngine) alertFromDrift(r DriftDetectionResult, source string) *Ale
 
 	e.counter++
 	alert := Alert{
-		ID:         fmt.Sprintf("drift-%d", e.counter),
-		Category:   CategoryDrift,
-		Level:      level,
-		Status:     AlertStatusActive,
-		Title:      driftAlertTitle(r),
-		Message:    r.Description,
-		Source:     source,
-		MetricName: r.MetricName,
+		ID:          fmt.Sprintf("drift-%d", e.counter),
+		Category:    CategoryDrift,
+		Level:       level,
+		Status:      AlertStatusActive,
+		Title:       driftAlertTitle(r),
+		Message:     r.Description,
+		Source:      source,
+		MetricName:  r.MetricName,
 		MetricValue: r.NewValue,
-		Threshold:  r.Threshold,
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
+		Threshold:   r.Threshold,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
 		Metadata: map[string]interface{}{
-			"drift_type":   r.Type,
-			"severity":     r.Severity,
-			"old_value":    r.OldValue,
-			"new_value":    r.NewValue,
-			"delta_pct":    r.DeltaPct,
-			"p_value":      r.PValue,
-			"sample_size":  r.SampleSize,
+			"drift_type":  r.Type,
+			"severity":    r.Severity,
+			"old_value":   r.OldValue,
+			"new_value":   r.NewValue,
+			"delta_pct":   r.DeltaPct,
+			"p_value":     r.PValue,
+			"sample_size": r.SampleSize,
 		},
 	}
 	return &alert
@@ -224,25 +224,25 @@ func (e *AlertEngine) alertFromDecay(r DecayDetectionResult, source string) *Ale
 
 	e.counter++
 	alert := Alert{
-		ID:         fmt.Sprintf("decay-%d", e.counter),
-		Category:   CategoryDecay,
-		Level:      level,
-		Status:     AlertStatusActive,
-		Title:      decayAlertTitle(r),
-		Message:    r.Description,
-		Source:     source,
-		MetricName: string(r.Type),
+		ID:          fmt.Sprintf("decay-%d", e.counter),
+		Category:    CategoryDecay,
+		Level:       level,
+		Status:      AlertStatusActive,
+		Title:       decayAlertTitle(r),
+		Message:     r.Description,
+		Source:      source,
+		MetricName:  string(r.Type),
 		MetricValue: r.CurrentValue,
-		Threshold:  r.HistoricalAvg,
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
+		Threshold:   r.HistoricalAvg,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
 		Metadata: map[string]interface{}{
-			"decay_type":   r.Type,
-			"severity":     r.Severity,
-			"change_pct":   r.ChangePct,
-			"confidence":   r.Confidence,
-			"current":      r.CurrentValue,
-			"historical":   r.HistoricalAvg,
+			"decay_type": r.Type,
+			"severity":   r.Severity,
+			"change_pct": r.ChangePct,
+			"confidence": r.Confidence,
+			"current":    r.CurrentValue,
+			"historical": r.HistoricalAvg,
 		},
 	}
 	return &alert
@@ -270,13 +270,13 @@ func decayAlertLevel(r DecayDetectionResult) AlertLevel {
 // decayAlertTitle 生成衰减预警标题
 func decayAlertTitle(r DecayDetectionResult) string {
 	titles := map[DecayType]string{
-		DecaySharpeDecline:     "夏普比率衰减",
-		DecayWinRateDrop:       "胜率衰减",
-		DecayHalfLife:          "策略半衰期缩短",
-		DecayDrawdownExpansion: "回撤扩大",
-		DecayCUSUM:             "持续偏移检测",
+		DecaySharpeDecline:      "夏普比率衰减",
+		DecayWinRateDrop:        "胜率衰减",
+		DecayHalfLife:           "策略半衰期缩短",
+		DecayDrawdownExpansion:  "回撤扩大",
+		DecayCUSUM:              "持续偏移检测",
 		DecayVolatilityIncrease: "波动率上升",
-		DecayHitRateDecay:      "命中率衰减",
+		DecayHitRateDecay:       "命中率衰减",
 	}
 	if title, ok := titles[r.Type]; ok {
 		return title
@@ -297,18 +297,18 @@ func (e *AlertEngine) alertFromConcentration(r ConcentrationResult, source strin
 
 	e.counter++
 	alert := Alert{
-		ID:         fmt.Sprintf("conc-%d", e.counter),
-		Category:   CategoryConcentration,
-		Level:      level,
-		Status:     AlertStatusActive,
-		Title:      concAlertTitle(r),
-		Message:    r.Description,
-		Source:     source,
-		MetricName: string(r.Type),
+		ID:          fmt.Sprintf("conc-%d", e.counter),
+		Category:    CategoryConcentration,
+		Level:       level,
+		Status:      AlertStatusActive,
+		Title:       concAlertTitle(r),
+		Message:     r.Description,
+		Source:      source,
+		MetricName:  string(r.Type),
 		MetricValue: r.HHI,
-		Threshold:  r.Threshold,
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
+		Threshold:   r.Threshold,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
 		Metadata: map[string]interface{}{
 			"conc_type":       r.Type,
 			"severity":        r.Severity,
@@ -341,10 +341,10 @@ func concAlertLevel(r ConcentrationResult) AlertLevel {
 // concAlertTitle 生成集中度预警标题
 func concAlertTitle(r ConcentrationResult) string {
 	titles := map[ConcentrationType]string{
-		ConcentrationPosition:   "持仓集中度",
-		ConcentrationIndustry:   "行业集中度",
-		ConcentrationStock:      "个股集中度",
-		ConcentrationSector:     "板块集中度",
+		ConcentrationPosition:    "持仓集中度",
+		ConcentrationIndustry:    "行业集中度",
+		ConcentrationStock:       "个股集中度",
+		ConcentrationSector:      "板块集中度",
 		ConcentrationCorrelation: "相关性集中度",
 	}
 	if title, ok := titles[r.Type]; ok {
@@ -476,15 +476,15 @@ func (e *AlertEngine) GetAlertSummary() AlertSummary {
 
 // AlertSummary 预警汇总
 type AlertSummary struct {
-	TotalAlerts      int `json:"total_alerts"`
-	ActiveCount      int `json:"active_count"`
-	AckedCount       int `json:"acked_count"`
-	ResolvedCount    int `json:"resolved_count"`
-	SuppressedCount  int `json:"suppressed_count"`
-	CriticalCount    int `json:"critical_count"`
-	DangerCount      int `json:"danger_count"`
-	WarningCount     int `json:"warning_count"`
-	InfoCount        int `json:"info_count"`
+	TotalAlerts     int `json:"total_alerts"`
+	ActiveCount     int `json:"active_count"`
+	AckedCount      int `json:"acked_count"`
+	ResolvedCount   int `json:"resolved_count"`
+	SuppressedCount int `json:"suppressed_count"`
+	CriticalCount   int `json:"critical_count"`
+	DangerCount     int `json:"danger_count"`
+	WarningCount    int `json:"warning_count"`
+	InfoCount       int `json:"info_count"`
 }
 
 // SortAlerts 按级别和时间排序预警

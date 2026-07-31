@@ -35,7 +35,7 @@ export default function Retrospective() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { queueMicrotask(() => void load()); }, []);
 
   // 计算表现
   const withReturn = paradigms.filter(p => p.actual_return !== undefined && p.actual_return !== null);

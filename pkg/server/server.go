@@ -9,6 +9,7 @@ import (
 	"github.com/sjzsdu/tongstock/internal/app/stockdata"
 	"github.com/sjzsdu/tongstock/internal/experiment"
 	"github.com/sjzsdu/tongstock/internal/ledger"
+	"github.com/sjzsdu/tongstock/internal/monitoring"
 	"github.com/sjzsdu/tongstock/internal/paradigm"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
 	"github.com/sjzsdu/tongstock/pkg/history"
@@ -44,6 +45,9 @@ type Server struct {
 	experimentRegistry    *experiment.SQLiteRegistry
 	researchTools         *ai_tools.ToolRegistry
 	storage               *storage.Storage
+	monitoringMu          sync.RWMutex
+	monitoringEngine      *monitoring.MonitorEngine
+	monitoringReport      *monitoring.MonitorReport
 	paradigmAlertMu       sync.RWMutex
 	paradigmAlertCache    []paradigmAlert
 	paradigmAlertLastScan time.Time
@@ -126,6 +130,7 @@ func NewServer(deps Dependencies) *Server {
 		newsfeedHandler:       deps.Newsfeed,
 		diagnostics:           deps.Diagnostics,
 		storage:               deps.Storage,
+		monitoringEngine:      monitoring.NewMonitorEngine(monitoring.NewDefaultMonitorConfig()),
 	}
 	if deps.Storage != nil {
 		s.paradigmSnapshots = paradigm.NewDatasetSnapshotStore(deps.Storage)

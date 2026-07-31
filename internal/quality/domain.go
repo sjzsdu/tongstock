@@ -21,13 +21,13 @@ const (
 type Category string
 
 const (
-	CategoryMissingData     Category = "missing_data"     // 数据缺失
-	CategoryDuplicate       Category = "duplicate"        // 重复记录
-	CategoryAbnormalPrice   Category = "abnormal_price"   // 异常价格
-	CategoryAbnormalVolume  Category = "abnormal_volume"  // 异常成交量
-	CategoryTimeReversal    Category = "time_reversal"   // 时间倒序
-	CategoryFinancialLag    Category = "financial_lag"    // 财务数据滞后
-	CategoryPoolCoverage    Category = "pool_coverage"    // 证券池覆盖
+	CategoryMissingData       Category = "missing_data"       // 数据缺失
+	CategoryDuplicate         Category = "duplicate"          // 重复记录
+	CategoryAbnormalPrice     Category = "abnormal_price"     // 异常价格
+	CategoryAbnormalVolume    Category = "abnormal_volume"    // 异常成交量
+	CategoryTimeReversal      Category = "time_reversal"      // 时间倒序
+	CategoryFinancialLag      Category = "financial_lag"      // 财务数据滞后
+	CategoryPoolCoverage      Category = "pool_coverage"      // 证券池覆盖
 	CategorySourceDegradation Category = "source_degradation" // 数据源降级
 )
 
@@ -50,11 +50,11 @@ type QualityReport struct {
 	SnapshotID string         `json:"snapshot_id,omitempty"`
 	StockCode  string         `json:"stock_code,omitempty"`
 	DateRange  DateRangeInfo  `json:"date_range"`
-	Source     string         `json:"source"`    // 数据源: kline / finance / xdxr
+	Source     string         `json:"source"` // 数据源: kline / finance / xdxr
 	AsOf       time.Time      `json:"as_of"`
 	Issues     []QualityIssue `json:"issues"`
-	Passed     bool           `json:"passed"`      // 是否通过质量门
-	Blocked    bool           `json:"blocked"`     // 是否被阻止 (存在 critical)
+	Passed     bool           `json:"passed"`  // 是否通过质量门
+	Blocked    bool           `json:"blocked"` // 是否被阻止 (存在 critical)
 	Summary    QualitySummary `json:"summary"`
 	CreatedAt  time.Time      `json:"created_at"`
 }
@@ -67,13 +67,13 @@ type DateRangeInfo struct {
 
 // QualitySummary 质量摘要统计。
 type QualitySummary struct {
-	TotalIssues     int `json:"total_issues"`
-	CriticalCount   int `json:"critical_count"`
-	WarningCount    int `json:"warning_count"`
-	InfoCount       int `json:"info_count"`
-	CheckedRecords  int `json:"checked_records"`
-	PassedRecords   int `json:"passed_records"`
-	FailedRecords   int `json:"failed_records"`
+	TotalIssues     int     `json:"total_issues"`
+	CriticalCount   int     `json:"critical_count"`
+	WarningCount    int     `json:"warning_count"`
+	InfoCount       int     `json:"info_count"`
+	CheckedRecords  int     `json:"checked_records"`
+	PassedRecords   int     `json:"passed_records"`
+	FailedRecords   int     `json:"failed_records"`
 	CoveragePercent float64 `json:"coverage_percent"`
 }
 
@@ -112,12 +112,12 @@ func DefaultQualityGateConfig() QualityGateConfig {
 
 // QualityGateResult 质量门决策结果。
 type QualityGateResult struct {
-	Passed    bool     `json:"passed"`
-	Blocked   bool     `json:"blocked"`
-	Decision  string   `json:"decision"` // "pass" / "warn" / "block"
-	Reason    string   `json:"reason"`
-	ReportID  string   `json:"report_id"`
-	Issues    []string `json:"issues,omitempty"`
+	Passed    bool      `json:"passed"`
+	Blocked   bool      `json:"blocked"`
+	Decision  string    `json:"decision"` // "pass" / "warn" / "block"
+	Reason    string    `json:"reason"`
+	ReportID  string    `json:"report_id"`
+	Issues    []string  `json:"issues,omitempty"`
 	CheckedAt time.Time `json:"checked_at"`
 }
 

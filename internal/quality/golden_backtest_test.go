@@ -72,12 +72,12 @@ func TestGoldenBacktestRunner_RegressionDetection(t *testing.T) {
 func TestGoldenBacktestRunner_BuyAndHoldDeclining(t *testing.T) {
 	engine := NewBaselineEngineAdapter()
 	spec := GoldenTestSpec{
-		ID:            "declining_test",
-		Description:   "买入持有 (价格下跌)",
-		InputData:     generateLinearBars(5, 10.0, -0.3),
-		StrategyName:  "buy_and_hold",
+		ID:             "declining_test",
+		Description:    "买入持有 (价格下跌)",
+		InputData:      generateLinearBars(5, 10.0, -0.3),
+		StrategyName:   "buy_and_hold",
 		ExpectedReturn: -0.1361,
-		Tolerance:     0.05,
+		Tolerance:      0.05,
 	}
 	runner := NewGoldenBacktestRunner(engine, []GoldenTestSpec{spec})
 	_, details := runner.RunAll(context.Background())

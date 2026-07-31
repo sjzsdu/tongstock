@@ -6,11 +6,12 @@ BINDIR ?= $(HOME)/.local/bin
 CLI_BIN := tongstock
 GO ?= go
 GOFMT ?= gofmt
+NPM ?= npm
 
 all: cli
 
 web:
-	cd web && CI=true pnpm run build
+	cd web && $(NPM) run build
 	rm -rf pkg/web/dist
 	cp -rf web/dist pkg/web/dist
 
@@ -24,10 +25,10 @@ go-check:
 	$(GO) test -race ./pkg/tdx/... ./pkg/server/... ./internal/app/... ./internal/serverapp
 
 web-check:
-	cd web && pnpm lint
-	cd web && pnpm typecheck
-	cd web && pnpm api:check
-	cd web && pnpm test:ci
+	cd web && $(NPM) run lint
+	cd web && $(NPM) run typecheck
+	cd web && $(NPM) run api:check
+	cd web && $(NPM) run test:ci
 
 cli: web
 	go build -o $(CLI_BIN) ./cmd/cli

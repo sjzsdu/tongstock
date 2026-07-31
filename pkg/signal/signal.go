@@ -11,10 +11,10 @@ import (
 type TrendDirection int
 
 const (
-	TrendUnknown TrendDirection = iota
-	TrendUptrend    // 上涨趋势
-	TrendDowntrend  // 下跌趋势
-	TrendSideways   // 横盘震荡
+	TrendUnknown   TrendDirection = iota
+	TrendUptrend                  // 上涨趋势
+	TrendDowntrend                // 下跌趋势
+	TrendSideways                 // 横盘震荡
 )
 
 // DetectTrend 判断当前的趋势方向

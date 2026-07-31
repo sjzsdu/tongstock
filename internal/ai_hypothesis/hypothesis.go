@@ -24,10 +24,10 @@ import (
 type HypothesisStatus string
 
 const (
-	HypothesisDraft       HypothesisStatus = "draft"       // 草稿 (刚生成)
-	HypothesisValidated   HypothesisStatus = "validated"   // 已通过可证伪性检查
-	HypothesisRejected    HypothesisStatus = "rejected"    // 已拒绝 (不可证伪/缺失数据)
-	HypothesisSchemaOK    HypothesisStatus = "schema_ok"   // Schema 合规, 可进入隔离区
+	HypothesisDraft        HypothesisStatus = "draft"      // 草稿 (刚生成)
+	HypothesisValidated    HypothesisStatus = "validated"  // 已通过可证伪性检查
+	HypothesisRejected     HypothesisStatus = "rejected"   // 已拒绝 (不可证伪/缺失数据)
+	HypothesisSchemaOK     HypothesisStatus = "schema_ok"  // Schema 合规, 可进入隔离区
 	HypothesisInQuarantine HypothesisStatus = "quarantine" // 已进入候选隔离区
 )
 
@@ -103,19 +103,19 @@ type MissingDataIssue struct {
 
 // AIHypothesis AI 生成的结构化假设
 type AIHypothesis struct {
-	ID          string               `json:"id"`
-	Title       string               `json:"title"`
-	Statement   string               `json:"statement"`   // 可证伪的假设陈述
-	Status      HypothesisStatus     `json:"status"`
-	Behavior    BehavioralLogic      `json:"behavior"`    // 行为逻辑
-	CounterExamples []CounterExample `json:"counter_examples"` // 反例列表
-	Verifications []VerificationItem `json:"verifications"`    // 验证项列表
-	SchemaSpec   HypothesisSchemaSpec `json:"schema_spec"`   // 生成的 Schema 规范
-	VersionTag   VersionTag           `json:"version_tag"`   // 版本追踪
-	MissingData  []MissingDataIssue   `json:"missing_data,omitempty"` // 缺失数据
-	RejectReason string               `json:"reject_reason,omitempty"` // 拒绝原因
-	CreatedAt    time.Time            `json:"created_at"`
-	UpdatedAt    time.Time            `json:"updated_at"`
+	ID              string               `json:"id"`
+	Title           string               `json:"title"`
+	Statement       string               `json:"statement"` // 可证伪的假设陈述
+	Status          HypothesisStatus     `json:"status"`
+	Behavior        BehavioralLogic      `json:"behavior"`                // 行为逻辑
+	CounterExamples []CounterExample     `json:"counter_examples"`        // 反例列表
+	Verifications   []VerificationItem   `json:"verifications"`           // 验证项列表
+	SchemaSpec      HypothesisSchemaSpec `json:"schema_spec"`             // 生成的 Schema 规范
+	VersionTag      VersionTag           `json:"version_tag"`             // 版本追踪
+	MissingData     []MissingDataIssue   `json:"missing_data,omitempty"`  // 缺失数据
+	RejectReason    string               `json:"reject_reason,omitempty"` // 拒绝原因
+	CreatedAt       time.Time            `json:"created_at"`
+	UpdatedAt       time.Time            `json:"updated_at"`
 }
 
 // HypothesisSchemaSpec 假设对应的范式 Schema 规范 (准备进入隔离区)
@@ -146,15 +146,15 @@ type HypothesisSchemaSpec struct {
 func NewAIHypothesis(id, title, statement string) *AIHypothesis {
 	now := time.Now()
 	return &AIHypothesis{
-		ID:            id,
-		Title:         title,
-		Statement:     statement,
-		Status:        HypothesisDraft,
+		ID:              id,
+		Title:           title,
+		Statement:       statement,
+		Status:          HypothesisDraft,
 		CounterExamples: make([]CounterExample, 0),
-		Verifications: make([]VerificationItem, 0),
-		MissingData:   make([]MissingDataIssue, 0),
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		Verifications:   make([]VerificationItem, 0),
+		MissingData:     make([]MissingDataIssue, 0),
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 }
 

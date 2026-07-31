@@ -2,7 +2,6 @@ package paradigms
 
 import (
 	"fmt"
-	"time"
 )
 
 // ============================================================================
@@ -174,47 +173,6 @@ func (s PipelineStats) String() string {
 // CandidateProcessor 候选处理器接口
 type CandidateProcessor interface {
 	Process(candidate *Candidate) (*TestResult, error)
-}
-
-// SimpleProcessor 简单处理器 (用于测试)
-type SimpleProcessor struct {
-	successRate float64 // 成功率 (0-1)
-}
-
-func NewSimpleProcessor(successRate float64) *SimpleProcessor {
-	if successRate < 0 {
-		successRate = 0
-	}
-	if successRate > 1 {
-		successRate = 1
-	}
-	return &SimpleProcessor{successRate: successRate}
-}
-
-func (p *SimpleProcessor) Process(candidate *Candidate) (*TestResult, error) {
-	now := time.Now()
-
-	// 模拟回测结果
-	return &TestResult{
-		BacktestResult: &BacktestSummary{
-			TotalReturn: 0.15 * p.successRate,
-			SharpeRatio: 1.5 * p.successRate,
-			MaxDrawdown: 0.10,
-			WinRate:     0.55,
-			TradesCount: 20,
-			SampleSize:  252,
-			Confidence:  p.successRate,
-		},
-		CrossValidation: &CrossValidationResult{
-			MeanReturn:     0.12 * p.successRate,
-			StdReturn:      0.05,
-			WorstReturn:    0.05 * p.successRate,
-			StabilityScore: p.successRate * 0.8,
-			OverfitRisk:    1.0 - p.successRate,
-			Folds:          5,
-		},
-		CheckedAt: now,
-	}, nil
 }
 
 // PipelineBuilder 管线构建器 (链式调用)

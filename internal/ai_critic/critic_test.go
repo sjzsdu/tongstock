@@ -658,12 +658,12 @@ func TestFullReviewPipeline_BadCandidate_Blocked(t *testing.T) {
 func TestCriticalDimension_IndependentReview(t *testing.T) {
 	// 验证 7 种独立审查维度
 	expectedDims := map[ReviewDimension]bool{
-		DimDataLeakage:    true,
-		DimSelectionBias:  true,
-		DimSampleSize:     true,
+		DimDataLeakage:     true,
+		DimSelectionBias:   true,
+		DimSampleSize:      true,
 		DimCostSensitivity: true,
-		DimConcentration:  true,
-		DimNarrativeBias:  true,
+		DimConcentration:   true,
+		DimNarrativeBias:   true,
 		DimBaselineCompare: true,
 	}
 

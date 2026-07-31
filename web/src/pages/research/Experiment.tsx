@@ -98,7 +98,7 @@ export default function Experiment() {
   };
 
   useEffect(() => {
-    void load();
+	queueMicrotask(() => void load());
   }, []);
 
   // 按审查状态分组统计

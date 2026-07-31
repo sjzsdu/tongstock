@@ -29,28 +29,28 @@ const (
 
 // StateTransition 记录一次状态变更的审计信息
 type StateTransition struct {
-	ID            string    `json:"id"`
-	ParadigmID    string    `json:"paradigm_id"`
-	From          string    `json:"from"`
-	To            string    `json:"to"`
-	Action        string    `json:"action"`            // promote / downgrade / suspend / resume / reject / verify / review
-	Reason        string    `json:"reason"`            // 人类可读的变更原因
-	Actor         string    `json:"actor,omitempty"`   // 操作人或代理
-	EvidenceHash  string    `json:"evidence_hash,omitempty"`
-	Auto          bool      `json:"auto"`              // true 表示系统自动触发, false 为人工决定
-	CreatedAt     time.Time `json:"created_at"`
+	ID           string    `json:"id"`
+	ParadigmID   string    `json:"paradigm_id"`
+	From         string    `json:"from"`
+	To           string    `json:"to"`
+	Action       string    `json:"action"`          // promote / downgrade / suspend / resume / reject / verify / review
+	Reason       string    `json:"reason"`          // 人类可读的变更原因
+	Actor        string    `json:"actor,omitempty"` // 操作人或代理
+	EvidenceHash string    `json:"evidence_hash,omitempty"`
+	Auto         bool      `json:"auto"` // true 表示系统自动触发, false 为人工决定
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 // ValidTransitions 定义允许的状态迁移
 // key: "from->to" ; value: 允许的 action 列表
 var ValidTransitions = map[string][]string{
 	// pending 流程
-	StatePending + "->" + StateReviewed:  {"review"},
-	StatePending + "->" + StateRejected:  {"reject"},
+	StatePending + "->" + StateReviewed: {"review"},
+	StatePending + "->" + StateRejected: {"reject"},
 	// reviewed 流程
-	StateReviewed + "->" + StateVerified:  {"verify"},
-	StateReviewed + "->" + StateRejected:  {"reject"},
-	StateReviewed + "->" + StatePending:   {"rollback"},
+	StateReviewed + "->" + StateVerified: {"verify"},
+	StateReviewed + "->" + StateRejected: {"reject"},
+	StateReviewed + "->" + StatePending:  {"rollback"},
 	// verified 流程
 	StateVerified + "->" + StatePromoted:  {"promote"},
 	StateVerified + "->" + StateSuspended: {"suspend"},
@@ -67,8 +67,8 @@ var ValidTransitions = map[string][]string{
 	// suspended 恢复/淘汰
 	StateSuspended + "->" + StateVerified: {"resume"},
 	StateSuspended + "->" + StateDegraded: {"resume"},
-	StateSuspended + "->" + StatePromoted:  {"resume", "promote"},
-	StateSuspended + "->" + StateRejected:  {"reject"},
+	StateSuspended + "->" + StatePromoted: {"resume", "promote"},
+	StateSuspended + "->" + StateRejected: {"reject"},
 	// rejected 不可恢复 (保留历史)
 }
 

@@ -43,10 +43,10 @@ func NewValidator() *Validator {
 			"indicator.ATR":   true,
 		},
 		KnownIndicators: map[string][]string{
-			"MA5":  {"period", "method"},
-			"MA10": {"period", "method"},
-			"MA20": {"period", "method"},
-			"MA60": {"period", "method"},
+			"MA5":   {"period", "method"},
+			"MA10":  {"period", "method"},
+			"MA20":  {"period", "method"},
+			"MA60":  {"period", "method"},
 			"EMA12": {"period"},
 			"EMA26": {"period"},
 			"MACD":  {"fast", "slow", "signal"},
@@ -274,7 +274,7 @@ func (v *Validator) validateContextRule(cr *ContextRule) []ValidationError {
 		for _, val := range cr.Values {
 			if !validValues[val] {
 				errors = append(errors, ValidationError{
-					Level:   "warning",
+					Level: "warning",
 					Message: fmt.Sprintf("unknown value '%s' for context key '%s' (valid: %s)",
 						val, cr.Key, strings.Join(getKeys(validValues), ", ")),
 				})

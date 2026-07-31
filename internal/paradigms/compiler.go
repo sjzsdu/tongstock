@@ -26,16 +26,16 @@ type CompiledRule struct {
 
 // CompiledSchema 编译后的 Schema
 type CompiledSchema struct {
-	ID            string          `json:"id"`
-	Version       int             `json:"version"`
-	EntryRules    []CompiledRule  `json:"entry_rules"`
-	ExitRules     []CompiledRule  `json:"exit_rules"`
-	ConfirmRules  []CompiledRule  `json:"confirm_rules"`
-	InvalidRules  []CompiledRule  `json:"invalid_rules"`
-	ContextRules  []ContextRule   `json:"context_rules"`
-	HoldingPeriod string          `json:"holding_period"`
-	MaxDrawdown   float64         `json:"max_drawdown"`
-	FeatureList   []string        `json:"feature_list"` // 所有需要的特征
+	ID            string         `json:"id"`
+	Version       int            `json:"version"`
+	EntryRules    []CompiledRule `json:"entry_rules"`
+	ExitRules     []CompiledRule `json:"exit_rules"`
+	ConfirmRules  []CompiledRule `json:"confirm_rules"`
+	InvalidRules  []CompiledRule `json:"invalid_rules"`
+	ContextRules  []ContextRule  `json:"context_rules"`
+	HoldingPeriod string         `json:"holding_period"`
+	MaxDrawdown   float64        `json:"max_drawdown"`
+	FeatureList   []string       `json:"feature_list"` // 所有需要的特征
 }
 
 // Compiler 规则编译器
@@ -76,14 +76,14 @@ func (c *Compiler) Compile(schema *ParadigmSchema) (*CompiledSchema, error) {
 	// 编译规则
 	for _, rule := range schema.Rules {
 		compiledRule := CompiledRule{
-			ID:        rule.ID,
-			Type:      rule.Type,
-			Side:      rule.Side,
-			Feature:   rule.FeatureName,
-			Operator:  rule.Operator,
-			Required:  rule.Required,
-			Weight:    rule.Weight,
-			FuncName:  c.getFuncName(rule.Operator),
+			ID:       rule.ID,
+			Type:     rule.Type,
+			Side:     rule.Side,
+			Feature:  rule.FeatureName,
+			Operator: rule.Operator,
+			Required: rule.Required,
+			Weight:   rule.Weight,
+			FuncName: c.getFuncName(rule.Operator),
 		}
 
 		// 设置阈值
@@ -125,16 +125,16 @@ func (c *Compiler) Compile(schema *ParadigmSchema) (*CompiledSchema, error) {
 // getFuncName 获取运算符对应的函数名
 func (c *Compiler) getFuncName(op RuleOperator) string {
 	funcNames := map[RuleOperator]string{
-		OpGreaterThan:  "gt",
-		OpLessThan:     "lt",
-		OpEqual:        "eq",
-		OpBetween:      "between",
-		OpCrossAbove:   "cross_above",
-		OpCrossBelow:   "cross_below",
-		OpAbove:        "above",
-		OpBelow:        "below",
-		OpMaxDrawdown:  "max_dd",
-		OpMaxDuration:  "max_duration",
+		OpGreaterThan: "gt",
+		OpLessThan:    "lt",
+		OpEqual:       "eq",
+		OpBetween:     "between",
+		OpCrossAbove:  "cross_above",
+		OpCrossBelow:  "cross_below",
+		OpAbove:       "above",
+		OpBelow:       "below",
+		OpMaxDrawdown: "max_dd",
+		OpMaxDuration: "max_duration",
 	}
 	return funcNames[op]
 }

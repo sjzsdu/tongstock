@@ -7,10 +7,10 @@ import (
 
 // ComputeRequest 特征计算请求。
 type ComputeRequest struct {
-	StockCode string          `json:"stock_code"`
-	Features  []string        `json:"features"`  // FeatureSpec ID 列表
-	AsOf      time.Time       `json:"as_of"`     // 数据可获得时间 (无泄漏边界)
-	PriceReq  PriceAdjustment `json:"price_req"` // 价格口径
+	StockCode string                 `json:"stock_code"`
+	Features  []string               `json:"features"`         // FeatureSpec ID 列表
+	AsOf      time.Time              `json:"as_of"`            // 数据可获得时间 (无泄漏边界)
+	PriceReq  PriceAdjustment        `json:"price_req"`        // 价格口径
 	Params    map[string]interface{} `json:"params,omitempty"` // 覆盖默认参数
 }
 
@@ -58,12 +58,12 @@ func (p *FeaturePipeline) Compute(req ComputeRequest) (*ComputeResponse, error) 
 	// 2. 无泄漏检查
 	leakCheck := p.performLeakCheck(computationOrder, req.AsOf)
 	response := &ComputeResponse{
-		StockCode:  req.StockCode,
-		AsOf:       req.AsOf,
-		Results:    make(map[string]float64),
+		StockCode:   req.StockCode,
+		AsOf:        req.AsOf,
+		Results:     make(map[string]float64),
 		FeatureMeta: make(map[string]interface{}),
-		LeakCheck:  leakCheck,
-		ComputedAt: time.Now(),
+		LeakCheck:   leakCheck,
+		ComputedAt:  time.Now(),
 	}
 
 	if !leakCheck.Passed {
@@ -82,11 +82,11 @@ func (p *FeaturePipeline) Compute(req ComputeRequest) (*ComputeResponse, error) 
 		}
 
 		response.FeatureMeta[spec.ID] = map[string]interface{}{
-			"version":   spec.Version,
-			"window":    spec.Window,
-			"timing":    spec.Timing,
-			"params":    params,
-			"as_of":     req.AsOf.Format("2006-01-02"),
+			"version": spec.Version,
+			"window":  spec.Window,
+			"timing":  spec.Timing,
+			"params":  params,
+			"as_of":   req.AsOf.Format("2006-01-02"),
 		}
 
 		// 计算最少样本数检查

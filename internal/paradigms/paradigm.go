@@ -21,10 +21,10 @@ type Paradigm struct {
 	Validation  ValidationSummary `json:"validation,omitempty"`
 	// Evidence holds the admission check result for paradigm promotion.
 	// Populated when the paradigm undergoes validation.
-	Evidence *ParadigmEvidence `json:"evidence,omitempty"`
-	CreatedAt   time.Time         `json:"created_at"`
-	UpdatedAt   time.Time         `json:"updated_at"`
-	Tags        []string          `json:"tags,omitempty"`
+	Evidence  *ParadigmEvidence `json:"evidence,omitempty"`
+	CreatedAt time.Time         `json:"created_at"`
+	UpdatedAt time.Time         `json:"updated_at"`
+	Tags      []string          `json:"tags,omitempty"`
 	// Review fields
 	ReviewStatus string   `json:"review_status,omitempty"` // pending / reviewed / verified / promoted / degraded / suspended / rejected
 	ReviewNote   string   `json:"review_note,omitempty"`
@@ -92,6 +92,7 @@ type ParadigmEvidence struct {
 	Warnings    []string `json:"warnings,omitempty"`
 	Suggestions []string `json:"suggestions,omitempty"`
 }
+
 // EvaluatedItem is a condition with its current status
 type EvaluatedItem struct {
 	Text   string `json:"text"`

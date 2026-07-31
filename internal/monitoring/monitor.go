@@ -27,10 +27,10 @@ type MonitorConfig struct {
 	Source string `json:"source"`
 
 	// 各检测器配置
-	DriftConfig        DriftConfig        `json:"drift_config"`
-	DecayConfig        DecayConfig        `json:"decay_config"`
+	DriftConfig         DriftConfig         `json:"drift_config"`
+	DecayConfig         DecayConfig         `json:"decay_config"`
 	ConcentrationConfig ConcentrationConfig `json:"concentration_config"`
-	AlertConfig        AlertConfig        `json:"alert_config"`
+	AlertConfig         AlertConfig         `json:"alert_config"`
 
 	// 监控周期
 	MonitoringIntervalDays int `json:"monitoring_interval_days"` // 监控间隔 (天)
@@ -66,9 +66,9 @@ func NewDefaultMonitorConfig() MonitorConfig {
 			ModerateThreshold:     0.25,
 			SevereThreshold:       0.40,
 		},
-		DecayConfig:         NewDecayConfig(),
-		ConcentrationConfig: NewConcentrationConfig(),
-		AlertConfig:         NewAlertConfig(),
+		DecayConfig:            NewDecayConfig(),
+		ConcentrationConfig:    NewConcentrationConfig(),
+		AlertConfig:            NewAlertConfig(),
 		MonitoringIntervalDays: 1,
 		AnalysisWindowDays:     60,
 		MaxHistoricalDays:      252,
@@ -116,45 +116,45 @@ func NewDriftDetectorWithConfig(config DriftConfig) *DriftDetector {
 
 // MonitorReport 监控报告
 type MonitorReport struct {
-	Source         string                        `json:"source"`
-	GeneratedAt    time.Time                     `json:"generated_at"`
-	Period         MonitoringPeriod              `json:"period"`
+	Source      string           `json:"source"`
+	GeneratedAt time.Time        `json:"generated_at"`
+	Period      MonitoringPeriod `json:"period"`
 
 	// 漂移检测结果
-	DriftResults   []DriftDetectionResult        `json:"drift_results"`
-	DriftSummary   DriftSummary                  `json:"drift_summary"`
+	DriftResults []DriftDetectionResult `json:"drift_results"`
+	DriftSummary DriftSummary           `json:"drift_summary"`
 
 	// 衰减检测结果
-	DecayResults   []DecayDetectionResult        `json:"decay_results"`
-	DecaySummary   DecaySummary                  `json:"decay_summary"`
+	DecayResults []DecayDetectionResult `json:"decay_results"`
+	DecaySummary DecaySummary           `json:"decay_summary"`
 
 	// 集中度结果
-	ConcentrationResults []ConcentrationResult    `json:"concentration_results"`
-	ConcentrationSummary ConcentrationSummary      `json:"concentration_summary"`
+	ConcentrationResults []ConcentrationResult `json:"concentration_results"`
+	ConcentrationSummary ConcentrationSummary  `json:"concentration_summary"`
 
 	// 预警
-	GeneratedAlerts []Alert                       `json:"generated_alerts"`
-	AlertSummary    AlertSummary                  `json:"alert_summary"`
+	GeneratedAlerts []Alert      `json:"generated_alerts"`
+	AlertSummary    AlertSummary `json:"alert_summary"`
 
 	// 建议
-	Recommendations []string                     `json:"recommendations"`
-	HealthScore     float64                      `json:"health_score"` // 0-100, 越高越好
+	Recommendations []string `json:"recommendations"`
+	HealthScore     float64  `json:"health_score"` // 0-100, 越高越好
 }
 
 // MonitoringPeriod 监控周期
 type MonitoringPeriod struct {
-	StartDate time.Time `json:"start_date"`
-	EndDate   time.Time `json:"end_date"`
-	WindowDays int      `json:"window_days"`
+	StartDate  time.Time `json:"start_date"`
+	EndDate    time.Time `json:"end_date"`
+	WindowDays int       `json:"window_days"`
 }
 
 // DriftSummary 漂移汇总
 type DriftSummary struct {
-	TotalDetections  int `json:"total_detections"`
-	SignificantCount int `json:"significant_count"`
-	SevereCount      int `json:"severe_count"`
+	TotalDetections  int     `json:"total_detections"`
+	SignificantCount int     `json:"significant_count"`
+	SevereCount      int     `json:"severe_count"`
 	AverageDeltaPct  float64 `json:"average_delta_pct"`
-	OverallStatus    string `json:"overall_status"` // normal / watch / alert / critical
+	OverallStatus    string  `json:"overall_status"` // normal / watch / alert / critical
 }
 
 // DecaySummary 衰减汇总
@@ -168,11 +168,11 @@ type DecaySummary struct {
 
 // ConcentrationSummary 集中度汇总
 type ConcentrationSummary struct {
-	TotalDetections int     `json:"total_detections"`
-	ConcentratedCount int   `json:"concentrated_count"`
-	CriticalCount   int     `json:"critical_count"`
-	AvgHHI          float64 `json:"avg_hhi"`
-	OverallStatus   string  `json:"overall_status"`
+	TotalDetections   int     `json:"total_detections"`
+	ConcentratedCount int     `json:"concentrated_count"`
+	CriticalCount     int     `json:"critical_count"`
+	AvgHHI            float64 `json:"avg_hhi"`
+	OverallStatus     string  `json:"overall_status"`
 }
 
 // MonitoringInput 监控输入
@@ -192,8 +192,8 @@ func (e *MonitorEngine) RunMonitoring(input MonitoringInput) MonitorReport {
 		Source:      e.Config.Source,
 		GeneratedAt: time.Now(),
 		Period: MonitoringPeriod{
-			StartDate: time.Now().AddDate(0, 0, -e.Config.AnalysisWindowDays),
-			EndDate:   time.Now(),
+			StartDate:  time.Now().AddDate(0, 0, -e.Config.AnalysisWindowDays),
+			EndDate:    time.Now(),
 			WindowDays: e.Config.AnalysisWindowDays,
 		},
 	}

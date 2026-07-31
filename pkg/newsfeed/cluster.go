@@ -30,10 +30,10 @@ func DefaultClusterConfig() ClusterConfig {
 	return ClusterConfig{
 		KeywordMinFrequency:   2,
 		CooccurrenceThreshold: 1,
-		TimeWindow:           60,
-		SimilarityThreshold:  0.5,
-		MinNewsCount:         2,
-		MaxEvents:            20,
+		TimeWindow:            60,
+		SimilarityThreshold:   0.5,
+		MinNewsCount:          2,
+		MaxEvents:             20,
 	}
 }
 

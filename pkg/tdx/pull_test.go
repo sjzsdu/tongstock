@@ -58,8 +58,8 @@ func TestSaveKlineRejectsInvalidRecords(t *testing.T) {
 	validDate := time.Date(2026, time.June, 22, 0, 0, 0, 0, time.Local)
 	klines := []*protocol.Kline{
 		{Time: validDate, Open: 2, High: 3, Low: 1, Close: 2.5, Volume: 100, Amount: 1000},
-		{Time: validDate.AddDate(0, 0, 1), Open: 0, High: 3, Low: 1, Close: 2.5},    // Invalid: Open=0
-		{Time: validDate.AddDate(0, 0, 2), Open: 2, High: 1, Low: 3, Close: 2.5},    // Invalid: High<Low
+		{Time: validDate.AddDate(0, 0, 1), Open: 0, High: 3, Low: 1, Close: 2.5},           // Invalid: Open=0
+		{Time: validDate.AddDate(0, 0, 2), Open: 2, High: 1, Low: 3, Close: 2.5},           // Invalid: High<Low
 		{Time: validDate.AddDate(0, 0, 3), Open: 2, High: math.Inf(1), Low: 1, Close: 2.5}, // Invalid: Inf
 	}
 	if err := store.SaveKline("000001", 9, klines); err != nil {

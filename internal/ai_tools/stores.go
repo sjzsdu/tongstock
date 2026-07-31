@@ -59,8 +59,8 @@ func NewForwardRunTool(repo ForwardRunRepository) *ForwardRunTool {
 	}
 }
 
-func (t *ForwardRunTool) Name() string         { return "forward_run" }
-func (t *ForwardRunTool) Version() string       { return t.version }
+func (t *ForwardRunTool) Name() string                  { return "forward_run" }
+func (t *ForwardRunTool) Version() string               { return t.version }
 func (t *ForwardRunTool) Permissions() []ToolPermission { return []ToolPermission{PermRead} }
 func (t *ForwardRunTool) Description() string {
 	return "查询 TongStock 前向模拟和 Paper Trading 运行 (只读)。列出最新前向运行、按 ID 查询运行详情、按范式查询历史前向、查看指定运行的信号明细。用于评估范式在未见过的市场中的实际表现。"
@@ -190,8 +190,8 @@ func NewEvidenceDrilldownTool(repo EvidenceRepository) *EvidenceDrilldownTool {
 	}
 }
 
-func (t *EvidenceDrilldownTool) Name() string         { return "evidence_drilldown" }
-func (t *EvidenceDrilldownTool) Version() string       { return t.version }
+func (t *EvidenceDrilldownTool) Name() string                  { return "evidence_drilldown" }
+func (t *EvidenceDrilldownTool) Version() string               { return t.version }
 func (t *EvidenceDrilldownTool) Permissions() []ToolPermission { return []ToolPermission{PermRead} }
 func (t *EvidenceDrilldownTool) Description() string {
 	return "深度下钻范式验证证据 (只读)。按范式版本 ID 查看完整 Admission 证据: must_fix/warnings/suggestions、分窗口/分市场状态表现、原始指标。支持对比同一范式多次验证的演进。"

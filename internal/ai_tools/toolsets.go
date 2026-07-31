@@ -12,14 +12,14 @@ import (
 
 // SnapshotInfo 数据快照摘要
 type SnapshotInfo struct {
-	ID              string         `json:"id"`
-	Version         string         `json:"version"`
-	DateRange       string         `json:"date_range"`
-	UniverseSize    int            `json:"universe_size"`
-	Market          string         `json:"market"`
-	PriceAdjustment string         `json:"price_adjustment"`
-	Description     string         `json:"description"`
-	CreatedAt       time.Time      `json:"created_at"`
+	ID              string            `json:"id"`
+	Version         string            `json:"version"`
+	DateRange       string            `json:"date_range"`
+	UniverseSize    int               `json:"universe_size"`
+	Market          string            `json:"market"`
+	PriceAdjustment string            `json:"price_adjustment"`
+	Description     string            `json:"description"`
+	CreatedAt       time.Time         `json:"created_at"`
 	SourceVersions  map[string]string `json:"source_versions,omitempty"`
 }
 
@@ -46,8 +46,8 @@ func NewDataSnapshotTool(repo SnapshotRepository) *DataSnapshotTool {
 	}
 }
 
-func (t *DataSnapshotTool) Name() string         { return "data_snapshot" }
-func (t *DataSnapshotTool) Version() string       { return t.version }
+func (t *DataSnapshotTool) Name() string                  { return "data_snapshot" }
+func (t *DataSnapshotTool) Version() string               { return t.version }
 func (t *DataSnapshotTool) Permissions() []ToolPermission { return []ToolPermission{PermRead} }
 func (t *DataSnapshotTool) Description() string {
 	return "查询 TongStock 内部数据快照 (只读)。可列出最新快照、按 ID 查询快照详情、按日期范围搜索快照。返回: 快照 ID、版本、日期范围、股票数量、市场、价格口径、数据源版本等结构化信息。"
@@ -161,8 +161,8 @@ func NewFeatureQueryTool(repo FeatureRepository) *FeatureQueryTool {
 	}
 }
 
-func (t *FeatureQueryTool) Name() string         { return "feature_query" }
-func (t *FeatureQueryTool) Version() string       { return t.version }
+func (t *FeatureQueryTool) Name() string                  { return "feature_query" }
+func (t *FeatureQueryTool) Version() string               { return t.version }
 func (t *FeatureQueryTool) Permissions() []ToolPermission { return []ToolPermission{PermRead} }
 func (t *FeatureQueryTool) Description() string {
 	return "查询 TongStock 特征定义 (只读)。列出所有特征、按 ID 查询特征详情、按关键字搜索特征。特征包含: 技术指标 (MACD, RSI, MA 等)、信号 (金叉、超卖等)。返回: 特征 ID、版本、类型、公式、参数、描述等结构化信息。"
@@ -219,28 +219,28 @@ func (t *FeatureQueryTool) Invoke(ctx AccessContext, params map[string]any) (*To
 
 // ExperimentSummary 实验摘要
 type ExperimentSummary struct {
-	ID              string    `json:"id"`
-	HypothesisID    string    `json:"hypothesis_id"`
-	DatasetSnapshot string    `json:"dataset_snapshot"`
-	FeatureSetID    string    `json:"feature_set_id"`
-	Status          string    `json:"status"`
-	HoldingPeriod   string    `json:"holding_period"`
-	CostPerTrade    float64   `json:"cost_per_trade"`
-	CreatedAt       time.Time `json:"created_at"`
+	ID              string     `json:"id"`
+	HypothesisID    string     `json:"hypothesis_id"`
+	DatasetSnapshot string     `json:"dataset_snapshot"`
+	FeatureSetID    string     `json:"feature_set_id"`
+	Status          string     `json:"status"`
+	HoldingPeriod   string     `json:"holding_period"`
+	CostPerTrade    float64    `json:"cost_per_trade"`
+	CreatedAt       time.Time  `json:"created_at"`
 	CompletedAt     *time.Time `json:"completed_at,omitempty"`
 }
 
 // BacktestReportSummary 回测报告摘要
 type BacktestReportSummary struct {
-	ExperimentID    string  `json:"experiment_id"`
-	TotalReturn     float64 `json:"total_return"`
-	NetReturn       float64 `json:"net_return"`
-	MaxDrawdown     float64 `json:"max_drawdown"`
-	SharpeRatio     float64 `json:"sharpe_ratio"`
-	WinRate         float64 `json:"win_rate"`
-	SampleSize      int     `json:"sample_size"`
-	Passed          bool    `json:"passed"`
-	Level           string  `json:"level,omitempty"`
+	ExperimentID string  `json:"experiment_id"`
+	TotalReturn  float64 `json:"total_return"`
+	NetReturn    float64 `json:"net_return"`
+	MaxDrawdown  float64 `json:"max_drawdown"`
+	SharpeRatio  float64 `json:"sharpe_ratio"`
+	WinRate      float64 `json:"win_rate"`
+	SampleSize   int     `json:"sample_size"`
+	Passed       bool    `json:"passed"`
+	Level        string  `json:"level,omitempty"`
 }
 
 // ExperimentRepository 实验仓储接口
@@ -267,8 +267,8 @@ func NewExperimentReportTool(repo ExperimentRepository) *ExperimentReportTool {
 	}
 }
 
-func (t *ExperimentReportTool) Name() string         { return "experiment_report" }
-func (t *ExperimentReportTool) Version() string       { return t.version }
+func (t *ExperimentReportTool) Name() string                  { return "experiment_report" }
+func (t *ExperimentReportTool) Version() string               { return t.version }
 func (t *ExperimentReportTool) Permissions() []ToolPermission { return []ToolPermission{PermRead} }
 func (t *ExperimentReportTool) Description() string {
 	return "查询 TongStock 实验和回测报告 (只读)。列出最新实验、按 ID 查询实验详情、按状态筛选实验、获取指定实验的回测报告 (收益、回撤、Sharpe、通过率等)。返回: 结构化的实验配置和回测指标。"
@@ -354,15 +354,15 @@ type ParadigmVersionInfo struct {
 
 // ValidationEvidenceInfo 验证证据摘要
 type ValidationEvidenceInfo struct {
-	ParadigmID        string  `json:"paradigm_id"`
-	ParadigmVersionID string  `json:"paradigm_version_id"`
-	NetReturn         float64 `json:"net_return"`
-	MaxDrawdown       float64 `json:"max_drawdown"`
-	SharpeRatio       float64 `json:"sharpe_ratio"`
-	WinRate           float64 `json:"win_rate"`
-	SampleSize        int     `json:"sample_size"`
-	Passed            bool    `json:"passed"`
-	Level             string  `json:"level,omitempty"`
+	ParadigmID        string   `json:"paradigm_id"`
+	ParadigmVersionID string   `json:"paradigm_version_id"`
+	NetReturn         float64  `json:"net_return"`
+	MaxDrawdown       float64  `json:"max_drawdown"`
+	SharpeRatio       float64  `json:"sharpe_ratio"`
+	WinRate           float64  `json:"win_rate"`
+	SampleSize        int      `json:"sample_size"`
+	Passed            bool     `json:"passed"`
+	Level             string   `json:"level,omitempty"`
 	MustFix           []string `json:"must_fix,omitempty"`
 	Warnings          []string `json:"warnings,omitempty"`
 	Suggestions       []string `json:"suggestions,omitempty"`
@@ -393,8 +393,8 @@ func NewParadigmVersionTool(repo ParadigmRepository) *ParadigmVersionTool {
 	}
 }
 
-func (t *ParadigmVersionTool) Name() string         { return "paradigm_version" }
-func (t *ParadigmVersionTool) Version() string       { return t.version }
+func (t *ParadigmVersionTool) Name() string                  { return "paradigm_version" }
+func (t *ParadigmVersionTool) Version() string               { return t.version }
 func (t *ParadigmVersionTool) Permissions() []ToolPermission { return []ToolPermission{PermRead} }
 func (t *ParadigmVersionTool) Description() string {
 	return "查询 TongStock 范式版本、血缘和证据下钻 (只读)。列出已晋级范式、按 ID 查询范式版本、查看范式版本历史 (血缘)、获取指定版本的验证证据 (must_fix/warnings/suggestions)。AI 无法修改晋级结果。"

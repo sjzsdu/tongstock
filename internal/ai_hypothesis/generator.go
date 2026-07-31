@@ -14,8 +14,8 @@ import (
 type PromptTemplate struct {
 	ID      string `json:"id"`
 	Version string `json:"version"`
-	System  string `json:"system"`  // 系统提示
-	User    string `json:"user"`    // 用户提示模板
+	System  string `json:"system"` // 系统提示
+	User    string `json:"user"`   // 用户提示模板
 }
 
 // DefaultPromptTemplates 默认提示词模板
@@ -421,11 +421,11 @@ func (g *StructuredHypothesisGenerator) buildHypothesis(input HypothesisInput, m
 
 	// 设置行为逻辑
 	h.Behavior = BehavioralLogic{
-		Mechanism:         g.buildMechanism(input),
-		Driver:            g.buildDriver(input),
-		MarketContext:     input.MarketContext,
+		Mechanism:          g.buildMechanism(input),
+		Driver:             g.buildDriver(input),
+		MarketContext:      input.MarketContext,
 		HistoricalEvidence: g.buildEvidenceList(input),
-		KeyAssumptions:    g.buildAssumptions(input),
+		KeyAssumptions:     g.buildAssumptions(input),
 	}
 
 	// 添加反例
@@ -621,11 +621,11 @@ func (g *StructuredHypothesisGenerator) buildSchemaSpec(input HypothesisInput) H
 	}
 
 	return HypothesisSchemaSpec{
-		SchemaID:          fmt.Sprintf("schema-%d", time.Now().UnixNano()),
-		SchemaName:        g.buildTitle(input),
-		HoldingPeriod:     "medium",
-		EntryConditions:   entryConds,
-		ExitConditions:    exitConds,
+		SchemaID:        fmt.Sprintf("schema-%d", time.Now().UnixNano()),
+		SchemaName:      g.buildTitle(input),
+		HoldingPeriod:   "medium",
+		EntryConditions: entryConds,
+		ExitConditions:  exitConds,
 		ContextConstraints: []string{
 			"震荡市或短期超卖反弹",
 			"非强趋势市场",

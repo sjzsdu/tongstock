@@ -8,16 +8,6 @@ trap 'rm -f "$actual_file" "$allowed_file"' EXIT
 
 "$gofmt_bin" -l $(find cmd internal pkg -name '*.go' -type f) | sort >"$actual_file"
 cat >"$allowed_file" <<'EOF'
-internal/picoclaw/constants.go
-pkg/newsfeed/cluster.go
-pkg/newsfeed/sources/cailianshe.go
-pkg/newsfeed/sources/juchao.go
-pkg/newsfeed/sources/xueqiu.go
-pkg/signal/cycle.go
-pkg/signal/interpreter.go
-pkg/signal/signal.go
-pkg/tdx/protocol/kline.go
-pkg/tdx/pull_test.go
 EOF
 
 unexpected="$(comm -23 "$actual_file" "$allowed_file")"

@@ -99,40 +99,8 @@ export default function Monitoring() {
   };
 
   useEffect(() => {
-    loadData();
+    queueMicrotask(() => void loadData());
   }, []);
-
-  const handleRunMonitoring = async () => {
-    message.loading({ content: '执行监控分析中...', key: 'monitoring' });
-    try {
-      // 使用默认数据运行监控
-      const baselineReturns: number[] = [];
-      const forwardReturns: number[] = [];
-      for (let i = 0; i < 200; i++) baselineReturns.push((Math.random() - 0.45) * 0.04);
-      for (let i = 0; i < 60; i++) forwardReturns.push((Math.random() - 0.48) * 0.05);
-
-      const resp = await api.monitoringRun({
-        source: 'web-monitoring',
-        baseline_returns: baselineReturns,
-        forward_returns: forwardReturns,
-        positions: [
-          { code: '000001', industry: '金融', weight: 0.30 },
-          { code: '000002', industry: '消费', weight: 0.25 },
-          { code: '000003', industry: '科技', weight: 0.20 },
-          { code: '000004', industry: '医药', weight: 0.15 },
-          { code: '000005', industry: '能源', weight: 0.10 },
-        ],
-      });
-      setReport(resp.report);
-      message.success({ content: '监控分析完成', key: 'monitoring' });
-      // 刷新预警
-      const alertsResp = await api.monitoringAlerts();
-      setAlerts(alertsResp.alerts);
-      setAlertSummary(alertsResp.summary);
-    } catch (err) {
-      message.error({ content: String(err), key: 'monitoring' });
-    }
-  };
 
   const handleAckAlert = async (id: string) => {
     try {
@@ -174,10 +142,9 @@ export default function Monitoring() {
           <Space direction="vertical" style={{ width: '100%', justifyContent: 'center', alignItems: 'center' }}>
             <SafetyCertificateOutlined style={{ fontSize: 48, color: '#1890ff' }} />
             <Title level={4}>暂无监控数据</Title>
-            <Text>点击下方按钮开始首次监控分析</Text>
-            <Button type="primary" onClick={handleRunMonitoring}>
-              <SafetyCertificateOutlined /> 执行监控
-            </Button>
+            <Text>尚未收到真实前向收益和持仓观测，系统不会生成模拟监控报告。</Text>
+            <Text type="secondary">请先由真实账本或研究任务提交带来源和观测日期的监控输入。</Text>
+            <Button type="primary" onClick={loadData}>刷新</Button>
           </Space>
         </Card>
       </div>
@@ -203,9 +170,6 @@ export default function Monitoring() {
         extra={
           <Space>
             <Button onClick={loadData}>刷新</Button>
-            <Button type="primary" onClick={handleRunMonitoring}>
-              执行监控
-            </Button>
           </Space>
         }
       >

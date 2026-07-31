@@ -14,19 +14,19 @@ import (
 type MarketRegime string
 
 const (
-	RegimeTrendUp    MarketRegime = "trend_up"    // 上升趋势
-	RegimeTrendDown  MarketRegime = "trend_down"  // 下降趋势
-	RegimeRange      MarketRegime = "range"       // 震荡
-	RegimeHighVol    MarketRegime = "high_vol"    // 高波动
-	RegimeLowVol     MarketRegime = "low_vol"     // 低波动
-	RegimeHighLiq    MarketRegime = "high_liq"    // 高流动性
-	RegimeLowLiq     MarketRegime = "low_liq"     // 低流动性
-	RegimeLargeCap   MarketRegime = "large_cap"   // 大盘股
-	RegimeMidCap     MarketRegime = "mid_cap"     // 中盘股
-	RegimeSmallCap   MarketRegime = "small_cap"   // 小盘股
-	RegimeBull       MarketRegime = "bull"        // 牛市
-	RegimeBear       MarketRegime = "bear"        // 熊市
-	RegimeSideways   MarketRegime = "sideways"    // 横盘
+	RegimeTrendUp   MarketRegime = "trend_up"   // 上升趋势
+	RegimeTrendDown MarketRegime = "trend_down" // 下降趋势
+	RegimeRange     MarketRegime = "range"      // 震荡
+	RegimeHighVol   MarketRegime = "high_vol"   // 高波动
+	RegimeLowVol    MarketRegime = "low_vol"    // 低波动
+	RegimeHighLiq   MarketRegime = "high_liq"   // 高流动性
+	RegimeLowLiq    MarketRegime = "low_liq"    // 低流动性
+	RegimeLargeCap  MarketRegime = "large_cap"  // 大盘股
+	RegimeMidCap    MarketRegime = "mid_cap"    // 中盘股
+	RegimeSmallCap  MarketRegime = "small_cap"  // 小盘股
+	RegimeBull      MarketRegime = "bull"       // 牛市
+	RegimeBear      MarketRegime = "bear"       // 熊市
+	RegimeSideways  MarketRegime = "sideways"   // 横盘
 )
 
 // MarketState 市场状态
@@ -36,7 +36,7 @@ type MarketState struct {
 	Liquidity     float64      `json:"liquidity"`
 	MarketCap     float64      `json:"market_cap"`
 	Industry      string       `json:"industry"`
-	Breadth       float64      `json:"breadth"`       // 上涨股票占比
+	Breadth       float64      `json:"breadth"`        // 上涨股票占比
 	TrendStrength float64      `json:"trend_strength"` // 趋势强度 (ADX)
 	Date          time.Time    `json:"date"`
 }
@@ -87,19 +87,19 @@ func (ms *MarketState) IsBear() bool {
 
 // ContextLayer 上下文层
 type ContextLayer struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Condition   string   `json:"condition"` // 描述条件
-	Level       int      `json:"level"`     // 层级 (1=最高优先级)
-	Enabled     bool     `json:"enabled"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Condition   string `json:"condition"` // 描述条件
+	Level       int    `json:"level"`     // 层级 (1=最高优先级)
+	Enabled     bool   `json:"enabled"`
 }
 
 // LayerDefinition 层定义
 type LayerDefinition struct {
-	Layer     ContextLayer
-	EvalFn    func(state *MarketState) bool
-	Params    map[string]interface{}
+	Layer  ContextLayer
+	EvalFn func(state *MarketState) bool
+	Params map[string]interface{}
 }
 
 // 默认层级定义
@@ -328,13 +328,13 @@ func (lp *LayerPerformance) IsValid() bool {
 
 // EnvironmentProfile 环境画像
 type EnvironmentProfile struct {
-	ID              string              `json:"id"`
-	LayerResults    []LayerResult       `json:"layer_results"`
-	Performance     []LayerPerformance  `json:"performance"`
-	BestEnvironment string              `json:"best_environment"`
+	ID               string             `json:"id"`
+	LayerResults     []LayerResult      `json:"layer_results"`
+	Performance      []LayerPerformance `json:"performance"`
+	BestEnvironment  string             `json:"best_environment"`
 	WorstEnvironment string             `json:"worst_environment"`
-	FoundedAt       time.Time           `json:"founded_at"`
-	LastUpdated     time.Time           `json:"last_updated"`
+	FoundedAt        time.Time          `json:"founded_at"`
+	LastUpdated      time.Time          `json:"last_updated"`
 }
 
 // NewEnvironmentProfile 创建环境画像
@@ -428,23 +428,23 @@ func (ep *EnvironmentProfile) GetUnfavorableEnvironments(maxSharpe float64) []*L
 
 // LayeredReport 分层报告
 type LayeredReport struct {
-	Title        string              `json:"title"`
-	Date         time.Time           `json:"date"`
-	TotalSamples int                 `json:"total_samples"`
-	Layers       []LayerPerformance  `json:"layers"`
-	Summary      LayerSummary        `json:"summary"`
+	Title        string             `json:"title"`
+	Date         time.Time          `json:"date"`
+	TotalSamples int                `json:"total_samples"`
+	Layers       []LayerPerformance `json:"layers"`
+	Summary      LayerSummary       `json:"summary"`
 }
 
 // LayerSummary 分层摘要
 type LayerSummary struct {
-	BestLayer    string  `json:"best_layer"`
-	BestSharpe   float64 `json:"best_sharpe"`
-	WorstLayer   string  `json:"worst_layer"`
-	WorstSharpe  float64 `json:"worst_sharpe"`
-	AvgSharpe    float64 `json:"avg_sharpe"`
-	StdSharpe    float64 `json:"std_sharpe"`
-	EnvCount     int     `json:"env_count"`
-	ValidCount   int     `json:"valid_count"`
+	BestLayer   string  `json:"best_layer"`
+	BestSharpe  float64 `json:"best_sharpe"`
+	WorstLayer  string  `json:"worst_layer"`
+	WorstSharpe float64 `json:"worst_sharpe"`
+	AvgSharpe   float64 `json:"avg_sharpe"`
+	StdSharpe   float64 `json:"std_sharpe"`
+	EnvCount    int     `json:"env_count"`
+	ValidCount  int     `json:"valid_count"`
 }
 
 // GenerateLayeredReport 生成分层报告
@@ -513,16 +513,16 @@ func GenerateLayeredReport(layers []LayerPerformance, title string) *LayeredRepo
 
 // LookAheadValidator 未来数据检查器
 type LookAheadValidator struct {
-	maxLookAhead    time.Duration
-	allowLookAhead  bool
+	maxLookAhead     time.Duration
+	allowLookAhead   bool
 	forbidPostHocOpt bool
 }
 
 // NewLookAheadValidator 创建未来数据检查器
 func NewLookAheadValidator() *LookAheadValidator {
 	return &LookAheadValidator{
-		maxLookAhead:    0,
-		allowLookAhead:  false,
+		maxLookAhead:     0,
+		allowLookAhead:   false,
 		forbidPostHocOpt: true,
 	}
 }

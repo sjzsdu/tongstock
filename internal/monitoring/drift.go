@@ -20,12 +20,12 @@ import (
 
 // KSResult KS 检验结果
 type KSResult struct {
-	Statistic   float64 `json:"statistic"`    // KS 统计量 D
-	PValue      float64 `json:"p_value"`      // 近似 p-value
-	SampleSize1 int     `json:"sample_size1"` // 第一组样本量
-	SampleSize2 int     `json:"sample_size2"` // 第二组样本量
-	IsSignificant bool  `json:"is_significant"` // 是否统计显著
-	Alpha       float64 `json:"alpha"`        // 显著性水平
+	Statistic     float64 `json:"statistic"`      // KS 统计量 D
+	PValue        float64 `json:"p_value"`        // 近似 p-value
+	SampleSize1   int     `json:"sample_size1"`   // 第一组样本量
+	SampleSize2   int     `json:"sample_size2"`   // 第二组样本量
+	IsSignificant bool    `json:"is_significant"` // 是否统计显著
+	Alpha         float64 `json:"alpha"`          // 显著性水平
 }
 
 // KSTest 执行两样本 Kolmogorov-Smirnov 检验
@@ -138,41 +138,41 @@ func ksPValue(lambda float64) float64 {
 type DriftType string
 
 const (
-	DriftDistribution   DriftType = "distribution"   // 整体分布漂移
-	DriftMean           DriftType = "mean"           // 均值漂移
-	DriftWinRate        DriftType = "win_rate"       // 胜率漂移
-	DriftVolatility     DriftType = "volatility"     // 波动率漂移
-	DriftSkewness       DriftType = "skewness"       // 偏度漂移
-	DriftKurtosis       DriftType = "kurtosis"       // 峰度漂移
-	DriftCoverage       DriftType = "coverage"       // 数据覆盖率漂移
+	DriftDistribution DriftType = "distribution" // 整体分布漂移
+	DriftMean         DriftType = "mean"         // 均值漂移
+	DriftWinRate      DriftType = "win_rate"     // 胜率漂移
+	DriftVolatility   DriftType = "volatility"   // 波动率漂移
+	DriftSkewness     DriftType = "skewness"     // 偏度漂移
+	DriftKurtosis     DriftType = "kurtosis"     // 峰度漂移
+	DriftCoverage     DriftType = "coverage"     // 数据覆盖率漂移
 )
 
 // DriftDetectionResult 漂移检测结果
 type DriftDetectionResult struct {
-	Type        DriftType   `json:"type"`
-	Significant bool        `json:"significant"`
-	Severity    string      `json:"severity"` // normal / mild / moderate / severe
-	MetricName  string      `json:"metric_name"`
-	OldValue    float64     `json:"old_value"`
-	NewValue    float64     `json:"new_value"`
-	Delta       float64     `json:"delta"`
-	DeltaPct    float64     `json:"delta_pct"`
-	PValue      float64     `json:"p_value"`
-	Threshold   float64     `json:"threshold"`
-	SampleSize  int         `json:"sample_size"`
-	Description string      `json:"description"`
+	Type        DriftType `json:"type"`
+	Significant bool      `json:"significant"`
+	Severity    string    `json:"severity"` // normal / mild / moderate / severe
+	MetricName  string    `json:"metric_name"`
+	OldValue    float64   `json:"old_value"`
+	NewValue    float64   `json:"new_value"`
+	Delta       float64   `json:"delta"`
+	DeltaPct    float64   `json:"delta_pct"`
+	PValue      float64   `json:"p_value"`
+	Threshold   float64   `json:"threshold"`
+	SampleSize  int       `json:"sample_size"`
+	Description string    `json:"description"`
 }
 
 // DriftDetector 漂移检测器
 type DriftDetector struct {
 	// KS 检验参数
 	KSSignificance float64 `json:"ks_significance"` // KS 检验显著性水平
-	MinSampleSize  int     `json:"min_sample_size"`  // 最小样本量 (低于此值不触发结论)
+	MinSampleSize  int     `json:"min_sample_size"` // 最小样本量 (低于此值不触发结论)
 
 	// 均值漂移阈值
-	MeanDriftThreshold    float64 `json:"mean_drift_threshold"`    // 均值变化超过此比例触发预警
+	MeanDriftThreshold    float64 `json:"mean_drift_threshold"`     // 均值变化超过此比例触发预警
 	WinRateDriftThreshold float64 `json:"win_rate_drift_threshold"` // 胜率变化阈值
-	VolDriftThreshold     float64 `json:"vol_drift_threshold"`     // 波动率变化阈值
+	VolDriftThreshold     float64 `json:"vol_drift_threshold"`      // 波动率变化阈值
 
 	// 严重度阈值
 	MildThreshold     float64 `json:"mild_threshold"`     // 轻度: 偏离但尚未严重
@@ -185,9 +185,9 @@ func NewDriftDetector() *DriftDetector {
 	return &DriftDetector{
 		KSSignificance:        0.05,
 		MinSampleSize:         20,
-		MeanDriftThreshold:    0.20,  // 均值变化 > 20% 触发
-		WinRateDriftThreshold: 0.15,  // 胜率变化 > 15pp 触发
-		VolDriftThreshold:     0.30,  // 波动率变化 > 30% 触发
+		MeanDriftThreshold:    0.20, // 均值变化 > 20% 触发
+		WinRateDriftThreshold: 0.15, // 胜率变化 > 15pp 触发
+		VolDriftThreshold:     0.30, // 波动率变化 > 30% 触发
 		MildThreshold:         0.10,
 		ModerateThreshold:     0.25,
 		SevereThreshold:       0.40,
@@ -524,7 +524,7 @@ func tTestPValue(sample1, sample2 []float64) float64 {
 	if se == 0 {
 		return 1
 	}
-	tStat := math.Abs(m1 - m2) / se
+	tStat := math.Abs(m1-m2) / se
 
 	// 近似自由度
 	df := v1/float64(n1) + v2/float64(n2)
@@ -554,7 +554,7 @@ func binomialTestPValue(p1 float64, n1 int, p2 float64, n2 int) float64 {
 	if se == 0 {
 		return 1
 	}
-	z := math.Abs(p1 - p2) / se
+	z := math.Abs(p1-p2) / se
 	// 近似 p-value
 	pValue := math.Exp(-0.5 * z * z)
 	if pValue < 0 {

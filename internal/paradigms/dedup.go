@@ -157,7 +157,7 @@ func (ds *DeduplicationService) thresholdSimilarity(t1, t2 []float64) float64 {
 			totalSimilarity += 0.0
 		} else {
 			// 使用相对差异
-			diff := math.Abs(t1[i] - t2[i]) / math.Max(math.Abs(t1[i]), math.Abs(t2[i]))
+			diff := math.Abs(t1[i]-t2[i]) / math.Max(math.Abs(t1[i]), math.Abs(t2[i]))
 			totalSimilarity += 1.0 - math.Min(1.0, diff)
 		}
 	}
@@ -365,23 +365,23 @@ func (ds *DeduplicationService) ClusterBySimilarity(candidates []*Candidate, thr
 
 // BatchExperiment 批量实验
 type BatchExperiment struct {
-	ID            string          `json:"id"`
-	Name          string          `json:"name"`
-	CandidateIDs  []string        `json:"candidate_ids"`
-	Status        string          `json:"status"`
-	ProcessedCount int            `json:"processed_count"`
-	Results       []*TestResult   `json:"results,omitempty"`
-	CreatedAt     time.Time       `json:"created_at"`
-	CompletedAt   *time.Time      `json:"completed_at,omitempty"`
-	Config        *BatchConfig    `json:"config"`
+	ID             string        `json:"id"`
+	Name           string        `json:"name"`
+	CandidateIDs   []string      `json:"candidate_ids"`
+	Status         string        `json:"status"`
+	ProcessedCount int           `json:"processed_count"`
+	Results        []*TestResult `json:"results,omitempty"`
+	CreatedAt      time.Time     `json:"created_at"`
+	CompletedAt    *time.Time    `json:"completed_at,omitempty"`
+	Config         *BatchConfig  `json:"config"`
 }
 
 // BatchConfig 批量实验配置
 type BatchConfig struct {
-	MaxConcurrent   int     `json:"max_concurrent"`   // 最大并发数
-	MaxRetries      int     `json:"max_retries"`      // 最大重试次数
-	MinScore        float64 `json:"min_score"`        // 最低通过分数
-	TimeLimit       int     `json:"time_limit"`       // 时间限制 (秒)
+	MaxConcurrent   int     `json:"max_concurrent"`     // 最大并发数
+	MaxRetries      int     `json:"max_retries"`        // 最大重试次数
+	MinScore        float64 `json:"min_score"`          // 最低通过分数
+	TimeLimit       int     `json:"time_limit"`         // 时间限制 (秒)
 	StopOnFirstFail bool    `json:"stop_on_first_fail"` // 首次失败是否停止
 }
 

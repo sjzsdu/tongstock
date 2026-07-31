@@ -2,14 +2,14 @@ import { useRef } from 'react';
 import { Button, Card, Checkbox, Col, Descriptions, Empty, Flex, Radio, Row, Segmented, Spin, Space, Statistic, Table, Tabs, Typography, message } from 'antd';
 import { BarChartOutlined, CameraOutlined, FileExcelOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import type { FinanceTrendRecord, FinanceMetricsResponse } from '../../types/api';
+import type { FinanceTrendRecord, FinanceMetricsResponse, FinanceTrendsResponse } from '../../types/api';
 import type { FinanceTrendMetric, FinanceCompareMode, FinanceViewMode } from '../../hooks/useStockFinance';
-import FinanceTrendChart, { type FinanceTrendChartHandle } from '../charts/FinanceTrendChart';
+import FinanceTrendChart, { type FinanceTrendChartHandle, type FinanceTrendMetric as ChartFinanceTrendMetric } from '../charts/FinanceTrendChart';
 import { exportCsv, downloadDataUrl } from '../../lib/stock-detail';
 import { formatDate } from '../../lib/datetime';
 
 interface FinanceTabContentProps {
-  financeTrends: any;
+  financeTrends: FinanceTrendsResponse | null;
   financeMetrics: FinanceMetricsResponse | null;
   financeTrendMode: 'quarter' | 'year';
   setFinanceTrendMode: (mode: 'quarter' | 'year') => void;
@@ -21,12 +21,18 @@ interface FinanceTabContentProps {
   setSelectedFinanceMetrics: (metrics: string[]) => void;
   financeTrendLoading: boolean;
   availableFinanceMetrics: FinanceTrendMetric[];
-  financeChartGroups: any[];
+  financeChartGroups: Array<{
+    key: 'amount' | 'margin';
+    title: string;
+    description: string;
+    axes: FinanceTrendMetric['axis'][];
+    metrics: FinanceTrendMetric[];
+  }>;
   financeDisplayRecords: FinanceTrendRecord[];
   activeFinanceMetrics: FinanceTrendMetric[];
   latestFinanceRecord: FinanceTrendRecord | undefined;
   formatFinanceMetricValue: (value: number | undefined, metric: FinanceTrendMetric) => string;
-  financeItems: any[][];
+  financeItems: Array<[string, number, string]>;
   code: string;
 }
 
@@ -209,8 +215,9 @@ export function FinanceTabContent({
               <Row gutter={[16, 16]}>
                 {financeChartGroups.map((group) => {
                   const selectedGroupMetrics = group.metrics.filter((metric: FinanceTrendMetric) => selectedFinanceMetrics.includes(metric.key));
-                  const chartMetrics = selectedGroupMetrics.map((metric: FinanceTrendMetric) => ({
+                  const chartMetrics: ChartFinanceTrendMetric[] = selectedGroupMetrics.map((metric: FinanceTrendMetric) => ({
                     ...metric,
+                    key: metric.key as ChartFinanceTrendMetric['key'],
                     axis: financeCompareMode === 'raw' ? metric.axis : 'percent',
                   }));
                   const chartRef = group.key === 'amount' ? amountChartRef : marginChartRef;

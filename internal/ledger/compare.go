@@ -15,9 +15,9 @@ type ComparisonReport struct {
 	// 理论回测 (从范式验证阶段)
 	Theoretical TheoreticalMetrics `json:"theoretical"`
 	// 实际前向 (Paper Trading)
-	Actual     ActualMetrics     `json:"actual"`
+	Actual ActualMetrics `json:"actual"`
 	// 差距分析
-	Gap        GapAnalysis        `json:"gap"`
+	Gap GapAnalysis `json:"gap"`
 }
 
 // TheoreticalMetrics 理论回测指标
@@ -29,7 +29,7 @@ type TheoreticalMetrics struct {
 	WinRate       float64 `json:"win_rate"`
 	SignalCount   int     `json:"signal_count"`
 	// 交易全部按理想价格成交 (无滑点, 无约束)
-	IdealPnL      float64 `json:"ideal_pnl"`
+	IdealPnL float64 `json:"ideal_pnl"`
 }
 
 // ActualMetrics 实际前向指标 (受 A 股约束)
@@ -43,22 +43,22 @@ type ActualMetrics struct {
 	FilledCount   int     `json:"filled_count"`
 	RejectedCount int     `json:"rejected_count"`
 	// 实际成交价格, 受滑点和约束影响
-	ActualPnL     float64 `json:"actual_pnl"`
+	ActualPnL float64 `json:"actual_pnl"`
 	// 因约束损失的机会
-	MissedTrades  int     `json:"missed_trades"`
+	MissedTrades int `json:"missed_trades"`
 }
 
 // GapAnalysis 差距分析
 type GapAnalysis struct {
-	ReturnGap        float64 `json:"return_gap"`         // 理论收益 - 实际收益
-	ReturnGapPct     float64 `json:"return_gap_pct"`     // 收益差距百分比
-	DrawdownGap      float64 `json:"drawdown_gap"`       // 理论回撤 - 实际回撤
-	SharpeGap        float64 `json:"sharpe_gap"`         // 夏普比率差距
-	WinRateGap       float64 `json:"win_rate_gap"`       // 胜率差距
-	ExecLoss         float64 `json:"exec_loss"`          // 因执行约束损失的收益
-	ConstraintImpact float64 `json:"constraint_impact"`  // 约束影响: 0=无影响, 1=完全无效
+	ReturnGap        float64 `json:"return_gap"`        // 理论收益 - 实际收益
+	ReturnGapPct     float64 `json:"return_gap_pct"`    // 收益差距百分比
+	DrawdownGap      float64 `json:"drawdown_gap"`      // 理论回撤 - 实际回撤
+	SharpeGap        float64 `json:"sharpe_gap"`        // 夏普比率差距
+	WinRateGap       float64 `json:"win_rate_gap"`      // 胜率差距
+	ExecLoss         float64 `json:"exec_loss"`         // 因执行约束损失的收益
+	ConstraintImpact float64 `json:"constraint_impact"` // 约束影响: 0=无影响, 1=完全无效
 	// 关键差异原因
-	KeyInsights      []string `json:"key_insights"`
+	KeyInsights []string `json:"key_insights"`
 }
 
 // NewComparisonReport 对比理论回测与实际前向
@@ -130,11 +130,11 @@ func calcActualMetrics(run *ForwardRun, entries []SignalEntry) ActualMetrics {
 // calcGap 计算理论 vs 实际的差距
 func calcGap(theoretical TheoreticalMetrics, actual ActualMetrics) GapAnalysis {
 	gap := GapAnalysis{
-		ReturnGap:    theoretical.TotalReturn - actual.TotalReturn,
-		DrawdownGap:  actual.MaxDrawdown - theoretical.MaxDrawdown, // 实际回撤可能更大
-		SharpeGap:    theoretical.SharpeRatio - actual.SharpeRatio,
-		WinRateGap:   theoretical.WinRate - actual.WinRate,
-		KeyInsights:  make([]string, 0),
+		ReturnGap:   theoretical.TotalReturn - actual.TotalReturn,
+		DrawdownGap: actual.MaxDrawdown - theoretical.MaxDrawdown, // 实际回撤可能更大
+		SharpeGap:   theoretical.SharpeRatio - actual.SharpeRatio,
+		WinRateGap:  theoretical.WinRate - actual.WinRate,
+		KeyInsights: make([]string, 0),
 	}
 
 	// 计算约束影响

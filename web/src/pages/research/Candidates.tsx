@@ -77,7 +77,7 @@ export default function Candidates() {
     }
   };
 
-  useEffect(() => { load(); }, [reviewStatus]);
+  useEffect(() => { queueMicrotask(() => void load()); }, [reviewStatus]);
 
   const loadEvidence = async (id: string) => {
     setEvidenceLoading(true);

@@ -47,28 +47,28 @@ type CriticConfig struct {
 	MinHoldPeriodDays int `json:"min_hold_period_days"` // 最小持有期天数
 
 	// 成本阈值
-	MaxCostRatio      float64 `json:"max_cost_ratio"`      // 最大成本占比
-	MaxSlippageBps    float64 `json:"max_slippage_bps"`    // 最大滑点 (bps)
+	MaxCostRatio   float64 `json:"max_cost_ratio"`   // 最大成本占比
+	MaxSlippageBps float64 `json:"max_slippage_bps"` // 最大滑点 (bps)
 
 	// 集中度阈值
-	MaxSingleWeight   float64 `json:"max_single_weight"`   // 最大单票权重
-	MaxConcentration  float64 `json:"max_concentration"`   // 最大集中度指数
+	MaxSingleWeight  float64 `json:"max_single_weight"` // 最大单票权重
+	MaxConcentration float64 `json:"max_concentration"` // 最大集中度指数
 
 	// 基线阈值
-	MinExcessReturn   float64 `json:"min_excess_return"`   // 最小超额收益
+	MinExcessReturn        float64 `json:"min_excess_return"`         // 最小超额收益
 	MinSharpeAboveBaseline float64 `json:"min_sharpe_above_baseline"` // 最小超额夏普
 
 	// 数据泄漏检查
-	MinEmbargoDays    int `json:"min_embargo_days"`    // 最小隔离期
-	MinPurgeDays      int `json:"min_purge_days"`      // 最小清洗期
+	MinEmbargoDays int `json:"min_embargo_days"` // 最小隔离期
+	MinPurgeDays   int `json:"min_purge_days"`   // 最小清洗期
 
 	// 选择偏差检查
-	MinTrainRatio     float64 `json:"min_train_ratio"`    // 最小训练集比例
-	MaxOverlapRatio   float64 `json:"max_overlap_ratio"`  // 最大特征重叠率
+	MinTrainRatio   float64 `json:"min_train_ratio"`   // 最小训练集比例
+	MaxOverlapRatio float64 `json:"max_overlap_ratio"` // 最大特征重叠率
 
 	// 叙事偏差检查
-	MinHypothesisRefs  int     `json:"min_hypothesis_refs"`  // 假设最小引用数
-	MaxNarrativeScore  float64 `json:"max_narrative_score"`  // 最大叙事分数 (越低越好)
+	MinHypothesisRefs int     `json:"min_hypothesis_refs"` // 假设最小引用数
+	MaxNarrativeScore float64 `json:"max_narrative_score"` // 最大叙事分数 (越低越好)
 
 	// AI 不能自行豁免硬门槛
 	AICanOverrideHardThreshold bool `json:"ai_can_override_hard_threshold"` // 默认 false
@@ -77,21 +77,21 @@ type CriticConfig struct {
 // DefaultCriticConfig 默认批评者配置
 func DefaultCriticConfig() CriticConfig {
 	return CriticConfig{
-		MinSampleSize:           30,
-		MinTradeCount:           10,
-		MinHoldPeriodDays:       5,
-		MaxCostRatio:            0.30,
-		MaxSlippageBps:          10,
-		MaxSingleWeight:         0.15,
-		MaxConcentration:        0.50,
-		MinExcessReturn:         0.02,
-		MinSharpeAboveBaseline:  0.20,
-		MinEmbargoDays:          5,
-		MinPurgeDays:            3,
-		MinTrainRatio:           0.50,
-		MaxOverlapRatio:         0.80,
-		MinHypothesisRefs:       3,
-		MaxNarrativeScore:       0.30,
+		MinSampleSize:              30,
+		MinTradeCount:              10,
+		MinHoldPeriodDays:          5,
+		MaxCostRatio:               0.30,
+		MaxSlippageBps:             10,
+		MaxSingleWeight:            0.15,
+		MaxConcentration:           0.50,
+		MinExcessReturn:            0.02,
+		MinSharpeAboveBaseline:     0.20,
+		MinEmbargoDays:             5,
+		MinPurgeDays:               3,
+		MinTrainRatio:              0.50,
+		MaxOverlapRatio:            0.80,
+		MinHypothesisRefs:          3,
+		MaxNarrativeScore:          0.30,
 		AICanOverrideHardThreshold: false, // AI 永远不能豁免硬门槛
 	}
 }
@@ -168,9 +168,9 @@ func NewDataLeakageChecker(cfg CriticConfig) *DataLeakageChecker {
 	return &DataLeakageChecker{config: cfg}
 }
 
-func (c *DataLeakageChecker) Name() string              { return "data_leakage_checker" }
+func (c *DataLeakageChecker) Name() string               { return "data_leakage_checker" }
 func (c *DataLeakageChecker) Dimension() ReviewDimension { return DimDataLeakage }
-func (c *DataLeakageChecker) IsHardThreshold() bool     { return true }
+func (c *DataLeakageChecker) IsHardThreshold() bool      { return true }
 
 func (c *DataLeakageChecker) Check(input ReviewInput) []ReviewIssue {
 	var issues []ReviewIssue
@@ -212,7 +212,7 @@ func (c *DataLeakageChecker) Check(input ReviewInput) []ReviewIssue {
 	}
 
 	// 检查训练/验证集是否有重叠 (简化检查)
-	if input.Config.TrainRatio + input.Config.ValidRatio > 0.95 {
+	if input.Config.TrainRatio+input.Config.ValidRatio > 0.95 {
 		issues = append(issues, ReviewIssue{
 			ID:              fmt.Sprintf("dl-overlap-%s", input.TargetID),
 			Dimension:       DimDataLeakage,
@@ -244,9 +244,9 @@ func NewSelectionBiasChecker(cfg CriticConfig) *SelectionBiasChecker {
 	return &SelectionBiasChecker{config: cfg}
 }
 
-func (c *SelectionBiasChecker) Name() string              { return "selection_bias_checker" }
+func (c *SelectionBiasChecker) Name() string               { return "selection_bias_checker" }
 func (c *SelectionBiasChecker) Dimension() ReviewDimension { return DimSelectionBias }
-func (c *SelectionBiasChecker) IsHardThreshold() bool     { return false }
+func (c *SelectionBiasChecker) IsHardThreshold() bool      { return false }
 
 func (c *SelectionBiasChecker) Check(input ReviewInput) []ReviewIssue {
 	var issues []ReviewIssue
@@ -288,16 +288,16 @@ func (c *SelectionBiasChecker) Check(input ReviewInput) []ReviewIssue {
 	// 检查切分类型: 固定切分 vs 滚动切分
 	if input.Config.SplitType == "fixed" && input.Config.TrainRatio > 0.7 {
 		issues = append(issues, ReviewIssue{
-			ID:              fmt.Sprintf("sb-split-%s", input.TargetID),
-			Dimension:       DimSelectionBias,
-			Severity:        SevLow,
-			Title:           "固定切分比例偏高",
-			Description:     "固定时间切分且训练集比例较高, 可能对特定时段过拟合",
-			Evidence:        fmt.Sprintf("split=fixed, train=%.2f", input.Config.TrainRatio),
-			Recommendation:  "考虑使用滚动/扩展切分以检验时段鲁棒性",
-			MetricName:      "split_type",
-			MetricValue:     input.Config.TrainRatio,
-			CreatedAt:       time.Now(),
+			ID:             fmt.Sprintf("sb-split-%s", input.TargetID),
+			Dimension:      DimSelectionBias,
+			Severity:       SevLow,
+			Title:          "固定切分比例偏高",
+			Description:    "固定时间切分且训练集比例较高, 可能对特定时段过拟合",
+			Evidence:       fmt.Sprintf("split=fixed, train=%.2f", input.Config.TrainRatio),
+			Recommendation: "考虑使用滚动/扩展切分以检验时段鲁棒性",
+			MetricName:     "split_type",
+			MetricValue:    input.Config.TrainRatio,
+			CreatedAt:      time.Now(),
 		})
 	}
 
@@ -317,9 +317,9 @@ func NewSampleSizeChecker(cfg CriticConfig) *SampleSizeChecker {
 	return &SampleSizeChecker{config: cfg}
 }
 
-func (c *SampleSizeChecker) Name() string              { return "sample_size_checker" }
+func (c *SampleSizeChecker) Name() string               { return "sample_size_checker" }
 func (c *SampleSizeChecker) Dimension() ReviewDimension { return DimSampleSize }
-func (c *SampleSizeChecker) IsHardThreshold() bool     { return true }
+func (c *SampleSizeChecker) IsHardThreshold() bool      { return true }
 
 func (c *SampleSizeChecker) Check(input ReviewInput) []ReviewIssue {
 	var issues []ReviewIssue
@@ -376,9 +376,9 @@ func NewCostSensitivityChecker(cfg CriticConfig) *CostSensitivityChecker {
 	return &CostSensitivityChecker{config: cfg}
 }
 
-func (c *CostSensitivityChecker) Name() string              { return "cost_sensitivity_checker" }
+func (c *CostSensitivityChecker) Name() string               { return "cost_sensitivity_checker" }
 func (c *CostSensitivityChecker) Dimension() ReviewDimension { return DimCostSensitivity }
-func (c *CostSensitivityChecker) IsHardThreshold() bool     { return true }
+func (c *CostSensitivityChecker) IsHardThreshold() bool      { return true }
 
 func (c *CostSensitivityChecker) Check(input ReviewInput) []ReviewIssue {
 	var issues []ReviewIssue
@@ -437,9 +437,9 @@ func NewConcentrationChecker(cfg CriticConfig) *ConcentrationChecker {
 	return &ConcentrationChecker{config: cfg}
 }
 
-func (c *ConcentrationChecker) Name() string              { return "concentration_checker" }
+func (c *ConcentrationChecker) Name() string               { return "concentration_checker" }
 func (c *ConcentrationChecker) Dimension() ReviewDimension { return DimConcentration }
-func (c *ConcentrationChecker) IsHardThreshold() bool     { return false }
+func (c *ConcentrationChecker) IsHardThreshold() bool      { return false }
 
 func (c *ConcentrationChecker) Check(input ReviewInput) []ReviewIssue {
 	var issues []ReviewIssue
@@ -483,15 +483,15 @@ func (c *ConcentrationChecker) Check(input ReviewInput) []ReviewIssue {
 		avgTradeSize := 1.0 / float64(input.Results.TotalTrades)
 		if avgTradeSize > 0.3 {
 			issues = append(issues, ReviewIssue{
-				ID:              fmt.Sprintf("conc-trade-%s", input.TargetID),
-				Dimension:       DimConcentration,
-				Severity:        SevLow,
-				Title:           "交易分布不均",
-				Description:     "平均单笔交易占比过高, 少数交易贡献了大部分收益",
-				Evidence:        fmt.Sprintf("total_trades=%d", input.Results.TotalTrades),
-				Recommendation:  "确保策略在多个交易中表现一致",
-				MetricName:      "trade_distribution",
-				CreatedAt:       time.Now(),
+				ID:             fmt.Sprintf("conc-trade-%s", input.TargetID),
+				Dimension:      DimConcentration,
+				Severity:       SevLow,
+				Title:          "交易分布不均",
+				Description:    "平均单笔交易占比过高, 少数交易贡献了大部分收益",
+				Evidence:       fmt.Sprintf("total_trades=%d", input.Results.TotalTrades),
+				Recommendation: "确保策略在多个交易中表现一致",
+				MetricName:     "trade_distribution",
+				CreatedAt:      time.Now(),
 			})
 		}
 	}
@@ -512,9 +512,9 @@ func NewNarrativeBiasChecker(cfg CriticConfig) *NarrativeBiasChecker {
 	return &NarrativeBiasChecker{config: cfg}
 }
 
-func (c *NarrativeBiasChecker) Name() string              { return "narrative_bias_checker" }
+func (c *NarrativeBiasChecker) Name() string               { return "narrative_bias_checker" }
 func (c *NarrativeBiasChecker) Dimension() ReviewDimension { return DimNarrativeBias }
-func (c *NarrativeBiasChecker) IsHardThreshold() bool     { return false }
+func (c *NarrativeBiasChecker) IsHardThreshold() bool      { return false }
 
 func (c *NarrativeBiasChecker) Check(input ReviewInput) []ReviewIssue {
 	var issues []ReviewIssue
@@ -573,16 +573,16 @@ func (c *NarrativeBiasChecker) Check(input ReviewInput) []ReviewIssue {
 	// 检查最大回撤是否过小 (可能是过拟合)
 	if input.Results.MaxDrawdown > -0.01 && input.Results.TotalReturn > 0.05 {
 		issues = append(issues, ReviewIssue{
-			ID:              fmt.Sprintf("nar-drawdown-%s", input.TargetID),
-			Dimension:       DimNarrativeBias,
-			Severity:        SevLow,
-			Title:           "回撤过小值得关注",
-			Description:     fmt.Sprintf("最大回撤 %.1f%% 但收益 %.1f%%, 可能参数过度优化", input.Results.MaxDrawdown*100, input.Results.TotalReturn*100),
-			Evidence:        fmt.Sprintf("max_dd=%.4f, total_return=%.4f", input.Results.MaxDrawdown, input.Results.TotalReturn),
-			Recommendation:  "检查参数敏感性, 验证在不同市场环境下的表现",
-			MetricName:      "max_drawdown",
-			MetricValue:     input.Results.MaxDrawdown,
-			CreatedAt:       time.Now(),
+			ID:             fmt.Sprintf("nar-drawdown-%s", input.TargetID),
+			Dimension:      DimNarrativeBias,
+			Severity:       SevLow,
+			Title:          "回撤过小值得关注",
+			Description:    fmt.Sprintf("最大回撤 %.1f%% 但收益 %.1f%%, 可能参数过度优化", input.Results.MaxDrawdown*100, input.Results.TotalReturn*100),
+			Evidence:       fmt.Sprintf("max_dd=%.4f, total_return=%.4f", input.Results.MaxDrawdown, input.Results.TotalReturn),
+			Recommendation: "检查参数敏感性, 验证在不同市场环境下的表现",
+			MetricName:     "max_drawdown",
+			MetricValue:    input.Results.MaxDrawdown,
+			CreatedAt:      time.Now(),
 		})
 	}
 
@@ -602,9 +602,9 @@ func NewBaselineCompareChecker(cfg CriticConfig) *BaselineCompareChecker {
 	return &BaselineCompareChecker{config: cfg}
 }
 
-func (c *BaselineCompareChecker) Name() string              { return "baseline_compare_checker" }
+func (c *BaselineCompareChecker) Name() string               { return "baseline_compare_checker" }
 func (c *BaselineCompareChecker) Dimension() ReviewDimension { return DimBaselineCompare }
-func (c *BaselineCompareChecker) IsHardThreshold() bool     { return false }
+func (c *BaselineCompareChecker) IsHardThreshold() bool      { return false }
 
 func (c *BaselineCompareChecker) Check(input ReviewInput) []ReviewIssue {
 	var issues []ReviewIssue
@@ -670,16 +670,16 @@ func (c *BaselineCompareChecker) Check(input ReviewInput) []ReviewIssue {
 	// 如果总收益为正但基线收益更高, 需要警告
 	if input.Results.TotalReturn > 0 && input.Results.BaselineReturn > input.Results.TotalReturn {
 		issues = append(issues, ReviewIssue{
-			ID:              fmt.Sprintf("bl-underperform-%s", input.TargetID),
-			Dimension:       DimBaselineCompare,
-			Severity:        SevCritical,
-			Title:           "策略跑输基准",
-			Description:     fmt.Sprintf("策略收益 %.1f%% < 基准收益 %.1f%%, 绝对跑输", input.Results.TotalReturn*100, input.Results.BaselineReturn*100),
-			Evidence:        fmt.Sprintf("total=%.4f, baseline=%.4f", input.Results.TotalReturn, input.Results.BaselineReturn),
-			Recommendation:  "策略在当前时段显著跑输基准, 需要调整或暂停",
-			MetricName:      "relative_performance",
-			MetricValue:     input.Results.TotalReturn - input.Results.BaselineReturn,
-			CreatedAt:       time.Now(),
+			ID:             fmt.Sprintf("bl-underperform-%s", input.TargetID),
+			Dimension:      DimBaselineCompare,
+			Severity:       SevCritical,
+			Title:          "策略跑输基准",
+			Description:    fmt.Sprintf("策略收益 %.1f%% < 基准收益 %.1f%%, 绝对跑输", input.Results.TotalReturn*100, input.Results.BaselineReturn*100),
+			Evidence:       fmt.Sprintf("total=%.4f, baseline=%.4f", input.Results.TotalReturn, input.Results.BaselineReturn),
+			Recommendation: "策略在当前时段显著跑输基准, 需要调整或暂停",
+			MetricName:     "relative_performance",
+			MetricValue:    input.Results.TotalReturn - input.Results.BaselineReturn,
+			CreatedAt:      time.Now(),
 		})
 	}
 

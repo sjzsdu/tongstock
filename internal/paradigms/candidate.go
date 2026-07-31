@@ -33,48 +33,48 @@ const (
 
 // Candidate 候选范式
 type Candidate struct {
-	ID            string          `json:"id"`
-	BatchID       string          `json:"batch_id"`       // 生成批次
-	Source        CandidateSource `json:"source"`         // 来源
-	Schema        *ParadigmSchema `json:"schema"`         // 范式 Schema
-	Status        CandidateStatus `json:"status"`         // 状态
-	Score         float64         `json:"score,omitempty"` // 综合评分 (0-1)
-	Reason        string          `json:"reason"`         // 生成原因/假设描述
-	SearchSpace   string          `json:"search_space"`   // 搜索空间描述
-	ParentID      string          `json:"parent_id"`      // 父候选 (变异来源)
-	CreatedAt     time.Time       `json:"created_at"`
-	UpdatedAt     time.Time       `json:"updated_at"`
-	ValidatedAt   *time.Time      `json:"validated_at,omitempty"`
-	TestResults   *TestResult     `json:"test_results,omitempty"`
-	Deduplicated  bool            `json:"deduplicated"`   // 是否已去重
+	ID           string          `json:"id"`
+	BatchID      string          `json:"batch_id"`        // 生成批次
+	Source       CandidateSource `json:"source"`          // 来源
+	Schema       *ParadigmSchema `json:"schema"`          // 范式 Schema
+	Status       CandidateStatus `json:"status"`          // 状态
+	Score        float64         `json:"score,omitempty"` // 综合评分 (0-1)
+	Reason       string          `json:"reason"`          // 生成原因/假设描述
+	SearchSpace  string          `json:"search_space"`    // 搜索空间描述
+	ParentID     string          `json:"parent_id"`       // 父候选 (变异来源)
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+	ValidatedAt  *time.Time      `json:"validated_at,omitempty"`
+	TestResults  *TestResult     `json:"test_results,omitempty"`
+	Deduplicated bool            `json:"deduplicated"` // 是否已去重
 }
 
 // TestResult 测试结果
 type TestResult struct {
-	BacktestResult *BacktestSummary `json:"backtest_result,omitempty"`
+	BacktestResult  *BacktestSummary       `json:"backtest_result,omitempty"`
 	CrossValidation *CrossValidationResult `json:"cross_validation,omitempty"`
-	CheckedAt      time.Time       `json:"checked_at"`
+	CheckedAt       time.Time              `json:"checked_at"`
 }
 
 // BacktestSummary 回测摘要
 type BacktestSummary struct {
-	TotalReturn    float64 `json:"total_return"`
-	SharpeRatio    float64 `json:"sharpe_ratio"`
-	MaxDrawdown    float64 `json:"max_drawdown"`
-	WinRate        float64 `json:"win_rate"`
-	TradesCount    int     `json:"trades_count"`
-	SampleSize     int     `json:"sample_size"`
-	Confidence     float64 `json:"confidence"` // 结果置信度
+	TotalReturn float64 `json:"total_return"`
+	SharpeRatio float64 `json:"sharpe_ratio"`
+	MaxDrawdown float64 `json:"max_drawdown"`
+	WinRate     float64 `json:"win_rate"`
+	TradesCount int     `json:"trades_count"`
+	SampleSize  int     `json:"sample_size"`
+	Confidence  float64 `json:"confidence"` // 结果置信度
 }
 
 // CrossValidationResult 交叉验证结果
 type CrossValidationResult struct {
-	MeanReturn      float64 `json:"mean_return"`
-	StdReturn       float64 `json:"std_return"`
-	WorstReturn     float64 `json:"worst_return"`
-	StabilityScore  float64 `json:"stability_score"`
-	OverfitRisk     float64 `json:"overfit_risk"` // 过拟合风险 (0-1)
-	Folds           int     `json:"folds"`
+	MeanReturn     float64 `json:"mean_return"`
+	StdReturn      float64 `json:"std_return"`
+	WorstReturn    float64 `json:"worst_return"`
+	StabilityScore float64 `json:"stability_score"`
+	OverfitRisk    float64 `json:"overfit_risk"` // 过拟合风险 (0-1)
+	Folds          int     `json:"folds"`
 }
 
 // IsActive 检查候选是否处于活跃状态 (可测试)
@@ -132,19 +132,19 @@ type GenerateParams struct {
 
 // SearchConfig 搜索配置
 type SearchConfig struct {
-	MaxRules       int     `json:"max_rules"`        // 最大规则数
-	MinConfidence  float64 `json:"min_confidence"`   // 最小置信度
-	SearchBudget   int     `json:"search_budget"`    // 搜索预算 (生成次数)
-	UsedBudget     int     `json:"used_budget"`      // 已用预算
-	FeatureWhitelist []string `json:"feature_whitelist"` // 允许的特征
+	MaxRules          int            `json:"max_rules"`          // 最大规则数
+	MinConfidence     float64        `json:"min_confidence"`     // 最小置信度
+	SearchBudget      int            `json:"search_budget"`      // 搜索预算 (生成次数)
+	UsedBudget        int            `json:"used_budget"`        // 已用预算
+	FeatureWhitelist  []string       `json:"feature_whitelist"`  // 允许的特征
 	OperatorWhitelist []RuleOperator `json:"operator_whitelist"` // 允许的运算符
 }
 
 // CandidateStore 候选存储
 type CandidateStore struct {
 	candidates map[string]*Candidate // id -> candidate
-	batches    map[string][]string  // batch_id -> [candidate_ids]
-	quarantine []string             // 隔离区候选 IDs
+	batches    map[string][]string   // batch_id -> [candidate_ids]
+	quarantine []string              // 隔离区候选 IDs
 }
 
 // NewCandidateStore 创建候选存储

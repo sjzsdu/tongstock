@@ -1,12 +1,12 @@
 import { Button, Card, Flex, Space, Tag, Tooltip, Typography } from 'antd';
 import { CompressOutlined, ExpandOutlined, RobotOutlined, SyncOutlined } from '@ant-design/icons';
-import type { KlineSyncState } from '../../types/api';
+import type { KlineSyncState, Quote } from '../../types/api';
 import { formatDate } from '../../lib/datetime';
 import { formatSigned } from '../../lib/stock-detail';
 
 interface StockInfoHeaderProps {
   code: string;
-  quote: any;
+  quote: Quote;
   ktype: string;
   pct: number;
   valueColor: string;

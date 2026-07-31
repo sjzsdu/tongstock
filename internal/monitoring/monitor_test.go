@@ -2,8 +2,8 @@
 package monitoring
 
 import (
-	"math"
 	"fmt"
+	"math"
 	"math/rand"
 	"testing"
 	"time"

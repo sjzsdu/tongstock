@@ -70,8 +70,10 @@ export default function Observation() {
   };
 
   useEffect(() => {
-    load();
-    loadRuns();
+	queueMicrotask(() => {
+		void load();
+		void loadRuns();
+	});
   }, []);
 
   // ========================================================================

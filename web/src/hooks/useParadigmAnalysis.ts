@@ -1,13 +1,13 @@
 import { useState, useCallback } from 'react';
 import { api } from '../api/client';
-import type { ParadigmItem } from '../types/api';
+import type { EvaluatedItem, ParadigmItem } from '../types/api';
 
 export interface UseParadigmAnalysisReturn {
   paradigmResult: ParadigmItem | null;
   paradigmLoading: boolean;
   paradigmAgentText: string;
-  paradigmEvalConfirm: any[];
-  paradigmEvalInvalid: any[];
+  paradigmEvalConfirm: EvaluatedItem[];
+  paradigmEvalInvalid: EvaluatedItem[];
   paradigmDrawerOpen: boolean;
   setParadigmDrawerOpen: (open: boolean) => void;
   analyzeParadigm: (code: string, name?: string, bypassCache?: boolean) => Promise<void>;
@@ -17,8 +17,8 @@ export function useParadigmAnalysis(): UseParadigmAnalysisReturn {
   const [paradigmResult, setParadigmResult] = useState<ParadigmItem | null>(null);
   const [paradigmLoading, setParadigmLoading] = useState(false);
   const [paradigmAgentText, setParadigmAgentText] = useState('');
-  const [paradigmEvalConfirm, setParadigmEvalConfirm] = useState<any[]>([]);
-  const [paradigmEvalInvalid, setParadigmEvalInvalid] = useState<any[]>([]);
+  const [paradigmEvalConfirm, setParadigmEvalConfirm] = useState<EvaluatedItem[]>([]);
+  const [paradigmEvalInvalid, setParadigmEvalInvalid] = useState<EvaluatedItem[]>([]);
   const [paradigmDrawerOpen, setParadigmDrawerOpen] = useState(false);
 
   const analyzeParadigm = useCallback(async (code: string, name?: string, bypassCache?: boolean) => {

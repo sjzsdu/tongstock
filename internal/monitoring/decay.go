@@ -16,13 +16,13 @@ import (
 type DecayType string
 
 const (
-	DecaySharpeDecline    DecayType = "sharpe_decline"    // 夏普比率下降
-	DecayWinRateDrop      DecayType = "win_rate_drop"      // 胜率下降
-	DecayHalfLife         DecayType = "half_life"          // 半衰期衰减
-	DecayDrawdownExpansion DecayType = "drawdown_expansion" // 回撤扩大
-	DecayCUSUM            DecayType = "cusum"              // CUSUM 持续偏移
+	DecaySharpeDecline      DecayType = "sharpe_decline"      // 夏普比率下降
+	DecayWinRateDrop        DecayType = "win_rate_drop"       // 胜率下降
+	DecayHalfLife           DecayType = "half_life"           // 半衰期衰减
+	DecayDrawdownExpansion  DecayType = "drawdown_expansion"  // 回撤扩大
+	DecayCUSUM              DecayType = "cusum"               // CUSUM 持续偏移
 	DecayVolatilityIncrease DecayType = "volatility_increase" // 波动率上升
-	DecayHitRateDecay     DecayType = "hit_rate_decay"     // 命中率衰减
+	DecayHitRateDecay       DecayType = "hit_rate_decay"      // 命中率衰减
 )
 
 // DecayDetectionResult 衰减检测结果
@@ -47,14 +47,14 @@ type DecayConfig struct {
 	LongWindow   int `json:"long_window"`   // 长期窗口 (天)
 
 	// 衰减阈值
-	SharpeDeclineThreshold    float64 `json:"sharpe_decline_threshold"`    // 夏普比率下降阈值
-	WinRateDropThreshold      float64 `json:"win_rate_drop_threshold"`      // 胜率下降阈值
+	SharpeDeclineThreshold     float64 `json:"sharpe_decline_threshold"`     // 夏普比率下降阈值
+	WinRateDropThreshold       float64 `json:"win_rate_drop_threshold"`      // 胜率下降阈值
 	DrawdownExpansionThreshold float64 `json:"drawdown_expansion_threshold"` // 回撤扩大阈值
-	HalfLifeDecayThreshold    float64 `json:"half_life_decay_threshold"`    // 半衰期衰减阈值
+	HalfLifeDecayThreshold     float64 `json:"half_life_decay_threshold"`    // 半衰期衰减阈值
 
 	// CUSUM 参数
-	CUSUMK       float64 `json:"cusum_k"`        // CUSUM 参考值 (允许的偏移)
-	CUMUH        float64 `json:"cusum_h"`        // CUSUM 决策阈值
+	CUSUMK float64 `json:"cusum_k"` // CUSUM 参考值 (允许的偏移)
+	CUMUH  float64 `json:"cusum_h"` // CUSUM 决策阈值
 
 	// 小样本保护
 	MinWindowSize int `json:"min_window_size"` // 最小窗口大小 (低于此值不判断)
@@ -63,16 +63,16 @@ type DecayConfig struct {
 // NewDecayConfig 创建默认衰减检测配置
 func NewDecayConfig() DecayConfig {
 	return DecayConfig{
-		ShortWindow:              10,
-		MediumWindow:             30,
-		LongWindow:               60,
-		SharpeDeclineThreshold:   0.30,
-		WinRateDropThreshold:     0.15,
+		ShortWindow:                10,
+		MediumWindow:               30,
+		LongWindow:                 60,
+		SharpeDeclineThreshold:     0.30,
+		WinRateDropThreshold:       0.15,
 		DrawdownExpansionThreshold: 0.50,
-		HalfLifeDecayThreshold:   0.10,
-		CUSUMK:                   0.001,
-		CUMUH:                    0.01,
-		MinWindowSize:            10,
+		HalfLifeDecayThreshold:     0.10,
+		CUSUMK:                     0.001,
+		CUMUH:                      0.01,
+		MinWindowSize:              10,
 	}
 }
 
@@ -138,9 +138,9 @@ func (d *DecayDetector) DetectSharpeDecline(returns []float64) DecayDetectionRes
 		ChangePct:     changePct,
 		WindowDays:    d.Config.ShortWindow,
 		Confidence:    decayConfidence(len(shortReturns), len(longReturns)),
-		Description:   fmt.Sprintf("短窗夏普 %.2f vs 长窗 %.2f (变化 %.1f%%) [%s]",
+		Description: fmt.Sprintf("短窗夏普 %.2f vs 长窗 %.2f (变化 %.1f%%) [%s]",
 			shortSharpe, longSharpe, changePct*100, severity),
-		DetectedAt:    time.Now(),
+		DetectedAt: time.Now(),
 	}
 }
 
@@ -169,9 +169,9 @@ func (d *DecayDetector) DetectWinRateDecay(returns []float64) DecayDetectionResu
 		ChangePct:     changePct,
 		WindowDays:    d.Config.ShortWindow,
 		Confidence:    decayConfidence(len(shortReturns), len(mediumReturns)),
-		Description:   fmt.Sprintf("短窗胜率 %.1f%% vs 中窗 %.1f%% (变化 %.1f%%) [%s]",
+		Description: fmt.Sprintf("短窗胜率 %.1f%% vs 中窗 %.1f%% (变化 %.1f%%) [%s]",
 			shortWR*100, mediumWR*100, changePct*100, severity),
-		DetectedAt:    time.Now(),
+		DetectedAt: time.Now(),
 	}
 }
 
@@ -200,9 +200,9 @@ func (d *DecayDetector) DetectDrawdownExpansion(returns []float64) DecayDetectio
 		ChangePct:     changePct,
 		WindowDays:    d.Config.ShortWindow,
 		Confidence:    decayConfidence(len(shortReturns), len(longReturns)),
-		Description:   fmt.Sprintf("短窗最大回撤 %.2f%% vs 长窗 %.2f%% (变化 %.1f%%) [%s]",
+		Description: fmt.Sprintf("短窗最大回撤 %.2f%% vs 长窗 %.2f%% (变化 %.1f%%) [%s]",
 			shortMaxDD*100, longMaxDD*100, changePct*100, severity),
-		DetectedAt:    time.Now(),
+		DetectedAt: time.Now(),
 	}
 }
 
@@ -280,9 +280,9 @@ func (d *DecayDetector) DetectCUSUM(returns []float64) DecayDetectionResult {
 		ChangePct:     changePct,
 		WindowDays:    len(returns),
 		Confidence:    math.Min(1.0, float64(maxCS)/d.Config.CUMUH),
-		Description:   fmt.Sprintf("CUSUM 统计量 %.4f (阈值 %.4f), %s",
+		Description: fmt.Sprintf("CUSUM 统计量 %.4f (阈值 %.4f), %s",
 			maxCS, d.Config.CUMUH, severity),
-		DetectedAt:    time.Now(),
+		DetectedAt: time.Now(),
 	}
 }
 
@@ -343,9 +343,9 @@ func (d *DecayDetector) DetectHalfLife(returns []float64, dates []time.Time) Dec
 		ChangePct:     -relativeError,
 		WindowDays:    len(returns),
 		Confidence:    math.Min(1.0, forecastError/(math.Abs(actualSecond)+0.001)),
-		Description:   fmt.Sprintf("估计半衰期 %.0f 天, 预测误差 %.1f%% [%s]",
+		Description: fmt.Sprintf("估计半衰期 %.0f 天, 预测误差 %.1f%% [%s]",
 			halfLifeEstimate, relativeError*100, severity),
-		DetectedAt:    time.Now(),
+		DetectedAt: time.Now(),
 	}
 }
 

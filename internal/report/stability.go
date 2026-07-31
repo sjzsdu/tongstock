@@ -11,12 +11,12 @@ import (
 
 // TradeRecord 交易记录 (用于稳定性分析)。
 type TradeRecord struct {
-	StockCode  string  `json:"stock_code"`
-	EntryDate  string  `json:"entry_date"`
-	ExitDate   string  `json:"exit_date"`
-	Return     float64 `json:"return"`
-	HoldDays   int     `json:"hold_days"`
-	Position   float64 `json:"position"` // 持仓金额
+	StockCode string  `json:"stock_code"`
+	EntryDate string  `json:"entry_date"`
+	ExitDate  string  `json:"exit_date"`
+	Return    float64 `json:"return"`
+	HoldDays  int     `json:"hold_days"`
+	Position  float64 `json:"position"` // 持仓金额
 }
 
 // ComputeStabilityMetrics 计算稳定性指标。
@@ -53,14 +53,14 @@ func ComputeStabilityMetrics(trades []TradeRecord, totalDays int) *StabilityMetr
 	sharpeStab := computeSharpeStability(trades, totalDays)
 
 	return &StabilityMetrics{
-		TurnoverRate:      turnover,
-		AvgHoldDays:       avgHold,
-		TradeFrequency:    tradeFreq,
+		TurnoverRate:       turnover,
+		AvgHoldDays:        avgHold,
+		TradeFrequency:     tradeFreq,
 		StockConcentration: stockConcentration,
 		DateConcentration:  dateConcentration,
-		TopPctContrib:     topContrib,
-		CapacityEstimate:  capacity,
-		SharpeStability:   sharpeStab,
+		TopPctContrib:      topContrib,
+		CapacityEstimate:   capacity,
+		SharpeStability:    sharpeStab,
 	}
 }
 
