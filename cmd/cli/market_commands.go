@@ -29,52 +29,25 @@ func init() {
 }
 
 func runKline(cmd *cobra.Command, args []string) error {
-	// Parse kline type using shared helper
 	ktype := tdx.ParseKlineType(klineType)
-
-	if ktype != tdx.ParseKlineType("day") {
-		return runLegacyKline(ktype)
-	}
 	service, cleanup, err := dialStockData(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("连接服务器失败: %w", err)
 	}
 	defer cleanup()
-	result, err := service.Query(cmd.Context(), cliDataRequest(stockdata.DataSpec{
+	spec := stockdata.DataSpec{
 		Type: stockdata.DataKline, Market: cliMarketForCode(klineCode), Code: klineCode,
 		Granularity: klineType, KType: ktype,
-	}))
+	}
+	result, err := service.Query(cmd.Context(), cliDataRequest(spec))
 	if err != nil {
-		return fmt.Errorf("获取K线失败: %w", err)
+		return fmt.Errorf("获取K线失败: %w", cliDataError(err, spec))
 	}
 	klines := result.Klines
 	if !klineAll && len(klines) > 100 {
 		klines = klines[len(klines)-100:]
 	}
 
-	fmt.Printf("共获取 %d 条K线数据\n", len(klines))
-	for _, k := range klines {
-		fmt.Printf("%s O:%.2f H:%.2f L:%.2f C:%.2f V:%.2f\n",
-			k.Time.Format("2006-01-02"), k.Open, k.High, k.Low, k.Close, k.Volume)
-	}
-	return nil
-}
-
-func runLegacyKline(ktype uint8) error {
-	svc, err := dialService()
-	if err != nil {
-		return fmt.Errorf("连接服务器失败: %w", err)
-	}
-	defer svc.Close()
-	var klines []*protocol.Kline
-	if klineAll {
-		klines, err = svc.FetchKlineAll(klineCode, ktype)
-	} else {
-		klines, err = svc.FetchKline(klineCode, ktype, 0, 100)
-	}
-	if err != nil {
-		return fmt.Errorf("获取K线失败: %w", err)
-	}
 	fmt.Printf("共获取 %d 条K线数据\n", len(klines))
 	for _, k := range klines {
 		fmt.Printf("%s O:%.2f H:%.2f L:%.2f C:%.2f V:%.2f\n",
@@ -189,11 +162,12 @@ func runFinance(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("连接服务器失败: %w", err)
 	}
 	defer cleanup()
-	result, err := service.Query(cmd.Context(), cliDataRequest(stockdata.DataSpec{
+	spec := stockdata.DataSpec{
 		Type: stockdata.DataFinance, Market: cliMarketForCode(args[0]), Code: args[0],
-	}))
+	}
+	result, err := service.Query(cmd.Context(), cliDataRequest(spec))
 	if err != nil {
-		return fmt.Errorf("获取财务数据失败: %w", err)
+		return fmt.Errorf("获取财务数据失败: %w", cliDataError(err, spec))
 	}
 	info := result.Finance
 

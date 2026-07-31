@@ -23,11 +23,12 @@ func runQuote(cmd *cobra.Command, args []string) error {
 	defer cleanup()
 
 	for _, code := range args {
-		result, err := service.Query(cmd.Context(), cliDataRequest(stockdata.DataSpec{
+		spec := stockdata.DataSpec{
 			Type: stockdata.DataQuote, Market: cliMarketForCode(code), Code: code,
-		}))
+		}
+		result, err := service.Query(cmd.Context(), cliDataRequest(spec))
 		if err != nil {
-			return fmt.Errorf("获取行情失败: %w", err)
+			return fmt.Errorf("获取行情失败: %w", cliDataError(err, spec))
 		}
 		q := result.Quote
 		fmt.Printf("%s %s\n", q.Code, q.Name)

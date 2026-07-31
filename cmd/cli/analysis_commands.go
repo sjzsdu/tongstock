@@ -3,15 +3,17 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
+	"sync"
+
+	"github.com/sjzsdu/tongstock/internal/app/stockdata"
 	"github.com/sjzsdu/tongstock/pkg/param"
 	"github.com/sjzsdu/tongstock/pkg/signal"
 	"github.com/sjzsdu/tongstock/pkg/ta"
 	"github.com/sjzsdu/tongstock/pkg/tdx"
 	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
 	"github.com/spf13/cobra"
-	"os"
-	"strings"
-	"sync"
 )
 
 var (
@@ -43,21 +45,22 @@ func init() {
 
 func runIndicator(cmd *cobra.Command, args []string) error {
 	ktype := tdx.ParseKlineType(indicatorType)
-
-	svc, err := dialService()
+	service, cleanup, err := dialStockData(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("连接服务器失败: %w", err)
 	}
-	defer svc.Close()
-
-	var klines []*protocol.Kline
-	if indicatorAll {
-		klines, err = svc.FetchKlineAll(indicatorCode, ktype)
-	} else {
-		klines, err = svc.FetchKline(indicatorCode, ktype, 0, uint16(indicatorCount))
+	defer cleanup()
+	spec := stockdata.DataSpec{
+		Type: stockdata.DataKline, Market: cliMarketForCode(indicatorCode),
+		Code: indicatorCode, Granularity: indicatorType, KType: ktype,
 	}
+	data, err := service.Query(cmd.Context(), cliDataRequest(spec))
 	if err != nil {
-		return fmt.Errorf("获取K线失败: %w", err)
+		return fmt.Errorf("获取K线失败: %w", cliDataError(err, spec))
+	}
+	klines := data.Klines
+	if !indicatorAll && indicatorCount > 0 && len(klines) > indicatorCount {
+		klines = klines[len(klines)-indicatorCount:]
 	}
 
 	inputs := make([]ta.KlineInput, len(klines))
@@ -545,11 +548,11 @@ func runScreen(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("没有有效的股票代码")
 	}
 
-	svc, err := dialService()
+	service, cleanup, err := dialStockData(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("连接服务器失败: %w", err)
 	}
-	defer svc.Close()
+	defer cleanup()
 
 	_ = param.AutoInit()
 
@@ -572,10 +575,18 @@ func runScreen(cmd *cobra.Command, args []string) error {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			klines, err := svc.FetchKline(c, ktype, 0, 250)
+			spec := stockdata.DataSpec{
+				Type: stockdata.DataKline, Market: cliMarketForCode(c),
+				Code: c, Granularity: screenType, KType: ktype,
+			}
+			data, err := service.Query(cmd.Context(), cliDataRequest(spec))
 			if err != nil {
-				results[idx] = screenResult{Code: c, Err: err}
+				results[idx] = screenResult{Code: c, Err: cliDataError(err, spec)}
 				return
+			}
+			klines := data.Klines
+			if len(klines) > 250 {
+				klines = klines[len(klines)-250:]
 			}
 
 			inputs := make([]ta.KlineInput, len(klines))

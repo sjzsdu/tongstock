@@ -137,7 +137,13 @@ func (r *SQLiteRepository) Query(ctx context.Context, spec DataSpec) (Dataset, e
 			item.Time, _ = time.ParseInLocation("20060102", raw, time.Local)
 			result = append(result, &item)
 		}
-		return Dataset{Klines: result}, rows.Err()
+		if err := rows.Err(); err != nil {
+			return Dataset{}, err
+		}
+		if len(result) == 0 {
+			return Dataset{}, sql.ErrNoRows
+		}
+		return Dataset{Klines: result}, nil
 	case DataQuote:
 		var raw string
 		if err := r.storage.DB().QueryRowContext(ctx, `SELECT payload FROM quote_snapshot WHERE code = ?`, spec.Code).Scan(&raw); err != nil {
