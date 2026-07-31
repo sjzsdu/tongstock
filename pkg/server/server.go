@@ -6,11 +6,14 @@ import (
 	"github.com/gin-gonic/gin"
 	pinyin "github.com/mozillazg/go-pinyin"
 	"github.com/sjzsdu/tongstock/internal/app/stockdata"
+	"github.com/sjzsdu/tongstock/internal/experiment"
 	"github.com/sjzsdu/tongstock/internal/ledger"
+	"github.com/sjzsdu/tongstock/internal/paradigm"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
 	"github.com/sjzsdu/tongstock/pkg/history"
 	"github.com/sjzsdu/tongstock/pkg/stockinfo"
 	"github.com/sjzsdu/tongstock/pkg/stockpool"
+	"github.com/sjzsdu/tongstock/pkg/storage"
 	"github.com/sjzsdu/tongstock/pkg/tdx"
 	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
 	"github.com/sjzsdu/tongstock/pkg/trading"
@@ -36,6 +39,9 @@ type Server struct {
 	agentListFunc         func() ([]EmbeddedAgent, error)
 	ledger                *ledger.SignalLedger
 	paradigmStore         *paradigms.Store
+	paradigmSnapshots     *paradigm.DatasetSnapshotStore
+	experimentRegistry    *experiment.SQLiteRegistry
+	storage               *storage.Storage
 	paradigmAlertMu       sync.RWMutex
 	paradigmAlertCache    []paradigmAlert
 	paradigmAlertLastScan time.Time
@@ -99,11 +105,12 @@ type Dependencies struct {
 	StockInfo   *stockinfo.Store
 	Newsfeed    *NewsfeedHandler
 	Diagnostics DiagnosticsProvider
+	Storage     *storage.Storage
 }
 
 // NewServer creates a transport adapter from explicitly composed modules.
 func NewServer(deps Dependencies) *Server {
-	return &Server{
+	s := &Server{
 		svc:                   deps.StockData,
 		stockData:             deps.UnifiedData,
 		historyDB:             deps.History,
@@ -115,7 +122,13 @@ func NewServer(deps Dependencies) *Server {
 		ledger:                ledger.NewSignalLedger(),
 		newsfeedHandler:       deps.Newsfeed,
 		diagnostics:           deps.Diagnostics,
+		storage:               deps.Storage,
 	}
+	if deps.Storage != nil {
+		s.paradigmSnapshots = paradigm.NewDatasetSnapshotStore(deps.Storage)
+		s.experimentRegistry, _ = experiment.NewSQLiteRegistry(deps.Storage)
+	}
+	return s
 }
 
 func (s *Server) SetChatStore(store *ChatStore) {

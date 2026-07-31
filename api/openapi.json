@@ -2029,11 +2029,49 @@
       }
     },
     "/api/paradigm/backtest": {
+      "post": {
+        "operationId": "postApiParadigmBacktest",
+        "responses": {
+          "201": {
+            "description": "Persisted experiment completed against a frozen real-data snapshot"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/paradigm/experiments/{id}": {
       "get": {
-        "operationId": "getApiParadigmBacktest",
+        "operationId": "getApiParadigmExperiment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Successful legacy-compatible response"
+            "description": "Persisted experiment, runs, metrics, and transaction artifacts"
           },
           "400": {
             "$ref": "#/components/responses/Error"

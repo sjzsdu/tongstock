@@ -51,7 +51,8 @@ func (s *Server) SetupParadigmRoutes(api *gin.RouterGroup) {
 		p.POST("/evaluate", s.handleParadigmEvaluate)
 		p.POST("/hypothesis", s.handleParadigmCreate)
 		p.POST("/hypothesis/preview", s.handleParadigmPreview)
-		p.GET("/backtest", s.handleParadigmBacktest)
+		p.POST("/backtest", s.handleParadigmBacktest)
+		p.GET("/experiments/:id", s.handleParadigmExperimentGet)
 		p.GET("/list", s.handleParadigmList)
 		p.GET("/discover", s.handleParadigmDiscover)
 		p.GET("/decision-cards", s.handleParadigmDecisionCards)
@@ -167,149 +168,6 @@ type paradigmStatsResponse struct {
 	AverageReturn   float64 `json:"average_return"`
 	AverageRating   float64 `json:"average_rating"`
 	HighReliability int     `json:"high_reliability"`
-}
-
-type paradigmBacktestResponse struct {
-	ParadigmID  string  `json:"paradigm_id"`
-	StockCode   string  `json:"stock_code"`
-	SampleSize  int     `json:"sample_size"`
-	WinRate5    float64 `json:"win_rate_5"`
-	WinRate10   float64 `json:"win_rate_10"`
-	WinRate20   float64 `json:"win_rate_20"`
-	AvgReturn5  float64 `json:"avg_return_5"`
-	AvgReturn10 float64 `json:"avg_return_10"`
-	AvgReturn20 float64 `json:"avg_return_20"`
-	MaxDrawdown float64 `json:"max_drawdown"`
-	Error       string  `json:"error,omitempty"`
-}
-
-func (s *Server) handleParadigmBacktest(c *gin.Context) {
-	if s.paradigmStore == nil {
-		c.JSON(http.StatusOK, []paradigmBacktestResponse{})
-		return
-	}
-	id := c.Query("id")
-	stockCode := c.Query("stock_code")
-	var list []*paradigms.Paradigm
-	if id != "" {
-		p, err := s.paradigmStore.Get(id)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-			return
-		}
-		list = []*paradigms.Paradigm{p}
-	} else if stockCode != "" {
-		list = s.paradigmStore.ListByStockCode(stockCode)
-	} else {
-		list = s.paradigmStore.List()
-	}
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
-	if limit <= 0 || limit > 200 {
-		limit = 50
-	}
-	if len(list) > limit {
-		list = list[:limit]
-	}
-	out := make([]paradigmBacktestResponse, 0, len(list))
-	for _, p := range list {
-		out = append(out, s.backtestParadigm(p))
-	}
-	c.JSON(http.StatusOK, out)
-}
-
-func (s *Server) backtestParadigm(p *paradigms.Paradigm) paradigmBacktestResponse {
-	resp := paradigmBacktestResponse{ParadigmID: p.ID, StockCode: p.StockCode}
-	klines, err := s.svc.FetchKlineAll(p.StockCode, 0)
-	if err != nil || len(klines) < 80 {
-		resp.Error = fmt.Sprintf("kline data unavailable: %v", err)
-		return resp
-	}
-	start := 60
-	var sum5, sum10, sum20 float64
-	var wins5, wins10, wins20 int
-	maxDD := 0.0
-	for i := start; i < len(klines)-20; i++ {
-		ind := indicatorAt(klines, i)
-		matched := len(p.BuyConds) > 0
-		for _, cond := range p.BuyConds {
-			ec := EvaluatedCondition{Condition: formatConditionText(cond), Type: "buy"}
-			evaluateSingleCondition(&ec, cond, ind)
-			if ec.Status != "met" {
-				matched = false
-				break
-			}
-		}
-		if !matched {
-			continue
-		}
-		entry := klines[i].Close
-		ret5 := percentReturn(entry, klines[i+5].Close)
-		ret10 := percentReturn(entry, klines[i+10].Close)
-		ret20 := percentReturn(entry, klines[i+20].Close)
-		sum5 += ret5
-		sum10 += ret10
-		sum20 += ret20
-		if ret5 > 0 {
-			wins5++
-		}
-		if ret10 > 0 {
-			wins10++
-		}
-		if ret20 > 0 {
-			wins20++
-		}
-		for j := i + 1; j <= i+20; j++ {
-			dd := percentReturn(entry, klines[j].Low)
-			if dd < maxDD {
-				maxDD = dd
-			}
-		}
-		resp.SampleSize++
-	}
-	if resp.SampleSize > 0 {
-		n := float64(resp.SampleSize)
-		resp.AvgReturn5 = sum5 / n
-		resp.AvgReturn10 = sum10 / n
-		resp.AvgReturn20 = sum20 / n
-		resp.WinRate5 = float64(wins5) / n
-		resp.WinRate10 = float64(wins10) / n
-		resp.WinRate20 = float64(wins20) / n
-		resp.MaxDrawdown = maxDD
-	}
-	return resp
-}
-
-func indicatorAt(klines []*protocol.Kline, idx int) map[string]float64 {
-	ind := map[string]float64{"close": klines[idx].Close, "volume": klines[idx].Volume}
-	if idx > 0 {
-		ind["prev_close"] = klines[idx-1].Close
-		ind["prev_volume"] = klines[idx-1].Volume
-	}
-	for _, period := range []int{5, 10, 20, 60} {
-		if idx+1 >= period {
-			ind[fmt.Sprintf("ma%d", period)] = calcSMA(klines, period, idx)
-		}
-		if idx >= period {
-			ind[fmt.Sprintf("prev_ma%d", period)] = calcSMA(klines, period, idx-1)
-		}
-	}
-	if idx+1 >= 26 {
-		ind["macd_dif"] = calcEMA(klines[:idx+1], 12) - calcEMA(klines[:idx+1], 26)
-	}
-	if idx >= 26 {
-		ind["prev_macd_dif"] = calcEMA(klines[:idx], 12) - calcEMA(klines[:idx], 26)
-	}
-	if idx+1 >= 15 {
-		ind["rsi14"] = calcRSI(klines[:idx+1], 14)
-	}
-	return ind
-}
-
-func percentReturn(entry, exit float64) float64 {
-	if entry == 0 {
-		return 0
-	}
-	return (exit - entry) / entry * 100
 }
 
 func (s *Server) handleParadigmStats(c *gin.Context) {
@@ -1684,30 +1542,17 @@ func (s *Server) handleParadigmEvidence(c *gin.Context) {
 		return
 	}
 	id := c.Param("id")
-	p, err := s.paradigmStore.Get(id)
-	if err != nil {
+	if _, err := s.paradigmStore.Get(id); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
 
-	backtestResp := s.backtestParadigm(p)
-	bt := &paradigms.BacktestResult{
-		ParadigmID:  backtestResp.ParadigmID,
-		StockCode:   backtestResp.StockCode,
-		SampleSize:  backtestResp.SampleSize,
-		WinRate5:    backtestResp.WinRate5,
-		WinRate10:   backtestResp.WinRate10,
-		WinRate20:   backtestResp.WinRate20,
-		AvgReturn5:  backtestResp.AvgReturn5,
-		AvgReturn10: backtestResp.AvgReturn10,
-		AvgReturn20: backtestResp.AvgReturn20,
-		MaxDrawdown: backtestResp.MaxDrawdown,
-		Error:       backtestResp.Error,
+	evidence, err := s.latestParadigmExperimentEvidence(id, c.Query("experiment_id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
 	}
-
-	builder := paradigms.NewEvidenceBuilder()
-	card := builder.BuildFromParadigm(p, bt)
-	c.JSON(http.StatusOK, card)
+	c.JSON(http.StatusOK, evidence)
 }
 
 // --- Lineage & Versioning ---

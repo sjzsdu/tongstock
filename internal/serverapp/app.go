@@ -195,7 +195,7 @@ func NewApp(cfg *config.Config, opts Options) (_ *App, err error) {
 	app.api = server.NewServer(server.Dependencies{
 		StockData: app.data, UnifiedData: app.stockData, History: historyStore, Watchlist: watchlistStore,
 		Trading: tradingStore, StockPool: stockpoolStore, StockInfo: stockinfoStore,
-		Newsfeed: newsHandler, Diagnostics: server.DiagnosticsFunc(app.Diagnostics),
+		Newsfeed: newsHandler, Diagnostics: server.DiagnosticsFunc(app.Diagnostics), Storage: app.storage,
 	})
 
 	app.configureOptionalModules()

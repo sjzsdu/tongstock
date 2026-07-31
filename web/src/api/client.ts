@@ -492,13 +492,14 @@ export const api = {
   paradigmStats: () =>
     fetchJSON<ParadigmStatsResponse>('/api/paradigm/stats'),
 
-  paradigmBacktest: (id?: string, stockCode?: string) => {
-    const params = new URLSearchParams();
-    if (id) params.set('id', id);
-    if (stockCode) params.set('stock_code', stockCode);
-    const q = params.toString();
-    return fetchJSON<ParadigmBacktestItem[]>(`/api/paradigm/backtest${q ? `?${q}` : ''}`);
-  },
+  paradigmBacktest: (paradigmId: string, snapshotId?: string) =>
+    fetchJSON<ParadigmBacktestItem>('/api/paradigm/backtest', {
+      method: 'POST',
+      body: JSON.stringify({
+        paradigm_id: paradigmId,
+        ...(snapshotId ? { snapshot_id: snapshotId } : {}),
+      }),
+    }),
 
   paradigmHistory: () =>
     fetchJSON<ParadigmListResponse>('/api/paradigm/history'),

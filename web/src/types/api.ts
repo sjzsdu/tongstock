@@ -643,15 +643,27 @@ export interface ParadigmStatsResponse {
 export interface ParadigmBacktestItem {
   paradigm_id: string;
   stock_code: string;
-  sample_size: number;
-  win_rate_5: number;
-  win_rate_10: number;
-  win_rate_20: number;
-  avg_return_5: number;
-  avg_return_10: number;
-  avg_return_20: number;
-  max_drawdown: number;
-  error?: string;
+  experiment_id: string;
+  run_id: string;
+  snapshot_id: string;
+  config_hash: string;
+  result_hash: string;
+  metrics: {
+    total_trades?: number;
+    win_rate?: number;
+    total_return?: number;
+    max_drawdown?: number;
+    net_pnl?: number;
+    custom?: Record<string, number>;
+  };
+  segmented_metrics: unknown[];
+  artifacts: Array<{
+    id: string;
+    type: string;
+    name: string;
+    content_hash?: string;
+    content?: unknown;
+  }>;
 }
 
 // Evidence Card types
