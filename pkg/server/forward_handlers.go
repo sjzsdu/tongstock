@@ -1,9 +1,6 @@
 package server
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -26,7 +23,6 @@ func (s *Server) registerForwardRunRoutes(api *gin.RouterGroup) {
 		fr.POST("/runs/:id/execute", s.handleForwardRunExecute)
 		fr.POST("/runs/:id/finalize", s.handleForwardRunFinalize)
 		fr.GET("/runs/:id/signals", s.handleForwardRunSignals)
-		fr.POST("/runs/:id/signals", s.handleForwardSignalAppend)
 		fr.GET("/runs/:id/equity", s.handleForwardRunEquity)
 		fr.GET("/runs/:id/compare", s.handleForwardRunCompare)
 		fr.GET("/signals/:id", s.handleForwardSignalGet)
@@ -282,112 +278,6 @@ func (s *Server) handleForwardRunSignals(c *gin.Context) {
 // Signal Handlers
 // ============================================================================
 
-type forwardSignalAppendRequest struct {
-	ID                string              `json:"id"`
-	ParadigmVersionID string              `json:"paradigm_version_id"`
-	StockCode         string              `json:"stock_code"`
-	Direction         string              `json:"direction"`
-	SignalDate        string              `json:"signal_date"`
-	Confidence        float64             `json:"confidence"`
-	Source            ledger.SignalSource `json:"source"`
-}
-
-func (s *Server) handleForwardSignalAppend(c *gin.Context) {
-	if s.ledger == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "ledger not initialized"})
-		return
-	}
-	runID := c.Param("id")
-
-	var req forwardSignalAppendRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if req.ID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
-		return
-	}
-	run, err := s.ledger.GetRun(runID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		return
-	}
-	if run.Status != "active" {
-		c.JSON(http.StatusConflict, gin.H{"error": "forward run is not active"})
-		return
-	}
-	if req.ParadigmVersionID == "" {
-		req.ParadigmVersionID = run.ParadigmVersionID
-	}
-	if req.ParadigmVersionID != run.ParadigmVersionID {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "paradigm_version_id does not match run"})
-		return
-	}
-	req.StockCode = strings.TrimSpace(req.StockCode)
-	if req.StockCode == "" || (req.Direction != "buy" && req.Direction != "sell") {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "stock_code and direction (buy/sell) are required"})
-		return
-	}
-
-	signalDate, err := time.Parse("2006-01-02", req.SignalDate)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid signal_date"})
-		return
-	}
-
-	if existing, getErr := s.ledger.GetSignal(req.ID); getErr == nil {
-		if signalRequestMatches(existing, req, runID, signalDate) {
-			c.JSON(http.StatusOK, gin.H{"signal": existing})
-			return
-		}
-		c.JSON(http.StatusConflict, gin.H{"error": "signal ID already exists with different immutable content"})
-		return
-	}
-
-	market, dataHash, err := s.captureForwardSignalMarket(req.StockCode, signalDate)
-	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
-		return
-	}
-
-	entry := ledger.SignalEntry{
-		ID:                req.ID,
-		RunID:             runID,
-		ParadigmVersionID: req.ParadigmVersionID,
-		StockCode:         req.StockCode,
-		Direction:         req.Direction,
-		SignalDate:        signalDate,
-		Price:             market.Close,
-		PreClose:          market.PreClose,
-		LimitUp:           market.LimitUp,
-		LimitDown:         market.LimitDown,
-		Suspended:         market.Suspended,
-		Board:             market.Board,
-		Market:            market,
-		Confidence:        req.Confidence,
-		DataSnapshot: ledger.DataSnapshot{
-			DatasetID: fmt.Sprintf("kline:%s:9:%s:%s", req.StockCode,
-				signalDate.Format("20060102"), signalDate.Format("20060102")),
-			RuleSetID: req.ParadigmVersionID, DataHash: dataHash, CapturedAt: time.Now().UTC(),
-		},
-		Source: req.Source,
-	}
-
-	if err := s.ledger.AppendSignal(entry); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	persisted, err := s.ledger.GetSignal(entry.ID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"signal": persisted})
-}
-
 func (s *Server) handleForwardSignalGet(c *gin.Context) {
 	if s.ledger == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "ledger not initialized"})
@@ -465,70 +355,6 @@ func forwardExecutionConfig(run *ledger.ForwardRun) (trading.TradingConstraints,
 	cost.StampDutyRate = run.ConstraintsSnapshot.StampDutyRate
 	cost.TransferFeeRate = run.ConstraintsSnapshot.TransferFeeRate
 	return constraints, cost
-}
-
-func signalRequestMatches(
-	existing ledger.SignalEntry,
-	req forwardSignalAppendRequest,
-	runID string,
-	signalDate time.Time,
-) bool {
-	left, _ := json.Marshal(existing.Source)
-	right, _ := json.Marshal(req.Source)
-	return existing.RunID == runID &&
-		existing.ParadigmVersionID == req.ParadigmVersionID &&
-		existing.StockCode == req.StockCode &&
-		existing.Direction == req.Direction &&
-		existing.SignalDate.Equal(signalDate) &&
-		existing.Confidence == req.Confidence &&
-		string(left) == string(right)
-}
-
-func (s *Server) captureForwardSignalMarket(
-	code string,
-	signalDate time.Time,
-) (ledger.ExecutionMarket, string, error) {
-	if s.storage == nil {
-		return ledger.ExecutionMarket{}, "", fmt.Errorf("server storage is required for real market capture")
-	}
-	type row struct {
-		date                   string
-		open, high, low, close float64
-		volume, amount         float64
-	}
-	var signal row
-	if err := s.storage.DB().QueryRow(`SELECT date, open, high, low, close, volume, amount
-		FROM kline WHERE code=? AND ktype=9 AND REPLACE(date, '-', '')=?
-		LIMIT 1`, code, signalDate.Format("20060102")).
-		Scan(&signal.date, &signal.open, &signal.high, &signal.low, &signal.close,
-			&signal.volume, &signal.amount); err != nil {
-		return ledger.ExecutionMarket{}, "", fmt.Errorf("real signal-date K-line unavailable for %s on %s: %w",
-			code, signalDate.Format("2006-01-02"), err)
-	}
-	var previousClose float64
-	_ = s.storage.DB().QueryRow(`SELECT close FROM kline
-		WHERE code=? AND ktype=9 AND REPLACE(date, '-', '')<?
-		ORDER BY REPLACE(date, '-', '') DESC LIMIT 1`,
-		code, signalDate.Format("20060102")).Scan(&previousClose)
-	if previousClose <= 0 {
-		previousClose = signal.close
-	}
-	board := backtest.BoardForCode(code)
-	limitUp, limitDown := trading.CalculateLimits(previousClose, board)
-	market := ledger.ExecutionMarket{
-		Date: signalDate, Open: signal.open, High: signal.high, Low: signal.low,
-		Close: signal.close, PreClose: previousClose, Volume: signal.volume,
-		Amount: signal.amount, LimitUp: limitUp, LimitDown: limitDown,
-		Suspended: signal.volume <= 0 || signal.open <= 0 || signal.high <= 0 ||
-			signal.low <= 0 || signal.close <= 0,
-		Board: string(board),
-	}
-	payload, _ := json.Marshal(struct {
-		Code   string `json:"code"`
-		Signal row    `json:"signal"`
-	}{Code: code, Signal: signal})
-	sum := sha256.Sum256(payload)
-	return market, hex.EncodeToString(sum[:]), nil
 }
 
 func (s *Server) captureForwardExecutionMarket(entry ledger.SignalEntry) (ledger.ExecutionMarket, error) {
