@@ -10,12 +10,7 @@ import {
   SearchOutlined,
   SettingOutlined,
   StockOutlined,
-  ExperimentOutlined,
-  BulbOutlined,
-  AuditOutlined,
   SafetyCertificateOutlined,
-  EyeOutlined,
-  FlagOutlined,
   ToolOutlined,
   WalletOutlined,
   BlockOutlined,
@@ -26,15 +21,7 @@ import type { MenuProps } from 'antd';
 import StockSearchInput from './components/StockSearchInput';
 import ErrorBoundary from './components/ErrorBoundary';
 
-const ResearchHome = lazy(() => import('./pages/research/ResearchHome'));
-const Hypothesis = lazy(() => import('./pages/research/Hypothesis'));
-const Experiment = lazy(() => import('./pages/research/Experiment'));
-const Candidates = lazy(() => import('./pages/research/Candidates'));
-const Verified = lazy(() => import('./pages/research/Verified'));
-const Observation = lazy(() => import('./pages/research/Observation'));
-const Retrospective = lazy(() => import('./pages/research/Retrospective'));
-const Discover = lazy(() => import('./pages/research/Discover'));
-
+const Dashboard = lazy(() => import('./pages/Dashboard'));
 const StockDetail = lazy(() => import('./pages/stock/StockDetail'));
 const StockChoose = lazy(() => import('./pages/stock/StockChoose'));
 const Screen = lazy(() => import('./pages/Screen'));
@@ -77,17 +64,6 @@ function RouteFallback() {
   );
 }
 
-// 研究工作流菜单项
-const researchMenuItems: MenuProps['items'] = [
-  { key: '/', icon: <DashboardOutlined />, label: <Link to="/">研究首页</Link> },
-  { key: '/research/hypothesis', icon: <BulbOutlined />, label: <Link to="/research/hypothesis">假设</Link> },
-  { key: '/research/experiment', icon: <ExperimentOutlined />, label: <Link to="/research/experiment">实验</Link> },
-  { key: '/research/candidates', icon: <AuditOutlined />, label: <Link to="/research/candidates">候选</Link> },
-  { key: '/research/verified', icon: <SafetyCertificateOutlined />, label: <Link to="/research/verified">已验证</Link> },
-  { key: '/research/observation', icon: <EyeOutlined />, label: <Link to="/research/observation">前向观察</Link> },
-  { key: '/research/retrospective', icon: <FlagOutlined />, label: <Link to="/research/retrospective">复盘</Link> },
-];
-
 // 高级工具菜单项
 const toolsMenuItems: MenuProps['items'] = [
   {
@@ -110,22 +86,14 @@ const toolsMenuItems: MenuProps['items'] = [
   },
 ];
 
-// 合并后的完整菜单
 const menuItems: MenuProps['items'] = [
-  ...researchMenuItems,
-  { type: 'divider' },
+  { key: '/', icon: <DashboardOutlined />, label: <Link to="/">首页</Link> },
   ...toolsMenuItems,
 ];
 
 // 计算选中的菜单 key
 function getSelectedKey(pathname: string): string {
-  if (pathname === '/' || pathname === '/research') return '/';
-  if (pathname.startsWith('/research/hypothesis')) return '/research/hypothesis';
-  if (pathname.startsWith('/research/experiment')) return '/research/experiment';
-  if (pathname.startsWith('/research/candidates')) return '/research/candidates';
-  if (pathname.startsWith('/research/verified')) return '/research/verified';
-  if (pathname.startsWith('/research/observation')) return '/research/observation';
-  if (pathname.startsWith('/research/retrospective')) return '/research/retrospective';
+  if (pathname === '/') return '/';
   if (pathname.startsWith('/stock')) return '/stock/choose';
   if (pathname.startsWith('/index')) return '/';
   if (pathname.startsWith('/screen')) return '/screen';
@@ -253,18 +221,7 @@ export default function App() {
       <AppLayout>
         <ErrorBoundary>
           <Routes>
-            {/* 研究工作流路由 */}
-            <Route path="/" element={<ResearchHome />} />
-            <Route path="/research" element={<ResearchHome />} />
-            <Route path="/research/hypothesis" element={<Hypothesis />} />
-            <Route path="/research/experiment" element={<Experiment />} />
-            <Route path="/research/candidates" element={<Candidates />} />
-            <Route path="/research/verified" element={<Verified />} />
-            <Route path="/research/observation" element={<Observation />} />
-            <Route path="/research/retrospective" element={<Retrospective />} />
-            <Route path="/research/discover" element={<Discover />} />
-
-            {/* 保持向后兼容的路由 */}
+            <Route path="/" element={<Dashboard />} />
             <Route path="/watchlist" element={<Watchlist />} />
             <Route path="/stock/choose" element={<StockChoose />} />
             <Route path="/stock/:code" element={<StockDetail />} />
@@ -294,18 +251,11 @@ function buildBreadcrumbs(pathname: string) {
   const items: { title: React.ReactNode }[] = [{ title: <Link to="/">TongStock</Link> }];
 
   if (parts.length === 0) {
-    items.push({ title: '研究首页' });
+    items.push({ title: '首页' });
     return items;
   }
 
   const labels: Record<string, string> = {
-    research: '研究工作台',
-    hypothesis: '假设',
-    experiment: '实验',
-    candidates: '候选',
-    verified: '已验证',
-    observation: '前向观察',
-    retrospective: '复盘',
     stock: '个股分析',
     choose: '选择股票',
     watchlist: '自选股',

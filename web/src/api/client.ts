@@ -28,17 +28,6 @@ import type {
   ParadigmAlertsResponse,
   ParadigmStatsResponse,
   ParadigmBacktestItem,
-  EvidenceCard,
-  ParadigmVersionRecord,
-  ParadigmLineageGraph,
-  ParadigmVersionDiff,
-  ParadigmDiscoverResponse,
-  ParadigmDecisionCardsResponse,
-  ParadigmTransitionsResponse,
-  ParadigmTransitionRequest,
-  ParadigmTransitionResponse,
-  HypothesisPreviewRequest,
-  HypothesisPreviewResponse,
   ChatSessionInfo,
   NewsItem,
   NewsSummary,
@@ -58,10 +47,8 @@ import type {
   ForwardRunCompareRequest,
   ComparisonReport,
   SignalEntry,
-  ForwardSignalAppendRequest,
   EquityPoint,
   MonitoringReport,
-  MonitoringRunRequest,
   AlertItem,
   AlertSummary,
 } from '../types/api';
@@ -442,53 +429,6 @@ export const api = {
     return fetchJSON<ParadigmListResponse>(`/api/paradigm/list${q ? '?' + q : ''}`);
   },
 
-  paradigmGet: (id: string) =>
-    fetchJSON<ParadigmItem>(`/api/paradigm/${id}`),
-
-  paradigmEvidence: (id: string) =>
-    fetchJSON<EvidenceCard>(`/api/paradigm/${id}/evidence`),
-
-  paradigmCreate: (payload: {
-    name: string;
-    side: string;
-    stock_code: string;
-    stock_name?: string;
-    rationale?: string;
-    logic?: string;
-    features?: string[];
-    baseline?: string;
-    buy_conditions: { indicator: string; operator: string; value: string }[];
-    sell_conditions?: {
-      take_profit?: { indicator: string; operator: string; value: string }[];
-      stop_loss?: { indicator: string; operator: string; value: string }[];
-    };
-    confirmations?: string[];
-    invalidations: string[];
-    expectation: {
-      holding_period: string;
-      expected_return: string;
-      risk_reward_ratio: string;
-      confidence: number;
-    };
-    tags?: string[];
-  }) =>
-    fetchJSON<{ paradigm: ParadigmItem; valid: boolean; errors?: string[]; warnings?: string[] }>(
-      '/api/paradigm/hypothesis',
-      {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      }
-    ),
-
-  paradigmPreview: (payload: HypothesisPreviewRequest) =>
-    fetchJSON<HypothesisPreviewResponse>(
-      '/api/paradigm/hypothesis/preview',
-      {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      }
-    ),
-
   paradigmEvaluate: (stockCode: string) =>
     fetchJSON<ParadigmEvaluateResponse>('/api/paradigm/evaluate', {
       method: 'POST',
@@ -509,9 +449,6 @@ export const api = {
         ...(snapshotId ? { snapshot_id: snapshotId } : {}),
       }),
     }),
-
-  paradigmHistory: () =>
-    fetchJSON<ParadigmListResponse>('/api/paradigm/history'),
 
   paradigmReview: (id: string, review: { review_status: string; review_note?: string; review_rating?: number; actual_return?: number }) =>
     fetchJSON<ParadigmItem>(`/api/paradigm/${id}/review`, {
@@ -536,46 +473,6 @@ export const api = {
 
   paradigmDelete: (id: string) =>
 	fetchJSON<{ message: string }>(`/api/paradigm/${id}`, { method: 'DELETE' }),
-
-  paradigmLineage: (id: string) =>
-	fetchJSON<ParadigmLineageGraph>(`/api/paradigm/${id}/lineage`),
-
-  paradigmVersions: (id: string) =>
-	fetchJSON<{ paradigm_id: string; total: number; versions: ParadigmVersionRecord[] }>(`/api/paradigm/${id}/versions`),
-
-  paradigmDiff: (id: string, from: number, to: number) =>
-	fetchJSON<ParadigmVersionDiff>(`/api/paradigm/${id}/diff?from=${from}&to=${to}`),
-
-  paradigmSnapshot: (id: string, payload: { change_type?: string; change_reason?: string; author?: string; evidence_hash?: string }) =>
-	fetchJSON<{ version: ParadigmVersionRecord }>(`/api/paradigm/${id}/snapshot`, {
-	  method: 'PUT',
-	  body: JSON.stringify(payload),
-	}),
-
-  paradigmDiscover: (filters?: { review_status?: string; side?: string; reliability?: string }) => {
-    const params = new URLSearchParams();
-    if (filters?.review_status) params.set('review_status', filters.review_status);
-    if (filters?.side) params.set('side', filters.side);
-    if (filters?.reliability) params.set('reliability', filters.reliability);
-    const q = params.toString();
-    return fetchJSON<ParadigmDiscoverResponse>('/api/paradigm/discover' + (q ? `?${q}` : ''));
-  },
-
-  paradigmDecisionCards: (code?: string) => {
-    const params = new URLSearchParams();
-    if (code) params.set('code', code);
-    const q = params.toString();
-    return fetchJSON<ParadigmDecisionCardsResponse>('/api/paradigm/decision-cards' + (q ? `?${q}` : ''));
-  },
-
-  paradigmTransitions: (id: string) =>
-	fetchJSON<ParadigmTransitionsResponse>(`/api/paradigm/${id}/transitions`),
-
-  paradigmTransition: (id: string, payload: ParadigmTransitionRequest) =>
-	fetchJSON<ParadigmTransitionResponse>(`/api/paradigm/${id}/transition`, {
-	  method: 'POST',
-	  body: JSON.stringify(payload),
-	}),
 
 	// Strategy APIs
 	overnightArbitrage: (codes: string[], minMarketCap?: number, maxMarketCap?: number) =>
@@ -737,12 +634,6 @@ export const api = {
 	forwardRunSignals: (runId: string) =>
 		fetchJSON<{ signals: SignalEntry[]; total: number }>(`/api/forward/runs/${runId}/signals`),
 
-	forwardSignalAppend: (runId: string, payload: ForwardSignalAppendRequest) =>
-		fetchJSON<{ signal: SignalEntry }>(`/api/forward/runs/${runId}/signals`, {
-			method: 'POST',
-			body: JSON.stringify(payload),
-		}),
-
 	forwardSignalGet: (id: string) =>
 		fetchJSON<{ signal: SignalEntry }>(`/api/forward/signals/${id}`),
 
@@ -765,12 +656,6 @@ export const api = {
 			}),
 
 	// Monitoring APIs
-	monitoringRun: (payload: MonitoringRunRequest) =>
-		fetchJSON<{ report: MonitoringReport }>('/api/monitoring/run', {
-			method: 'POST',
-			body: JSON.stringify(payload),
-		}),
-
 	monitoringReport: () =>
 		fetchJSON<{ report: MonitoringReport }>('/api/monitoring/report'),
 
@@ -792,67 +677,6 @@ export const api = {
 
 	monitoringHealth: () =>
 		fetchJSON<{ status: string; engine_source: string; alert_summary: AlertSummary }>('/api/monitoring/health'),
-
-	// Review APIs
-	reviewGenerate: (payload: import('../types/api').ReviewGenerateRequest) =>
-		fetchJSON<{ report: import('../types/api').ReviewReport }>('/api/review/generate', {
-			method: 'POST',
-			body: JSON.stringify(payload),
-		}),
-
-	reviewList: (params?: { source_id?: string; source_type?: string; type?: string }) => {
-		const qs = new URLSearchParams();
-		if (params?.source_id) qs.set('source_id', params.source_id);
-		if (params?.source_type) qs.set('source_type', params.source_type);
-		if (params?.type) qs.set('type', params.type);
-		return fetchJSON<{ reports: import('../types/api').ReviewReport[]; total: number }>(
-			`/api/review/list${qs.toString() ? `?${qs.toString()}` : ''}`
-		);
-	},
-
-	reviewGet: (id: string) =>
-		fetchJSON<{ report: import('../types/api').ReviewReport }>(`/api/review/${id}`),
-
-	reviewFailureAnalysis: (failures: import('../types/api').FailureEvent[]) =>
-		fetchJSON<{ analysis: import('../types/api').FailureAnalysisResult; failures: import('../types/api').FailureEvent[] }>(
-			'/api/review/failure-analysis',
-			{ method: 'POST', body: JSON.stringify({ failures }) }
-		),
-
-	reviewFailurePatterns: () =>
-		fetchJSON<{ patterns: import('../types/api').FailurePattern[]; total: number }>(
-			'/api/review/failure-patterns'
-		),
-
-	reviewFeedbackGenerate: (reviewId: string) =>
-		fetchJSON<{ portfolio: import('../types/api').FeedbackPortfolio }>('/api/review/feedback/generate', {
-			method: 'POST',
-			body: JSON.stringify({ review_id: reviewId }),
-		}),
-
-	reviewFeedbackList: (params?: { status?: string; priority?: string }) => {
-		const qs = new URLSearchParams();
-		if (params?.status) qs.set('status', params.status);
-		if (params?.priority) qs.set('priority', params.priority);
-		return fetchJSON<{ portfolios: import('../types/api').FeedbackPortfolio[]; total: number }>(
-			`/api/review/feedback/list${qs.toString() ? `?${qs.toString()}` : ''}`
-		);
-	},
-
-	reviewFeedbackUpdate: (portfolioId: string, payload: { status: string; note?: string; actor?: string; item_id?: string }) => {
-		const qs = new URLSearchParams();
-		if (payload.item_id) qs.set('item_id', payload.item_id);
-		return fetchJSON<{ portfolio: import('../types/api').FeedbackPortfolio }>(
-			`/api/review/feedback/${portfolioId}${qs.toString() ? `?${qs.toString()}` : ''}`,
-			{ method: 'PUT', body: JSON.stringify(payload) }
-		);
-	},
-
-	reviewFeedbackImplement: (portfolioId: string, itemId: string, newVersion: string, actor?: string) =>
-		fetchJSON<{ portfolio: import('../types/api').FeedbackPortfolio }>(
-			`/api/review/feedback/${portfolioId}/implement`,
-			{ method: 'POST', body: JSON.stringify({ item_id: itemId, new_version: newVersion, actor }) }
-		),
 };
 
 export interface OvernightCriteria {

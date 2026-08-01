@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -253,28 +252,6 @@ func (s *Server) resolveParadigmSnapshot(p *paradigms.Paradigm, req paradigmBack
 		return "", fmt.Errorf("create frozen snapshot from real K-line data: %w", err)
 	}
 	return id, nil
-}
-
-func (s *Server) handleParadigmExperimentGet(c *gin.Context) {
-	if s.experimentRegistry == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "experiment registry is not initialized"})
-		return
-	}
-	exp, err := s.experimentRegistry.GetByID(c.Param("id"))
-	if err != nil {
-		status := http.StatusInternalServerError
-		if errors.Is(err, sql.ErrNoRows) {
-			status = http.StatusNotFound
-		}
-		c.JSON(status, gin.H{"error": err.Error()})
-		return
-	}
-	runs, err := s.experimentRegistry.ListRuns(exp.ID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"experiment": exp, "runs": runs})
 }
 
 func (s *Server) latestParadigmExperimentEvidence(paradigmID, requestedExperimentID string) (*paradigms.EvidenceCard, error) {

@@ -1,10 +1,10 @@
 package server
 
 import (
-	"bytes"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +16,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/sjzsdu/tongstock/internal/backtest"
 	"github.com/sjzsdu/tongstock/internal/ledger"
 	"github.com/sjzsdu/tongstock/internal/trading"
 	"github.com/sjzsdu/tongstock/pkg/storage"
@@ -61,56 +62,57 @@ func TestForwardLedgerPersistsRealMarketAndAccountAcrossRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	// Append signals directly via the ledger Go API (the manual HTTP injection
+	// endpoint has been deleted; signals are now appended by the deterministic
+	// execution path, not by users).
+	buyMarket, buySnap := fetchKlineBar(t, store, "600000", "20250102")
+	buyEntry := ledger.SignalEntry{
+		ID:                "sig-buy",
+		RunID:             run.ID,
+		ParadigmVersionID: "pv-real",
+		StockCode:         "600000",
+		Direction:         "buy",
+		SignalDate:        start,
+		Price:             buyMarket.Close,
+		PreClose:          buyMarket.PreClose,
+		LimitUp:           buyMarket.LimitUp,
+		LimitDown:         buyMarket.LimitDown,
+		Suspended:         buyMarket.Suspended,
+		Board:             buyMarket.Board,
+		Market:            buyMarket,
+		DataSnapshot:      buySnap,
+		Source:            ledger.SignalSource{RuleID: "real-rule", TriggeredBy: "close breakout"},
+	}
+	if err := persistent.AppendSignal(buyEntry); err != nil {
+		t.Fatalf("append buy: %v", err)
+	}
+
+	sellMarket, sellSnap := fetchKlineBar(t, store, "600000", "20250106")
+	sellEntry := ledger.SignalEntry{
+		ID:                "sig-sell",
+		RunID:             run.ID,
+		ParadigmVersionID: "pv-real",
+		StockCode:         "600000",
+		Direction:         "sell",
+		SignalDate:        time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC),
+		Price:             sellMarket.Close,
+		PreClose:          sellMarket.PreClose,
+		LimitUp:           sellMarket.LimitUp,
+		LimitDown:         sellMarket.LimitDown,
+		Suspended:         sellMarket.Suspended,
+		Board:             sellMarket.Board,
+		Market:            sellMarket,
+		DataSnapshot:      sellSnap,
+		Source:            ledger.SignalSource{RuleID: "real-rule"},
+	}
+	if err := persistent.AppendSignal(sellEntry); err != nil {
+		t.Fatalf("append sell: %v", err)
+	}
+
 	router := forwardTestRouter(store, persistent)
 
-	buy := `{
-		"id":"sig-buy","stock_code":"600000","direction":"buy","signal_date":"2025-01-02",
-		"price":999,"pre_close":999,"limit_up":999,"suspended":true,
-		"source":{"rule_id":"real-rule","triggered_by":"close breakout"}
-	}`
-	first := forwardJSONRequest(t, router, http.MethodPost,
-		"/api/forward/runs/"+run.ID+"/signals", buy)
-	if first.Code != http.StatusOK {
-		t.Fatalf("append buy: status=%d body=%s", first.Code, first.Body.String())
-	}
-	var appended struct {
-		Signal ledger.SignalEntry `json:"signal"`
-	}
-	if err := json.Unmarshal(first.Body.Bytes(), &appended); err != nil {
-		t.Fatal(err)
-	}
-	if appended.Signal.Price != 10.0 || appended.Signal.Market.Open != 9.8 ||
-		!appended.Signal.ExecutionDate.IsZero() || appended.Signal.Suspended ||
-		appended.Signal.DataSnapshot.DataHash == "" {
-		t.Fatalf("client-controlled market data was accepted: %+v", appended.Signal)
-	}
-
-	// A network retry with the same immutable signal is idempotent.
-	retry := forwardJSONRequest(t, router, http.MethodPost,
-		"/api/forward/runs/"+run.ID+"/signals", buy)
-	if retry.Code != http.StatusOK {
-		t.Fatalf("idempotent append: status=%d body=%s", retry.Code, retry.Body.String())
-	}
-	if got, _ := persistent.GetRun(run.ID); got.SignalCount != 1 {
-		t.Fatalf("idempotent signal changed count: %d", got.SignalCount)
-	}
-
-	sell := `{
-		"id":"sig-sell","stock_code":"600000","direction":"sell","signal_date":"2025-01-06",
-		"price":888,"execution_date":"1999-01-01","source":{"rule_id":"real-rule"}
-	}`
 	response := forwardJSONRequest(t, router, http.MethodPost,
-		"/api/forward/runs/"+run.ID+"/signals", sell)
-	if response.Code != http.StatusOK {
-		t.Fatalf("append sell: status=%d body=%s", response.Code, response.Body.String())
-	}
-	staleLedger, err := ledger.NewSQLiteSignalLedger(store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	staleRouter := forwardTestRouter(store, staleLedger)
-
-	response = forwardJSONRequest(t, router, http.MethodPost,
 		"/api/forward/runs/"+run.ID+"/execute", `{"signal_id":"sig-buy"}`)
 	if response.Code != http.StatusOK {
 		t.Fatalf("execute buy: status=%d body=%s", response.Code, response.Body.String())
@@ -123,6 +125,11 @@ func TestForwardLedgerPersistsRealMarketAndAccountAcrossRestart(t *testing.T) {
 		!buySignal.Execution.Market.Date.Equal(time.Date(2025, 1, 3, 0, 0, 0, 0, time.UTC)) {
 		t.Fatalf("execution did not use next real bar: %+v", buySignal.Execution.Market)
 	}
+	staleLedger, err := ledger.NewSQLiteSignalLedger(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleRouter := forwardTestRouter(store, staleLedger)
 	staleResponse := forwardJSONRequest(t, staleRouter, http.MethodPost,
 		"/api/forward/runs/"+run.ID+"/execute", `{"signal_id":"sig-buy"}`)
 	if staleResponse.Code == http.StatusOK {
@@ -276,18 +283,34 @@ func TestForwardLedgerAgainstRealDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	router := forwardTestRouter(store, signalLedger)
+
 	appendSignal := func(id, direction, date string) {
-		body := fmt.Sprintf(`{"id":%q,"stock_code":%q,"direction":%q,"signal_date":%q}`,
-			id, code, direction, parseDate(date).Format("2006-01-02"))
-		response := forwardJSONRequest(t, router, http.MethodPost,
-			"/api/forward/runs/"+run.ID+"/signals", body)
-		if response.Code != http.StatusOK {
-			t.Fatalf("append %s: status=%d body=%s", id, response.Code, response.Body.String())
+		market, snap := fetchKlineBar(t, store, code, strings.ReplaceAll(date, "-", ""))
+		entry := ledger.SignalEntry{
+			ID:                id,
+			RunID:             run.ID,
+			ParadigmVersionID: "pv-real-db",
+			StockCode:         code,
+			Direction:         direction,
+			SignalDate:        parseDate(date),
+			Price:             market.Close,
+			PreClose:          market.PreClose,
+			LimitUp:           market.LimitUp,
+			LimitDown:         market.LimitDown,
+			Suspended:         market.Suspended,
+			Board:             market.Board,
+			Market:            market,
+			DataSnapshot:      snap,
+			Source:            ledger.SignalSource{RuleID: "real-rule"},
+		}
+		if err := signalLedger.AppendSignal(entry); err != nil {
+			t.Fatalf("append %s: %v", id, err)
 		}
 	}
 	appendSignal("real-buy", "buy", bars[0].date)
 	appendSignal("real-sell", "sell", bars[2].date)
+
+	router := forwardTestRouter(store, signalLedger)
 	response := forwardJSONRequest(t, router, http.MethodPost,
 		"/api/forward/runs/"+run.ID+"/execute", `{"signal_id":"real-buy"}`)
 	if response.Code != http.StatusOK {
@@ -330,9 +353,71 @@ func forwardJSONRequest(
 	method, path, body string,
 ) *httptest.ResponseRecorder {
 	t.Helper()
-	request := httptest.NewRequest(method, path, bytes.NewBufferString(body))
+	request := httptest.NewRequest(method, path, strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	return response
+}
+
+// fetchKlineBar reads a real daily K-line bar from the test database and
+// builds an ExecutionMarket with limit-up/down and suspension state, plus
+// the data hash required by the ledger's integrity check.
+func fetchKlineBar(t *testing.T, store *storage.Storage, code, dateStr string) (ledger.ExecutionMarket, ledger.DataSnapshot) {
+	t.Helper()
+	var open, high, low, close, volume, amount float64
+	var dateRaw string
+	if err := store.DB().QueryRow(`SELECT date, open, high, low, close, volume, amount
+		FROM kline WHERE code=? AND ktype=9 AND REPLACE(date, '-', '')=?
+		LIMIT 1`, code, dateStr).
+		Scan(&dateRaw, &open, &high, &low, &close, &volume, &amount); err != nil {
+		t.Fatalf("fetch kline bar %s %s: %v", code, dateStr, err)
+	}
+	var previousClose float64
+	_ = store.DB().QueryRow(`SELECT close FROM kline
+		WHERE code=? AND ktype=9 AND REPLACE(date, '-', '')<?
+		ORDER BY REPLACE(date, '-', '') DESC LIMIT 1`,
+		code, dateStr).Scan(&previousClose)
+	if previousClose <= 0 {
+		previousClose = close
+	}
+	signalDate, err := time.Parse("20060102", strings.ReplaceAll(dateRaw, "-", ""))
+	if err != nil {
+		t.Fatalf("parse signal date %s: %v", dateRaw, err)
+	}
+	board := backtest.BoardForCode(code)
+	limitUp, limitDown := trading.CalculateLimits(previousClose, board)
+	market := ledger.ExecutionMarket{
+		Date:      signalDate,
+		Open:      open,
+		High:      high,
+		Low:       low,
+		Close:     close,
+		PreClose:  previousClose,
+		Volume:    volume,
+		Amount:    amount,
+		LimitUp:   limitUp,
+		LimitDown: limitDown,
+		Suspended: volume <= 0 || open <= 0 || high <= 0 || low <= 0 || close <= 0,
+		Board:     string(board),
+	}
+	payload, _ := json.Marshal(struct {
+		Code string `json:"code"`
+		Bar  struct {
+			Date                   string  `json:"date"`
+			Open, High, Low, Close float64 `json:"open,high,low,close"`
+			Volume, Amount         float64 `json:"volume,amount"`
+		} `json:"bar"`
+	}{Code: code, Bar: struct {
+		Date                   string  `json:"date"`
+		Open, High, Low, Close float64 `json:"open,high,low,close"`
+		Volume, Amount         float64 `json:"volume,amount"`
+	}{Date: dateRaw, Open: open, High: high, Low: low, Close: close, Volume: volume, Amount: amount}})
+	sum := sha256.Sum256(payload)
+	snapshot := ledger.DataSnapshot{
+		DatasetID:  "kline:" + code + ":9:" + dateStr + ":" + dateStr,
+		DataHash:   hex.EncodeToString(sum[:]),
+		CapturedAt: time.Now().UTC(),
+	}
+	return market, snapshot
 }
