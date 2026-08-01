@@ -200,4 +200,5 @@ func init() {
 	rootCmd.AddCommand(screenCmd)
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(qualityCmd)
+	rootCmd.AddCommand(archCmd)
 }
