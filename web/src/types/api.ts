@@ -753,35 +753,6 @@ export interface DrawdownInfo {
   warning?: string;
 }
 
-export interface ScoreComponent {
-  name: string;
-  category: string;
-  score: number;
-  weight: number;
-  contribution: number;
-  reason: string;
-  threshold: number;
-  pass: boolean;
-}
-
-export interface HardKillResult {
-  reason: string;
-  category: string;
-  severity: string;
-  threshold: number;
-  actual: number;
-}
-
-export interface ScoreResult {
-  timestamp: string;
-  components: ScoreComponent[];
-  overall_score: number;
-  final_score: number;
-  hard_kills: HardKillResult[];
-  hard_killed: boolean;
-  stage: string;
-}
-
 export interface ParamSweep {
   param_name: string;
   param_value: number;
@@ -872,15 +843,6 @@ export interface TradeRecord {
   return?: number;
 }
 
-export interface GateDecision {
-  stage: string;
-  score: number;
-  gate_threshold: number;
-  reason: string;
-  overridden: boolean;
-  override_reason?: string;
-}
-
 export interface EvidenceCard {
   paradigm_id: string;
   paradigm_name: string;
@@ -901,14 +863,12 @@ export interface EvidenceCard {
   confidence_interval?: CIResult;
   cost_analysis?: CostBreakdown;
   drawdown_analysis?: DrawdownInfo;
-  robustness_score?: ScoreResult;
   param_sensitivity?: ParamSensitivityInfo;
   concentration?: ConcentrationInfo;
   counter_evidence: CounterExample[];
   risk_flags: RiskFlag[];
   lineage?: DataLineage;
   trade_samples?: TradeRecord[];
-  stage_gate_decision?: GateDecision;
 }
 
 // Paradigm lifecycle state machine types

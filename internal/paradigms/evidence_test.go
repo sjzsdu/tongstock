@@ -20,7 +20,7 @@ func TestUnavailableEvidenceOmitsUnprovenNumbers(t *testing.T) {
 	}
 	for _, forbidden := range []string{
 		`"in_sample"`, `"out_of_sample"`, `"confidence_interval"`,
-		`"cost_analysis"`, `"robustness_score"`, `"trade_samples"`,
+		`"cost_analysis"`, `"trade_samples"`,
 	} {
 		if strings.Contains(string(data), forbidden) {
 			t.Fatalf("unavailable evidence emitted unproven field %s: %s", forbidden, data)

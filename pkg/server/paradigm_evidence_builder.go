@@ -430,9 +430,9 @@ func evidencePromotionBlockers(card *paradigms.EvidenceCard) []string {
 	if card.ParamSensitivity == nil {
 		blockers = append(blockers, "缺少基于持久化参数扫描的敏感性证据")
 	}
-	if card.RobustnessScore == nil {
-		blockers = append(blockers, "缺少完全由真实实验派生的稳健性评分")
-	}
+	// 稳健性评分当前没有由真实实验派生的生产路径，fail-closed：禁止晋级，
+	// 直到出现可追溯的稳健性证据再用真实字段替换该守卫。
+	blockers = append(blockers, "缺少完全由真实实验派生的稳健性评分")
 	return blockers
 }
 

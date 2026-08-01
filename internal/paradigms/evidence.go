@@ -27,14 +27,12 @@ type EvidenceCard struct {
 	ConfidenceInterval *CIResult             `json:"confidence_interval,omitempty"`
 	CostAnalysis       *CostBreakdown        `json:"cost_analysis,omitempty"`
 	DrawdownAnalysis   *DrawdownInfo         `json:"drawdown_analysis,omitempty"`
-	RobustnessScore    *ScoreResult          `json:"robustness_score,omitempty"`
 	ParamSensitivity   *ParamSensitivityInfo `json:"param_sensitivity,omitempty"`
 	Concentration      *ConcentrationInfo    `json:"concentration,omitempty"`
 	CounterEvidence    []CounterExample      `json:"counter_evidence"`
 	RiskFlags          []RiskFlag            `json:"risk_flags"`
 	Lineage            *DataLineage          `json:"lineage,omitempty"`
 	TradeSamples       []TradeRecord         `json:"trade_samples,omitempty"`
-	StageGateDecision  *GateDecision         `json:"stage_gate_decision,omitempty"`
 }
 
 type SampleResult struct {
