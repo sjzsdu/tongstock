@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sjzsdu/tongstock/internal/adapter/paradigmrepo"
 	"github.com/sjzsdu/tongstock/internal/agents"
 	"github.com/sjzsdu/tongstock/internal/app/stockdata"
 	"github.com/sjzsdu/tongstock/internal/ledger"
@@ -252,7 +253,13 @@ func (a *App) configureOptionalModules() {
 		a.setModule("chat", "ready", "")
 	}
 
-	paradigmStore, err := paradigms.NewStoreWithStorage("", a.storage)
+	paradigmRepo, err := paradigmrepo.NewSQLiteRepository(a.storage)
+	if err != nil {
+		log.Printf("paradigm initialization degraded: %v", err)
+		a.setModule("paradigm", "degraded", "paradigm repository init failed")
+		return
+	}
+	paradigmStore, err := paradigms.NewStoreWithRepository(paradigmRepo)
 	if err != nil {
 		log.Printf("paradigm initialization degraded: %v", err)
 		a.setModule("paradigm", "degraded", "paradigm initialization failed")

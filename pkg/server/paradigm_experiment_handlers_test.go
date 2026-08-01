@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sjzsdu/tongstock/internal/adapter/paradigmrepo"
 	"github.com/sjzsdu/tongstock/internal/experiment"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
 	"github.com/sjzsdu/tongstock/pkg/storage"
@@ -270,7 +271,11 @@ func TestAgentResearchAgainstRealDatabase(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	paradigmStore, err := paradigms.NewStoreWithStorage("", store)
+	paradigmRepo, err := paradigmrepo.NewSQLiteRepository(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paradigmStore, err := paradigms.NewStoreWithRepository(paradigmRepo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -329,7 +334,11 @@ func newParadigmExperimentTestServer(t *testing.T, barCount int) (*storage.Stora
 		}
 		inserted++
 	}
-	paradigmStore, err := paradigms.NewStoreWithStorage("", store)
+	paradigmRepo, err := paradigmrepo.NewSQLiteRepository(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paradigmStore, err := paradigms.NewStoreWithRepository(paradigmRepo)
 	if err != nil {
 		t.Fatal(err)
 	}
