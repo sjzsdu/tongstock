@@ -370,7 +370,7 @@ func validateCondition(c paradigms.Condition) error {
 	default:
 		return fmt.Errorf("unsupported condition operator %q", c.Operator)
 	}
-	if normalizeIndicator(c.Indicator) == "" {
+	if paradigms.NormalizeIndicator(c.Indicator) == "" {
 		return fmt.Errorf("condition indicator is empty")
 	}
 	if strings.TrimSpace(c.Value) == "" {
@@ -380,7 +380,7 @@ func validateCondition(c paradigms.Condition) error {
 }
 
 func evaluateCondition(c paradigms.Condition, frame map[string]float64) (bool, bool, error) {
-	leftName := normalizeIndicator(c.Indicator)
+	leftName := paradigms.NormalizeIndicator(c.Indicator)
 	left, ok := frame[leftName]
 	if !ok {
 		return false, false, nil
@@ -423,27 +423,8 @@ func evaluateCondition(c paradigms.Condition, frame map[string]float64) (bool, b
 	}
 }
 
-func normalizeIndicator(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	value = strings.ReplaceAll(value, ".", "_")
-	value = strings.ReplaceAll(value, " ", "")
-	value = strings.Trim(value, "\"'`：:")
-	switch value {
-	case "price", "current", "当前价", "收盘价", "closeprice":
-		return "close"
-	case "成交量", "vol":
-		return "volume"
-	case "dif", "macd_dif":
-		return "macd_dif"
-	case "rsi", "rsi6", "rsi14":
-		return "rsi14"
-	default:
-		return value
-	}
-}
-
 func resolveValue(raw string, frame map[string]float64) (float64, string, bool) {
-	name := normalizeIndicator(raw)
+	name := paradigms.NormalizeIndicator(raw)
 	if value, ok := frame[name]; ok {
 		return value, name, true
 	}

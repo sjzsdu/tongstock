@@ -319,7 +319,7 @@ func (s *Server) handleParadigmAnalyze(c *gin.Context) {
 	if paradigm != nil {
 		paradigm.AgentText = agentResp
 		paradigm.Source = paradigms.ParadigmSource{AgentVersion: "stock-paradigm-miner", Model: s.agentState.defaults.Model, KlineType: req.KlineType, Days: req.Days, GeneratedAt: time.Now().Format(time.RFC3339), CacheKey: cacheKey}
-		paradigm.Validation = validateParadigm(paradigm)
+		paradigm.Validation = paradigms.ValidateParadigm(paradigm)
 		if !paradigm.Validation.Valid {
 			c.JSON(http.StatusOK, paradigmAnalyzeResponse{StockCode: req.StockCode, StockName: req.StockName, Paradigm: paradigm, AgentText: agentResp, Error: strings.Join(paradigm.Validation.Errors, "; ")})
 			return
@@ -851,58 +851,6 @@ func extractParadigmJSON(text, stockCode, stockName string) *paradigms.Paradigm 
 		return &p
 	}
 	return nil
-}
-
-func validateParadigm(p *paradigms.Paradigm) paradigms.ValidationSummary {
-	s := paradigms.ValidationSummary{Valid: true, DataCompleteness: 1}
-	if p == nil {
-		return paradigms.ValidationSummary{Valid: false, Errors: []string{"empty paradigm"}}
-	}
-	if p.ID == "" {
-		s.Errors = append(s.Errors, "id is required")
-	}
-	if p.Name == "" {
-		s.Errors = append(s.Errors, "name is required")
-	}
-	if p.Side != "buy" && p.Side != "sell" {
-		s.Errors = append(s.Errors, "side must be buy or sell")
-	}
-	if len(p.BuyConds) == 0 {
-		s.Warnings = append(s.Warnings, "buy_conditions is empty")
-	}
-	conds := append([]paradigms.Condition{}, p.BuyConds...)
-	conds = append(conds, p.SellConds.TakeProfit...)
-	conds = append(conds, p.SellConds.StopLoss...)
-	s.TotalConditions = len(conds)
-	for _, c := range conds {
-		if c.Indicator == "" {
-			s.Warnings = append(s.Warnings, "condition indicator is empty")
-			continue
-		}
-		if isAutoEvaluableCondition(c) {
-			s.AutoEvaluable++
-		}
-	}
-	if s.TotalConditions > 0 {
-		s.AutoEvaluableRatio = float64(s.AutoEvaluable) / float64(s.TotalConditions)
-	}
-	if len(s.Errors) > 0 {
-		s.Valid = false
-	}
-	s.ReliabilityLabel = "low"
-	if s.Valid && s.AutoEvaluableRatio >= 0.7 {
-		s.ReliabilityLabel = "high"
-	} else if s.Valid && s.AutoEvaluableRatio >= 0.4 {
-		s.ReliabilityLabel = "medium"
-	}
-	return s
-}
-
-func isAutoEvaluableCondition(c paradigms.Condition) bool {
-	ind := normalizeIndicator(c.Indicator)
-	val := normalizeIndicator(c.Value)
-	supported := map[string]bool{"close": true, "volume": true, "ma5": true, "ma10": true, "ma20": true, "ma60": true, "rsi14": true, "macd_dif": true}
-	return supported[ind] || supported[val] || c.Operator == "describe"
 }
 
 func extractField(text, field string) string {
