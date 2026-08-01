@@ -532,6 +532,88 @@ CREATE INDEX IF NOT EXISTS idx_forward_signal_stock
 	ON forward_signal(stock_code, signal_date_ns, id);
 `,
 	},
+	{
+		version: 11,
+		name:    "daily_market_and_feature_snapshot_with_readiness",
+		sql: `
+-- 每日市场快照: 绑定特定交易日的 universe + 数据水位 + 完整率 + 内容哈希。
+-- 下游（选股、回测、AI 方法挖掘）只能引用 status = 'ready' 且 frozen = 1 的 snapshot_id。
+CREATE TABLE IF NOT EXISTS market_snapshot (
+	id TEXT PRIMARY KEY,
+	snapshot_date TEXT NOT NULL,                -- YYYY-MM-DD，必须是交易日
+	universe_definition TEXT NOT NULL DEFAULT '',  -- universe_xx 的名字或 SQL 表达式
+	market TEXT NOT NULL DEFAULT 'CN-A',
+	price_adjustment TEXT NOT NULL DEFAULT 'forward',
+	kline_expected_codes INTEGER NOT NULL DEFAULT 0,
+	kline_ready_codes INTEGER NOT NULL DEFAULT 0,
+	quote_ready_codes INTEGER NOT NULL DEFAULT 0,
+	finance_ready_codes INTEGER NOT NULL DEFAULT 0,
+	xdxr_ready_codes INTEGER NOT NULL DEFAULT 0,
+	coverage_pct REAL NOT NULL DEFAULT 0.0,
+	status TEXT NOT NULL DEFAULT 'building',   -- building / ready / failed / partial
+	readiness_reason TEXT NOT NULL DEFAULT '',
+	universe_hash TEXT NOT NULL DEFAULT '',
+	content_hash TEXT NOT NULL DEFAULT '',
+	frozen INTEGER NOT NULL DEFAULT 0,
+	built_at INTEGER NOT NULL DEFAULT 0,
+	frozen_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_market_snapshot_date_univ ON market_snapshot(snapshot_date, universe_definition, price_adjustment);
+CREATE INDEX IF NOT EXISTS idx_market_snapshot_status ON market_snapshot(status);
+
+-- 快照内的单股水位 (用于 tracing 缺口)
+CREATE TABLE IF NOT EXISTS market_snapshot_code_state (
+	snapshot_id TEXT NOT NULL,
+	code TEXT NOT NULL,
+	universe_member INTEGER NOT NULL DEFAULT 1,
+	ipo_date TEXT NOT NULL DEFAULT '',
+	delist_date TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'normal',       -- normal / st / suspended / delisted / halted
+	kline_last_date TEXT NOT NULL DEFAULT '',
+	kline_row_count INTEGER NOT NULL DEFAULT 0,
+	quote_ok INTEGER NOT NULL DEFAULT 0,
+	finance_ok INTEGER NOT NULL DEFAULT 0,
+	xdxr_ok INTEGER NOT NULL DEFAULT 0,
+	gap_days INTEGER NOT NULL DEFAULT 0,          -- 到 snapshot_date 连续缺失的天数
+	last_error TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (snapshot_id, code),
+	FOREIGN KEY (snapshot_id) REFERENCES market_snapshot(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_mss_code ON market_snapshot_code_state(code);
+
+-- 每日特征快照: 对固定 {universe, date, feature_list} 的全量物化，
+-- 作为选股/AI 训练的确定性输入。同一 (snapshot_id, feature_version_list) 哈希不变。
+CREATE TABLE IF NOT EXISTS feature_snapshot (
+	id TEXT PRIMARY KEY,
+	market_snapshot_id TEXT NOT NULL,
+	snapshot_date TEXT NOT NULL,
+	feature_ids_json TEXT NOT NULL,           -- sorted feature IDs JSON
+	feature_total INTEGER NOT NULL DEFAULT 0,
+	rows_written INTEGER NOT NULL DEFAULT 0,
+	leak_checked INTEGER NOT NULL DEFAULT 0,
+	price_adjustment TEXT NOT NULL DEFAULT 'forward',
+	status TEXT NOT NULL DEFAULT 'building',
+	as_of_ns INTEGER NOT NULL DEFAULT 0,
+	content_hash TEXT NOT NULL DEFAULT '',
+	built_at INTEGER NOT NULL DEFAULT 0,
+	FOREIGN KEY (market_snapshot_id) REFERENCES market_snapshot(id)
+);
+CREATE INDEX IF NOT EXISTS idx_feature_snapshot_market ON feature_snapshot(market_snapshot_id);
+CREATE INDEX IF NOT EXISTS idx_feature_snapshot_date ON feature_snapshot(snapshot_date);
+
+CREATE TABLE IF NOT EXISTS feature_snapshot_value (
+	snapshot_id TEXT NOT NULL,
+	code TEXT NOT NULL,
+	feature_id TEXT NOT NULL,
+	feature_version INTEGER NOT NULL DEFAULT 1,
+	value REAL NOT NULL DEFAULT 0,
+	as_of INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (snapshot_id, code, feature_id, feature_version),
+	FOREIGN KEY (snapshot_id) REFERENCES feature_snapshot(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_fsv_lookup ON feature_snapshot_value(snapshot_id, code, feature_id);
+`,
+	},
 }
 
 // Migrate upgrades the SQLite database transactionally. Store constructors

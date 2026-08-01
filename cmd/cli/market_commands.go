@@ -1,349 +1,284 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	"github.com/sjzsdu/tongstock/internal/app/stockdata"
-	"github.com/sjzsdu/tongstock/pkg/tdx"
-	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
-	"github.com/spf13/cobra"
+	"os"
 	"strings"
+
+	"github.com/sjzsdu/tongstock/internal/adapter/marketsnapshotrepo"
+	"github.com/sjzsdu/tongstock/internal/marketsnapshot"
+	"github.com/sjzsdu/tongstock/pkg/config"
+	"github.com/sjzsdu/tongstock/pkg/storage"
+	"github.com/spf13/cobra"
 )
 
-var (
-	klineCode string
-	klineType string
-	klineAll  bool
-)
-
-var klineCmd = &cobra.Command{
-	Use:   "kline",
-	Short: "查询K线数据",
-	RunE:  runKline,
-}
-
-func init() {
-	klineCmd.Flags().StringVarP(&klineCode, "code", "c", "", "股票代码")
-	klineCmd.Flags().StringVarP(&klineType, "type", "t", "day", "K线类型: 1m/5m/15m/30m/60m/day/week/month/quarter/year")
-	klineCmd.Flags().BoolVarP(&klineAll, "all", "a", false, "获取全部历史K线")
-	_ = klineCmd.MarkFlagRequired("code")
-}
-
-func runKline(cmd *cobra.Command, args []string) error {
-	ktype := tdx.ParseKlineType(klineType)
-	service, cleanup, err := dialStockData(cmd.Context())
-	if err != nil {
-		return fmt.Errorf("连接服务器失败: %w", err)
-	}
-	defer cleanup()
-	spec := stockdata.DataSpec{
-		Type: stockdata.DataKline, Market: cliMarketForCode(klineCode), Code: klineCode,
-		Granularity: klineType, KType: ktype,
-	}
-	result, err := service.Query(cmd.Context(), cliDataRequest(spec))
-	if err != nil {
-		return fmt.Errorf("获取K线失败: %w", cliDataError(err, spec))
-	}
-	klines := result.Klines
-	if !klineAll && len(klines) > 100 {
-		klines = klines[len(klines)-100:]
-	}
-
-	fmt.Printf("共获取 %d 条K线数据\n", len(klines))
-	for _, k := range klines {
-		fmt.Printf("%s O:%.2f H:%.2f L:%.2f C:%.2f V:%.2f\n",
-			k.Time.Format("2006-01-02"), k.Open, k.High, k.Low, k.Close, k.Volume)
-	}
-	return nil
+var marketCmd = &cobra.Command{
+	Use:   "market",
+	Short: "每日市场快照 (MarketSnapshot) + 特征快照 (FeatureSnapshot)",
+	Long: `封装 tongstock-ai.7: 全市场真实数据就绪与每日特征快照。
+下游 (选股 / AI 挖掘 / 回测) 只能引用 status=ready 且 frozen=1 的 snapshot_id。
+Fail closed: 如果 coverage / gap 未达阈值，扫描阶段不使用该快照。`,
 }
 
 var (
-	minuteDate string
+	mkAdj       = "forward"
+	mkUniverse  = "universe_usable"
+	mkThreshold = 0.99
+	mkMaxGap    = 50
+	mkCodes     string
 )
 
-var minuteCmd = &cobra.Command{
-	Use:   "minute [code]",
-	Short: "查询分时数据（支持当日和历史）",
-	Args:  cobra.MinimumNArgs(1),
-	RunE:  runMinute,
-}
-
-func init() {
-	minuteCmd.Flags().StringVarP(&minuteDate, "date", "d", "", "日期 (YYYYMMDD)，不指定则查询当日")
-}
-
-func runMinute(cmd *cobra.Command, args []string) error {
-	svc, err := dialService()
-	if err != nil {
-		return fmt.Errorf("连接服务器失败: %w", err)
-	}
-	defer svc.Close()
-
-	var resp *protocol.MinuteResp
-	if minuteDate != "" {
-		resp, err = svc.GetHistoryMinute(minuteDate, args[0])
-	} else {
-		resp, err = svc.GetMinute(args[0])
-	}
-	if err != nil {
-		return fmt.Errorf("获取分时数据失败: %w", err)
-	}
-
-	fmt.Printf("共获取 %d 条分时数据\n", resp.Count)
-	for _, m := range resp.List {
-		fmt.Printf("%s 价格: %.3f 成交量: %d\n", m.Time, m.Price, m.Number)
-	}
-	return nil
-}
-
-var (
-	tradeDate    string
-	tradeStart   uint16
-	tradeCount   uint16
-	tradeHistory bool
-)
-
-var tradeCmd = &cobra.Command{
-	Use:   "trade [code]",
-	Short: "查询分笔成交数据",
-	Args:  cobra.MinimumNArgs(1),
-	RunE:  runTrade,
-}
-
-func init() {
-	tradeCmd.Flags().StringVarP(&tradeDate, "date", "d", "", "日期 (YYYYMMDD, 仅历史分时)")
-	tradeCmd.Flags().Uint16VarP(&tradeStart, "start", "s", 0, "起始位置")
-	tradeCmd.Flags().Uint16VarP(&tradeCount, "count", "c", 100, "数量")
-	tradeCmd.Flags().BoolVarP(&tradeHistory, "history", "H", false, "历史分时成交")
-}
-
-var xdxrCmd = &cobra.Command{
-	Use:   "xdxr [code]",
-	Short: "查询除权除息信息",
-	Args:  cobra.MinimumNArgs(1),
-	RunE:  runXdXr,
-}
-
-func runXdXr(cmd *cobra.Command, args []string) error {
-	svc, err := dialService()
-	if err != nil {
-		return fmt.Errorf("连接服务器失败: %w", err)
-	}
-	defer svc.Close()
-
-	items, err := svc.FetchXdXr(args[0])
-	if err != nil {
-		return fmt.Errorf("获取除权除息失败: %w", err)
-	}
-
-	fmt.Printf("共获取 %d 条除权除息记录\n", len(items))
-	for _, item := range items {
-		fmt.Printf("%s [%s] ", item.Date.Format("2006-01-02"), item.Category)
-		switch item.Category {
-		case protocol.XdXrChuQuanChuXi:
-			fmt.Printf("分红:%.4f 配股价:%.2f 送转:%.2f 配股:%.2f\n",
-				item.FenHong, item.PeiGuJia, item.SongZhuanGu, item.PeiGu)
-		default:
-			fmt.Printf("流通:%.0f 总股本:%.0f\n", item.PanHouLiuTong, item.HouZongGuBen)
-		}
-	}
-	return nil
-}
-
-var financeCmd = &cobra.Command{
-	Use:   "finance [code]",
-	Short: "查询财务数据",
-	Args:  cobra.MinimumNArgs(1),
-	RunE:  runFinance,
-}
-
-func runFinance(cmd *cobra.Command, args []string) error {
-	service, cleanup, err := dialStockData(cmd.Context())
-	if err != nil {
-		return fmt.Errorf("连接服务器失败: %w", err)
-	}
-	defer cleanup()
-	spec := stockdata.DataSpec{
-		Type: stockdata.DataFinance, Market: cliMarketForCode(args[0]), Code: args[0],
-	}
-	result, err := service.Query(cmd.Context(), cliDataRequest(spec))
-	if err != nil {
-		return fmt.Errorf("获取财务数据失败: %w", cliDataError(err, spec))
-	}
-	info := result.Finance
-
-	fmt.Printf("总股本: %.2f万股  流通股本: %.2f万股\n", info.ZongGuBen/10000, info.LiuTongGuBen/10000)
-	fmt.Printf("总资产: %.2f亿元  净资产: %.2f亿元\n", info.ZongZiChan/1000000000, info.JingZiChan/1000000000)
-	fmt.Printf("主营收入: %.2f亿元  净利润: %.2f亿元\n", info.ZhuYingShouRu/1000000000, info.JingLiRun/1000000000)
-	fmt.Printf("每股净资产: %.4f元  股东人数: %.0f\n", info.MeiGuJingZiChan, info.GuDongRenShu)
-	fmt.Printf("IPO日期: %d  更新日期: %d\n", info.IPODate, info.UpdatedDate)
-	return nil
-}
-
-func cliMarketForCode(code string) string {
-	lower := strings.ToLower(strings.TrimSpace(code))
-	if len(lower) >= 2 {
-		switch lower[:2] {
-		case "sh", "sz", "bj":
-			return lower[:2]
-		}
-	}
-	if strings.HasPrefix(code, "6") {
-		return "sh"
-	}
-	if strings.HasPrefix(code, "8") || strings.HasPrefix(code, "4") {
-		return "bj"
-	}
-	return "sz"
-}
-
-var (
-	indexCode string
-	indexType string
-)
-
-var indexCmd = &cobra.Command{
-	Use:   "index",
-	Short: "查询指数K线数据",
-	RunE:  runIndex,
-}
-
-func init() {
-	indexCmd.Flags().StringVarP(&indexCode, "code", "c", "", "指数代码")
-	indexCmd.Flags().StringVarP(&indexType, "type", "t", "day", "K线类型: 1m/5m/15m/30m/60m/day/week/month")
-	_ = indexCmd.MarkFlagRequired("code")
-}
-
-func runIndex(cmd *cobra.Command, args []string) error {
-	ktype := tdx.ParseKlineType(indexType)
-
-	svc, err := dialService()
-	if err != nil {
-		return fmt.Errorf("连接服务器失败: %w", err)
-	}
-	defer svc.Close()
-
-	bars, err := svc.GetIndexBars(indexCode, ktype, 0, 100)
-	if err != nil {
-		return fmt.Errorf("获取指数K线失败: %w", err)
-	}
-
-	fmt.Printf("共获取 %d 条指数K线数据\n", len(bars))
-	for _, b := range bars {
-		fmt.Printf("%s O:%.2f H:%.2f L:%.2f C:%.2f V:%.2f Up:%d Down:%d\n",
-			b.Time.Format("2006-01-02"), b.Open, b.High, b.Low, b.Close, b.Volume, b.UpCount, b.DownCount)
-	}
-	return nil
-}
-
-var companyCmd = &cobra.Command{
-	Use:   "company [code]",
-	Short: "查询公司信息(F10)目录",
-	Args:  cobra.MinimumNArgs(1),
-	RunE:  runCompany,
-}
-
-func runCompany(cmd *cobra.Command, args []string) error {
-	svc, err := dialService()
-	if err != nil {
-		return fmt.Errorf("连接服务器失败: %w", err)
-	}
-	defer svc.Close()
-
-	cats, err := svc.FetchCompanyCategory(args[0])
-	if err != nil {
-		return fmt.Errorf("获取公司信息目录失败: %w", err)
-	}
-
-	for _, cat := range cats {
-		fmt.Printf("[%s] %s (offset:%d len:%d)\n", cat.Filename, cat.Name, cat.Start, cat.Length)
-	}
-	return nil
-}
-
-var (
-	companyContentStart  uint32
-	companyContentLength uint32
-	companyContentBlock  string
-)
-
-var companyContentCmd = &cobra.Command{
-	Use:   "company-content [code] [filename]",
-	Short: "查询公司信息(F10)具体内容",
-	Args:  cobra.MinimumNArgs(1),
-	RunE:  runCompanyContent,
-}
-
-func runCompanyContent(cmd *cobra.Command, args []string) error {
-	svc, err := dialService()
-	if err != nil {
-		return fmt.Errorf("连接服务器失败: %w", err)
-	}
-	defer svc.Close()
-
-	code := args[0]
-	var filename string
-	if len(args) > 1 {
-		filename = args[1]
-	} else {
-		// 自动推断 filename
-		filename = code + ".txt"
-	}
-
-	start := companyContentStart
-	length := companyContentLength
-
-	// 如果指定了块名称，查找对应的 start 和 length
-	if companyContentBlock != "" {
-		cats, err := svc.FetchCompanyCategory(code)
+var marketBuildCmd = &cobra.Command{
+	Use:   "build <YYYY-MM-DD>",
+	Short: "构建指定交易日的 MarketSnapshot（可选 FeatureSnapshot）",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		date := args[0]
+		db, repo, builder, err := wireMarket()
 		if err != nil {
-			return fmt.Errorf("获取公司信息目录失败: %w", err)
+			return err
 		}
-		found := false
-		for _, cat := range cats {
-			if cat.Name == companyContentBlock {
-				start = cat.Start
-				length = cat.Length
-				found = true
-				break
+		_ = db
+		builder.CoverageThreshold = mkThreshold
+		builder.MaxGappedCodes = mkMaxGap
+		builder.PriceAdjustment = mkAdj
+
+		univ := pickUniverse(mkUniverse)
+		if mkCodes != "" {
+			list := strings.FieldsFunc(mkCodes, func(r rune) bool { return r == ',' || r == ' ' })
+			univ.RequiredCodes = append(univ.RequiredCodes, list...)
+			univ.MinIpoDays = 0
+			univ.ExcludeST = false
+			univ.ExcludeSuspended = false
+			univ.ExcludeDelisted = false
+		}
+		s, err := builder.Build(date, univ)
+		if err != nil {
+			return fmt.Errorf("build snapshot: %w", err)
+		}
+		// 先保存 (未冻结，可重复覆盖)
+		if err := repo.SaveMarketSnapshot(s); err != nil {
+			return err
+		}
+		// 只有 ready 才默认冻结
+		if s.Status == marketsnapshot.StatusReady {
+			if err := repo.FreezeMarketSnapshot(s.ID); err != nil {
+				return err
+			}
+			s.Frozen = true
+		}
+		printMarket(s)
+		return nil
+	},
+}
+
+var marketFreezeCmd = &cobra.Command{
+	Use:   "freeze <id>",
+	Short: "冻结一个 MarketSnapshot（之后任何修改都会失败）",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		_, repo, _, err := wireMarket()
+		if err != nil {
+			return err
+		}
+		if err := repo.FreezeMarketSnapshot(args[0]); err != nil {
+			return err
+		}
+		s, err := repo.LoadMarketSnapshot(args[0], false)
+		if err != nil {
+			return err
+		}
+		printMarket(s)
+		return nil
+	},
+}
+
+var marketShowCmd = &cobra.Command{
+	Use:   "show ([date] [universe] | <id>)",
+	Short: "查看 snapshot；传 <id> 或 (date, universe)",
+	Args:  cobra.RangeArgs(1, 2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		_, repo, _, err := wireMarket()
+		if err != nil {
+			return err
+		}
+		var s *marketsnapshot.MarketSnapshot
+		if len(args) == 1 {
+			s, err = repo.LoadMarketSnapshot(args[0], true)
+		} else {
+			s, err = repo.FindMarketSnapshot(args[0], args[1], mkAdj)
+		}
+		if err != nil {
+			return err
+		}
+		printMarket(s)
+		return nil
+	},
+}
+
+var marketListCmd = &cobra.Command{
+	Use:   "list [status]",
+	Short: "列所有 MarketSnapshot（按 status 可选过滤）",
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		_, repo, _, err := wireMarket()
+		if err != nil {
+			return err
+		}
+		status := ""
+		if len(args) == 1 {
+			status = args[0]
+		}
+		list, err := repo.ListMarketSnapshots("", "", status)
+		if err != nil {
+			return err
+		}
+		for _, s := range list {
+			fmt.Printf("%s date=%s univ=%s status=%s frozen=%v coverage=%.1f%% ready=%d/%d\n",
+				s.ID, s.SnapshotDate, s.Universe.Name, s.Status, s.Frozen,
+				s.CoveragePct*100, s.ReadyKlineCodes, s.ExpectedKlineCodes)
+		}
+		return nil
+	},
+}
+
+var marketFeaturesCmd = &cobra.Command{
+	Use:   "features <snapshot_id>",
+	Short: "在一个已 ready 的 MarketSnapshot 上构建 FeatureSnapshot",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		db, repo, b, err := wireMarket()
+		if err != nil {
+			return err
+		}
+		ms, err := repo.LoadMarketSnapshot(args[0], true)
+		if err != nil {
+			return err
+		}
+		if ms.Status != marketsnapshot.StatusReady {
+			return fmt.Errorf("market snapshot %s status=%s != ready", ms.ID, ms.Status)
+		}
+		fe := marketsnapshotrepo.NewSQLiteFeatureEngine(db)
+		fs, err := b.BuildFeatureSnapshot(ms, nil, fe)
+		if err != nil {
+			return fmt.Errorf("build feature: %w", err)
+		}
+		if err := repo.SaveFeatureSnapshot(fs); err != nil {
+			return err
+		}
+		fmt.Printf("FeatureSnapshot id=%s rows=%d features=%d codes=%d hash=%s\n",
+			fs.ID, fs.RowsWritten, fs.FeatureTotal, len(fs.Values), fs.ContentHash[:12])
+		return nil
+	},
+}
+
+var marketReportCmd = &cobra.Command{
+	Use:   "report <id>",
+	Short: "导出 snapshot 的 JSON 报告（含所有代码水位 + feature 统计）",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		_, repo, _, err := wireMarket()
+		if err != nil {
+			return err
+		}
+		ms, err := repo.LoadMarketSnapshot(args[0], true)
+		if err != nil {
+			return err
+		}
+		fss, err := repo.ListFeatureSnapshots(ms.ID)
+		if err != nil {
+			return err
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(map[string]any{
+			"market_snapshot":    ms,
+			"feature_snapshots":  fss,
+			"ready_for_scan":     ms.IsReady(),
+			"fail_closed_reason": failClosedReason(ms),
+		})
+	},
+}
+
+func init() {
+	marketCmd.AddCommand(marketBuildCmd, marketFreezeCmd, marketShowCmd, marketListCmd, marketFeaturesCmd, marketReportCmd)
+	marketBuildCmd.Flags().StringVar(&mkAdj, "adj", "forward", "价格口径: raw/forward/backward")
+	marketBuildCmd.Flags().StringVar(&mkUniverse, "universe", "universe_usable", "股票池: universe_usable / universe_csi800 / universe_all_a")
+	marketBuildCmd.Flags().Float64Var(&mkThreshold, "coverage", 0.99, "ready 覆盖阈值 (0,1]")
+	marketBuildCmd.Flags().IntVar(&mkMaxGap, "max-gapped", 50, "最多允许多少只股票有 gap_days > 0")
+	marketBuildCmd.Flags().StringVar(&mkCodes, "codes", "", "指定代码列表，用逗号分隔；会覆盖 universe 过滤")
+	marketShowCmd.Flags().StringVar(&mkAdj, "adj", "forward", "价格口径")
+	rootCmd.AddCommand(marketCmd)
+}
+
+func wireMarket() (*storage.Storage, marketsnapshot.Repository, *marketsnapshot.Builder, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		cfg = config.DefaultConfig()
+	}
+	db, err := storage.New(storage.Config{Driver: cfg.Database.Driver, DSN: cfg.Database.DSN})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if err := db.Migrate(); err != nil {
+		return nil, nil, nil, err
+	}
+	repo, err := marketsnapshotrepo.New(db)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	up := marketsnapshotrepo.NewSQLiteUniverseProvider(db)
+	wp := marketsnapshotrepo.NewSQLiteWatermarkProvider(db)
+	cal := marketsnapshotrepo.NewSQLiteTradingCalendar(db)
+	b := marketsnapshot.NewBuilder(up, wp, cal)
+	return db, repo, b, nil
+}
+
+func pickUniverse(name string) marketsnapshot.UniverseDefinition {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "universe_csi800":
+		return marketsnapshot.DefaultUniverseCSI800()
+	case "universe_all_a":
+		return marketsnapshot.DefaultUniverseAllA()
+	default:
+		return marketsnapshot.DefaultUniverseUsable()
+	}
+}
+
+func printMarket(s *marketsnapshot.MarketSnapshot) {
+	fmt.Printf("MarketSnapshot id=%s\n", s.ID)
+	fmt.Printf("  date        = %s\n", s.SnapshotDate)
+	fmt.Printf("  universe    = %s (%s)\n", s.Universe.Name, s.Universe.Description)
+	fmt.Printf("  price_adj   = %s\n", s.PriceAdjustment)
+	fmt.Printf("  coverage    = %.2f%% (%d / %d kline ready)\n",
+		s.CoveragePct*100, s.ReadyKlineCodes, s.ExpectedKlineCodes)
+	fmt.Printf("  quote/fin/xdxr = %d / %d / %d ready\n", s.ReadyQuoteCodes, s.ReadyFinanceCodes, s.ReadyXdxrCodes)
+	fmt.Printf("  status      = %s  frozen=%v  ready_for_scan=%v\n", s.Status, s.Frozen, s.IsReady())
+	fmt.Printf("  reason      = %s\n", s.ReadinessReason)
+	fmt.Printf("  universe_hash = %s\n", s.UniverseHash)
+	fmt.Printf("  content_hash  = %s\n", s.ContentHash)
+	if len(s.Codes) > 0 {
+		var gaps []marketsnapshot.CodeStatus
+		for _, c := range s.Codes {
+			if c.GapDays > 0 {
+				gaps = append(gaps, c)
 			}
 		}
-		if !found {
-			return fmt.Errorf("未找到块名称: %s", companyContentBlock)
+		fmt.Printf("  gap_codes   = %d (展示前 10)\n", len(gaps))
+		for i := 0; i < len(gaps) && i < 10; i++ {
+			fmt.Printf("    %s last=%s gap=%d status=%s err=%s\n",
+				gaps[i].Code, gaps[i].KlineLastDate, gaps[i].GapDays, gaps[i].SecurityStatus, gaps[i].LastError)
 		}
 	}
-
-	content, err := svc.FetchCompanyContent(code, filename, start, length)
-	if err != nil {
-		return fmt.Errorf("获取公司信息内容失败: %w", err)
-	}
-
-	fmt.Println(content)
-	return nil
 }
 
-func runTrade(cmd *cobra.Command, args []string) error {
-	svc, err := dialService()
-	if err != nil {
-		return fmt.Errorf("连接服务器失败: %w", err)
+func failClosedReason(s *marketsnapshot.MarketSnapshot) string {
+	if s.IsReady() {
+		return ""
 	}
-	defer svc.Close()
-
-	var resp *protocol.TradeResp
-	if tradeHistory && tradeDate != "" {
-		resp, err = svc.GetHistoryMinuteTrade(tradeDate, args[0], tradeStart, tradeCount)
-	} else {
-		resp, err = svc.GetMinuteTrade(args[0], tradeStart, tradeCount)
+	if !s.Frozen {
+		return "snapshot 尚未冻结，需先 `tongstock market freeze " + s.ID + "`"
 	}
-	if err != nil {
-		return fmt.Errorf("获取分笔数据失败: %w", err)
-	}
-
-	fmt.Printf("共获取 %d 条分笔数据\n", resp.Count)
-	for _, t := range resp.List {
-		fmt.Printf("%s 价格: %.3f 成交量: %d 状态: %d\n",
-			t.Time.Format("15:04"), t.Price, t.Volume, t.Status)
-	}
-	return nil
+	return "status=" + s.Status + "; readiness_reason=" + s.ReadinessReason
 }
-
-var countExchange string
