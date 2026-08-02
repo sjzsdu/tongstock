@@ -3536,6 +3536,42 @@
         }
       }
     },
+    "/api/methods": {
+      "get": {
+        "operationId": "getApiMethods",
+        "parameters": [
+          { "in": "query", "name": "status", "schema": { "type": "string" } },
+          { "in": "query", "name": "market", "schema": { "type": "string" } },
+          { "in": "query", "name": "universe", "schema": { "type": "string" } },
+          { "in": "query", "name": "holding_min_days", "schema": { "type": "integer" } },
+          { "in": "query", "name": "holding_max_days", "schema": { "type": "integer" } },
+          { "in": "query", "name": "family_id", "schema": { "type": "string" } },
+          { "in": "query", "name": "limit", "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "Success" }, "400": { "$ref": "#/components/responses/Error" }, "401": { "$ref": "#/components/responses/Error" }, "500": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/api/methods/{id}": {
+      "get": {
+        "operationId": "getApiMethodsId",
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Success" }, "401": { "$ref": "#/components/responses/Error" }, "404": { "$ref": "#/components/responses/Error" }, "500": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/api/methods/{id}/audit": {
+      "get": {
+        "operationId": "getApiMethodsIdAudit",
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Success" }, "401": { "$ref": "#/components/responses/Error" }, "500": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/api/method-families/{id}": {
+      "get": {
+        "operationId": "getApiMethodFamiliesId",
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Success" }, "401": { "$ref": "#/components/responses/Error" }, "500": { "$ref": "#/components/responses/Error" } }
+      }
+    },
     "/api/monitoring/report": {
       "get": {
         "operationId": "getApiMonitoringReport",

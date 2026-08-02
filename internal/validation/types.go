@@ -167,6 +167,7 @@ type EvidenceBundle struct {
 	MethodHash  string    `json:"method_hash"`
 	MethodName  string    `json:"method_name"`
 	SnapshotID  string    `json:"snapshot_id"`
+	StockCode   string    `json:"stock_code,omitempty"`
 	GeneratedAt time.Time `json:"generated_at"`
 
 	// 各段回测结果
@@ -211,6 +212,7 @@ func (e *EvidenceBundle) ComputeResultHash() string {
 		JobHash        string             `json:"jh"`
 		MethodHash     string             `json:"mh"`
 		Snapshot       string             `json:"sid"`
+		StockCode      string             `json:"stock_code,omitempty"`
 		Segments       []SegmentResult    `json:"segs"`
 		Oos            PerformanceStats   `json:"oos"`
 		Trials         int                `json:"trials"`
@@ -220,7 +222,7 @@ func (e *EvidenceBundle) ComputeResultHash() string {
 		Confidence     string             `json:"conf"`
 		Passable       bool               `json:"passable"`
 	}{
-		JobHash: e.JobHash, MethodHash: e.MethodHash, Snapshot: e.SnapshotID,
+		JobHash: e.JobHash, MethodHash: e.MethodHash, Snapshot: e.SnapshotID, StockCode: e.StockCode,
 		Segments: sortedSegments, Oos: e.OosStats, Trials: e.DiscoveryTrials,
 		AdjustedPValue: e.AdjustedPValue, CriticIssues: e.CriticIssues,
 		Blockers: e.Blockers, Confidence: string(e.Confidence), Passable: e.Passable,

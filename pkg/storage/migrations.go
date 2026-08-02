@@ -699,6 +699,41 @@ CREATE INDEX IF NOT EXISTS idx_method_validation_queue_status ON method_validati
 CREATE INDEX IF NOT EXISTS idx_method_validation_queue_family ON method_validation_queue(family_id, status);
 `,
 	},
+	{
+		version: 15,
+		name:    "investment_method_registry",
+		sql: `
+CREATE TABLE IF NOT EXISTS investment_method_registry (
+	method_id TEXT PRIMARY KEY,
+	family_id TEXT NOT NULL,
+	variant_id TEXT NOT NULL,
+	status TEXT NOT NULL,
+	market TEXT NOT NULL,
+	universe TEXT NOT NULL,
+	holding_min_days INTEGER NOT NULL DEFAULT 0,
+	holding_max_days INTEGER NOT NULL DEFAULT 0,
+	current_version INTEGER NOT NULL,
+	method_json TEXT NOT NULL,
+	created_at_ns INTEGER NOT NULL,
+	updated_at_ns INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_investment_method_family_variant ON investment_method_registry(family_id,variant_id);
+CREATE INDEX IF NOT EXISTS idx_investment_method_filters ON investment_method_registry(status,market,universe,holding_min_days,holding_max_days);
+
+CREATE TABLE IF NOT EXISTS investment_method_audit (
+	event_id TEXT PRIMARY KEY,
+	method_id TEXT NOT NULL,
+	from_status TEXT NOT NULL,
+	to_status TEXT NOT NULL,
+	action TEXT NOT NULL,
+	evidence_hash TEXT NOT NULL DEFAULT '',
+	event_json TEXT NOT NULL,
+	created_at_ns INTEGER NOT NULL,
+	FOREIGN KEY (method_id) REFERENCES investment_method_registry(method_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_investment_method_audit_method ON investment_method_audit(method_id,created_at_ns);
+`,
+	},
 }
 
 // Migrate upgrades the SQLite database transactionally. Store constructors

@@ -17,10 +17,12 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sjzsdu/tongstock/internal/adapter/methodregistryrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/paradigmrepo"
 	"github.com/sjzsdu/tongstock/internal/agents"
 	"github.com/sjzsdu/tongstock/internal/app/stockdata"
 	"github.com/sjzsdu/tongstock/internal/ledger"
+	"github.com/sjzsdu/tongstock/internal/methodregistry"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
 	"github.com/sjzsdu/tongstock/internal/serviceproc"
 	"github.com/sjzsdu/tongstock/pkg/config"
@@ -204,6 +206,16 @@ func NewApp(cfg *config.Config, opts Options) (_ *App, err error) {
 		Newsfeed: newsHandler, Diagnostics: server.DiagnosticsFunc(app.Diagnostics),
 		Storage: app.storage, Ledger: forwardLedger,
 	})
+	methodRepo, err := methodregistryrepo.New(app.storage)
+	if err != nil {
+		return nil, fmt.Errorf("初始化投资方法仓库失败: %w", err)
+	}
+	methodRegistry, err := methodregistry.New(methodRepo)
+	if err != nil {
+		return nil, fmt.Errorf("初始化投资方法库失败: %w", err)
+	}
+	app.api.SetMethodRegistry(methodRegistry)
+	app.setModule("method_registry", "ready", "")
 
 	app.configureOptionalModules()
 	router := app.buildRouter()

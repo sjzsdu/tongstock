@@ -9,6 +9,7 @@ import (
 	"github.com/sjzsdu/tongstock/internal/app/stockdata"
 	"github.com/sjzsdu/tongstock/internal/experiment"
 	"github.com/sjzsdu/tongstock/internal/ledger"
+	"github.com/sjzsdu/tongstock/internal/methodregistry"
 	"github.com/sjzsdu/tongstock/internal/monitoring"
 	"github.com/sjzsdu/tongstock/internal/paradigm"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
@@ -41,6 +42,7 @@ type Server struct {
 	agentListFunc         func() ([]EmbeddedAgent, error)
 	ledger                *ledger.SignalLedger
 	paradigmStore         *paradigms.Store
+	methodRegistry        *methodregistry.Registry
 	paradigmSnapshots     *paradigm.DatasetSnapshotStore
 	experimentRegistry    *experiment.SQLiteRegistry
 	researchTools         *ai_tools.ToolRegistry
@@ -155,6 +157,8 @@ func (s *Server) SetChatStore(store *ChatStore) {
 func (s *Server) SetParadigmStore(store *paradigms.Store) {
 	s.paradigmStore = store
 }
+
+func (s *Server) SetMethodRegistry(registry *methodregistry.Registry) { s.methodRegistry = registry }
 
 // SetLedger sets the signal ledger on the server instance.
 func (s *Server) SetLedger(ledger *ledger.SignalLedger) {
