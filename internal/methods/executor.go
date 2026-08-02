@@ -322,6 +322,14 @@ func indicatorValue(env *evalEnv, name string, params []string) (float64, bool) 
 	case "amount":
 		return env.bar.Amount, true
 	}
+	// A frozen FeatureSnapshot is the authoritative point-in-time value in
+	// daily decision engines. Prefer it over recomputing a rolling indicator
+	// from an incomplete one-bar execution window.
+	if env.bar.Indicators != nil {
+		if v, ok := env.bar.Indicators[name]; ok {
+			return v, true
+		}
+	}
 	// 参数化 MA: 名字是 "ma" 加 params[0] = N → 返回 N 日均收盘价均线。
 	if strings.HasPrefix(name, "ma") {
 		if n, err := parseIntSuffix(name, 2); err == nil {
@@ -369,10 +377,6 @@ func indicatorValue(env *evalEnv, name string, params []string) (float64, bool) 
 		if previous > 0 {
 			return (env.bar.Open - previous) / previous, true
 		}
-	}
-	if env.bar.Indicators != nil {
-		v, ok := env.bar.Indicators[name]
-		return v, ok
 	}
 	return 0, false
 }

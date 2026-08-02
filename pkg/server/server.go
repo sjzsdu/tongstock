@@ -13,6 +13,7 @@ import (
 	"github.com/sjzsdu/tongstock/internal/monitoring"
 	"github.com/sjzsdu/tongstock/internal/paradigm"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
+	"github.com/sjzsdu/tongstock/internal/positiondecision"
 	"github.com/sjzsdu/tongstock/internal/selection"
 	"github.com/sjzsdu/tongstock/pkg/history"
 	"github.com/sjzsdu/tongstock/pkg/stockinfo"
@@ -45,6 +46,8 @@ type Server struct {
 	paradigmStore         *paradigms.Store
 	methodRegistry        *methodregistry.Registry
 	selectionRuns         selection.Repository
+	positionEngine        *positiondecision.Engine
+	positionRuns          positiondecision.Repository
 	paradigmSnapshots     *paradigm.DatasetSnapshotStore
 	experimentRegistry    *experiment.SQLiteRegistry
 	researchTools         *ai_tools.ToolRegistry
@@ -162,6 +165,9 @@ func (s *Server) SetParadigmStore(store *paradigms.Store) {
 
 func (s *Server) SetMethodRegistry(registry *methodregistry.Registry) { s.methodRegistry = registry }
 func (s *Server) SetSelectionRuns(runs selection.Repository)          { s.selectionRuns = runs }
+func (s *Server) SetPositionDecision(engine *positiondecision.Engine, runs positiondecision.Repository) {
+	s.positionEngine, s.positionRuns = engine, runs
+}
 
 // SetLedger sets the signal ledger on the server instance.
 func (s *Server) SetLedger(ledger *ledger.SignalLedger) {

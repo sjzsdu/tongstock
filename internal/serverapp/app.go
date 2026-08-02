@@ -17,14 +17,17 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sjzsdu/tongstock/internal/adapter/marketsnapshotrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/methodregistryrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/paradigmrepo"
+	"github.com/sjzsdu/tongstock/internal/adapter/positiondecisionrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/selectionrepo"
 	"github.com/sjzsdu/tongstock/internal/agents"
 	"github.com/sjzsdu/tongstock/internal/app/stockdata"
 	"github.com/sjzsdu/tongstock/internal/ledger"
 	"github.com/sjzsdu/tongstock/internal/methodregistry"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
+	"github.com/sjzsdu/tongstock/internal/positiondecision"
 	"github.com/sjzsdu/tongstock/internal/serviceproc"
 	"github.com/sjzsdu/tongstock/pkg/config"
 	"github.com/sjzsdu/tongstock/pkg/history"
@@ -223,6 +226,20 @@ func NewApp(cfg *config.Config, opts Options) (_ *App, err error) {
 	}
 	app.api.SetSelectionRuns(selectionRuns)
 	app.setModule("daily_selection", "ready", "")
+	positionRuns, err := positiondecisionrepo.New(app.storage)
+	if err != nil {
+		return nil, fmt.Errorf("初始化持仓判断仓库失败: %w", err)
+	}
+	marketSnapshots, err := marketsnapshotrepo.New(app.storage)
+	if err != nil {
+		return nil, fmt.Errorf("初始化市场快照仓库失败: %w", err)
+	}
+	positionEngine, err := positiondecision.NewEngine(marketSnapshots, tradingStore, methodRepo, positionRuns)
+	if err != nil {
+		return nil, fmt.Errorf("初始化持仓判断引擎失败: %w", err)
+	}
+	app.api.SetPositionDecision(positionEngine, positionRuns)
+	app.setModule("position_decision", "ready", "")
 
 	app.configureOptionalModules()
 	router := app.buildRouter()

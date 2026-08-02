@@ -782,6 +782,35 @@ CREATE TABLE IF NOT EXISTS daily_selection_exclusion (
 CREATE INDEX IF NOT EXISTS idx_daily_selection_exclusion_reason ON daily_selection_exclusion(run_id,reason_code);
 `,
 	},
+	{
+		version: 17,
+		name:    "position_decision_and_lineage",
+		sql: `
+CREATE TABLE IF NOT EXISTS position_method_link (
+	trade_id INTEGER PRIMARY KEY,
+	quantity INTEGER NOT NULL,
+	selection_run_id TEXT NOT NULL DEFAULT '',
+	method_id TEXT NOT NULL DEFAULT '',
+	method_version_id TEXT NOT NULL DEFAULT '',
+	buy_reason TEXT NOT NULL DEFAULT '',
+	created_at_ns INTEGER NOT NULL,
+	FOREIGN KEY (trade_id) REFERENCES trades(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS position_decision_run (
+	run_id TEXT PRIMARY KEY,
+	run_hash TEXT NOT NULL UNIQUE,
+	engine_version TEXT NOT NULL,
+	snapshot_id TEXT NOT NULL,
+	feature_snapshot_id TEXT NOT NULL,
+	snapshot_date TEXT NOT NULL,
+	decision_json TEXT NOT NULL,
+	created_at_ns INTEGER NOT NULL,
+	FOREIGN KEY (snapshot_id) REFERENCES market_snapshot(id),
+	FOREIGN KEY (feature_snapshot_id) REFERENCES feature_snapshot(id)
+);
+CREATE INDEX IF NOT EXISTS idx_position_decision_date ON position_decision_run(snapshot_date DESC,created_at_ns DESC);
+`,
+	},
 }
 
 // Migrate upgrades the SQLite database transactionally. Store constructors
