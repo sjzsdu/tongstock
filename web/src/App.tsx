@@ -36,6 +36,7 @@ const OvernightArbitrage = lazy(() => import('./pages/strategy/OvernightArbitrag
 const EventDetail = lazy(() => import('./pages/news/EventDetail'));
 const NewsHome = lazy(() => import('./pages/news/NewsHome'));
 const Monitoring = lazy(() => import('./pages/Monitoring'));
+const Methods = lazy(() => import('./pages/Methods'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 const { Header, Content, Sider } = Layout;
@@ -77,7 +78,6 @@ const toolsMenuItems: MenuProps['items'] = [
       { key: '/screen', icon: <SearchOutlined />, label: <Link to="/screen">信号筛选</Link> },
       { key: '/stock/choose', icon: <StockOutlined />, label: <Link to="/stock/choose">个股分析</Link> },
       { key: '/watchlist', icon: <HeartOutlined />, label: <Link to="/watchlist">自选股</Link> },
-      { key: '/portfolio', icon: <WalletOutlined />, label: <Link to="/portfolio">虚拟持仓</Link> },
       { key: '/blocks', icon: <BlockOutlined />, label: <Link to="/blocks">股票池</Link> },
       { key: '/strategy/overnight', icon: <FormOutlined />, label: <Link to="/strategy/overnight">隔夜套利</Link> },
       { key: '/news', icon: <FileTextOutlined />, label: <Link to="/news">财经资讯</Link> },
@@ -87,7 +87,9 @@ const toolsMenuItems: MenuProps['items'] = [
 ];
 
 const menuItems: MenuProps['items'] = [
-  { key: '/', icon: <DashboardOutlined />, label: <Link to="/">首页</Link> },
+  { key: '/', icon: <DashboardOutlined />, label: <Link to="/">今日决策</Link> },
+  { key: '/portfolio', icon: <WalletOutlined />, label: <Link to="/portfolio">持仓卖出</Link> },
+  { key: '/methods', icon: <SafetyCertificateOutlined />, label: <Link to="/methods">可信方法</Link> },
   ...toolsMenuItems,
 ];
 
@@ -98,6 +100,7 @@ function getSelectedKey(pathname: string): string {
   if (pathname.startsWith('/index')) return '/';
   if (pathname.startsWith('/screen')) return '/screen';
   if (pathname.startsWith('/portfolio')) return '/portfolio';
+  if (pathname.startsWith('/methods')) return '/methods';
   if (pathname.startsWith('/blocks')) return '/blocks';
   if (pathname.startsWith('/watchlist')) return '/watchlist';
   if (pathname.startsWith('/settings')) return '/settings';
@@ -150,7 +153,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
                     TongStock
                   </Typography.Title>
                   <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                    范式研究工作台
+                    AI 投资决策
                   </Typography.Text>
                 </div>
               )}
@@ -235,6 +238,7 @@ export default function App() {
             <Route path="/agent" element={<AgentWeb />} />
             <Route path="/paradigms" element={<Paradigms />} />
             <Route path="/monitoring" element={<Monitoring />} />
+            <Route path="/methods" element={<Methods />} />
             <Route path="/strategy/overnight" element={<OvernightArbitrage />} />
             <Route path="/news" element={<NewsHome />} />
             <Route path="/news/event/:id" element={<EventDetail />} />
@@ -265,6 +269,7 @@ function buildBreadcrumbs(pathname: string) {
     settings: '配置',
     paradigms: '范式库',
     monitoring: '范式监控',
+    methods: '可信方法库',
     strategy: '策略',
     overnight: '隔夜套利',
     agent: 'AI 助手',

@@ -675,9 +675,19 @@ export const api = {
 	monitoringConfig: () =>
 		fetchJSON<{ config: Record<string, unknown> }>('/api/monitoring/config'),
 
-	monitoringHealth: () =>
+  monitoringHealth: () =>
 		fetchJSON<{ status: string; engine_source: string; alert_summary: AlertSummary }>('/api/monitoring/health'),
+
+  selectionToday: () => fetchJSON<SelectionRun>('/api/selections/today'),
+  positionDecisionToday: () => fetchJSON<PositionDecisionRun>('/api/position-decisions/today'),
+  methodCards: (status = '') => fetchJSON<{ items: MethodCard[]; total: number }>(`/api/methods${status ? `?status=${encodeURIComponent(status)}` : ''}`),
 };
+
+export interface SelectionCandidate { rank:number;code:string;action:'buy'|'watch'|'avoid'|'insufficient_data';score:number;data_date:string;buy_window:string;position_cap_pct:number;exit:{max_holding_days?:number;stop_loss_pct?:number;take_profit_pct?:number;complete:boolean};risks?:string[];explanation:string;triggers:Array<{method_id:string;method_name:string;score:number}> }
+export interface SelectionRun { id:string;snapshot_id:string;feature_snapshot_id:string;snapshot_date:string;candidate_count:number;buy_count:number;candidates:SelectionCandidate[];exclusions:Array<{reason_code:string;detail:string}> }
+export interface PositionDecision { code:string;name:string;action:'hold'|'watch'|'reduce'|'exit'|'insufficient_data';priority:string;deadline:string;inferred:boolean;executable:boolean;constraint?:string;return_pct:number;price_time:string;explanation:string }
+export interface PositionDecisionRun { id:string;snapshot_id:string;snapshot_date:string;decisions:PositionDecision[] }
+export interface MethodCard { id:string;name:string;status:string;market:string;universe:string;holding_period:string;entry_summary:string;exit_summary:string;invalidations?:string[];evidence?:{confidence:string;oos_trades:number;oos_return:number;oos_max_drawdown:number};updated_at:string }
 
 export interface OvernightCriteria {
 	change_pct: boolean;
