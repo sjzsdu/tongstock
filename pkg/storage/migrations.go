@@ -653,6 +653,52 @@ CREATE INDEX IF NOT EXISTS idx_discovery_trace_snapshot
 	ON discovery_research_trace(snapshot_id, created_at_ns DESC);
 `,
 	},
+	{
+		version: 14,
+		name:    "method_source_research_evidence",
+		sql: `
+CREATE TABLE IF NOT EXISTS method_research_artifact (
+	research_id TEXT PRIMARY KEY,
+	family_id TEXT NOT NULL,
+	result_hash TEXT NOT NULL UNIQUE,
+	status TEXT NOT NULL,
+	method_name TEXT NOT NULL,
+	result_json TEXT NOT NULL,
+	created_at_ns INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_method_research_status ON method_research_artifact(status, created_at_ns DESC);
+CREATE INDEX IF NOT EXISTS idx_method_research_family ON method_research_artifact(family_id, created_at_ns DESC);
+
+CREATE TABLE IF NOT EXISTS method_source_evidence (
+	research_id TEXT NOT NULL,
+	source_id TEXT NOT NULL,
+	source_url TEXT NOT NULL,
+	content_hash TEXT NOT NULL,
+	tier TEXT NOT NULL,
+	source_json TEXT NOT NULL,
+	retrieved_at_ns INTEGER NOT NULL,
+	PRIMARY KEY (research_id, source_id),
+	FOREIGN KEY (research_id) REFERENCES method_research_artifact(research_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_method_source_hash ON method_source_evidence(content_hash);
+CREATE INDEX IF NOT EXISTS idx_method_source_url ON method_source_evidence(source_url);
+
+CREATE TABLE IF NOT EXISTS method_validation_queue (
+	job_id TEXT PRIMARY KEY,
+	research_id TEXT NOT NULL,
+	family_id TEXT NOT NULL,
+	variant_id TEXT NOT NULL,
+	method_hash TEXT NOT NULL,
+	scope TEXT NOT NULL,
+	stock_code TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL,
+	created_at_ns INTEGER NOT NULL,
+	FOREIGN KEY (research_id) REFERENCES method_research_artifact(research_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_method_validation_queue_status ON method_validation_queue(status, created_at_ns);
+CREATE INDEX IF NOT EXISTS idx_method_validation_queue_family ON method_validation_queue(family_id, status);
+`,
+	},
 }
 
 // Migrate upgrades the SQLite database transactionally. Store constructors
