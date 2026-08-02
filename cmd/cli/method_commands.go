@@ -22,6 +22,8 @@ var methodCmd = &cobra.Command{
 并通过确定性 executor 执行, 确保同一版本在任何环境下结果一致。`,
 }
 
+var methodCompileOutput string
+
 var methodCompileCmd = &cobra.Command{
 	Use:   "compile [candidate.json]",
 	Short: "将结构化候选编译为稳定 CompiledMethod JSON",
@@ -52,6 +54,11 @@ var methodCompileCmd = &cobra.Command{
 			"compiler":      m.CompilerVersion,
 			"human_version": methods.FormatVersion(m),
 		}, "", "  ")
+		if methodCompileOutput != "" {
+			if err := os.WriteFile(methodCompileOutput, append(pretty, '\n'), 0o644); err != nil {
+				return fmt.Errorf("写入编译制品失败: %w", err)
+			}
+		}
 		fmt.Println(string(pretty))
 		return nil
 	},
@@ -127,6 +134,7 @@ var methodExecuteEntryCmd = &cobra.Command{
 }
 
 func init() {
+	methodCompileCmd.Flags().StringVarP(&methodCompileOutput, "output", "o", "", "写入编译 JSON 制品路径")
 	methodCmd.AddCommand(methodCompileCmd)
 	methodCmd.AddCommand(methodExplainCmd)
 	methodCmd.AddCommand(methodExecuteEntryCmd)

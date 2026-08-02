@@ -614,6 +614,28 @@ CREATE TABLE IF NOT EXISTS feature_snapshot_value (
 CREATE INDEX IF NOT EXISTS idx_fsv_lookup ON feature_snapshot_value(snapshot_id, code, feature_id);
 `,
 	},
+	{
+		version: 12,
+		name:    "validation_evidence_artifact",
+		sql: `
+CREATE TABLE IF NOT EXISTS validation_evidence_artifact (
+	result_hash TEXT PRIMARY KEY,
+	job_hash TEXT NOT NULL,
+	method_hash TEXT NOT NULL,
+	snapshot_id TEXT NOT NULL,
+	confidence TEXT NOT NULL,
+	passable INTEGER NOT NULL DEFAULT 0,
+	evidence_json TEXT NOT NULL,
+	created_at_ns INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_validation_evidence_job
+	ON validation_evidence_artifact(job_hash, created_at_ns DESC);
+CREATE INDEX IF NOT EXISTS idx_validation_evidence_method
+	ON validation_evidence_artifact(method_hash, created_at_ns DESC);
+CREATE INDEX IF NOT EXISTS idx_validation_evidence_snapshot
+	ON validation_evidence_artifact(snapshot_id, created_at_ns DESC);
+`,
+	},
 }
 
 // Migrate upgrades the SQLite database transactionally. Store constructors
