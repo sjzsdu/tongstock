@@ -811,6 +811,37 @@ CREATE TABLE IF NOT EXISTS position_decision_run (
 CREATE INDEX IF NOT EXISTS idx_position_decision_date ON position_decision_run(snapshot_date DESC,created_at_ns DESC);
 `,
 	},
+	{
+		version: 18,
+		name:    "daily_automation_job_and_outbox",
+		sql: `
+CREATE TABLE IF NOT EXISTS automation_job_run (
+	job_id TEXT PRIMARY KEY,
+	idempotency_key TEXT NOT NULL UNIQUE,
+	snapshot_id TEXT NOT NULL,
+	status TEXT NOT NULL,
+	attempt INTEGER NOT NULL,
+	selection_run_id TEXT NOT NULL DEFAULT '',
+	position_run_id TEXT NOT NULL DEFAULT '',
+	error TEXT NOT NULL DEFAULT '',
+	started_at_ns INTEGER NOT NULL,
+	finished_at_ns INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_automation_job_status ON automation_job_run(status,started_at_ns DESC);
+CREATE TABLE IF NOT EXISTS automation_outbox (
+	event_key TEXT PRIMARY KEY,
+	job_id TEXT NOT NULL,
+	event_type TEXT NOT NULL,
+	priority TEXT NOT NULL,
+	payload_json TEXT NOT NULL,
+	status TEXT NOT NULL DEFAULT 'pending',
+	created_at_ns INTEGER NOT NULL,
+	delivered_at_ns INTEGER NOT NULL DEFAULT 0,
+	FOREIGN KEY (job_id) REFERENCES automation_job_run(job_id)
+);
+CREATE INDEX IF NOT EXISTS idx_automation_outbox_pending ON automation_outbox(status,priority,created_at_ns);
+`,
+	},
 }
 
 // Migrate upgrades the SQLite database transactionally. Store constructors

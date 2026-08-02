@@ -7,6 +7,7 @@ import (
 	pinyin "github.com/mozillazg/go-pinyin"
 	"github.com/sjzsdu/tongstock/internal/ai_tools"
 	"github.com/sjzsdu/tongstock/internal/app/stockdata"
+	"github.com/sjzsdu/tongstock/internal/automation"
 	"github.com/sjzsdu/tongstock/internal/experiment"
 	"github.com/sjzsdu/tongstock/internal/ledger"
 	"github.com/sjzsdu/tongstock/internal/methodregistry"
@@ -48,6 +49,8 @@ type Server struct {
 	selectionRuns         selection.Repository
 	positionEngine        *positiondecision.Engine
 	positionRuns          positiondecision.Repository
+	automationEngine      *automation.Orchestrator
+	automationRuns        automation.Repository
 	paradigmSnapshots     *paradigm.DatasetSnapshotStore
 	experimentRegistry    *experiment.SQLiteRegistry
 	researchTools         *ai_tools.ToolRegistry
@@ -167,6 +170,9 @@ func (s *Server) SetMethodRegistry(registry *methodregistry.Registry) { s.method
 func (s *Server) SetSelectionRuns(runs selection.Repository)          { s.selectionRuns = runs }
 func (s *Server) SetPositionDecision(engine *positiondecision.Engine, runs positiondecision.Repository) {
 	s.positionEngine, s.positionRuns = engine, runs
+}
+func (s *Server) SetAutomation(engine *automation.Orchestrator, runs automation.Repository) {
+	s.automationEngine, s.automationRuns = engine, runs
 }
 
 // SetLedger sets the signal ledger on the server instance.

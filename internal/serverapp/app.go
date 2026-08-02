@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sjzsdu/tongstock/internal/adapter/automationrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/marketsnapshotrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/methodregistryrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/paradigmrepo"
@@ -24,10 +25,12 @@ import (
 	"github.com/sjzsdu/tongstock/internal/adapter/selectionrepo"
 	"github.com/sjzsdu/tongstock/internal/agents"
 	"github.com/sjzsdu/tongstock/internal/app/stockdata"
+	"github.com/sjzsdu/tongstock/internal/automation"
 	"github.com/sjzsdu/tongstock/internal/ledger"
 	"github.com/sjzsdu/tongstock/internal/methodregistry"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
 	"github.com/sjzsdu/tongstock/internal/positiondecision"
+	"github.com/sjzsdu/tongstock/internal/selection"
 	"github.com/sjzsdu/tongstock/internal/serviceproc"
 	"github.com/sjzsdu/tongstock/pkg/config"
 	"github.com/sjzsdu/tongstock/pkg/history"
@@ -240,6 +243,21 @@ func NewApp(cfg *config.Config, opts Options) (_ *App, err error) {
 	}
 	app.api.SetPositionDecision(positionEngine, positionRuns)
 	app.setModule("position_decision", "ready", "")
+	selectionEngine, err := selection.NewEngine(marketSnapshots, methodRepo, selectionRuns)
+	if err != nil {
+		return nil, fmt.Errorf("初始化每日选股引擎失败: %w", err)
+	}
+	automationRuns, err := automationrepo.New(app.storage)
+	if err != nil {
+		return nil, fmt.Errorf("初始化自动任务仓库失败: %w", err)
+	}
+	automationEngine, err := automation.New(selectionEngine, positionEngine, marketSnapshots, forwardLedger, automationRuns)
+	if err != nil {
+		return nil, fmt.Errorf("初始化自动任务引擎失败: %w", err)
+	}
+	app.api.SetAutomation(automationEngine, automationRuns)
+	app.api.StartAutomationScheduler(app.runCtx, marketSnapshots)
+	app.setModule("daily_automation", "ready", "")
 
 	app.configureOptionalModules()
 	router := app.buildRouter()

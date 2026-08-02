@@ -3608,6 +3608,9 @@
         }
       }
     },
+    "/api/automation/run": {"post":{"operationId":"postApiAutomationRun","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"}}}},"responses":{"200":{"description":"Idempotent daily automation job"},"422":{"$ref":"#/components/responses/Error"},"500":{"$ref":"#/components/responses/Error"},"503":{"$ref":"#/components/responses/Error"}}}},
+    "/api/automation/jobs": {"get":{"operationId":"getApiAutomationJobs","responses":{"200":{"description":"Persisted automation jobs"},"500":{"$ref":"#/components/responses/Error"},"503":{"$ref":"#/components/responses/Error"}}}},
+    "/api/automation/outbox": {"get":{"operationId":"getApiAutomationOutbox","responses":{"200":{"description":"Prioritized persistent notification outbox"},"500":{"$ref":"#/components/responses/Error"},"503":{"$ref":"#/components/responses/Error"}}}},
     "/api/position-decisions/run": {"post":{"operationId":"postApiPositionDecisionsRun","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"}}}},"responses":{"200":{"description":"Immutable position decisions"},"422":{"$ref":"#/components/responses/Error"},"500":{"$ref":"#/components/responses/Error"},"503":{"$ref":"#/components/responses/Error"}}}},
     "/api/position-decisions/today": {"get":{"operationId":"getApiPositionDecisionsToday","responses":{"200":{"description":"Latest position decisions"},"404":{"$ref":"#/components/responses/Error"},"500":{"$ref":"#/components/responses/Error"},"503":{"$ref":"#/components/responses/Error"}}}},
     "/api/position-decisions/runs/{id}": {"get":{"operationId":"getApiPositionDecisionRun","parameters":[{"in":"path","name":"id","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"One position decision run"},"404":{"$ref":"#/components/responses/Error"},"500":{"$ref":"#/components/responses/Error"},"503":{"$ref":"#/components/responses/Error"}}}},
