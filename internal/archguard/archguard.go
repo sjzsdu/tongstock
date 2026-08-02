@@ -278,6 +278,38 @@ func (r *runner) noMockNoRandomNoHardcoded() GateResult {
 		}
 		return nil
 	})
+	// The browser is also a production path. Recommendations must not be made
+	// from random values or literal fake-result markers in React/TypeScript.
+	webRoot := filepath.Join(r.root, "web", "src")
+	_ = filepath.Walk(webRoot, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info == nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if strings.Contains(path, ".test.") || strings.Contains(path, ".spec.") {
+			return nil
+		}
+		if !strings.HasSuffix(path, ".ts") && !strings.HasSuffix(path, ".tsx") {
+			return nil
+		}
+		src, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		low := strings.ToLower(string(src))
+		rel, _ := filepath.Rel(r.root, path)
+		if strings.Contains(string(src), "Math.random(") {
+			res.Passed = false
+			res.Issues = append(res.Issues, rel+": uses Math.random in production UI")
+		}
+		if strings.Contains(low, "synthetic_result") || strings.Contains(low, "mock returns") {
+			res.Passed = false
+			res.Issues = append(res.Issues, rel+": contains fabricated-result marker")
+		}
+		return nil
+	})
 	return res
 }
 
