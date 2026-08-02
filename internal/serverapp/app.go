@@ -19,6 +19,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sjzsdu/tongstock/internal/adapter/methodregistryrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/paradigmrepo"
+	"github.com/sjzsdu/tongstock/internal/adapter/selectionrepo"
 	"github.com/sjzsdu/tongstock/internal/agents"
 	"github.com/sjzsdu/tongstock/internal/app/stockdata"
 	"github.com/sjzsdu/tongstock/internal/ledger"
@@ -216,6 +217,12 @@ func NewApp(cfg *config.Config, opts Options) (_ *App, err error) {
 	}
 	app.api.SetMethodRegistry(methodRegistry)
 	app.setModule("method_registry", "ready", "")
+	selectionRuns, err := selectionrepo.New(app.storage)
+	if err != nil {
+		return nil, fmt.Errorf("初始化每日选股仓库失败: %w", err)
+	}
+	app.api.SetSelectionRuns(selectionRuns)
+	app.setModule("daily_selection", "ready", "")
 
 	app.configureOptionalModules()
 	router := app.buildRouter()

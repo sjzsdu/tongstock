@@ -59,6 +59,10 @@ func (p *SQLiteUniverseProvider) BuildUniverse(date string, def marketsnapshot.U
 		}
 	}
 	out := make([]marketsnapshot.UniverseMember, 0, len(raw))
+	required := make(map[string]bool, len(def.RequiredCodes))
+	for _, code := range def.RequiredCodes {
+		required[strings.TrimSpace(code)] = true
+	}
 	dDate, _ := time.Parse("2006-01-02", date)
 	for _, r := range raw {
 		mem := marketsnapshot.UniverseMember{
@@ -69,6 +73,10 @@ func (p *SQLiteUniverseProvider) BuildUniverse(date string, def marketsnapshot.U
 			DelistDate: r.delist,
 			Status:     "normal",
 			Selected:   true,
+		}
+		if len(required) > 0 && !required[r.code] {
+			mem.Selected = false
+			mem.ExcludeReasons = append(mem.ExcludeReasons, "not_required")
 		}
 		if st, ok := statusMap[r.code]; ok && st != "" {
 			mem.Status = st
@@ -149,6 +157,7 @@ func (p *SQLiteWatermarkProvider) FetchWatermarks(date string, codes []string) (
 		return nil, err
 	}
 	defer rows.Close()
+	found := map[string]bool{}
 	for rows.Next() {
 		var (
 			c, last, status, lerr string
@@ -158,11 +167,38 @@ func (p *SQLiteWatermarkProvider) FetchWatermarks(date string, codes []string) (
 			return nil, err
 		}
 		cs := marketsnapshot.CodeStatus{Code: c, KlineLastDate: last, KlineRowCount: rc, LastError: lerr}
+		found[c] = true
 		if last != "" && last < date {
 			// 粗略 gap：计算 last_date 到 date 的日差（工作日近似，只用于排序）
 			cs.GapDays = dayDiff(last, date)
 		}
 		result[c] = cs
+	}
+	// Older real databases can contain complete kline history without the newer
+	// sync-state table being backfilled. Derive the watermark from the source
+	// rows themselves; never invent readiness from a configured date.
+	compactDate := strings.ReplaceAll(date, "-", "")
+	for _, code := range codes {
+		var last string
+		var count int
+		err := p.db.DB().QueryRow(`SELECT COALESCE(MAX(date),''), COUNT(*) FROM kline WHERE code=? AND ktype=? AND date<=?`, code, ktype, compactDate).Scan(&last, &count)
+		if err != nil {
+			return nil, err
+		}
+		if last != "" {
+			formatted := last
+			if len(last) == 8 {
+				formatted = last[:4] + "-" + last[4:6] + "-" + last[6:]
+			}
+			cs := result[code]
+			cs.Code, cs.KlineLastDate, cs.KlineRowCount = code, formatted, count
+			if formatted < date {
+				cs.GapDays = dayDiff(formatted, date)
+			}
+			result[code] = cs
+		} else if !found[code] {
+			delete(result, code)
+		}
 	}
 	// quote_snapshot: 只要有行就算 ready（用于今日行情覆盖）
 	q2 := fmt.Sprintf(`SELECT code FROM quote_snapshot WHERE code IN (%s)`, qMarks)
@@ -238,6 +274,12 @@ func (c *SQLiteTradingCalendar) IsTradingDay(date string) (bool, error) {
 	}
 	var cnt int
 	err = c.db.DB().QueryRow(`SELECT COUNT(*) FROM workday WHERE unix = ?`, u).Scan(&cnt)
+	if err != nil || cnt > 0 {
+		return cnt > 0, err
+	}
+	// Fail on absence of actual market rows, but allow legacy databases whose
+	// workday table has not yet been materialized.
+	err = c.db.DB().QueryRow(`SELECT COUNT(*) FROM kline WHERE ktype=9 AND date=?`, strings.ReplaceAll(date, "-", "")).Scan(&cnt)
 	return cnt > 0, err
 }
 
@@ -269,10 +311,11 @@ func NewSQLiteFeatureEngine(db *storage.Storage) *SQLiteFeatureEngine {
 // 这是 deterministic 的（只要 kline 不变结果不变），满足特征快照哈希。
 func (e *SQLiteFeatureEngine) Compute(date string, codes []string, features []marketsnapshot.FeatureSpec) (map[string]map[string]float64, error) {
 	out := map[string]map[string]float64{}
+	queryDate := strings.ReplaceAll(date, "-", "")
 	for _, code := range codes {
 		// 读取 250 行前复权日线；若不足就取所有
 		rows, err := e.db.DB().Query(`SELECT date, open, high, low, close, volume, amount
-			FROM kline WHERE code = ? AND ktype = 9 AND date <= ? ORDER BY date DESC LIMIT 260`, code, date)
+			FROM kline WHERE code = ? AND ktype = 9 AND date <= ? ORDER BY date DESC LIMIT 260`, code, queryDate)
 		if err != nil {
 			return nil, err
 		}

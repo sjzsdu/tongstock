@@ -3608,6 +3608,48 @@
         }
       }
     },
+    "/api/selections/today": {
+      "get": {
+        "operationId": "getApiSelectionsToday",
+        "parameters": [{"in":"query","name":"method_id","schema":{"type":"string"}}],
+        "responses": {
+          "200": {"description":"Latest immutable real-data selection run","content":{"application/json":{"schema":{"type":"object"}}}},
+          "404": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/selections/runs": {
+      "get": {
+        "operationId": "getApiSelectionRuns",
+        "parameters": [
+          {"in":"query","name":"date","schema":{"type":"string"}},
+          {"in":"query","name":"method_id","schema":{"type":"string"}},
+          {"in":"query","name":"limit","schema":{"type":"integer","default":30}}
+        ],
+        "responses": {
+          "200": {"description":"Historical immutable selection runs","content":{"application/json":{"schema":{"type":"object"}}}},
+          "500": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/selections/runs/{id}": {
+      "get": {
+        "operationId": "getApiSelectionRun",
+        "parameters": [
+          {"in":"path","name":"id","required":true,"schema":{"type":"string"}},
+          {"in":"query","name":"method_id","schema":{"type":"string"}}
+        ],
+        "responses": {
+          "200": {"description":"One immutable selection run","content":{"application/json":{"schema":{"type":"object"}}}},
+          "404": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/monitoring/health": {
       "get": {
         "operationId": "getApiMonitoringHealth",

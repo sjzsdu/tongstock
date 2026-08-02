@@ -734,6 +734,54 @@ CREATE TABLE IF NOT EXISTS investment_method_audit (
 CREATE INDEX IF NOT EXISTS idx_investment_method_audit_method ON investment_method_audit(method_id,created_at_ns);
 `,
 	},
+	{
+		version: 16,
+		name:    "daily_ai_selection_runs",
+		sql: `
+CREATE TABLE IF NOT EXISTS daily_selection_run (
+	run_id TEXT PRIMARY KEY,
+	run_hash TEXT NOT NULL UNIQUE,
+	snapshot_id TEXT NOT NULL,
+	feature_snapshot_id TEXT NOT NULL,
+	snapshot_date TEXT NOT NULL,
+	status TEXT NOT NULL,
+	eligible_methods INTEGER NOT NULL,
+	scanned_stocks INTEGER NOT NULL,
+	candidate_count INTEGER NOT NULL,
+	buy_count INTEGER NOT NULL,
+	run_json TEXT NOT NULL,
+	created_at_ns INTEGER NOT NULL,
+	FOREIGN KEY (snapshot_id) REFERENCES market_snapshot(id),
+	FOREIGN KEY (feature_snapshot_id) REFERENCES feature_snapshot(id)
+);
+CREATE INDEX IF NOT EXISTS idx_daily_selection_run_date ON daily_selection_run(snapshot_date DESC,created_at_ns DESC);
+
+CREATE TABLE IF NOT EXISTS daily_selection_candidate (
+	run_id TEXT NOT NULL,
+	code TEXT NOT NULL,
+	rank INTEGER NOT NULL,
+	action TEXT NOT NULL,
+	score REAL NOT NULL,
+	method_ids_json TEXT NOT NULL,
+	candidate_json TEXT NOT NULL,
+	PRIMARY KEY (run_id,code),
+	FOREIGN KEY (run_id) REFERENCES daily_selection_run(run_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_daily_selection_candidate_action ON daily_selection_candidate(run_id,action,rank);
+
+CREATE TABLE IF NOT EXISTS daily_selection_exclusion (
+	run_id TEXT NOT NULL,
+	ordinal INTEGER NOT NULL,
+	method_id TEXT NOT NULL DEFAULT '',
+	code TEXT NOT NULL DEFAULT '',
+	reason_code TEXT NOT NULL,
+	detail TEXT NOT NULL,
+	PRIMARY KEY (run_id,ordinal),
+	FOREIGN KEY (run_id) REFERENCES daily_selection_run(run_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_daily_selection_exclusion_reason ON daily_selection_exclusion(run_id,reason_code);
+`,
+	},
 }
 
 // Migrate upgrades the SQLite database transactionally. Store constructors
