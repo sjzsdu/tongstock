@@ -345,7 +345,7 @@ func collectIndicators(exprs ...*Expr) []string {
 
 var builtinIndicatorSet = map[string]bool{
 	"close": true, "open": true, "high": true, "low": true,
-	"volume": true, "amount": true,
+	"volume": true, "amount": true, "return1": true, "gap_pct": true,
 	"ma5": true, "ma10": true, "ma20": true, "ma60": true, "ma120": true, "ma250": true,
 	"macd_dif": true, "macd_dea": true, "macd_hist": true,
 	"kdj_k": true, "kdj_d": true, "kdj_j": true,
@@ -354,7 +354,7 @@ var builtinIndicatorSet = map[string]bool{
 }
 
 func isBuiltinIndicator(name string) bool {
-	// 支持 ma_N 和 rsi_N 这类参数化内建:
+	// 支持参数化内建指标。
 	if n := name; len(n) > 2 {
 		switch {
 		case strings.HasPrefix(n, "ma"):
@@ -363,6 +363,22 @@ func isBuiltinIndicator(name string) bool {
 			}
 		case strings.HasPrefix(n, "rsi"):
 			if _, err := strconv.Atoi(n[3:]); err == nil {
+				return true
+			}
+		case strings.HasPrefix(n, "prevhigh"):
+			if _, err := strconv.Atoi(n[len("prevhigh"):]); err == nil {
+				return true
+			}
+		case strings.HasPrefix(n, "prevlow"):
+			if _, err := strconv.Atoi(n[len("prevlow"):]); err == nil {
+				return true
+			}
+		case strings.HasPrefix(n, "volma"):
+			if _, err := strconv.Atoi(n[len("volma"):]); err == nil {
+				return true
+			}
+		case strings.HasPrefix(n, "volatility"):
+			if _, err := strconv.Atoi(n[len("volatility"):]); err == nil {
 				return true
 			}
 		}

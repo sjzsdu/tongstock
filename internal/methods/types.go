@@ -26,7 +26,7 @@ import (
 
 // CompilerVersion 必须随任何改变 AST 哈希/求值语义的代码变化而递增。
 // 只有编译器完全等价才允许复用同一版本号。
-const CompilerVersion = "0.1.0"
+const CompilerVersion = "0.2.0"
 
 // Side 方向: 入场 (BUY) 或 出场 (SELL)。
 type Side string

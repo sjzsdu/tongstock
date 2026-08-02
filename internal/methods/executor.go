@@ -338,6 +338,38 @@ func indicatorValue(env *evalEnv, name string, params []string) (float64, bool) 
 			return rsi(env, n)
 		}
 	}
+	if strings.HasPrefix(name, "prevhigh") {
+		if n, err := parseIntSuffix(name, len("prevhigh")); err == nil && n > 0 {
+			return rollingPreviousCloseExtreme(env, n, true)
+		}
+	}
+	if strings.HasPrefix(name, "prevlow") {
+		if n, err := parseIntSuffix(name, len("prevlow")); err == nil && n > 0 {
+			return rollingPreviousCloseExtreme(env, n, false)
+		}
+	}
+	if strings.HasPrefix(name, "volma") {
+		if n, err := parseIntSuffix(name, len("volma")); err == nil && n > 0 {
+			return rollingMeanVolume(env, n)
+		}
+	}
+	if strings.HasPrefix(name, "volatility") {
+		if n, err := parseIntSuffix(name, len("volatility")); err == nil && n > 1 {
+			return rollingVolatility(env, n)
+		}
+	}
+	if name == "return1" && len(env.all) >= 2 {
+		previous := env.all[len(env.all)-2].Close
+		if previous > 0 {
+			return (env.bar.Close - previous) / previous, true
+		}
+	}
+	if name == "gap_pct" && len(env.all) >= 2 {
+		previous := env.all[len(env.all)-2].Close
+		if previous > 0 {
+			return (env.bar.Open - previous) / previous, true
+		}
+	}
 	if env.bar.Indicators != nil {
 		v, ok := env.bar.Indicators[name]
 		return v, ok
@@ -354,6 +386,59 @@ func rollingMeanClose(env *evalEnv, n int) (float64, bool) {
 		sum += env.all[i].Close
 	}
 	return sum / float64(n), true
+}
+
+func rollingMeanVolume(env *evalEnv, n int) (float64, bool) {
+	if n <= 0 || len(env.all) < n {
+		return 0, false
+	}
+	var sum float64
+	for i := len(env.all) - n; i < len(env.all); i++ {
+		sum += env.all[i].Volume
+	}
+	return sum / float64(n), true
+}
+
+func rollingPreviousCloseExtreme(env *evalEnv, n int, maximum bool) (float64, bool) {
+	if n <= 0 || len(env.all) < n+1 {
+		return 0, false
+	}
+	start, end := len(env.all)-n-1, len(env.all)-1
+	value := env.all[start].Close
+	for i := start + 1; i < end; i++ {
+		if maximum && env.all[i].Close > value {
+			value = env.all[i].Close
+		}
+		if !maximum && env.all[i].Close < value {
+			value = env.all[i].Close
+		}
+	}
+	return value, true
+}
+
+func rollingVolatility(env *evalEnv, n int) (float64, bool) {
+	if n <= 1 || len(env.all) < n+1 {
+		return 0, false
+	}
+	returns := make([]float64, 0, n)
+	for i := len(env.all) - n; i < len(env.all); i++ {
+		previous := env.all[i-1].Close
+		if previous <= 0 {
+			return 0, false
+		}
+		returns = append(returns, (env.all[i].Close-previous)/previous)
+	}
+	var mean float64
+	for _, value := range returns {
+		mean += value
+	}
+	mean /= float64(len(returns))
+	var variance float64
+	for _, value := range returns {
+		delta := value - mean
+		variance += delta * delta
+	}
+	return math.Sqrt(variance / float64(len(returns)-1)), true
 }
 
 func rsi(env *evalEnv, n int) (float64, bool) {

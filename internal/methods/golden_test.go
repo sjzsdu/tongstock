@@ -202,6 +202,36 @@ func TestEntryAndExitExecuteOnBars(t *testing.T) {
 	t.Fatalf("连续下跌后应触发 ma10 退出，检查 trace")
 }
 
+func TestPointInTimeDiscoveryIndicatorsDoNotIncludeFutureOrCurrentInPriorExtreme(t *testing.T) {
+	position := 0.1
+	candidate := &Candidate{
+		Name: "prior breakout", SourceKind: "deterministic_discovery",
+		PositionMode: "pct_equity", PositionPct: &position, HoldingMaxDays: 5,
+		Entry: map[string]any{
+			"type": "compare", "op": "gt",
+			"left":  map[string]any{"type": "indicator", "indicator": "close"},
+			"right": map[string]any{"type": "indicator", "indicator": "prevhigh20"},
+		},
+	}
+	method, _, err := Compile(candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bars := make([]Bar, 21)
+	for i := 0; i < 20; i++ {
+		bars[i] = Bar{Date: fmt.Sprintf("d%02d", i), Open: float64(i + 1), Close: float64(i + 1), Volume: 100}
+	}
+	// 当日收盘 100 若被错误纳入 prior high，条件会变成 100 > 100 而失败。
+	bars[20] = Bar{Date: "d20", Open: 21, Close: 100, Volume: 200}
+	result, err := method.Entry(bars[20], bars)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Matched {
+		t.Fatalf("close=100 should exceed prior 20-day high=20: %s", ExplainTrace(result.Trace))
+	}
+}
+
 // ===== 验收 #5: 编译诊断能被 AI 转成用户可理解说明 =====
 
 func TestExplainDiagnosticsProducesText(t *testing.T) {

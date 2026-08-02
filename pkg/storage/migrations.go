@@ -636,6 +636,23 @@ CREATE INDEX IF NOT EXISTS idx_validation_evidence_snapshot
 	ON validation_evidence_artifact(snapshot_id, created_at_ns DESC);
 `,
 	},
+	{
+		version: 13,
+		name:    "discovery_research_trace",
+		sql: `
+CREATE TABLE IF NOT EXISTS discovery_research_trace (
+	research_id TEXT PRIMARY KEY,
+	result_hash TEXT NOT NULL UNIQUE,
+	snapshot_id TEXT NOT NULL,
+	conclusion TEXT NOT NULL,
+	discovery_trials INTEGER NOT NULL,
+	trace_json TEXT NOT NULL,
+	created_at_ns INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_discovery_trace_snapshot
+	ON discovery_research_trace(snapshot_id, created_at_ns DESC);
+`,
+	},
 }
 
 // Migrate upgrades the SQLite database transactionally. Store constructors
