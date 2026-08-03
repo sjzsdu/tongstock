@@ -205,7 +205,8 @@ func TestDatasetSnapshot_CreateKlineSnapshotFreezesRealContent(t *testing.T) {
 	}
 
 	// 修改可变的实时 K 线表，已冻结快照必须保持原值。
-	if _, err := raw.DB().Exec(`UPDATE kline SET close = 99 WHERE code = '000001' AND ktype = 9 AND date = '20240103'`); err != nil {
+	if _, err := raw.DB().Exec(`UPDATE kline SET high = 100, close = 99, amount = volume * 99
+		WHERE code = '000001' AND ktype = 9 AND date = '20240103'`); err != nil {
 		t.Fatalf("mutate live K line: %v", err)
 	}
 	after, err := store.GetFrozenKlines(snapshot.ID, "000001", 9)

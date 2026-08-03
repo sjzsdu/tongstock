@@ -3,6 +3,7 @@ package stockdata
 import (
 	"context"
 	"errors"
+	"math"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -67,6 +68,63 @@ func TestFreshQuoteReadsDatabaseWithoutProvider(t *testing.T) {
 	}
 	if result.Metadata.SyncStatus != "cache" {
 		t.Fatalf("sync status = %q", result.Metadata.SyncStatus)
+	}
+}
+
+func TestSaveSyncedRejectsInvalidKlineAtomically(t *testing.T) {
+	store, repository := testRepository(t)
+	ctx := context.Background()
+	now := time.Now()
+	spec := DataSpec{Type: DataKline, Market: "sh", Code: "600000", Granularity: "day", KType: 9}
+
+	bad := validKline(now, 10)
+	bad.Close = math.Inf(1)
+	if err := repository.SaveSynced(ctx, spec, Dataset{Klines: []*protocol.Kline{
+		validKline(now.AddDate(0, 0, -1), 9), bad,
+	}}, SyncMetadata{SourceUpdatedAt: now, Quality: "validated"}); err == nil {
+		t.Fatal("invalid K-line dataset was persisted")
+	}
+
+	var rows int
+	if err := store.DB().QueryRow(`SELECT COUNT(*) FROM kline WHERE code = ?`, spec.Code).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 0 {
+		t.Fatalf("partial invalid dataset leaked %d rows", rows)
+	}
+}
+
+func TestSaveSyncedRejectsFutureKline(t *testing.T) {
+	_, repository := testRepository(t)
+	now := time.Now()
+	spec := DataSpec{Type: DataKline, Market: "sh", Code: "600000", Granularity: "day", KType: 9}
+	item := validKline(now.AddDate(100, 0, 0), 10)
+	if err := repository.SaveSynced(context.Background(), spec, Dataset{Klines: []*protocol.Kline{item}}, SyncMetadata{}); err == nil {
+		t.Fatal("future K-line was persisted")
+	}
+}
+
+func TestInspectCoverageFallsBackToLegacyKlineSyncState(t *testing.T) {
+	store, repository := testRepository(t)
+	now := time.Now().Truncate(time.Second)
+	spec := DataSpec{Type: DataKline, Market: "sh", Code: "601688", Granularity: "day", KType: 9}
+	if err := repository.SaveSynced(context.Background(), spec,
+		Dataset{Klines: []*protocol.Kline{validKline(now, 10)}}, SyncMetadata{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().Exec(`DELETE FROM data_sync_state WHERE data_type='kline' AND code=?`, spec.Code); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().Exec(`INSERT INTO kline_sync_state
+		(code,ktype,last_sync_at,status) VALUES (?,?,?,'ok')`, spec.Code, spec.KType, now.Unix()); err != nil {
+		t.Fatal(err)
+	}
+	coverage, err := repository.InspectCoverage(context.Background(), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if coverage.Status != "ok" || !coverage.LastSyncAt.Equal(now) {
+		t.Fatalf("legacy state was not merged: %+v", coverage)
 	}
 }
 
@@ -414,8 +472,8 @@ func TestFinanceSyncThenCache(t *testing.T) {
 
 func TestSQLiteTradingCalendarUsesKnownHolidayAndFallsBackOutsideCoverage(t *testing.T) {
 	store, _ := testRepository(t)
-	friday := time.Date(2026, 9, 25, 0, 0, 0, 0, time.Local)
-	tuesday := time.Date(2026, 9, 29, 0, 0, 0, 0, time.Local)
+	friday := time.Date(2026, 7, 24, 0, 0, 0, 0, time.Local)
+	tuesday := time.Date(2026, 7, 28, 0, 0, 0, 0, time.Local)
 	for _, day := range []time.Time{friday, tuesday} {
 		if _, err := store.DB().Exec(`INSERT INTO workday(unix, date) VALUES (?, ?)`,
 			day.Unix(), day.Format("20060102")); err != nil {
@@ -426,7 +484,7 @@ func TestSQLiteTradingCalendarUsesKnownHolidayAndFallsBackOutsideCoverage(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	holiday := time.Date(2026, 9, 28, 0, 0, 0, 0, time.Local)
+	holiday := time.Date(2026, 7, 27, 0, 0, 0, 0, time.Local)
 	trading, err := calendar.IsTradingDay(context.Background(), "sh", holiday)
 	if err != nil {
 		t.Fatal(err)
@@ -438,6 +496,33 @@ func TestSQLiteTradingCalendarUsesKnownHolidayAndFallsBackOutsideCoverage(t *tes
 	trading, err = calendar.IsTradingDay(context.Background(), "sh", outside)
 	if err != nil || !trading {
 		t.Fatalf("outside coverage fallback = %v, err=%v", trading, err)
+	}
+}
+
+func TestSQLiteTradingCalendarDerivesDaysFromKlinesWhenWorkdayIsEmpty(t *testing.T) {
+	store, _ := testRepository(t)
+	friday := time.Date(2026, 7, 24, 0, 0, 0, 0, time.Local)
+	tuesday := time.Date(2026, 7, 28, 0, 0, 0, 0, time.Local)
+	for _, day := range []time.Time{friday, tuesday} {
+		if _, err := store.DB().Exec(`INSERT INTO kline
+			(code,ktype,date,open,high,low,close,volume,amount)
+			VALUES ('600000',9,?,10,11,9,10,100,1000)`, day.Format("20060102")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	calendar, err := NewSQLiteTradingCalendar(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	holiday := time.Date(2026, 7, 27, 0, 0, 0, 0, time.Local)
+	trading, err := calendar.IsTradingDay(context.Background(), "sh", holiday)
+	if err != nil || trading {
+		t.Fatalf("derived weekday holiday = %v, err=%v", trading, err)
+	}
+	outside := time.Date(2026, 7, 29, 0, 0, 0, 0, time.Local)
+	trading, err = calendar.IsTradingDay(context.Background(), "sh", outside)
+	if err != nil || !trading {
+		t.Fatalf("outside derived coverage fallback = %v, err=%v", trading, err)
 	}
 }
 

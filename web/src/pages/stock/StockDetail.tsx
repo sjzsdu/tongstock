@@ -23,7 +23,7 @@ import { useStockCompany } from '../../hooks/useStockCompany';
 import { useStockMinute } from '../../hooks/useStockMinute';
 import { useStockCompare } from '../../hooks/useStockCompare';
 import { useParadigmAnalysis } from '../../hooks/useParadigmAnalysis';
-import { getValueColor } from '../../lib/stock-detail';
+import { getSyncAgeDays, getSyncStatusPresentation, getValueColor } from '../../lib/stock-detail';
 
 type Tab = 'chart' | 'signal' | 'compare' | 'finance' | 'company' | 'dividend' | 'intraday' | 'news';
 
@@ -98,6 +98,7 @@ export default function StockDetail() {
   const showTabs = detailStatus === 'ready';
   const showInitialLoading = !showTabs && (loading || chartLoading || detailStatus === 'loading');
   const valueColor = getValueColor(pct);
+  const syncStatus = getSyncStatusPresentation(syncState?.status || 'unknown');
 
   return (
     <div style={fullscreen ? { position: 'fixed', inset: 0, zIndex: 1000, background: '#0b1220', padding: 24, overflow: 'auto' } : undefined}>
@@ -135,8 +136,8 @@ export default function StockDetail() {
             <Space direction="vertical" size={12} style={{ width: '100%' }}>
               <Flex justify="space-between" align="center" wrap="wrap" gap={12}>
                 <Space size={16}>
-                  <Tag color={syncState.status === 'ok' ? 'green' : 'red'}>
-                    同步状态: {syncState.status === 'ok' ? '正常' : '失败'}
+                  <Tag color={syncStatus.color}>
+                    同步状态: {syncStatus.label}
                   </Tag>
                   {syncState.error && (
                     <Tooltip title={syncState.error}>
@@ -176,9 +177,8 @@ export default function StockDetail() {
                         <Tag color="green" icon={<InfoCircleOutlined />}>数据新鲜 - 已更新至最新交易日</Tag>
                       );
                     }
-                    const lastSyncDate = syncState.last_sync_at ? new Date(syncState.last_sync_at) : new Date(0);
-                    const daysAgo = Math.floor((Date.now() - lastSyncDate.getTime()) / (1000 * 60 * 60 * 24));
-                    if (daysAgo > 1) {
+                    const daysAgo = getSyncAgeDays(syncState.last_sync_at);
+                    if (daysAgo !== null && daysAgo > 1) {
                       return (
                         <Tag color="red" icon={<WarningOutlined />}>
                           数据过期 - 已超过{daysAgo}天未同步，数据截止至{lastDate}
@@ -187,7 +187,7 @@ export default function StockDetail() {
                     }
                     return (
                       <Tag color="orange" icon={<ClockCircleOutlined />}>
-                        数据滞后 - 数据截止至{lastDate}，建议同步更新
+                        数据滞后 - 数据截止至{lastDate}，{daysAgo === null ? '同步时间未知' : '建议同步更新'}
                       </Tag>
                     );
                   })()}

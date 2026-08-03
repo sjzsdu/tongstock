@@ -53,7 +53,7 @@ func openTestDB(t *testing.T) *storage.Storage {
 		}
 	}
 	for i := 0; i < 30; i++ {
-		d := time.Date(2023, 12, 4, 0, 0, 0, 0, time.Local).AddDate(0, 0, i).Format("2006-01-02")
+		d := time.Date(2023, 12, 4, 0, 0, 0, 0, time.Local).AddDate(0, 0, i).Format("20060102")
 		// 000001: 30 bars
 		price := 10 + 0.1*float64(i)
 		if _, err := stmt.Exec("000001", d, price, price+0.3, price-0.2, price+0.1, 1e6, price*1e6); err != nil {

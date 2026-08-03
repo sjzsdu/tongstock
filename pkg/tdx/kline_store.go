@@ -44,6 +44,32 @@ func NewKlineStore(s *storage.Storage) (*KlineStore, error) {
 func (s *KlineStore) SaveKline(code string, ktype uint8, klines []*protocol.Kline) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.saveKlinesLocked(code, ktype, klines, false)
+}
+
+// ReplaceKlines atomically replaces one complete code/type series. It is used
+// by full synchronization so stale rows that no longer exist upstream cannot
+// survive an otherwise successful refresh.
+func (s *KlineStore) ReplaceKlines(code string, ktype uint8, klines []*protocol.Kline) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.saveKlinesLocked(code, ktype, klines, true)
+}
+
+func (s *KlineStore) saveKlinesLocked(code string, ktype uint8, klines []*protocol.Kline, replace bool) error {
+	now := time.Now()
+	maxDate := now.AddDate(0, 0, 1)
+	minDate := time.Date(1990, 1, 1, 0, 0, 0, 0, s.loc)
+	valid := make([]*protocol.Kline, 0, len(klines))
+	for _, k := range klines {
+		if k == nil || k.Time.Before(minDate) || k.Time.After(maxDate) || validateKline(k) != "" {
+			continue
+		}
+		valid = append(valid, k)
+	}
+	if replace && len(valid) == 0 {
+		return errors.New("kline: refusing to replace series with no valid records")
+	}
 
 	tx, err := s.s.DB().Begin()
 	if err != nil {
@@ -57,26 +83,17 @@ func (s *KlineStore) SaveKline(code string, ktype uint8, klines []*protocol.Klin
 	}
 	defer stmt.Close()
 
-	// 日期范围检查
-	now := time.Now()
-	maxDate := now.AddDate(0, 0, 1)
-	minDate := time.Date(1990, 1, 1, 0, 0, 0, 0, s.loc)
-
-	skipped := 0
-	for _, k := range klines {
-		// 检查日期是否异常
-		if k.Time.Before(minDate) || k.Time.After(maxDate) {
-			skipped++
-			continue
+	if replace {
+		if _, err := tx.Exec(fmt.Sprintf(`DELETE FROM kline WHERE code = %s AND ktype = %s`, s.ph(1), s.ph(2)), code, ktype); err != nil {
+			return err
 		}
-		if reason := validateKline(k); reason != "" {
-			skipped++
-			continue
-		}
+	}
+	for _, k := range valid {
 		if _, err := stmt.Exec(code, ktype, k.Time.Format("20060102"), k.Open, k.High, k.Low, k.Close, k.Volume, k.Amount); err != nil {
 			return err
 		}
 	}
+	skipped := len(klines) - len(valid)
 	if skipped > 0 {
 		log.Printf("[kline] skipped %d invalid records for %s", skipped, code)
 	}

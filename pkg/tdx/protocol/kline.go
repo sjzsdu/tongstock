@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"errors"
+	"math"
 	"time"
 
 	"github.com/sjzsdu/tongstock/pkg/utils"
@@ -69,10 +70,19 @@ func (k klineStruct) Decode(bs []byte, ktype uint8) ([]*Kline, error) {
 		bs = bs[4:]
 
 		var openRaw, closeRaw, highRaw, lowRaw int64
-		bs, openRaw = varPrice(bs)
-		bs, closeRaw = varPrice(bs)
-		bs, highRaw = varPrice(bs)
-		bs, lowRaw = varPrice(bs)
+		var ok bool
+		if bs, openRaw, ok = readKlinePrice(bs); !ok {
+			return nil, ErrDataLength
+		}
+		if bs, closeRaw, ok = readKlinePrice(bs); !ok {
+			return nil, ErrDataLength
+		}
+		if bs, highRaw, ok = readKlinePrice(bs); !ok {
+			return nil, ErrDataLength
+		}
+		if bs, lowRaw, ok = readKlinePrice(bs); !ok {
+			return nil, ErrDataLength
+		}
 
 		var open, close, high, low float64
 		if i == 0 {
@@ -89,34 +99,10 @@ func (k klineStruct) Decode(bs []byte, ktype uint8) ([]*Kline, error) {
 			low = open + float64(lowRaw)/1000
 		}
 
-		// 校验解码后的价格是否合理
-		if open <= 0 || close <= 0 || high <= 0 || low <= 0 {
-			lastClose = close
-			continue
-		}
-		if open > maxPrice || close > maxPrice {
-			lastClose = close
-			continue
-		}
-		if high < low {
-			lastClose = close
-			continue
-		}
-
-		// 检查与前一条K线的价格变动是否合理
-		if i > 0 && lastClose > 0 {
-			changeRatio := close / lastClose
-			if changeRatio > maxPriceChange || changeRatio < 1.0/maxPriceChange {
-				// 价格变动超过500%，数据可能损坏，跳过
-				lastClose = close
-				continue
-			}
-		}
-
-		lastClose = close
-
+		// 成交量和成交额是每条记录的固定尾部。必须在任何校验分支前消费，
+		// 否则一条坏记录会让后续记录从错误的字节边界开始解码。
 		if len(bs) < 8 {
-			break
+			return nil, ErrDataLength
 		}
 		vol := volumeEncoded(Uint32LE(bs[:4]))
 		if ktype <= 6 || ktype == 8 {
@@ -124,6 +110,31 @@ func (k klineStruct) Decode(bs []byte, ktype uint8) ([]*Kline, error) {
 		}
 		amount := volumeEncoded(Uint32LE(bs[4:8])) / 100
 		bs = bs[8:]
+
+		previousClose := lastClose
+		// 后续记录的增量以协议中的前一条收盘价为基准，即使当前记录
+		// 最终因质量校验被丢弃，也必须推进该解码状态。
+		lastClose = close
+
+		maxDate := time.Now().AddDate(0, 0, 1)
+		minDate := time.Date(1990, 1, 1, 0, 0, 0, 0, time.Local)
+		invalidNumber := func(value float64) bool {
+			return value <= 0 || math.IsNaN(value) || math.IsInf(value, 0)
+		}
+		if t.IsZero() || t.Before(minDate) || t.After(maxDate) ||
+			invalidNumber(open) || invalidNumber(close) || invalidNumber(high) || invalidNumber(low) ||
+			open > maxPrice || close > maxPrice || high > maxPrice || low > maxPrice ||
+			high < low || high < open || high < close || low > open || low > close {
+			continue
+		}
+
+		// 检查与前一条K线的价格变动是否合理
+		if i > 0 && previousClose > 0 {
+			changeRatio := close / previousClose
+			if changeRatio > maxPriceChange || changeRatio < 1.0/maxPriceChange {
+				continue
+			}
+		}
 
 		items = append(items, &Kline{
 			Time:   t,
@@ -136,4 +147,29 @@ func (k klineStruct) Decode(bs []byte, ktype uint8) ([]*Kline, error) {
 		})
 	}
 	return items, nil
+}
+
+// readKlinePrice is the bounds-checked variant used by the paged K-line
+// decoder. The legacy varPrice helper cannot distinguish an unterminated
+// value from a decoded zero, which would make the record boundary ambiguous.
+func readKlinePrice(bs []byte) ([]byte, int64, bool) {
+	var value int64
+	for i, current := range bs {
+		if i == 0 {
+			value += int64(current & 0x3f)
+		} else {
+			value += int64(current&0x7f) << uint8(6+(i-1)*7)
+		}
+		if current&0x80 == 0 {
+			if bs[0]&0x40 != 0 {
+				value = -value
+			}
+			return bs[i+1:], value, true
+		}
+		// int64 cannot represent additional payload bits safely.
+		if i >= 8 {
+			return nil, 0, false
+		}
+	}
+	return nil, 0, false
 }

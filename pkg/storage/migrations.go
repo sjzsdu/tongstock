@@ -842,6 +842,131 @@ CREATE TABLE IF NOT EXISTS automation_outbox (
 CREATE INDEX IF NOT EXISTS idx_automation_outbox_pending ON automation_outbox(status,priority,created_at_ns);
 `,
 	},
+	{
+		version: 19,
+		name:    "kline_integrity_quarantine",
+		sql: `
+CREATE TABLE IF NOT EXISTS kline_quarantine (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	code TEXT NOT NULL,
+	ktype INTEGER NOT NULL,
+	date TEXT NOT NULL,
+	open REAL,
+	high REAL,
+	low REAL,
+	close REAL,
+	volume REAL,
+	amount REAL,
+	reason TEXT NOT NULL,
+	quarantined_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_kline_quarantine_series
+	ON kline_quarantine(code,ktype,quarantined_at);
+
+INSERT INTO kline_quarantine
+	(code,ktype,date,open,high,low,close,volume,amount,reason,quarantined_at)
+SELECT code,ktype,date,open,high,low,close,volume,amount,
+	CASE
+		WHEN length(CAST(date AS TEXT)) <> 8
+			OR CAST(date AS TEXT) NOT GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+			OR CAST(date AS TEXT) < '19900101'
+			OR CAST(date AS TEXT) > strftime('%Y%m%d','now','+1 day') THEN 'invalid_date'
+		WHEN typeof(open) NOT IN ('integer','real') OR typeof(high) NOT IN ('integer','real')
+			OR typeof(low) NOT IN ('integer','real') OR typeof(close) NOT IN ('integer','real')
+			OR open <= 0 OR high <= 0 OR low <= 0 OR close <= 0
+			OR open > 1000000 OR high > 1000000 OR low > 1000000 OR close > 1000000 THEN 'invalid_price'
+		WHEN high < low OR high < open OR high < close OR low > open OR low > close THEN 'invalid_ohlc'
+		ELSE 'invalid_turnover'
+	END,
+	CAST(strftime('%s','now') AS INTEGER)
+FROM kline
+WHERE length(CAST(date AS TEXT)) <> 8
+	OR CAST(date AS TEXT) NOT GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+	OR CAST(date AS TEXT) < '19900101'
+	OR CAST(date AS TEXT) > strftime('%Y%m%d','now','+1 day')
+	OR typeof(open) NOT IN ('integer','real') OR typeof(high) NOT IN ('integer','real')
+	OR typeof(low) NOT IN ('integer','real') OR typeof(close) NOT IN ('integer','real')
+	OR open <= 0 OR high <= 0 OR low <= 0 OR close <= 0
+	OR open > 1000000 OR high > 1000000 OR low > 1000000 OR close > 1000000
+	OR high < low OR high < open OR high < close OR low > open OR low > close
+	OR typeof(volume) NOT IN ('integer','real') OR typeof(amount) NOT IN ('integer','real')
+	OR volume < 0 OR amount < 0;
+
+DELETE FROM kline_sync_state
+WHERE EXISTS (
+	SELECT 1 FROM kline_quarantine q
+	WHERE q.code = kline_sync_state.code AND q.ktype = kline_sync_state.ktype
+);
+DELETE FROM data_sync_state
+WHERE data_type = 'kline' AND EXISTS (
+	SELECT 1 FROM kline_quarantine q WHERE q.code = data_sync_state.code
+);
+DELETE FROM kline
+WHERE length(CAST(date AS TEXT)) <> 8
+	OR CAST(date AS TEXT) NOT GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+	OR CAST(date AS TEXT) < '19900101'
+	OR CAST(date AS TEXT) > strftime('%Y%m%d','now','+1 day')
+	OR typeof(open) NOT IN ('integer','real') OR typeof(high) NOT IN ('integer','real')
+	OR typeof(low) NOT IN ('integer','real') OR typeof(close) NOT IN ('integer','real')
+	OR open <= 0 OR high <= 0 OR low <= 0 OR close <= 0
+	OR open > 1000000 OR high > 1000000 OR low > 1000000 OR close > 1000000
+	OR high < low OR high < open OR high < close OR low > open OR low > close
+	OR typeof(volume) NOT IN ('integer','real') OR typeof(amount) NOT IN ('integer','real')
+	OR volume < 0 OR amount < 0;
+
+DROP TRIGGER IF EXISTS trg_kline_validate_insert;
+CREATE TRIGGER trg_kline_validate_insert
+BEFORE INSERT ON kline
+WHEN length(CAST(NEW.date AS TEXT)) <> 8
+	OR CAST(NEW.date AS TEXT) NOT GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+	OR CAST(NEW.date AS TEXT) < '19900101'
+	OR CAST(NEW.date AS TEXT) > strftime('%Y%m%d','now','+1 day')
+	OR typeof(NEW.open) NOT IN ('integer','real') OR typeof(NEW.high) NOT IN ('integer','real')
+	OR typeof(NEW.low) NOT IN ('integer','real') OR typeof(NEW.close) NOT IN ('integer','real')
+	OR NEW.open <= 0 OR NEW.high <= 0 OR NEW.low <= 0 OR NEW.close <= 0
+	OR NEW.open > 1000000 OR NEW.high > 1000000 OR NEW.low > 1000000 OR NEW.close > 1000000
+	OR NEW.high < NEW.low OR NEW.high < NEW.open OR NEW.high < NEW.close
+	OR NEW.low > NEW.open OR NEW.low > NEW.close
+	OR typeof(NEW.volume) NOT IN ('integer','real') OR typeof(NEW.amount) NOT IN ('integer','real')
+	OR NEW.volume < 0 OR NEW.amount < 0
+BEGIN
+	SELECT RAISE(ABORT, 'invalid kline data');
+END;
+
+DROP TRIGGER IF EXISTS trg_kline_validate_update;
+CREATE TRIGGER trg_kline_validate_update
+BEFORE UPDATE ON kline
+WHEN length(CAST(NEW.date AS TEXT)) <> 8
+	OR CAST(NEW.date AS TEXT) NOT GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+	OR CAST(NEW.date AS TEXT) < '19900101'
+	OR CAST(NEW.date AS TEXT) > strftime('%Y%m%d','now','+1 day')
+	OR typeof(NEW.open) NOT IN ('integer','real') OR typeof(NEW.high) NOT IN ('integer','real')
+	OR typeof(NEW.low) NOT IN ('integer','real') OR typeof(NEW.close) NOT IN ('integer','real')
+	OR NEW.open <= 0 OR NEW.high <= 0 OR NEW.low <= 0 OR NEW.close <= 0
+	OR NEW.open > 1000000 OR NEW.high > 1000000 OR NEW.low > 1000000 OR NEW.close > 1000000
+	OR NEW.high < NEW.low OR NEW.high < NEW.open OR NEW.high < NEW.close
+	OR NEW.low > NEW.open OR NEW.low > NEW.close
+	OR typeof(NEW.volume) NOT IN ('integer','real') OR typeof(NEW.amount) NOT IN ('integer','real')
+	OR NEW.volume < 0 OR NEW.amount < 0
+BEGIN
+	SELECT RAISE(ABORT, 'invalid kline data');
+END;
+`,
+	},
+	{
+		version: 20,
+		name:    "remove_legacy_index_from_stock_klines",
+		sql: `
+INSERT INTO kline_quarantine
+	(code,ktype,date,open,high,low,close,volume,amount,reason,quarantined_at)
+SELECT code,ktype,date,open,high,low,close,volume,amount,
+	'legacy_index_misroute', CAST(strftime('%s','now') AS INTEGER)
+FROM kline WHERE code = '999999';
+DELETE FROM kline_sync_state WHERE code = '999999';
+DELETE FROM data_sync_state WHERE data_type = 'kline' AND code = '999999';
+DELETE FROM kline WHERE code = '999999';
+`,
+	},
 }
 
 // Migrate upgrades the SQLite database transactionally. Store constructors

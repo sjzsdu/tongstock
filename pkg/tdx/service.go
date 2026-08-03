@@ -472,7 +472,9 @@ func (s *Service) fetchAndSaveKlineAll(code string, ktype uint8) ([]*protocol.Kl
 		return nil, err
 	}
 	klines = FilterValidKlines(klines)
-	_ = s.klines.SaveKline(code, ktype, klines)
+	if err := s.klines.ReplaceKlines(code, ktype, klines); err != nil {
+		return nil, err
+	}
 	return klines, nil
 }
 
@@ -563,7 +565,7 @@ func (s *Service) CleanAndRefetchKlines(code string, ktype uint8) ([]*protocol.K
 	}
 
 	klines = FilterValidKlines(klines)
-	if err := s.klines.SaveKline(code, ktype, klines); err != nil {
+	if err := s.klines.ReplaceKlines(code, ktype, klines); err != nil {
 		return nil, fmt.Errorf("保存K线数据失败: %w", err)
 	}
 
