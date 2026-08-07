@@ -271,7 +271,7 @@ func NewApp(cfg *config.Config, opts Options) (_ *App, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("初始化发现轨迹仓库失败: %w", err)
 	}
-	discoverRunner := discoveryapp.NewRunner(app.storage, discoverResolver)
+	discoverRunner := discoveryapp.NewRunner(app.storage, discoverResolver, app.data)
 	app.api.SetDiscoverRunner(discoverRunner, discoverTraces)
 	app.setModule("discovery", "ready", "")
 

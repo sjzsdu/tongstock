@@ -16,6 +16,7 @@ import (
 	"github.com/sjzsdu/tongstock/internal/paradigm"
 	"github.com/sjzsdu/tongstock/internal/validation"
 	"github.com/sjzsdu/tongstock/pkg/storage"
+	"github.com/sjzsdu/tongstock/pkg/tdx"
 )
 
 // PoolResolver 把股票池 ID 解析为真实股票代码列表。
@@ -23,15 +24,25 @@ type PoolResolver interface {
 	Resolve(ctx context.Context, poolID string) ([]string, error)
 }
 
+// KlineSyncer 把缺失的日 K 数据从上游同步到本地库。
+type KlineSyncer interface {
+	SyncDailyKlines(codes []string, mode tdx.SyncMode, concurrency int) tdx.KlineBatchSyncResult
+}
+
 // Runner 是规律发现的统一应用服务入口。
 type Runner struct {
 	store        *storage.Storage
 	poolResolver PoolResolver // 可为 nil，此时 PoolID 不可用
+	sync         KlineSyncer  // 可为 nil，此时缺数据直接报错而非自动同步
 }
 
-// NewRunner 创建 Runner。
-func NewRunner(store *storage.Storage, poolResolver PoolResolver) *Runner {
-	return &Runner{store: store, poolResolver: poolResolver}
+// NewRunner 创建 Runner；poolResolver 与 sync 均可为 nil。
+func NewRunner(store *storage.Storage, poolResolver PoolResolver, syncs ...KlineSyncer) *Runner {
+	r := &Runner{store: store, poolResolver: poolResolver}
+	if len(syncs) > 0 {
+		r.sync = syncs[0]
+	}
+	return r
 }
 
 // RunRequest 描述一次发现研究请求。
@@ -59,6 +70,17 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (*discovery.Result, er
 	}
 	if len(codes) == 0 {
 		return nil, fmt.Errorf("no stock codes provided (use --code or --pool)")
+	}
+
+	// 本地缺数据的代码自动从上游同步，避免直接报错（fail-closed 由 resolveRealRange 兜底）。
+	if r.sync != nil {
+		missing, err := r.missingCodes(ctx, codes)
+		if err != nil {
+			return nil, err
+		}
+		if len(missing) > 0 {
+			r.sync.SyncDailyKlines(missing, tdx.SyncModeAuto, 3)
+		}
 	}
 
 	snapshotID := strings.TrimSpace(req.SnapshotID)
@@ -126,6 +148,24 @@ func NormalizeCodes(values []string) []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// missingCodes 返回本地缺少有效真实日 K 数据的代码（ktype=9 且 OHLCV 均有效）。
+func (r *Runner) missingCodes(ctx context.Context, codes []string) ([]string, error) {
+	var missing []string
+	for _, code := range codes {
+		var n int
+		err := r.store.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM kline
+			WHERE code = ? AND ktype = 9 AND open > 0 AND high > 0 AND low > 0 AND close > 0
+			AND volume > 0`, code).Scan(&n)
+		if err != nil {
+			return nil, fmt.Errorf("check local klines for %s: %w", code, err)
+		}
+		if n == 0 {
+			missing = append(missing, code)
+		}
+	}
+	return missing, nil
 }
 
 // resolveRealRange 计算多只股票共享的真实日 K 公共区间，并限制在最近 4 年内。

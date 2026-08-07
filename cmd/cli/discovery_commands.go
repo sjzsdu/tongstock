@@ -2,10 +2,12 @@ package main
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/sjzsdu/tongstock/internal/adapter/discoveryrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/stockpoolrepo"
 	"github.com/sjzsdu/tongstock/internal/app/discoveryapp"
+	"github.com/sjzsdu/tongstock/pkg/tdx"
 	"github.com/spf13/cobra"
 )
 
@@ -25,6 +27,21 @@ var (
 	discoverBudget   int
 )
 
+// lazyKlineSyncer 延迟建立 TDX 连接：仅当 discover 发现本地缺数据时才联网同步。
+type lazyKlineSyncer struct {
+	once sync.Once
+	svc  *tdx.Service
+	err  error
+}
+
+func (l *lazyKlineSyncer) SyncDailyKlines(codes []string, mode tdx.SyncMode, concurrency int) tdx.KlineBatchSyncResult {
+	l.once.Do(func() { l.svc, l.err = dialService() })
+	if l.err != nil {
+		return tdx.KlineBatchSyncResult{Total: len(codes), Failed: len(codes)}
+	}
+	return l.svc.SyncDailyKlines(codes, mode, concurrency)
+}
+
 var discoverRunCmd = &cobra.Command{
 	Use:   "run",
 	Short: "只输入股票代码启动真实数据规律发现",
@@ -42,7 +59,7 @@ var discoverRunCmd = &cobra.Command{
 				return err
 			}
 		}
-		result, err := discoveryapp.NewRunner(store, resolver).Run(cmd.Context(), discoveryapp.RunRequest{
+		result, err := discoveryapp.NewRunner(store, resolver, &lazyKlineSyncer{}).Run(cmd.Context(), discoveryapp.RunRequest{
 			Codes: discoverCodes, PoolID: discoverPool,
 			SnapshotID: discoverSnapshot, Question: discoverQuestion,
 			HoldDays: discoverHoldDays, SearchBudget: discoverBudget,
