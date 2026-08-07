@@ -311,6 +311,46 @@ export const api = {
       method: 'DELETE',
     }),
 
+  // Discovery research APIs
+  discoverRun: (req: { pool_id?: string; codes?: string[]; question?: string; hold_days?: number; search_budget?: number }) =>
+    fetchJSON<{
+      research_id: string;
+      snapshot_id: string;
+      conclusion: string;
+      candidate_count: number;
+      candidates: {
+        rank: number;
+        template_id: string;
+        method: { name: string; content_hash: string };
+        observations: number;
+        mean_forward_return: number;
+        win_rate: number;
+        baseline_return: number;
+        lift: number;
+        t_statistic: number;
+        validation_evidence: { stock_code: string; status: string; confidence?: string; passable?: boolean }[];
+      }[];
+      rejected_count: number;
+    }>('/api/discover/run', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+
+  discoverTraces: (limit?: number) =>
+    fetchJSON<{
+      traces: {
+        research_id: string;
+        snapshot_id: string;
+        conclusion: string;
+        discovery_trials: number;
+        created_at: string;
+        candidate_count: number;
+        passable_count: number;
+        stock_codes?: string[];
+      }[];
+      total: number;
+    }>(`/api/discover/traces${limit ? `?limit=${limit}` : ''}`),
+
   // Stockinfo APIs
   stockinfoList: (minMarketCap?: number, maxMarketCap?: number, exchange?: string) => {
     const params = new URLSearchParams();

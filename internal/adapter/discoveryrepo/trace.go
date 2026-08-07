@@ -70,3 +70,67 @@ func (r *TraceRepository) Get(ctx context.Context, researchID string) (*discover
 	}
 	return result, nil
 }
+
+// TraceSummary 是研究轨迹的摘要视图，供列表展示使用。
+type TraceSummary struct {
+	ResearchID      string    `json:"research_id"`
+	SnapshotID      string    `json:"snapshot_id"`
+	Conclusion      string    `json:"conclusion"`
+	DiscoveryTrials int       `json:"discovery_trials"`
+	CreatedAt       time.Time `json:"created_at"`
+	CandidateCount  int       `json:"candidate_count"`
+	PassableCount   int       `json:"passable_count"`
+	StockCodes      []string  `json:"stock_codes,omitempty"`
+}
+
+// List 按时间倒序返回研究轨迹摘要。
+func (r *TraceRepository) List(ctx context.Context, limit int) ([]TraceSummary, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT research_id, snapshot_id, conclusion,
+		discovery_trials, trace_json, created_at_ns FROM discovery_research_trace
+		ORDER BY created_at_ns DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list discovery traces: %w", err)
+	}
+	defer rows.Close()
+
+	var summaries []TraceSummary
+	for rows.Next() {
+		var researchID, snapshotID, conclusion string
+		var trials int
+		var payload string
+		var createdAtNS int64
+		if err := rows.Scan(&researchID, &snapshotID, &conclusion, &trials, &payload, &createdAtNS); err != nil {
+			return nil, err
+		}
+		summary := TraceSummary{
+			ResearchID: researchID, SnapshotID: snapshotID, Conclusion: conclusion,
+			DiscoveryTrials: trials, CreatedAt: time.Unix(0, createdAtNS),
+		}
+		if result, err := unmarshalTrace(payload); err == nil {
+			summary.CandidateCount = len(result.Candidates)
+			for _, c := range result.Candidates {
+				for _, ev := range c.ValidationEvidence {
+					if ev.Passable {
+						summary.PassableCount++
+					}
+				}
+			}
+			for _, b := range result.Boundaries {
+				summary.StockCodes = append(summary.StockCodes, b.Code)
+			}
+		}
+		summaries = append(summaries, summary)
+	}
+	return summaries, rows.Err()
+}
+
+func unmarshalTrace(payload string) (*discovery.Result, error) {
+	result := &discovery.Result{}
+	if err := json.Unmarshal([]byte(payload), result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}

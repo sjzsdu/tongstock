@@ -18,12 +18,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sjzsdu/tongstock/internal/adapter/automationrepo"
+	"github.com/sjzsdu/tongstock/internal/adapter/discoveryrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/marketsnapshotrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/methodregistryrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/paradigmrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/positiondecisionrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/selectionrepo"
+	"github.com/sjzsdu/tongstock/internal/adapter/stockpoolrepo"
 	"github.com/sjzsdu/tongstock/internal/agents"
+	"github.com/sjzsdu/tongstock/internal/app/discoveryapp"
 	"github.com/sjzsdu/tongstock/internal/app/stockdata"
 	"github.com/sjzsdu/tongstock/internal/automation"
 	"github.com/sjzsdu/tongstock/internal/ledger"
@@ -258,6 +261,19 @@ func NewApp(cfg *config.Config, opts Options) (_ *App, err error) {
 	app.api.SetAutomation(automationEngine, automationRuns)
 	app.api.StartAutomationScheduler(app.runCtx, marketSnapshots)
 	app.setModule("daily_automation", "ready", "")
+
+	// 规律发现应用服务：CLI 与 HTTP 共用同一 Runner。
+	discoverResolver, err := stockpoolrepo.NewResolver(app.storage)
+	if err != nil {
+		return nil, fmt.Errorf("初始化股票池解析器失败: %w", err)
+	}
+	discoverTraces, err := discoveryrepo.NewTraceRepository(app.storage)
+	if err != nil {
+		return nil, fmt.Errorf("初始化发现轨迹仓库失败: %w", err)
+	}
+	discoverRunner := discoveryapp.NewRunner(app.storage, discoverResolver)
+	app.api.SetDiscoverRunner(discoverRunner, discoverTraces)
+	app.setModule("discovery", "ready", "")
 
 	app.configureOptionalModules()
 	router := app.buildRouter()

@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	pinyin "github.com/mozillazg/go-pinyin"
+	"github.com/sjzsdu/tongstock/internal/adapter/discoveryrepo"
 	"github.com/sjzsdu/tongstock/internal/ai_tools"
+	"github.com/sjzsdu/tongstock/internal/app/discoveryapp"
 	"github.com/sjzsdu/tongstock/internal/app/stockdata"
 	"github.com/sjzsdu/tongstock/internal/automation"
 	"github.com/sjzsdu/tongstock/internal/experiment"
@@ -51,6 +53,8 @@ type Server struct {
 	positionRuns          positiondecision.Repository
 	automationEngine      *automation.Orchestrator
 	automationRuns        automation.Repository
+	discoverRunner        *discoveryapp.Runner
+	discoverTraces        *discoveryrepo.TraceRepository
 	paradigmSnapshots     *paradigm.DatasetSnapshotStore
 	experimentRegistry    *experiment.SQLiteRegistry
 	researchTools         *ai_tools.ToolRegistry
@@ -173,6 +177,12 @@ func (s *Server) SetPositionDecision(engine *positiondecision.Engine, runs posit
 }
 func (s *Server) SetAutomation(engine *automation.Orchestrator, runs automation.Repository) {
 	s.automationEngine, s.automationRuns = engine, runs
+}
+
+// SetDiscoverRunner registers the discovery application service and its trace
+// repository on the server instance.
+func (s *Server) SetDiscoverRunner(runner *discoveryapp.Runner, traces *discoveryrepo.TraceRepository) {
+	s.discoverRunner, s.discoverTraces = runner, traces
 }
 
 // SetLedger sets the signal ledger on the server instance.

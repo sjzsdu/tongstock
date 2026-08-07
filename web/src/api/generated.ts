@@ -177,6 +177,8 @@ export const operations = {
   postApiAutomationRun: { method: "POST", path: "/api/automation/run" },
   getApiAutomationJobs: { method: "GET", path: "/api/automation/jobs" },
   getApiAutomationOutbox: { method: "GET", path: "/api/automation/outbox" },
+  postApiDiscoverRun: { method: "POST", path: "/api/discover/run" },
+  getApiDiscoverTraces: { method: "GET", path: "/api/discover/traces" },
   postApiPositionDecisionsRun: { method: "POST", path: "/api/position-decisions/run" },
   getApiPositionDecisionsToday: { method: "GET", path: "/api/position-decisions/today" },
   getApiPositionDecisionRun: { method: "GET", path: "/api/position-decisions/runs/{id}" },
