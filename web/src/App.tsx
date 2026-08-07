@@ -11,7 +11,6 @@ import {
   SettingOutlined,
   StockOutlined,
   SafetyCertificateOutlined,
-  ToolOutlined,
   WalletOutlined,
   BlockOutlined,
   FormOutlined,
@@ -65,39 +64,68 @@ function RouteFallback() {
   );
 }
 
-// 高级工具菜单项
-const toolsMenuItems: MenuProps['items'] = [
-  {
-    key: 'tools-submenu',
-    icon: <ToolOutlined />,
-    label: '高级工具',
-    children: [
-      { key: '/agent', icon: <RobotOutlined />, label: <Link to="/agent">AI 助手</Link> },
-      { key: '/paradigms', icon: <RadarChartOutlined />, label: <Link to="/paradigms">范式库</Link> },
-      { key: '/monitoring', icon: <SafetyCertificateOutlined />, label: <Link to="/monitoring">范式监控</Link> },
-      { key: '/screen', icon: <SearchOutlined />, label: <Link to="/screen">信号筛选</Link> },
-      { key: '/stock/choose', icon: <StockOutlined />, label: <Link to="/stock/choose">个股分析</Link> },
-      { key: '/watchlist', icon: <HeartOutlined />, label: <Link to="/watchlist">自选股</Link> },
-      { key: '/blocks', icon: <BlockOutlined />, label: <Link to="/blocks">股票池</Link> },
-      { key: '/strategy/overnight', icon: <FormOutlined />, label: <Link to="/strategy/overnight">隔夜套利</Link> },
-      { key: '/news', icon: <FileTextOutlined />, label: <Link to="/news">财经资讯</Link> },
-      { key: '/settings', icon: <SettingOutlined />, label: <Link to="/settings">配置</Link> },
-    ],
-  },
+// 决策组：产品核心主流程，顶层平铺、零点击可见
+const decisionMenuItems: MenuProps['items'] = [
+  { key: '/', icon: <DashboardOutlined />, label: <Link to="/">今日决策</Link> },
+  { key: '/portfolio', icon: <WalletOutlined />, label: <Link to="/portfolio">持仓卖出</Link> },
+];
+
+// 方法研究组：可信方法、范式体系与 AI 研究入口
+const researchMenuItems: MenuProps['items'] = [
+  { key: '/methods', icon: <SafetyCertificateOutlined />, label: <Link to="/methods">可信方法</Link> },
+  { key: '/paradigms', icon: <RadarChartOutlined />, label: <Link to="/paradigms">范式库</Link> },
+  { key: '/monitoring', icon: <SafetyCertificateOutlined />, label: <Link to="/monitoring">范式监控</Link> },
+  { key: '/agent', icon: <RobotOutlined />, label: <Link to="/agent">AI 助手</Link> },
+];
+
+// 行情工具组：个股浏览与行情分析工具
+const marketMenuItems: MenuProps['items'] = [
+  { key: '/watchlist', icon: <HeartOutlined />, label: <Link to="/watchlist">自选股</Link> },
+  { key: '/stock/choose', icon: <StockOutlined />, label: <Link to="/stock/choose">个股分析</Link> },
+  { key: '/blocks', icon: <BlockOutlined />, label: <Link to="/blocks">股票池</Link> },
+  { key: '/screen', icon: <SearchOutlined />, label: <Link to="/screen">信号筛选</Link> },
+  { key: '/strategy/overnight', icon: <FormOutlined />, label: <Link to="/strategy/overnight">隔夜套利</Link> },
+  { key: '/news', icon: <FileTextOutlined />, label: <Link to="/news">财经资讯</Link> },
+];
+
+// 系统组：设置与扩展点
+const systemMenuItems: MenuProps['items'] = [
+  { key: '/settings', icon: <SettingOutlined />, label: <Link to="/settings">配置</Link> },
 ];
 
 const menuItems: MenuProps['items'] = [
-  { key: '/', icon: <DashboardOutlined />, label: <Link to="/">今日决策</Link> },
-  { key: '/portfolio', icon: <WalletOutlined />, label: <Link to="/portfolio">持仓卖出</Link> },
-  { key: '/methods', icon: <SafetyCertificateOutlined />, label: <Link to="/methods">可信方法</Link> },
-  ...toolsMenuItems,
+  ...decisionMenuItems,
+  { key: 'research-submenu', icon: <RadarChartOutlined />, label: '方法研究', children: researchMenuItems },
+  { key: 'market-submenu', icon: <StockOutlined />, label: '行情工具', children: marketMenuItems },
+  { key: 'system-submenu', icon: <SettingOutlined />, label: '系统', children: systemMenuItems },
 ];
+
+// 子菜单 key -> 组内成员路由，用于路由变化时自动展开所属分组
+const SUBMENU_BY_KEY: Record<string, string> = {
+  '/methods': 'research-submenu',
+  '/paradigms': 'research-submenu',
+  '/monitoring': 'research-submenu',
+  '/agent': 'research-submenu',
+  '/watchlist': 'market-submenu',
+  '/stock/choose': 'market-submenu',
+  '/blocks': 'market-submenu',
+  '/screen': 'market-submenu',
+  '/strategy/overnight': 'market-submenu',
+  '/news': 'market-submenu',
+  '/settings': 'system-submenu',
+};
+
+const DEFAULT_OPEN_KEYS = ['research-submenu', 'market-submenu'];
+
+function getParentKey(pathname: string): string | undefined {
+  return SUBMENU_BY_KEY[getSelectedKey(pathname)];
+}
 
 // 计算选中的菜单 key
 function getSelectedKey(pathname: string): string {
   if (pathname === '/') return '/';
   if (pathname.startsWith('/stock')) return '/stock/choose';
-  if (pathname.startsWith('/index')) return '/';
+  if (pathname.startsWith('/index')) return '/stock/choose';
   if (pathname.startsWith('/screen')) return '/screen';
   if (pathname.startsWith('/portfolio')) return '/portfolio';
   if (pathname.startsWith('/methods')) return '/methods';
@@ -116,6 +144,15 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [openKeys, setOpenKeys] = useState<string[]>(DEFAULT_OPEN_KEYS);
+
+  // 路由变化时自动展开选中项所属分组
+  useEffect(() => {
+    const parent = getParentKey(location.pathname);
+    if (parent) {
+      setOpenKeys((prev) => (prev.includes(parent) ? prev : [...prev, parent]));
+    }
+  }, [location.pathname]);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -163,6 +200,8 @@ function AppLayout({ children }: { children: React.ReactNode }) {
             mode="inline"
             theme="dark"
             selectedKeys={[selectedKey]}
+            openKeys={openKeys}
+            onOpenChange={setOpenKeys}
             items={menuItems}
             style={{ borderInlineEnd: 0, paddingTop: 8 }}
           />
@@ -264,7 +303,7 @@ function buildBreadcrumbs(pathname: string) {
     choose: '选择股票',
     watchlist: '自选股',
     screen: '信号筛选',
-    portfolio: '虚拟持仓',
+    portfolio: '持仓卖出',
     blocks: '股票池',
     settings: '配置',
     paradigms: '范式库',

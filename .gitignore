@@ -17,6 +17,8 @@ web/.vite
 
 # Local AI/config state
 .tt/
+.reasonix/
+reasonix.toml
 
 # Beads / Dolt files (added by bd init)
 .dolt/
