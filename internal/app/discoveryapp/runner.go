@@ -6,6 +6,7 @@ package discoveryapp
 import (
 	"context"
 	"fmt"
+	"log"
 	"slices"
 	"strings"
 	"time"
@@ -84,14 +85,16 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (*discovery.Result, er
 	}
 
 	snapshotID := strings.TrimSpace(req.SnapshotID)
+	researchCodes := codes
 	if snapshotID == "" {
-		start, end, err := resolveRealRange(ctx, r.store, codes)
+		start, end, used, err := resolveRealRange(ctx, r.store, codes)
 		if err != nil {
 			return nil, err
 		}
+		researchCodes = used
 		snapshotID = fmt.Sprintf("discovery-%d", time.Now().UTC().UnixNano())
 		snapshot := &paradigm.DatasetSnapshot{
-			ID: snapshotID, Version: "discovery-v1", Universe: codes,
+			ID: snapshotID, Version: "discovery-v1", Universe: used,
 			DateRange: paradigm.DateRange{Start: start, End: end}, Market: "A",
 			PriceAdjustment: paradigm.PriceRaw,
 			Description:     "AI discovery auto-frozen real daily K-lines",
@@ -109,7 +112,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (*discovery.Result, er
 		return nil, err
 	}
 	result, err := researcher.Run(ctx, discovery.Request{
-		SnapshotID: snapshotID, StockCodes: codes, Question: req.Question,
+		SnapshotID: snapshotID, StockCodes: researchCodes, Question: req.Question,
 		HoldDays: req.HoldDays, SearchBudget: req.SearchBudget,
 	})
 	if err != nil {
@@ -168,9 +171,24 @@ func (r *Runner) missingCodes(ctx context.Context, codes []string) ([]string, er
 	return missing, nil
 }
 
+// codeSpan 描述一只股票的有效日 K 日期跨度。
+type codeSpan struct {
+	code string
+	min  string // 20060102
+	max  string
+}
+
 // resolveRealRange 计算多只股票共享的真实日 K 公共区间，并限制在最近 4 年内。
-func resolveRealRange(ctx context.Context, store *storage.Storage, codes []string) (string, string, error) {
-	commonStart, commonEnd := "", "99999999"
+// 无有效数据的股票被跳过；若共享区间不足（存在次新股/退市股拖后腿），
+// 则按历史跨度从短到长迭代剔除，直到剩余股票拥有足够长的公共区间。
+// 返回区间与最终参与研究的代码列表。
+func resolveRealRange(ctx context.Context, store *storage.Storage, codes []string) (string, string, []string, error) {
+	type span struct {
+		code string
+		min  string // 20060102
+		max  string
+	}
+	spans := make([]codeSpan, 0, len(codes))
 	for _, code := range codes {
 		var minDate, maxDate string
 		err := store.DB().QueryRowContext(ctx, `SELECT
@@ -179,27 +197,72 @@ func resolveRealRange(ctx context.Context, store *storage.Storage, codes []strin
 			AND volume > 0 AND length(REPLACE(date, '-', '')) = 8
 			AND REPLACE(date, '-', '') BETWEEN '19900101' AND '20991231'`, code).Scan(&minDate, &maxDate)
 		if err != nil || minDate == "" || maxDate == "" {
-			return "", "", fmt.Errorf("no valid real daily K-lines for %s", code)
+			log.Printf("discover: 跳过无有效真实日K的股票 %s", code)
+			continue
 		}
-		if minDate > commonStart {
-			commonStart = minDate
+		spans = append(spans, codeSpan{code: code, min: minDate, max: maxDate})
+	}
+	if len(spans) == 0 {
+		return "", "", nil, fmt.Errorf("no stock has valid real daily K-lines")
+	}
+
+	// 最小共享区间：约 300 个自然日，保证研究至少有一定样本（单股票例外，允许短历史）。
+	const minSharedDays = 300
+	for {
+		commonStart, commonEnd := "", "99999999"
+		for _, sp := range spans {
+			if sp.min > commonStart {
+				commonStart = sp.min
+			}
+			if sp.max < commonEnd {
+				commonEnd = sp.max
+			}
 		}
-		if maxDate < commonEnd {
-			commonEnd = maxDate
+		endTime, err := time.Parse("20060102", commonEnd)
+		if err != nil {
+			return "", "", nil, err
 		}
+		defaultStart := endTime.AddDate(-4, 0, 0).Format("20060102")
+		if defaultStart > commonStart {
+			commonStart = defaultStart
+		}
+		if commonStart < commonEnd && (len(spans) == 1 || daysBetween(commonStart, commonEnd) >= minSharedDays) {
+			used := make([]string, 0, len(spans))
+			for _, sp := range spans {
+				used = append(used, sp.code)
+			}
+			slices.Sort(used)
+			return formatRangeDate(commonStart), formatRangeDate(commonEnd), used, nil
+		}
+		if len(spans) <= 1 {
+			return "", "", nil, fmt.Errorf("stocks do not share a sufficient real-data date range")
+		}
+		// 剔除历史跨度最短的股票（次新/退市/停牌最可能拖后腿）。
+		slices.SortFunc(spans, func(a, b codeSpan) int { return cmpSpanDays(a, b) })
+		log.Printf("discover: 排除历史不足的股票 %s (最早 %s)", spans[0].code, spans[0].min)
+		spans = spans[1:]
 	}
-	endTime, err := time.Parse("20060102", commonEnd)
-	if err != nil {
-		return "", "", err
+}
+
+func daysBetween(a, b string) int {
+	ta, errA := time.Parse("20060102", a)
+	tb, errB := time.Parse("20060102", b)
+	if errA != nil || errB != nil {
+		return 0
 	}
-	defaultStart := endTime.AddDate(-4, 0, 0).Format("20060102")
-	if defaultStart > commonStart {
-		commonStart = defaultStart
+	return int(tb.Sub(ta).Hours() / 24)
+}
+
+func cmpSpanDays(a, b codeSpan) int {
+	da := daysBetween(a.min, a.max)
+	db := daysBetween(b.min, b.max)
+	if da < db {
+		return -1
 	}
-	if commonStart >= commonEnd {
-		return "", "", fmt.Errorf("stocks do not share a sufficient real-data date range")
+	if da > db {
+		return 1
 	}
-	return formatRangeDate(commonStart), formatRangeDate(commonEnd), nil
+	return 0
 }
 
 func formatRangeDate(value string) string {
