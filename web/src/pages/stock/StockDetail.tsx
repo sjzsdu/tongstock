@@ -45,6 +45,7 @@ export default function StockDetail() {
   const [dividends, setDividends] = useState<XdXrItem[]>([]);
   const [fullscreen, setFullscreen] = useState(false);
   const [agentPanelOpen, setAgentPanelOpen] = useState(false);
+  const [paradigmCached, setParadigmCached] = useState(false);
   const [newsFeed, setNewsFeed] = useState<NewsSummary[]>([]);
   const [newsLoading, setNewsLoading] = useState(false);
 
@@ -69,6 +70,23 @@ export default function StockDetail() {
     if (tab === 'dividend') api.xdxr(code).then((d) => setDividends([...d].reverse())).catch(() => {});
     if (tab === 'intraday') api.finance(code).then(() => {}).catch(() => {});
   }, [code, tab, detailStatus]);
+
+  // 查询该股票是否已有范式挖掘缓存:缓存过才显示"重新挖掘"按钮
+  useEffect(() => {
+    if (!code || detailStatus !== 'ready') return;
+    let cancelled = false;
+    api.paradigmListByStock(code)
+      .then((r) => {
+        if (!cancelled) setParadigmCached((r.total ?? r.paradigms?.length ?? 0) > 0);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [code, detailStatus]);
+
+  // 挖掘成功(或命中缓存)后,该股票即视为已有缓存
+  useEffect(() => {
+    if (paradigmResult) setParadigmCached(true);
+  }, [paradigmResult]);
 
   const switchTab = (nextTab: Tab) => {
     setTab(nextTab);
@@ -123,6 +141,7 @@ export default function StockDetail() {
               setParadigmDrawerOpen(true);
               void analyzeParadigm(code, quote.Name, true);
             }}
+            hasParadigmCache={paradigmCached}
           />
         )}
 

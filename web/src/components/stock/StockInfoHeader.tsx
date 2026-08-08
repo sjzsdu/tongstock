@@ -17,6 +17,8 @@ interface StockInfoHeaderProps {
   onAgentClick: () => void;
   onParadigmClick: () => void;
   onParadigmRefresh: () => void;
+  /** 该股票是否已有挖掘缓存;仅缓存过才显示"重新挖掘"按钮 */
+  hasParadigmCache?: boolean;
 }
 
 export function StockInfoHeader({
@@ -32,6 +34,7 @@ export function StockInfoHeader({
   onAgentClick,
   onParadigmClick,
   onParadigmRefresh,
+  hasParadigmCache = false,
 }: StockInfoHeaderProps) {
   const syncStatus = getSyncStatusPresentation(syncState?.status || 'unknown');
   return (
@@ -90,12 +93,14 @@ export function StockInfoHeader({
         >
           范式挖掘
         </Button>
-        <Button
-          icon={<SyncOutlined />}
-          onClick={onParadigmRefresh}
-        >
-          重新挖掘
-        </Button>
+        {hasParadigmCache && (
+          <Button
+            icon={<SyncOutlined />}
+            onClick={onParadigmRefresh}
+          >
+            重新挖掘
+          </Button>
+        )}
       </Flex>
     </Card>
   );
