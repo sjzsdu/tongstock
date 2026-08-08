@@ -133,14 +133,14 @@ export default function Portfolio() {
                 value={totalProfit}
                 precision={2}
                 prefix="¥"
-                valueStyle={{ color: totalProfit >= 0 ? '#22c55e' : '#ef4444' }}
+                valueStyle={{ color: totalProfit >= 0 ? '#ef4444' : '#22c55e' }}
               />
               <Statistic
                 title="盈亏比例"
                 value={totalProfitPct}
                 precision={2}
                 suffix="%"
-                valueStyle={{ color: totalProfitPct >= 0 ? '#22c55e' : '#ef4444' }}
+                valueStyle={{ color: totalProfitPct >= 0 ? '#ef4444' : '#22c55e' }}
               />
               <Statistic
                 title="盈利占比"
@@ -208,7 +208,7 @@ export default function Portfolio() {
                       <Text code style={{ fontSize: 14, flexShrink: 0 }}>{position.code}</Text>
                       <Text strong style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>{position.name}</Text>
                     </Space>
-                    <Tag color={isProfit ? 'green' : 'red'} style={{ flexShrink: 0 }}>
+                    <Tag color={isProfit ? 'red' : 'green'} style={{ flexShrink: 0 }}>
                       {isProfit ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
                       {isProfit ? `+${profitPct.toFixed(2)}%` : `${profitPct.toFixed(2)}%`}
                     </Tag>
@@ -220,13 +220,13 @@ export default function Portfolio() {
                   </Flex>
                   <Flex justify="space-between" style={{ marginBottom: 8 }}>
                     <Text type="secondary" style={{ width: 80 }}>当前价格</Text>
-                    <Text strong style={{ fontVariantNumeric: 'tabular-nums', textAlign: 'right', flex: 1, color: isProfit ? '#22c55e' : '#ef4444' }}>
+                    <Text strong style={{ fontVariantNumeric: 'tabular-nums', textAlign: 'right', flex: 1, color: isProfit ? '#ef4444' : '#22c55e' }}>
                       ¥{currentPrice.toFixed(2)}
                     </Text>
                   </Flex>
                   <Flex justify="space-between" style={{ marginBottom: 12 }}>
                     <Text type="secondary" style={{ width: 80 }}>盈亏金额</Text>
-                    <Text style={{ fontVariantNumeric: 'tabular-nums', textAlign: 'right', flex: 1, color: isProfit ? '#22c55e' : '#ef4444' }}>
+                    <Text style={{ fontVariantNumeric: 'tabular-nums', textAlign: 'right', flex: 1, color: isProfit ? '#ef4444' : '#22c55e' }}>
                       {isProfit ? '+' : ''}¥{profit.toFixed(2)}
                     </Text>
                   </Flex>

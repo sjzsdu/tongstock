@@ -86,7 +86,7 @@ export function OvernightTradeModal({
         {currentTradeAction === 'sell' && currentTrade && (
           <div>
             <Text type="secondary" style={{ fontSize: 12 }}>预估盈亏</Text>
-            <div style={{ fontSize: 16, color: profit >= 0 ? '#22c55e' : '#ef4444' }}>
+            <div style={{ fontSize: 16, color: profit >= 0 ? '#ef4444' : '#22c55e' }}>
               {profit >= 0 ? `+${profit.toFixed(2)}%` : `${profit.toFixed(2)}%`}
             </div>
           </div>

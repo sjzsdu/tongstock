@@ -77,7 +77,7 @@ export default function Paradigms() {
   const columns: ColumnsType<ParadigmItem> = [
     { title: '股票', width: 150, render: (_, r) => <span>{r.stock_name || r.stock_code}<br /><Typography.Text type="secondary">{r.stock_code}</Typography.Text></span> },
     { title: '范式', dataIndex: 'name', width: 460, render: renderParadigmSummary },
-    { title: '方向', dataIndex: 'side', width: 80, render: v => <Tag color={v === 'sell' ? 'red' : 'green'}>{v}</Tag> },
+    { title: '方向', dataIndex: 'side', width: 80, render: v => <Tag color={v === 'sell' ? 'green' : 'red'}>{v}</Tag> },
     { title: '可靠性', width: 120, render: (_, r) => <Tag color={reliabilityColor[r.validation?.reliability_label || '']}>{r.validation?.reliability_label || '-'}</Tag> },
     { title: '复盘', width: 110, render: (_, r) => <Space direction="vertical" size={0}><span>{r.review_status || 'pending'}</span>{typeof r.actual_return === 'number' && <Typography.Text type="secondary">{r.actual_return.toFixed(2)}%</Typography.Text>}</Space> },
     { title: '更新时间', dataIndex: 'updated_at', width: 180, render: v => v ? new Date(v).toLocaleString() : '-' },

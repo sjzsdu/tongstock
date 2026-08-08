@@ -73,7 +73,7 @@ export function StockListTable({
       dataIndex: 'changePct',
       width: 100,
       render: (pct?: number) => pct !== undefined ? (
-        <Typography.Text type={pct >= 0 ? 'success' : 'danger'}>
+        <Typography.Text type={pct >= 0 ? 'danger' : 'success'}>
           {pct >= 0 ? '+' : ''}{pct.toFixed(2)}
         </Typography.Text>
       ) : '-',

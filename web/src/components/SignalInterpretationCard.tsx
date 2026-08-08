@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   AlertOutlined,
   BulbOutlined,
+  CheckCircleOutlined,
   InfoCircleOutlined,
-  RiseOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
 import {
@@ -40,7 +40,7 @@ function getRiskColor(level: string) {
 function getRiskIcon(level: string) {
   switch (level) {
     case 'low':
-      return <RiseOutlined style={{ color: '#22c55e' }} />;
+      return <CheckCircleOutlined style={{ color: '#22c55e' }} />;
     case 'medium':
       return <InfoCircleOutlined style={{ color: '#f97316' }} />;
     case 'high':
