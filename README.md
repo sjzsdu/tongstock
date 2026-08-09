@@ -149,44 +149,6 @@ pnpm dev           # 启动开发服务器，默认代理到 localhost:8080
 - `bond` - 债券
 - `index` - 指数
 
-### 查询K线数据
-
-```bash
-# 日K
-./tongstock kline --code 000001 --type day
-
-# 周K
-./tongstock kline --code 000001 --type week
-
-# 月K
-./tongstock kline --code 000001 --type month
-
-# 1分钟K
-./tongstock kline --code 000001 --type 1m
-
-# 5分钟K
-./tongstock kline --code 000001 --type 5m
-
-# 季K
-./tongstock kline --code 000001 --type quarter
-
-# 年K
-./tongstock kline --code 000001 --type year
-
-# 获取全部历史K线
-./tongstock kline --code 000001 --type day --all
-```
-
-### 查询分时数据
-
-```bash
-# 查询当日分时数据
-./tongstock minute 000001
-
-# 查询历史分时数据 (需要指定日期)
-./tongstock minute 000001 --history --date 20250314
-```
-
 ### 查询证券数量
 
 ```bash
@@ -207,53 +169,12 @@ pnpm dev           # 启动开发服务器，默认代理到 localhost:8080
 ./tongstock auction 000001
 ```
 
-### 查询分笔成交
+### 行情数据查询入口
 
-```bash
-# 查询当日分笔成交
-./tongstock trade 000001
-
-# 查询历史分笔成交 (需要指定日期)
-./tongstock trade 000001 --history --date 20240315
-```
-
-### 查询除权除息
-
-```bash
-./tongstock xdxr 000001
-```
-
-### 查询财务数据
-
-```bash
-./tongstock finance 000001
-```
-
-### 查询指数K线
-
-```bash
-# 上证指数日K
-./tongstock index --code 999999 --type day
-
-# 沪深300 5分钟K
-./tongstock index --code 399300 --type 5m
-```
-
-### 查询公司信息(F10)
-
-```bash
-# 查询公司信息目录
-./tongstock company 000001
-
-# 查询公司信息具体内容
-./tongstock company-content 000001
-
-# 通过块名称查询特定内容
-./tongstock company-content 000001 --block "公司概况"
-
-# 指定起始位置和长度
-./tongstock company-content 000001 --start 30744 --length 9560
-```
+K线、分时、分笔、除权除息、财务、指数 K 线、F10 公司信息等数据已统一走 HTTP API，
+请通过 Web 界面（`/stock/:code` 个股详情、`/index/:code` 指数详情）或 `./tongstock server`
+提供的 REST 接口查询；CLI 保留 `quote/codes/indicator/screen/block/count/auction` 等
+轻量查询命令。
 
 ### 查询板块分类
 
@@ -500,7 +421,7 @@ CLI 使用同名全局参数，例如：
 
 ```bash
 ./tongstock quote 000001 --consistency=cache_only
-./tongstock finance 000001 --refresh
+./tongstock indicator --code 000001 --type day --refresh
 ```
 
 ## 配置
