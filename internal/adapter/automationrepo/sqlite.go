@@ -31,7 +31,22 @@ func (r *SQLiteRepository) Claim(ctx context.Context, key, snapshot string) (*au
 			return &j, false, nil
 		}
 		if j.Status == "running" {
-			return &j, false, automation.ErrBusy
+			if time.Since(j.StartedAt) <= automation.StaleJobTimeout {
+				return &j, false, automation.ErrBusy
+			}
+			// 运行超时（进程崩溃/卡死）：条件更新标记为 failed，仅接管自己这行，
+			// 避免并发下两个任务同时处理同一快照。
+			staleErr := "stale: taken over after " + automation.StaleJobTimeout.String()
+			res, uerr := r.db.ExecContext(ctx, `UPDATE automation_job_run SET status='failed', error=?, finished_at_ns=?
+				WHERE idempotency_key=? AND status='running' AND started_at_ns<=?`,
+				staleErr, time.Now().UnixNano(), key, j.StartedAt.Add(automation.StaleJobTimeout).UnixNano())
+			if uerr != nil {
+				return nil, false, uerr
+			}
+			if n, _ := res.RowsAffected(); n == 0 {
+				return &j, false, automation.ErrBusy // 已被并发接管
+			}
+			// 继续走下方 INSERT ... ON CONFLICT 重试（attempt+1）
 		}
 	} else if err != sql.ErrNoRows {
 		return nil, false, err
@@ -86,8 +101,7 @@ func (r *SQLiteRepository) ListJobs(ctx context.Context, limit int) ([]automatio
 	}
 	return out, rows.Err()
 }
-func (r *SQLiteRepository) ListEvents(ctx context.Context, status string, limit int) ([]automation.Event, error) {
-	if limit <= 0 {
+func (r *SQLiteRepository) ListEvents(ctx context.Context, status string, limit int) ([]automation.Event, error) {	if limit <= 0 {
 		limit = 100
 	}
 	q := `SELECT event_key,job_id,event_type,priority,payload_json,status,created_at_ns FROM automation_outbox`
@@ -116,6 +130,20 @@ func (r *SQLiteRepository) ListEvents(ctx context.Context, status string, limit 
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// Unlock 强制释放指定快照的自动化任务锁：把其 running 任务标记为 failed
+// （错误注明人工解锁），下一次 Claim 会正常重试。用于人工干预卡死任务。
+func (r *SQLiteRepository) Unlock(ctx context.Context, snapshotID string) (bool, error) {
+	key := automation.Version + ":" + snapshotID
+	res, err := r.db.ExecContext(ctx, `UPDATE automation_job_run SET status='failed', error=?, finished_at_ns=?
+		WHERE idempotency_key=? AND status='running'`,
+		"manually unlocked", time.Now().UnixNano(), key)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 var _ automation.Repository = (*SQLiteRepository)(nil)

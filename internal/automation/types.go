@@ -8,6 +8,10 @@ import (
 
 const Version = "daily-automation-v1"
 
+// StaleJobTimeout 是自动化任务锁的过期阈值：一个 running 任务超过该时长
+// 未完成（进程崩溃/panic/卡死），Claim 将自动接管并重试，避免永久占锁。
+const StaleJobTimeout = 30 * time.Minute
+
 var ErrBusy = errors.New("automation job is already running")
 
 type Job struct {

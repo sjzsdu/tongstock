@@ -53,7 +53,44 @@ var automationRunCmd = &cobra.Command{Use: "run [snapshot_id]", Short: "幂等�
 	return enc.Encode(j)
 }}
 
-func init() { automationCmd.AddCommand(automationRunCmd); rootCmd.AddCommand(automationCmd) }
+var automationUnlockCmd = &cobra.Command{
+	Use:   "unlock <snapshot_id>",
+	Short: "强制释放卡死的自动化任务锁（标记为 failed，下次 run 自动重试）",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			cfg = config.DefaultConfig()
+		}
+		s, err := storage.New(storage.Config{Driver: cfg.Database.Driver, DSN: cfg.Database.DSN})
+		if err != nil {
+			return err
+		}
+		defer s.Close()
+		if err = s.Migrate(); err != nil {
+			return err
+		}
+		r, err := automationrepo.New(s)
+		if err != nil {
+			return err
+		}
+		unlocked, err := r.Unlock(cmd.Context(), args[0])
+		if err != nil {
+			return err
+		}
+		if !unlocked {
+			fmt.Printf("快照 %s 没有 running 中的任务锁，无需解锁\n", args[0])
+			return nil
+		}
+		fmt.Printf("已释放快照 %s 的任务锁（原任务标记为 failed），可重新运行 automation run\n", args[0])
+		return nil
+	},
+}
+
+func init() {
+	automationCmd.AddCommand(automationRunCmd, automationUnlockCmd)
+	rootCmd.AddCommand(automationCmd)
+}
 func wireAutomation() (*storage.Storage, *marketsnapshotrepo.SQLiteRepository, *automation.Orchestrator, error) {
 	cfg, err := config.Load()
 	if err != nil {
