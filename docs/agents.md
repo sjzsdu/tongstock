@@ -24,7 +24,7 @@ export DEEPSEEK_API_KEY="your-api-key"
 ./tongstock server
 ```
 
-`api_key_env` 推荐显式填写。省略时，TongStock 会对 `openai`、`anthropic`、`deepseek`、`openrouter` 和 `zhipu` 使用各自的标准 API Key 环境变量。OpenAI 兼容的本地或私有服务可额外配置 `api_base`。
+`api_key_env` 推荐显式填写。省略时，TongStock 会对 `openai`、`anthropic`、`deepseek`、`openrouter` 和 `zhipu` 使用各自的标准 API Key 环境变量。远程 provider 必须能从该环境变量读到非空密钥，否则启动诊断会明确报错。`ollama`、`vllm`、`lmstudio`、`gpt4free`、`claude-cli` 和 `codex-cli` 作为本地 provider，可以不配置密钥。OpenAI 兼容的本地或私有服务可额外配置 `api_base`。
 
 ## 添加自定义 Agent
 
@@ -58,6 +58,8 @@ no_history: false
 ```
 
 自定义定义与内建 Agent 使用同一个注册表。若 `id` 相同，自定义定义覆盖内建定义，因此既能新增 Agent，也能在不修改源码的情况下调整内建角色。
+
+`agent_paths` 按配置中的先后顺序加载，后面的路径覆盖前面的路径。目录内部按相对路径字典序递归加载，因此同一目录中路径字典序更靠后的文件覆盖更早的文件。最终返回列表会按 Agent ID 排序，但该排序不改变覆盖优先级。配置文件中的 `agent_paths` 是全量列表，不与默认值叠加；空字符串会被忽略，符号链接目录会解析到目标目录后加载。
 
 ## PicoClaw 兼容迁移
 

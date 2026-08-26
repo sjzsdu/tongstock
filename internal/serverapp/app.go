@@ -240,7 +240,7 @@ func (a *App) configureOptionalModules() {
 			StockAgent: a.cfg.Agent.StockAgent,
 		}); err != nil {
 			log.Printf("agent initialization degraded: %v", err)
-			a.setModule("agent", "degraded", "agent initialization failed")
+			a.setModule("agent", "degraded", err.Error())
 		} else {
 			a.setModule("agent", "ready", "")
 		}

@@ -14,6 +14,7 @@ func TestAgentConfigEffectiveBackend(t *testing.T) {
 	}{
 		{name: "native default", cfg: AgentConfig{}, want: AgentBackendBuiltin},
 		{name: "explicit native", cfg: AgentConfig{Backend: " BUILTIN "}, want: AgentBackendBuiltin},
+		{name: "explicit native wins over legacy paths", cfg: AgentConfig{Backend: "builtin", Home: "~/.picoclaw"}, want: AgentBackendBuiltin},
 		{name: "explicit legacy", cfg: AgentConfig{Backend: "picoclaw"}, want: AgentBackendPicoClaw},
 		{name: "legacy home migration", cfg: AgentConfig{Home: "~/.picoclaw"}, want: AgentBackendPicoClaw},
 		{name: "legacy config migration", cfg: AgentConfig{Config: "~/.picoclaw/config.json"}, want: AgentBackendPicoClaw},

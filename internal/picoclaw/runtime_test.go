@@ -2,6 +2,7 @@ package picoclaw
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -34,7 +35,46 @@ func TestLoadBuiltinBuildsRuntimeWithoutPicoClawConfigFile(t *testing.T) {
 }
 
 func TestLoadBuiltinRequiresModel(t *testing.T) {
-	if _, err := Load(Options{Backend: "builtin"}); err == nil {
-		t.Fatal("expected model validation error")
+	_, err := Load(Options{Backend: "builtin"})
+	if err == nil || !strings.Contains(err.Error(), "agent.model") {
+		t.Fatalf("error = %v, want explicit agent.model diagnostic", err)
+	}
+}
+
+func TestLoadBuiltinRequiresProvider(t *testing.T) {
+	_, err := Load(Options{Backend: "builtin", Model: "test-model"})
+	if err == nil || !strings.Contains(err.Error(), "agent.provider") {
+		t.Fatalf("error = %v, want explicit agent.provider diagnostic", err)
+	}
+}
+
+func TestLoadBuiltinRequiresRemoteProviderAPIKeyConfiguration(t *testing.T) {
+	_, err := Load(Options{Backend: "builtin", Provider: "remote-compatible", Model: "test-model"})
+	if err == nil || !strings.Contains(err.Error(), "agent.api_key_env") {
+		t.Fatalf("error = %v, want api_key_env diagnostic", err)
+	}
+}
+
+func TestLoadBuiltinRejectsMissingAPIKeyEnvironmentValue(t *testing.T) {
+	t.Setenv("MISSING_AGENT_KEY", "")
+	_, err := Load(Options{
+		Backend: "builtin", Provider: "openai", Model: "test-model", APIKeyEnv: "MISSING_AGENT_KEY",
+	})
+	if err == nil || !strings.Contains(err.Error(), "MISSING_AGENT_KEY") {
+		t.Fatalf("error = %v, want missing environment variable diagnostic", err)
+	}
+}
+
+func TestLoadBuiltinAllowsKeylessLocalProviders(t *testing.T) {
+	for _, provider := range []string{"ollama", "vllm", "lmstudio", "gpt4free", "claude-cli", "codex-cli"} {
+		t.Run(provider, func(t *testing.T) {
+			rt, err := Load(Options{Backend: "builtin", Home: t.TempDir(), Provider: provider, Model: "test-model"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := rt.Config.ModelList[0].APIKey(); got != "" {
+				t.Fatalf("APIKey() = %q, want empty", got)
+			}
+		})
 	}
 }

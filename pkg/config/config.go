@@ -51,11 +51,13 @@ type DatabaseConfig struct {
 
 // AgentConfig AI Agent 配置
 type AgentConfig struct {
-	Enabled    bool     `yaml:"enabled"`
-	Backend    string   `yaml:"backend"`
-	Provider   string   `yaml:"provider"`
-	APIBase    string   `yaml:"api_base"`
-	APIKeyEnv  string   `yaml:"api_key_env"`
+	Enabled   bool   `yaml:"enabled"`
+	Backend   string `yaml:"backend"`
+	Provider  string `yaml:"provider"`
+	APIBase   string `yaml:"api_base"`
+	APIKeyEnv string `yaml:"api_key_env"`
+	// AgentPaths is an ordered, file-level replacement list. It does not merge
+	// with defaults when a configuration file supplies one or more paths.
 	AgentPaths []string `yaml:"agent_paths"`
 	Model      string   `yaml:"model"`
 	Agent      string   `yaml:"agent"`
@@ -231,6 +233,8 @@ func Load() (*Config, error) {
 		merged.Agent.APIKeyEnv = tmp.Agent.APIKeyEnv
 	}
 	if len(tmp.Agent.AgentPaths) > 0 {
+		// A configured list intentionally replaces the default list. Path order is
+		// significant because later custom agent definitions override earlier ones.
 		merged.Agent.AgentPaths = append([]string(nil), tmp.Agent.AgentPaths...)
 	}
 	if tmp.Agent.Agent != "" {

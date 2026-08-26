@@ -33,6 +33,7 @@ type Server struct {
 	stockSearchIndexCache stockSearchIndexCache
 	agentState            *AgentState
 	agentListFunc         func() ([]EmbeddedAgent, error)
+	agentInitError        string
 	paradigmStore         *paradigms.Store
 	paradigmAlertMu       sync.RWMutex
 	paradigmAlertCache    []paradigmAlert

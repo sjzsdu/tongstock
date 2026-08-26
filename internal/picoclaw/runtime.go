@@ -67,13 +67,16 @@ func loadPicoClaw(opt Options) (*Runtime, error) {
 func loadBuiltin(opt Options) (*Runtime, error) {
 	model := str(opt.Model)
 	if model == "" {
-		return nil, fmt.Errorf("agent.model is required for builtin backend")
+		return nil, fmt.Errorf("agent.model is required when agent backend resolves to builtin; configure agent.model or set backend: picoclaw")
 	}
 	home := str(opt.Home)
 	if home == "" {
 		home = defaultBuiltinHome()
 	}
 	provider := strings.ToLower(str(opt.Provider))
+	if provider == "" {
+		return nil, fmt.Errorf("agent.provider is required for builtin backend")
+	}
 	apiKeyEnv := str(opt.APIKeyEnv)
 	if apiKeyEnv == "" {
 		apiKeyEnv = defaultAPIKeyEnv(provider)
@@ -81,6 +84,11 @@ func loadBuiltin(opt Options) (*Runtime, error) {
 	apiKey := ""
 	if apiKeyEnv != "" {
 		apiKey = strings.TrimSpace(os.Getenv(apiKeyEnv))
+		if apiKey == "" {
+			return nil, fmt.Errorf("agent api key environment variable %s is not set or is empty", apiKeyEnv)
+		}
+	} else if !providerAllowsEmptyAPIKey(provider) {
+		return nil, fmt.Errorf("agent.api_key_env is required for remote provider %q", provider)
 	}
 
 	cfg := pcconfig.DefaultConfig()
@@ -121,8 +129,19 @@ func defaultAPIKeyEnv(provider string) string {
 		return "OPENROUTER_API_KEY"
 	case "zhipu":
 		return "ZHIPU_API_KEY"
+	case "ollama", "vllm", "lmstudio", "gpt4free", "claude-cli", "codex-cli":
+		return ""
 	default:
 		return ""
+	}
+}
+
+func providerAllowsEmptyAPIKey(provider string) bool {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "ollama", "vllm", "lmstudio", "gpt4free", "claude-cli", "codex-cli":
+		return true
+	default:
+		return false
 	}
 }
 

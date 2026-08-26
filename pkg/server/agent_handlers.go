@@ -132,7 +132,13 @@ func (s *Server) InitAgentState(home, configPath, model, agentID, stockAgent, wo
 
 // InitAgentStateWithOptions initializes the selected runtime backend. Agent
 // definitions are owned by TongStock and supplied through SetAgentLister.
-func (s *Server) InitAgentStateWithOptions(opt AgentRuntimeOptions) error {
+func (s *Server) InitAgentStateWithOptions(opt AgentRuntimeOptions) (err error) {
+	s.agentInitError = ""
+	defer func() {
+		if err != nil {
+			s.agentInitError = err.Error()
+		}
+	}()
 	if opt.Workspace == "" {
 		workspace, _ := os.Getwd()
 		opt.Workspace = workspace
@@ -211,10 +217,22 @@ type agentDiagnosticResponse struct {
 }
 
 func (s *Server) handleAgentDiagnose(c *gin.Context) {
-	resp := agentDiagnosticResponse{Enabled: s.agentState != nil, Ready: s.agentState != nil && s.agentState.runner != nil}
-	if s.agentState == nil {
-		resp.Errors = append(resp.Errors, "agent service is not initialized")
-		resp.Hints = append(resp.Hints, "在 ~/.tongstock/config.yaml 中启用 agent.enabled，并配置 provider/model/api_key_env")
+	resp := agentDiagnosticResponse{
+		Enabled: s.agentState != nil || s.agentInitError != "",
+		Ready:   s.agentState != nil && s.agentState.runner != nil,
+	}
+	if s.agentState == nil || s.agentState.runner == nil {
+		if s.agentInitError != "" {
+			resp.Errors = append(resp.Errors, s.agentInitError)
+			if strings.Contains(s.agentInitError, "agent.model") {
+				resp.Hints = append(resp.Hints, "内建后端需要配置 agent.model；如需沿用 PicoClaw，请设置 backend: picoclaw 或保留 home/config")
+			} else if strings.Contains(s.agentInitError, "api key") || strings.Contains(s.agentInitError, "api_key_env") {
+				resp.Hints = append(resp.Hints, "远程 provider 需要有效的 agent.api_key_env；Ollama、vLLM、LM Studio 等本地 provider 可不配置密钥")
+			}
+		} else {
+			resp.Errors = append(resp.Errors, "agent service is not initialized")
+			resp.Hints = append(resp.Hints, "在 ~/.tongstock/config.yaml 中启用 agent.enabled，并配置 provider/model/api_key_env")
+		}
 		c.JSON(http.StatusOK, resp)
 		return
 	}

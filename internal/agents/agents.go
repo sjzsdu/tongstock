@@ -4,6 +4,7 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -61,19 +62,23 @@ func ListWithPaths(customPaths []string) ([]pcwrap.EmbeddedAgent, error) {
 		if path == "" {
 			continue
 		}
-		info, err := os.Stat(path)
+		resolvedPath, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return nil, fmt.Errorf("resolve agent path %s failed: %w", path, err)
+		}
+		info, err := os.Stat(resolvedPath)
 		if err != nil {
 			return nil, fmt.Errorf("read agent path %s failed: %w", path, err)
 		}
 		if !info.IsDir() {
-			agent, err := loadMarkdownAgentFile(path)
+			agent, err := loadMarkdownAgentFile(resolvedPath)
 			if err != nil {
 				return nil, err
 			}
 			agents = append(agents, agent)
 			continue
 		}
-		err = filepath.WalkDir(path, func(filePath string, entry fs.DirEntry, walkErr error) error {
+		err = filepath.WalkDir(resolvedPath, func(filePath string, entry fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
 			}
@@ -100,6 +105,7 @@ func mergeAgents(items []pcwrap.EmbeddedAgent) []pcwrap.EmbeddedAgent {
 	for _, agent := range items {
 		key := strings.ToLower(agent.ID)
 		if idx, exists := indexByID[key]; exists {
+			log.Printf("agent %q overridden by later definition", agent.ID)
 			agents[idx] = agent
 		} else {
 			indexByID[key] = len(agents)
@@ -155,6 +161,9 @@ func loadMarkdownAgentFS(source fs.ReadFileFS, path string) (pcwrap.EmbeddedAgen
 }
 
 func loadMarkdownAgentFile(path string) (pcwrap.EmbeddedAgent, error) {
+	if !strings.EqualFold(filepath.Ext(path), ".md") {
+		return pcwrap.EmbeddedAgent{}, fmt.Errorf("agent file %s must use the .md extension", path)
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return pcwrap.EmbeddedAgent{}, fmt.Errorf("read agent %s failed: %w", path, err)
