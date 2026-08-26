@@ -57,7 +57,7 @@ func (rt *Runtime) ResolveRunOptions(opt RunOptions) (ResolvedRunOptions, error)
 	}
 
 	var agentCfg *pcconfig.AgentConfig
-	if embedded, ok := opt.findEmbeddedAgent(resolved.Agent); ok {
+	if embedded, ok := ResolveEmbeddedAgent(opt.embeddedAgents(), resolved.Agent); ok {
 		resolved.Agent = str(embedded.ID)
 	} else {
 		var err error
@@ -95,12 +95,15 @@ func (opt RunOptions) embeddedAgents() []EmbeddedAgent {
 	return append([]EmbeddedAgent(nil), opt.EmbeddedAgents...)
 }
 
-func (opt RunOptions) findEmbeddedAgent(id string) (EmbeddedAgent, bool) {
+// ResolveEmbeddedAgent resolves an embedded agent by canonical ID or alias.
+// Matching is whitespace-tolerant and case-insensitive, while the returned
+// definition always carries the canonical ID declared by the agent.
+func ResolveEmbeddedAgent(agents []EmbeddedAgent, id string) (EmbeddedAgent, bool) {
 	want := str(id)
 	if want == "" {
 		return EmbeddedAgent{}, false
 	}
-	for _, agent := range opt.embeddedAgents() {
+	for _, agent := range agents {
 		if strings.EqualFold(str(agent.ID), want) {
 			return agent, true
 		}

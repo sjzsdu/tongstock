@@ -130,3 +130,34 @@ func agentName(items []pcwrap.EmbeddedAgent, id string) string {
 	}
 	return ""
 }
+
+func TestListWithPathsLoadsAliasesFromSingleMarkdownFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "custom-agent.md")
+	content := `---
+id: custom-risk
+name: Custom Risk
+aliases: [risk, 风险]
+tools: [web_search]
+---
+
+Review risks.
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := ListWithPaths([]string{path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, agent := range list {
+		if agent.ID != "custom-risk" {
+			continue
+		}
+		if len(agent.Aliases) != 2 || agent.Aliases[0] != "risk" || agent.Prompt != "Review risks." {
+			t.Fatalf("unexpected single-file agent: %#v", agent)
+		}
+		return
+	}
+	t.Fatal("single-file custom agent was not loaded")
+}

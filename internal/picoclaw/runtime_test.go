@@ -6,6 +6,25 @@ import (
 	"testing"
 )
 
+func TestDefaultAPIKeyEnv(t *testing.T) {
+	tests := map[string]string{
+		" openAI ":    "OPENAI_API_KEY",
+		"ANTHROPIC":   "ANTHROPIC_API_KEY",
+		"DeepSeek":    "DEEPSEEK_API_KEY",
+		"openrouter":  "OPENROUTER_API_KEY",
+		"ZHIPU":       "ZHIPU_API_KEY",
+		" ollama ":    "",
+		"unknown-api": "",
+	}
+	for provider, want := range tests {
+		t.Run(strings.TrimSpace(provider), func(t *testing.T) {
+			if got := defaultAPIKeyEnv(provider); got != want {
+				t.Fatalf("defaultAPIKeyEnv(%q) = %q, want %q", provider, got, want)
+			}
+		})
+	}
+}
+
 func TestLoadBuiltinBuildsRuntimeWithoutPicoClawConfigFile(t *testing.T) {
 	t.Setenv("TEST_AGENT_KEY", "secret")
 	home := t.TempDir()

@@ -52,6 +52,7 @@ type agentInfo struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`
 	Description string   `json:"description,omitempty"`
+	Aliases     []string `json:"aliases,omitempty"`
 	Skills      []string `json:"skills,omitempty"`
 	Tools       []string `json:"tools,omitempty"`
 }
@@ -335,6 +336,7 @@ func (s *Server) handleAgentState(c *gin.Context) {
 			ID:          agent.ID,
 			Name:        agent.Name,
 			Description: agent.Description,
+			Aliases:     agent.Aliases,
 			Skills:      agent.Skills,
 			Tools:       agent.Tools,
 		})
@@ -369,10 +371,12 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	if req.Agent == "" {
 		req.Agent = s.agentState.defaults.Agent
 	}
-	if !s.isValidAgent(req.Agent) {
+	canonicalAgent, ok := s.resolveAgentID(req.Agent)
+	if !ok {
 		c.JSON(http.StatusBadRequest, agentChatResponse{Error: "unknown agent: " + req.Agent})
 		return
 	}
+	req.Agent = canonicalAgent
 	if req.Session == "" {
 		req.Session = s.agentState.defaults.Session
 	}
@@ -442,10 +446,12 @@ func (s *Server) handleAgentChatStream(c *gin.Context) {
 	if req.Agent == "" {
 		req.Agent = s.agentState.defaults.Agent
 	}
-	if !s.isValidAgent(req.Agent) {
+	canonicalAgent, ok := s.resolveAgentID(req.Agent)
+	if !ok {
 		WriteError(c, http.StatusBadRequest, "unknown_agent", "指定的 Agent 不存在")
 		return
 	}
+	req.Agent = canonicalAgent
 	if req.Session == "" {
 		req.Session = s.agentState.defaults.Session
 	}
@@ -646,16 +652,19 @@ func chatSessionContentSize(sess *ChatSession) int64 {
 	return size
 }
 
-func (s *Server) isValidAgent(agentID string) bool {
+func (s *Server) resolveAgentID(agentID string) (string, bool) {
 	if s.agentState == nil {
-		return false
+		return "", false
 	}
-	for _, a := range s.agentState.embedded {
-		if a.ID == agentID {
-			return true
-		}
+	if agent, ok := pcwrap.ResolveEmbeddedAgent(s.agentState.embedded, agentID); ok {
+		return strings.TrimSpace(agent.ID), true
 	}
-	return agentID == s.agentState.defaults.Agent
+	want := strings.TrimSpace(agentID)
+	defaultAgent := strings.TrimSpace(s.agentState.defaults.Agent)
+	if want != "" && defaultAgent != "" && strings.EqualFold(want, defaultAgent) {
+		return defaultAgent, true
+	}
+	return "", false
 }
 
 // Helper functions
@@ -1011,12 +1020,14 @@ func (s *Server) handleAgentDebate(c *gin.Context) {
 		req.Agents = []string{"stock-quant-technician", "stock-fundamental-analyst"}
 	}
 
-	// Validate agents
-	for _, agentID := range req.Agents {
-		if !s.isValidAgent(agentID) {
+	// Validate agents and replace aliases/case variants with canonical IDs.
+	for i, agentID := range req.Agents {
+		canonicalAgent, ok := s.resolveAgentID(agentID)
+		if !ok {
 			c.JSON(http.StatusBadRequest, agentDebateResponse{Error: "unknown agent: " + agentID})
 			return
 		}
+		req.Agents[i] = canonicalAgent
 	}
 
 	stockCtx := req.StockCode

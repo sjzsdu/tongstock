@@ -47,6 +47,7 @@ Agent 文件示例：
 id: risk-reviewer
 name: 风险复核员
 description: 复核投资结论中的风险与证据缺口
+aliases: [risk, 风险复核]
 skills: []
 tools: [web_search, web_fetch]
 no_history: false
@@ -58,6 +59,8 @@ no_history: false
 ```
 
 自定义定义与内建 Agent 使用同一个注册表。若 `id` 相同，自定义定义覆盖内建定义，因此既能新增 Agent，也能在不修改源码的情况下调整内建角色。
+
+`aliases` 是可选字符串列表。`/api/agent/chat`、`/api/agent/chat/stream` 和 `/api/agent/debate` 都可使用 Agent 的规范 `id` 或任一别名，并且对大小写不敏感。服务在校验后会统一回填规范 `id`，因此会话记录和 debate participants 不会因别名或大小写变体产生多个 Agent 标识。别名应在注册表中保持唯一，避免同一输入匹配多个定义。
 
 `agent_paths` 按配置中的先后顺序加载，后面的路径覆盖前面的路径。目录内部按相对路径字典序递归加载，因此同一目录中路径字典序更靠后的文件覆盖更早的文件。最终返回列表会按 Agent ID 排序，但该排序不改变覆盖优先级。配置文件中的 `agent_paths` 是全量列表，不与默认值叠加；空字符串会被忽略，符号链接目录会解析到目标目录后加载。
 
@@ -73,4 +76,4 @@ agent:
   stock_agent: stock-analyst
 ```
 
-当 `backend` 省略且存在 `home` 或 `config` 时，TongStock 自动选择 `picoclaw` 后端。也可以显式配置 `backend: picoclaw`。迁移到内建模式时，删除 `home`、`config`，并添加 `provider`、`model` 和 `api_key_env` 即可。Agent 对话 API 和内建 Agent ID 保持不变。
+当 `backend` 省略且存在 `home` 或 `config` 时，TongStock 自动选择 `picoclaw` 后端。也可以显式配置 `backend: picoclaw`。旧 PicoClaw 配置若未显式设置 `agent.model`，只有运行时配置中可用的默认模型才能被自动采用；例如模型缺少成功的可用性状态时，服务可能以 `no model specified` 进入 degraded。遇到该提示时，优先在 TongStock 配置中显式填写 `agent.model`，或先在 PicoClaw 中验证并启用默认模型。迁移到内建模式时，删除 `home`、`config`，并添加 `provider`、`model` 和 `api_key_env` 即可。Agent 对话 API 和内建 Agent ID 保持不变。
