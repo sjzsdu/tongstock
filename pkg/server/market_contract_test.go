@@ -155,6 +155,30 @@ func TestSyncStateUsesUnifiedKlineCoverage(t *testing.T) {
 	}
 }
 
+func TestSyncStateDoesNotInferSuccessfulSyncFromCachedRows(t *testing.T) {
+	day := time.Date(2026, 8, 3, 0, 0, 0, 0, time.Local)
+	router := contractRouter(t, contractRepository{
+		coverage: stockdata.Coverage{
+			Exists: true, Start: day, End: day, Points: []time.Time{day},
+		},
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/api/sync/state?code=601688&ktype=day", nil)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	var body map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["status"] != "unknown" {
+		t.Fatalf("status = %v, want unknown", body["status"])
+	}
+	if _, exists := body["last_sync_at"]; exists {
+		t.Fatalf("missing sync timestamp was serialized: %#v", body)
+	}
+}
+
 func responseContainsAny(value string, candidates ...string) bool {
 	for _, candidate := range candidates {
 		if candidate != "" && strings.Contains(value, candidate) {

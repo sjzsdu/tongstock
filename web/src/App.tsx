@@ -1,6 +1,20 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { BarChartOutlined, DashboardOutlined, FileTextOutlined, FundOutlined, HeartOutlined, MenuOutlined, RadarChartOutlined, RobotOutlined, SearchOutlined, SettingOutlined, StockOutlined, WalletOutlined } from '@ant-design/icons';
+import {
+  DashboardOutlined,
+  FileTextOutlined,
+  HeartOutlined,
+  MenuOutlined,
+  RadarChartOutlined,
+  RobotOutlined,
+  SearchOutlined,
+  SettingOutlined,
+  StockOutlined,
+  SafetyCertificateOutlined,
+  WalletOutlined,
+  BlockOutlined,
+  FormOutlined,
+} from '@ant-design/icons';
 import { Avatar, Breadcrumb, Button, Drawer, Layout, Menu, Skeleton, Space, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import StockSearchInput from './components/StockSearchInput';
@@ -20,13 +34,14 @@ const Paradigms = lazy(() => import('./pages/Paradigms'));
 const OvernightArbitrage = lazy(() => import('./pages/strategy/OvernightArbitrage'));
 const EventDetail = lazy(() => import('./pages/news/EventDetail'));
 const NewsHome = lazy(() => import('./pages/news/NewsHome'));
+const Monitoring = lazy(() => import('./pages/Monitoring'));
+const Methods = lazy(() => import('./pages/Methods'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 const { Header, Content, Sider } = Layout;
 
 function GlobalSearch() {
   const navigate = useNavigate();
-
   return (
     <div style={{ width: 320, maxWidth: '100%' }}>
       <StockSearchInput
@@ -49,11 +64,95 @@ function RouteFallback() {
   );
 }
 
+// 决策组：产品核心主流程，顶层平铺、零点击可见
+const decisionMenuItems: MenuProps['items'] = [
+  { key: '/', icon: <DashboardOutlined />, label: <Link to="/">今日决策</Link> },
+  { key: '/portfolio', icon: <WalletOutlined />, label: <Link to="/portfolio">持仓卖出</Link> },
+];
+
+// 方法研究组：可信方法、范式体系与 AI 研究入口
+const researchMenuItems: MenuProps['items'] = [
+  { key: '/methods', icon: <SafetyCertificateOutlined />, label: <Link to="/methods">可信方法</Link> },
+  { key: '/paradigms', icon: <RadarChartOutlined />, label: <Link to="/paradigms">范式库</Link> },
+  { key: '/monitoring', icon: <SafetyCertificateOutlined />, label: <Link to="/monitoring">范式监控</Link> },
+  { key: '/agent', icon: <RobotOutlined />, label: <Link to="/agent">AI 助手</Link> },
+];
+
+// 行情工具组：个股浏览与行情分析工具
+const marketMenuItems: MenuProps['items'] = [
+  { key: '/watchlist', icon: <HeartOutlined />, label: <Link to="/watchlist">自选股</Link> },
+  { key: '/stock/choose', icon: <StockOutlined />, label: <Link to="/stock/choose">个股分析</Link> },
+  { key: '/blocks', icon: <BlockOutlined />, label: <Link to="/blocks">股票池</Link> },
+  { key: '/screen', icon: <SearchOutlined />, label: <Link to="/screen">信号筛选</Link> },
+  { key: '/strategy/overnight', icon: <FormOutlined />, label: <Link to="/strategy/overnight">隔夜套利</Link> },
+  { key: '/news', icon: <FileTextOutlined />, label: <Link to="/news">财经资讯</Link> },
+];
+
+// 系统组：设置与扩展点
+const systemMenuItems: MenuProps['items'] = [
+  { key: '/settings', icon: <SettingOutlined />, label: <Link to="/settings">配置</Link> },
+];
+
+const menuItems: MenuProps['items'] = [
+  ...decisionMenuItems,
+  { key: 'research-submenu', icon: <RadarChartOutlined />, label: '方法研究', children: researchMenuItems },
+  { key: 'market-submenu', icon: <StockOutlined />, label: '行情工具', children: marketMenuItems },
+  { key: 'system-submenu', icon: <SettingOutlined />, label: '系统', children: systemMenuItems },
+];
+
+// 子菜单 key -> 组内成员路由，用于路由变化时自动展开所属分组
+const SUBMENU_BY_KEY: Record<string, string> = {
+  '/methods': 'research-submenu',
+  '/paradigms': 'research-submenu',
+  '/monitoring': 'research-submenu',
+  '/agent': 'research-submenu',
+  '/watchlist': 'market-submenu',
+  '/stock/choose': 'market-submenu',
+  '/blocks': 'market-submenu',
+  '/screen': 'market-submenu',
+  '/strategy/overnight': 'market-submenu',
+  '/news': 'market-submenu',
+  '/settings': 'system-submenu',
+};
+
+const DEFAULT_OPEN_KEYS = ['research-submenu', 'market-submenu'];
+
+function getParentKey(pathname: string): string | undefined {
+  return SUBMENU_BY_KEY[getSelectedKey(pathname)];
+}
+
+// 计算选中的菜单 key
+function getSelectedKey(pathname: string): string {
+  if (pathname === '/') return '/';
+  if (pathname.startsWith('/stock')) return '/stock/choose';
+  if (pathname.startsWith('/index')) return '/stock/choose';
+  if (pathname.startsWith('/screen')) return '/screen';
+  if (pathname.startsWith('/portfolio')) return '/portfolio';
+  if (pathname.startsWith('/methods')) return '/methods';
+  if (pathname.startsWith('/blocks')) return '/blocks';
+  if (pathname.startsWith('/watchlist')) return '/watchlist';
+  if (pathname.startsWith('/settings')) return '/settings';
+  if (pathname.startsWith('/agent')) return '/agent';
+  if (pathname.startsWith('/paradigms')) return '/paradigms';
+  if (pathname.startsWith('/strategy')) return '/strategy/overnight';
+  if (pathname.startsWith('/news')) return '/news';
+  return '/';
+}
+
 function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [openKeys, setOpenKeys] = useState<string[]>(DEFAULT_OPEN_KEYS);
+
+  // 路由变化时自动展开选中项所属分组
+  useEffect(() => {
+    const parent = getParentKey(location.pathname);
+    if (parent) {
+      setOpenKeys((prev) => (prev.includes(parent) ? prev : [...prev, parent]));
+    }
+  }, [location.pathname]);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -67,51 +166,14 @@ function AppLayout({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const selectedKey = location.pathname.startsWith('/stock')
-    ? '/stock/choose'
-    : location.pathname.startsWith('/index')
-      ? '/'
-      : location.pathname.startsWith('/screen')
-        ? '/screen'
-        : location.pathname.startsWith('/portfolio')
-          ? '/portfolio'
-          : location.pathname.startsWith('/blocks')
-            ? '/blocks'
-            : location.pathname.startsWith('/watchlist')
-              ? '/watchlist'
-              : location.pathname.startsWith('/settings')
-                ? '/settings'
-                : location.pathname.startsWith('/agent')
-                  ? '/agent'
-                  : location.pathname.startsWith('/paradigms')
-                    ? '/paradigms'
-                    : location.pathname.startsWith('/strategy')
-                      ? '/strategy/overnight'
-                      : location.pathname.startsWith('/news')
-                        ? '/news'
-                        : '/';
-
-  const menuItems: MenuProps['items'] = [
-    { key: '/', icon: <DashboardOutlined />, label: <Link to="/">市场总览</Link> },
-    { key: '/news', icon: <FileTextOutlined />, label: <Link to="/news">财经资讯</Link> },
-    { key: '/watchlist', icon: <HeartOutlined />, label: <Link to="/watchlist">自选股</Link> },
-    { key: '/stock/choose', icon: <BarChartOutlined />, label: <Link to="/stock/choose">个股分析</Link> },
-    { key: '/screen', icon: <SearchOutlined />, label: <Link to="/screen">信号筛选</Link> },
-    { key: '/portfolio', icon: <WalletOutlined />, label: <Link to="/portfolio">虚拟持仓</Link> },
-    { key: '/blocks', icon: <FundOutlined />, label: <Link to="/blocks">股票池管理</Link> },
-    { key: '/settings', icon: <SettingOutlined />, label: <Link to="/settings">配置</Link> },
-    { key: '/agent', icon: <RobotOutlined />, label: <Link to="/agent">AI 助手</Link> },
-    { key: '/paradigms', icon: <RadarChartOutlined />, label: <Link to="/paradigms">范式管理</Link> },
-    { key: '/strategy/overnight', icon: <SearchOutlined />, label: <Link to="/strategy/overnight">隔夜套利</Link> },
-  ];
-
+  const selectedKey = getSelectedKey(location.pathname);
   const breadcrumbItems = buildBreadcrumbs(location.pathname);
 
   return (
     <Layout>
       {!isMobile && (
         <Sider
-          width={240}
+          width={220}
           collapsedWidth={72}
           collapsible
           collapsed={collapsed}
@@ -119,15 +181,17 @@ function AppLayout({ children }: { children: React.ReactNode }) {
           theme="dark"
           style={{ borderRight: '1px solid #1f2937' }}
         >
-          <div style={{ padding: collapsed ? '20px 12px' : 20, borderBottom: '1px solid #1f2937' }}>
+          <div style={{ padding: collapsed ? '20px 12px' : 16, borderBottom: '1px solid #1f2937' }}>
             <Space align="center" size={12}>
               <Avatar shape="square" icon={<StockOutlined />} style={{ backgroundColor: '#1677ff' }} />
               {!collapsed && (
                 <div>
-                  <Typography.Title level={4} style={{ margin: 0, color: '#fff' }}>
+                  <Typography.Title level={4} style={{ margin: 0, color: '#fff', fontSize: 16 }}>
                     TongStock
                   </Typography.Title>
-                  <Typography.Text type="secondary">A 股分析工作台</Typography.Text>
+                  <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                    AI 投资决策
+                  </Typography.Text>
                 </div>
               )}
             </Space>
@@ -136,8 +200,10 @@ function AppLayout({ children }: { children: React.ReactNode }) {
             mode="inline"
             theme="dark"
             selectedKeys={[selectedKey]}
+            openKeys={openKeys}
+            onOpenChange={setOpenKeys}
             items={menuItems}
-            style={{ borderInlineEnd: 0, paddingTop: 12 }}
+            style={{ borderInlineEnd: 0, paddingTop: 8 }}
           />
         </Sider>
       )}
@@ -197,23 +263,25 @@ export default function App() {
       <AppLayout>
         <ErrorBoundary>
           <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/watchlist" element={<Watchlist />} />
-          <Route path="/stock/choose" element={<StockChoose />} />
-          <Route path="/stock/:code" element={<StockDetail />} />
-          <Route path="/stock/:code/:tab" element={<StockDetail />} />
-          <Route path="/screen" element={<Screen />} />
-          <Route path="/portfolio" element={<Portfolio />} />
-          <Route path="/blocks" element={<Blocks />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/index/:code" element={<IndexDetail />} />
-          <Route path="/index/:code/:tab" element={<IndexDetail />} />
-          <Route path="/agent" element={<AgentWeb />} />
-          <Route path="/paradigms" element={<Paradigms />} />
-          <Route path="/strategy/overnight" element={<OvernightArbitrage />} />
-          <Route path="/news" element={<NewsHome />} />
-          <Route path="/news/event/:id" element={<EventDetail />} />
-          <Route path="*" element={<NotFound />} />
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/watchlist" element={<Watchlist />} />
+            <Route path="/stock/choose" element={<StockChoose />} />
+            <Route path="/stock/:code" element={<StockDetail />} />
+            <Route path="/stock/:code/:tab" element={<StockDetail />} />
+            <Route path="/screen" element={<Screen />} />
+            <Route path="/portfolio" element={<Portfolio />} />
+            <Route path="/blocks" element={<Blocks />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/index/:code" element={<IndexDetail />} />
+            <Route path="/index/:code/:tab" element={<IndexDetail />} />
+            <Route path="/agent" element={<AgentWeb />} />
+            <Route path="/paradigms" element={<Paradigms />} />
+            <Route path="/monitoring" element={<Monitoring />} />
+            <Route path="/methods" element={<Methods />} />
+            <Route path="/strategy/overnight" element={<OvernightArbitrage />} />
+            <Route path="/news" element={<NewsHome />} />
+            <Route path="/news/event/:id" element={<EventDetail />} />
+            <Route path="*" element={<NotFound />} />
           </Routes>
         </ErrorBoundary>
       </AppLayout>
@@ -226,7 +294,7 @@ function buildBreadcrumbs(pathname: string) {
   const items: { title: React.ReactNode }[] = [{ title: <Link to="/">TongStock</Link> }];
 
   if (parts.length === 0) {
-    items.push({ title: '市场总览' });
+    items.push({ title: '首页' });
     return items;
   }
 
@@ -235,21 +303,16 @@ function buildBreadcrumbs(pathname: string) {
     choose: '选择股票',
     watchlist: '自选股',
     screen: '信号筛选',
-    portfolio: '虚拟持仓',
-    blocks: '股票池管理',
+    portfolio: '持仓卖出',
+    blocks: '股票池',
     settings: '配置',
-    paradigms: '范式管理',
+    paradigms: '范式库',
+    monitoring: '范式监控',
+    methods: '可信方法库',
     strategy: '策略',
     overnight: '隔夜套利',
-    chart: 'K线+指标',
-    signal: '信号',
-    finance: '财务',
-    company: '公司',
-    dividend: '分红',
-    intraday: '分时',
+    agent: 'AI 助手',
     index: '指数详情',
-    stats: '涨跌统计',
-    components: '成分股',
     news: '财经资讯',
     event: '热点事件',
   };

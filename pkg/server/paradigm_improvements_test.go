@@ -25,7 +25,7 @@ func TestValidateParadigmReliability(t *testing.T) {
 		ID: "p1", Name: "n", Side: "buy",
 		BuyConds: []paradigms.Condition{{Indicator: "close", Operator: "gt", Value: "MA20"}, {Indicator: "文本确认", Operator: "describe"}},
 	}
-	v := validateParadigm(p)
+	v := paradigms.ValidateParadigm(p)
 	if !v.Valid {
 		t.Fatalf("expected valid: %+v", v)
 	}

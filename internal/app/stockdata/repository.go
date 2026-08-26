@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/sjzsdu/tongstock/pkg/storage"
@@ -22,6 +23,11 @@ type SQLiteRepository struct {
 // does not make the application unusable.
 type SQLiteTradingCalendar struct {
 	storage *storage.Storage
+	mu      sync.RWMutex
+	loaded  bool
+	days    map[string]struct{}
+	first   string
+	last    string
 }
 
 func NewSQLiteTradingCalendar(s *storage.Storage) (*SQLiteTradingCalendar, error) {
@@ -36,17 +42,73 @@ func (c *SQLiteTradingCalendar) IsTradingDay(ctx context.Context, _ string, day 
 		return false, nil
 	}
 	raw := day.Format("20060102")
-	var first, last sql.NullString
-	var exists int
-	if err := c.storage.DB().QueryRowContext(ctx, `SELECT MIN(date), MAX(date),
-		COUNT(CASE WHEN date = ? THEN 1 END) FROM workday`, raw).
-		Scan(&first, &last, &exists); err != nil {
+	if err := c.load(ctx); err != nil {
 		return false, err
 	}
-	if first.Valid && last.Valid && raw >= first.String && raw <= last.String {
-		return exists > 0, nil
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.first != "" && raw >= c.first && raw <= c.last {
+		_, exists := c.days[raw]
+		return exists, nil
 	}
 	return true, nil
+}
+
+func (c *SQLiteTradingCalendar) load(ctx context.Context) error {
+	c.mu.RLock()
+	loaded := c.loaded
+	c.mu.RUnlock()
+	if loaded {
+		return nil
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.loaded {
+		return nil
+	}
+	days, err := loadTradingDays(ctx, c.storage.DB(), `SELECT date FROM workday ORDER BY date`)
+	if err != nil {
+		return err
+	}
+	// Older databases may not have materialized workday. Derive the exchange
+	// calendar from the union of validated daily stock bars instead of treating
+	// every weekday (including public holidays) as a trading day.
+	if len(days) == 0 {
+		days, err = loadTradingDays(ctx, c.storage.DB(), `SELECT DISTINCT date FROM kline
+			WHERE ktype IN (4,9) AND code <> '999999'
+				AND length(date)=8 AND date BETWEEN '19900101' AND strftime('%Y%m%d','now','+1 day')
+			ORDER BY date`)
+		if err != nil {
+			return err
+		}
+	}
+	c.days = make(map[string]struct{}, len(days))
+	for _, value := range days {
+		c.days[value] = struct{}{}
+	}
+	if len(days) > 0 {
+		c.first, c.last = days[0], days[len(days)-1]
+	}
+	c.loaded = true
+	return nil
+}
+
+func loadTradingDays(ctx context.Context, db *sql.DB, query string) ([]string, error) {
+	rows, err := db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var days []string
+	for rows.Next() {
+		var value string
+		if err := rows.Scan(&value); err != nil {
+			return nil, err
+		}
+		days = append(days, value)
+	}
+	return days, rows.Err()
 }
 
 func NewSQLiteRepository(s *storage.Storage) (*SQLiteRepository, error) {
@@ -81,6 +143,9 @@ func (r *SQLiteRepository) InspectCoverage(ctx context.Context, spec DataSpec) (
 			coverage.Start, coverage.End = points[0], points[len(points)-1]
 		}
 		state, _ := r.syncState(ctx, syncKey(spec))
+		if state.lastSync == 0 && state.status == "" {
+			state, _ = r.legacyKlineSyncState(ctx, spec.Code, spec.KType)
+		}
 		mergeState(&coverage, state)
 		return coverage, rows.Err()
 	case DataQuote, DataFinance:
@@ -134,10 +199,22 @@ func (r *SQLiteRepository) Query(ctx context.Context, spec DataSpec) (Dataset, e
 			if err := rows.Scan(&raw, &item.Open, &item.High, &item.Low, &item.Close, &item.Volume, &item.Amount); err != nil {
 				return Dataset{}, err
 			}
-			item.Time, _ = time.ParseInLocation("20060102", raw, time.Local)
+			item.Time, err = time.ParseInLocation("20060102", raw, time.Local)
+			if err != nil {
+				return Dataset{}, fmt.Errorf("invalid stored kline date %q: %w", raw, err)
+			}
+			if err := validateKlineRecord(&item, time.Now()); err != nil {
+				return Dataset{}, fmt.Errorf("invalid stored kline %s: %w", raw, err)
+			}
 			result = append(result, &item)
 		}
-		return Dataset{Klines: result}, rows.Err()
+		if err := rows.Err(); err != nil {
+			return Dataset{}, err
+		}
+		if len(result) == 0 {
+			return Dataset{}, sql.ErrNoRows
+		}
+		return Dataset{Klines: result}, nil
 	case DataQuote:
 		var raw string
 		if err := r.storage.DB().QueryRowContext(ctx, `SELECT payload FROM quote_snapshot WHERE code = ?`, spec.Code).Scan(&raw); err != nil {
@@ -175,9 +252,9 @@ func (r *SQLiteRepository) SaveSynced(ctx context.Context, spec DataSpec, datase
 
 	switch spec.Type {
 	case DataKline:
-		for _, item := range dataset.Klines {
-			if item == nil || item.Time.IsZero() {
-				return errors.New("invalid kline")
+		for index, item := range dataset.Klines {
+			if err := validateKlineRecord(item, time.Now()); err != nil {
+				return fmt.Errorf("invalid kline at index %d: %w", index, err)
 			}
 			if _, err := tx.ExecContext(ctx, `INSERT INTO kline
 				(code, ktype, date, open, high, low, close, volume, amount)
@@ -261,6 +338,14 @@ func (r *SQLiteRepository) syncState(ctx context.Context, key string) (persisted
 	err := r.storage.DB().QueryRowContext(ctx, `SELECT source_updated_at, last_sync_at, status, quality
 		FROM data_sync_state WHERE sync_key = ?`, key).
 		Scan(&state.sourceUpdated, &state.lastSync, &state.status, &state.quality)
+	return state, err
+}
+
+func (r *SQLiteRepository) legacyKlineSyncState(ctx context.Context, code string, ktype uint8) (persistedState, error) {
+	var state persistedState
+	err := r.storage.DB().QueryRowContext(ctx, `SELECT last_sync_at, status
+		FROM kline_sync_state WHERE code = ? AND ktype = ?`, code, ktype).
+		Scan(&state.lastSync, &state.status)
 	return state, err
 }
 

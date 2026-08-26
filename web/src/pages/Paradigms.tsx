@@ -33,12 +33,12 @@ export default function Paradigms() {
     }
   };
 
-  useEffect(() => { load(); }, [filters]);
+  useEffect(() => { queueMicrotask(() => void load()); }, [filters]);
 
   const runBacktest = async (record: ParadigmItem) => {
     try {
       const result = await api.paradigmBacktest(record.id);
-      if (result[0]) setBacktests(prev => ({ ...prev, [record.id]: result[0] }));
+      setBacktests(prev => ({ ...prev, [record.id]: result }));
     } catch (err) {
       message.error(String(err));
     }
@@ -77,18 +77,18 @@ export default function Paradigms() {
   const columns: ColumnsType<ParadigmItem> = [
     { title: '股票', width: 150, render: (_, r) => <span>{r.stock_name || r.stock_code}<br /><Typography.Text type="secondary">{r.stock_code}</Typography.Text></span> },
     { title: '范式', dataIndex: 'name', width: 460, render: renderParadigmSummary },
-    { title: '方向', dataIndex: 'side', width: 80, render: v => <Tag color={v === 'sell' ? 'red' : 'green'}>{v}</Tag> },
+    { title: '方向', dataIndex: 'side', width: 80, render: v => <Tag color={v === 'sell' ? 'green' : 'red'}>{v}</Tag> },
     { title: '可靠性', width: 120, render: (_, r) => <Tag color={reliabilityColor[r.validation?.reliability_label || '']}>{r.validation?.reliability_label || '-'}</Tag> },
     { title: '复盘', width: 110, render: (_, r) => <Space direction="vertical" size={0}><span>{r.review_status || 'pending'}</span>{typeof r.actual_return === 'number' && <Typography.Text type="secondary">{r.actual_return.toFixed(2)}%</Typography.Text>}</Space> },
     { title: '更新时间', dataIndex: 'updated_at', width: 180, render: v => v ? new Date(v).toLocaleString() : '-' },
     { title: '回测', width: 200, fixed: 'right', render: (_, r) => {
       const b = backtests[r.id];
       if (!b) return <Button size="small" onClick={() => runBacktest(r)}>回测</Button>;
-      if (b.error) return <Typography.Text type="danger">{b.error}</Typography.Text>;
       return <Space direction="vertical" size={0}>
-        <Typography.Text>样本 {b.sample_size}</Typography.Text>
-        <Typography.Text type="secondary">20日胜率 {(b.win_rate_20 * 100).toFixed(1)}%，均值 {b.avg_return_20.toFixed(2)}%</Typography.Text>
-        <Typography.Text type="secondary">最大回撤 {b.max_drawdown.toFixed(2)}%</Typography.Text>
+        <Typography.Text>样本 {b.metrics.total_trades ?? 0}</Typography.Text>
+        <Typography.Text type="secondary">样本外胜率 {((b.metrics.win_rate ?? 0) * 100).toFixed(1)}%，净收益 {((b.metrics.total_return ?? 0) * 100).toFixed(2)}%</Typography.Text>
+        <Typography.Text type="secondary">最大回撤 {((b.metrics.max_drawdown ?? 0) * 100).toFixed(2)}%</Typography.Text>
+        <Typography.Text type="secondary" ellipsis={{ tooltip: b.experiment_id }}>实验 {b.experiment_id}</Typography.Text>
       </Space>;
     } },
     { title: '操作', width: 130, fixed: 'right', render: (_, r) => <Space><Button size="small" onClick={() => window.location.href = `/stock/${r.stock_code}`}>查看</Button><Popconfirm title="删除该范式？" onConfirm={() => remove(r)}><Button danger size="small">删</Button></Popconfirm></Space> },

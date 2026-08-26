@@ -9,9 +9,9 @@ import (
 type SignalInterpretation struct {
 	Summary     string   // 一句话摘要
 	Explanation string   // 详细解释
-	Suggestions []string  // 操作建议
-	RiskLevel   string    // 风险等级：low, medium, high
-	Trend       string    // 当前趋势描述
+	Suggestions []string // 操作建议
+	RiskLevel   string   // 风险等级：low, medium, high
+	Trend       string   // 当前趋势描述
 }
 
 // InterpretSignal 解读单个信号
@@ -89,7 +89,7 @@ func InterpretAllSignals(signals []Signal, trend TrendDirection) string {
 
 	// 添加最强信号
 	if len(signals) > 0 {
-	 strongest := signals[0]
+		strongest := signals[0]
 		for _, s := range signals {
 			if s.Strength > strongest.Strength {
 				strongest = s

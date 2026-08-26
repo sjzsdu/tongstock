@@ -103,20 +103,20 @@ func (s *JuChaoSource) parseNewsItems(items []juChaoItem) []*newsfeed.NewsItem {
 	var news []*newsfeed.NewsItem
 	for _, item := range items {
 		newsItem := &newsfeed.NewsItem{
-			ID:          generateID(),
-			Source:      newsfeed.SourceJuChao,
-			NewsType:    newsfeed.NewsTypeAnnouncement,
-			Title:       cleanText(item.Title),
-			Summary:     cleanText(item.Title),
-			Content:     "", // 巨潮资讯详情需要单独请求
-			PublishTime: parseTime(item.AnnouncementTime, []string{"2006-01-02 15:04:05"}),
-			HotScore:    0,
-			Tags:        []string{item.Category},
+			ID:            generateID(),
+			Source:        newsfeed.SourceJuChao,
+			NewsType:      newsfeed.NewsTypeAnnouncement,
+			Title:         cleanText(item.Title),
+			Summary:       cleanText(item.Title),
+			Content:       "", // 巨潮资讯详情需要单独请求
+			PublishTime:   parseTime(item.AnnouncementTime, []string{"2006-01-02 15:04:05"}),
+			HotScore:      0,
+			Tags:          []string{item.Category},
 			RelatedStocks: item.SecCodes,
-			URL:         s.baseURL + "/new/AnnouncementDetail?announcementId=" + item.AnnouncementID,
-			OriginalID:  fmt.Sprintf("jc_%s", item.AnnouncementID),
-			CreatedAt:   time.Now(),
-			UpdatedAt:   time.Now(),
+			URL:           s.baseURL + "/new/AnnouncementDetail?announcementId=" + item.AnnouncementID,
+			OriginalID:    fmt.Sprintf("jc_%s", item.AnnouncementID),
+			CreatedAt:     time.Now(),
+			UpdatedAt:     time.Now(),
 		}
 		news = append(news, newsItem)
 	}

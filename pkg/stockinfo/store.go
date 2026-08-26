@@ -32,6 +32,7 @@ type StockInfo struct {
 	Province        uint16  `json:"province"`        // 省份代码
 	Industry        uint16  `json:"industry"`        // 行业代码
 	IPODate         uint32  `json:"ipoDate"`         // 上市日期
+	StFlag          int     `json:"stFlag"`          // ST 标记 (0=非ST)
 	UpdatedAt       int64   `json:"updatedAt"`       // 更新时间戳
 }
 
@@ -55,7 +56,7 @@ func (s *Store) ph(n int) string {
 
 // GetAll 获取所有股票信息
 func (s *Store) GetAll() ([]StockInfo, error) {
-	rows, err := s.s.DB().Query(`SELECT code, name, exchange, price, open, high, low, last_close, change_pct, volume, amount, turnover_rate, liu_tong_gu_ben, zong_gu_ben, market_cap, total_market_cap, jing_zi_chan, jing_li_run, mei_gu_jing_zi_chan, province, industry, ipo_date, updated_at FROM stockinfo ORDER BY exchange, code`)
+	rows, err := s.s.DB().Query(`SELECT code, name, exchange, price, open, high, low, last_close, change_pct, volume, amount, turnover_rate, liu_tong_gu_ben, zong_gu_ben, market_cap, total_market_cap, jing_zi_chan, jing_li_run, mei_gu_jing_zi_chan, province, industry, ipo_date, st_flag, updated_at FROM stockinfo ORDER BY exchange, code`)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +71,7 @@ func (s *Store) GetAll() ([]StockInfo, error) {
 			&info.Volume, &info.Amount, &info.TurnoverRate,
 			&info.LiuTongGuBen, &info.ZongGuBen, &info.MarketCap, &info.TotalMarketCap,
 			&info.JingZiChan, &info.JingLiRun, &info.MeiGuJingZiChan,
-			&info.Province, &info.Industry, &info.IPODate, &info.UpdatedAt,
+			&info.Province, &info.Industry, &info.IPODate, &info.StFlag, &info.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -81,7 +82,7 @@ func (s *Store) GetAll() ([]StockInfo, error) {
 
 // GetByCode 根据代码获取股票信息
 func (s *Store) GetByCode(code string) (*StockInfo, error) {
-	query := fmt.Sprintf(`SELECT code, name, exchange, price, open, high, low, last_close, change_pct, volume, amount, turnover_rate, liu_tong_gu_ben, zong_gu_ben, market_cap, total_market_cap, jing_zi_chan, jing_li_run, mei_gu_jing_zi_chan, province, industry, ipo_date, updated_at FROM stockinfo WHERE code = %s`, s.ph(1))
+	query := fmt.Sprintf(`SELECT code, name, exchange, price, open, high, low, last_close, change_pct, volume, amount, turnover_rate, liu_tong_gu_ben, zong_gu_ben, market_cap, total_market_cap, jing_zi_chan, jing_li_run, mei_gu_jing_zi_chan, province, industry, ipo_date, st_flag, updated_at FROM stockinfo WHERE code = %s`, s.ph(1))
 	row := s.s.DB().QueryRow(query, code)
 
 	var info StockInfo
@@ -91,7 +92,7 @@ func (s *Store) GetByCode(code string) (*StockInfo, error) {
 		&info.Volume, &info.Amount, &info.TurnoverRate,
 		&info.LiuTongGuBen, &info.ZongGuBen, &info.MarketCap, &info.TotalMarketCap,
 		&info.JingZiChan, &info.JingLiRun, &info.MeiGuJingZiChan,
-		&info.Province, &info.Industry, &info.IPODate, &info.UpdatedAt,
+		&info.Province, &info.Industry, &info.IPODate, &info.StFlag, &info.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -103,13 +104,13 @@ func (s *Store) GetByCode(code string) (*StockInfo, error) {
 func (s *Store) GetByMarketCap(minCap, maxCap float64) ([]StockInfo, error) {
 	var query string
 	if minCap > 0 && maxCap > 0 {
-		query = fmt.Sprintf(`SELECT code, name, exchange, price, market_cap FROM stockinfo WHERE market_cap >= %s AND market_cap <= %s ORDER BY market_cap ASC`, s.ph(1), s.ph(2))
+		query = fmt.Sprintf(`SELECT code, name, exchange, price, market_cap, st_flag FROM stockinfo WHERE market_cap >= %s AND market_cap <= %s ORDER BY market_cap ASC`, s.ph(1), s.ph(2))
 		return s.queryStockInfo(query, minCap, maxCap)
 	} else if minCap > 0 {
-		query = fmt.Sprintf(`SELECT code, name, exchange, price, market_cap FROM stockinfo WHERE market_cap >= %s ORDER BY market_cap ASC`, s.ph(1))
+		query = fmt.Sprintf(`SELECT code, name, exchange, price, market_cap, st_flag FROM stockinfo WHERE market_cap >= %s ORDER BY market_cap ASC`, s.ph(1))
 		return s.queryStockInfo(query, minCap)
 	} else if maxCap > 0 {
-		query = fmt.Sprintf(`SELECT code, name, exchange, price, market_cap FROM stockinfo WHERE market_cap <= %s ORDER BY market_cap ASC`, s.ph(1))
+		query = fmt.Sprintf(`SELECT code, name, exchange, price, market_cap, st_flag FROM stockinfo WHERE market_cap <= %s ORDER BY market_cap ASC`, s.ph(1))
 		return s.queryStockInfo(query, maxCap)
 	}
 	return s.GetAll()
@@ -127,7 +128,7 @@ func (s *Store) queryStockInfo(query string, args ...interface{}) ([]StockInfo, 
 		var info StockInfo
 		if err := rows.Scan(
 			&info.Code, &info.Name, &info.Exchange,
-			&info.Price, &info.MarketCap,
+			&info.Price, &info.MarketCap, &info.StFlag,
 		); err != nil {
 			return nil, err
 		}

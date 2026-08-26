@@ -8,6 +8,7 @@ import { StockPoolList } from '../components/StockPoolList';
 import { StockPoolFilterPanel } from '../components/StockPoolFilterPanel';
 import { StockPoolModal } from '../components/StockPoolModal';
 import { StockListTable } from '../components/StockListTable';
+import DiscoverResearchPanel from '../components/DiscoverResearchPanel';
 import type { CustomStockPool, StockPoolFilter, FilterField } from '../types/api';
 
 const exchangeOptions = [
@@ -273,6 +274,7 @@ export default function Blocks() {
                     pool={currentPool}
                     onEdit={() => handleEditPool(currentPool)}
                   />
+                  <DiscoverResearchPanel poolId={currentPool.id} poolName={currentPool.name} />
                   <StockListTable
                     title="股票列表"
                     dataSource={filteredStocks.map(s => ({

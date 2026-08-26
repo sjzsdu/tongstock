@@ -101,7 +101,7 @@ export interface UseStockFinanceReturn {
   activeFinanceMetrics: FinanceTrendMetric[];
   latestFinanceRecord: FinanceTrendRecord | undefined;
   formatFinanceMetricValue: (value: number | undefined, metric: FinanceTrendMetric) => string;
-  financeItems: any[][];
+  financeItems: Array<[string, number, string]>;
 }
 
 export function useStockFinance(code: string, detailStatus: DetailStatus): UseStockFinanceReturn {
@@ -165,7 +165,7 @@ export function useStockFinance(code: string, detailStatus: DetailStatus): UseSt
 
   const latestFinanceRecord = financeDisplayRecords[financeDisplayRecords.length - 1];
 
-  const financeItems = finance ? [
+  const financeItems: Array<[string, number, string]> = finance ? [
     ['总股本', finance.ZongGuBen, '万股'],
     ['流通股本', finance.LiuTongGuBen, '万股'],
     ['总资产', finance.ZongZiChan, '万元'],

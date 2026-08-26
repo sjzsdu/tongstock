@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShoppingCartOutlined, ArrowUpOutlined, ArrowDownOutlined, CalendarOutlined, TagOutlined, MessageOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { Alert, Button, Card, Empty, Flex, Space, Statistic, Tag, Typography, message } from 'antd';
-import { api, type TradeInfo } from '../api/client';
+import { api, type PositionDecision, type TradeInfo } from '../api/client';
 import type { QuoteItem } from '../types/api';
 
 const { Paragraph, Text, Title } = Typography;
@@ -14,10 +14,12 @@ export default function Portfolio() {
   const [quotes, setQuotes] = useState<Record<string, QuoteItem>>({});
   const [loading, setLoading] = useState(true);
   const [sellingCode, setSellingCode] = useState<string | null>(null);
+  const [decisions, setDecisions] = useState<PositionDecision[]>([]);
 
   const loadPositions = useCallback(async () => {
     setLoading(true);
     try {
+      void api.positionDecisionToday().then((run) => setDecisions(run.decisions || [])).catch(() => setDecisions([]));
       const response = await api.tradePositions();
       const pos = response.positions || [];
       setPositions(pos);
@@ -93,15 +95,17 @@ export default function Portfolio() {
       <Space direction="vertical" size={16} style={{ width: '100%' }}>
         <Flex justify="space-between" align="center" wrap="wrap" gap={12}>
           <div>
-            <Title level={3} style={{ margin: 0 }}>虚拟持仓</Title>
+            <Title level={3} style={{ margin: 0 }}>持仓卖出判断</Title>
             <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              模拟交易的当前持仓，实时显示盈亏情况。
+              基于冻结真实行情和原始方法规则，回答继续持有、减仓还是退出。最终交易由你确认。
             </Paragraph>
           </div>
-          <Button icon={<ShoppingCartOutlined />} onClick={() => navigate('/screen')}>
-            去筛选
+          <Button icon={<ShoppingCartOutlined />} onClick={() => navigate('/')}>
+            查看今日选股
           </Button>
         </Flex>
+
+        {decisions.length > 0 && <Card title="AI 风险处置队列"><Space direction="vertical" style={{display:'flex'}}>{decisions.map((d)=><Alert key={d.code} type={d.action==='exit'?'error':d.action==='reduce'?'warning':'info'} showIcon message={`${d.code} ${d.name} · ${d.action}`} description={`${d.explanation}；最迟 ${d.deadline}${d.inferred?'；该持仓没有原始方法血缘，依据为推断':''}${d.constraint?`；${d.constraint}`:''}`}/>)}</Space></Card>}
 
         {positions.length > 0 ? (
           <Card>
@@ -129,14 +133,14 @@ export default function Portfolio() {
                 value={totalProfit}
                 precision={2}
                 prefix="¥"
-                valueStyle={{ color: totalProfit >= 0 ? '#22c55e' : '#ef4444' }}
+                valueStyle={{ color: totalProfit >= 0 ? '#ef4444' : '#22c55e' }}
               />
               <Statistic
                 title="盈亏比例"
                 value={totalProfitPct}
                 precision={2}
                 suffix="%"
-                valueStyle={{ color: totalProfitPct >= 0 ? '#22c55e' : '#ef4444' }}
+                valueStyle={{ color: totalProfitPct >= 0 ? '#ef4444' : '#22c55e' }}
               />
               <Statistic
                 title="盈利占比"
@@ -161,8 +165,8 @@ export default function Portfolio() {
               description={
                 <Space direction="vertical">
                   <Text type="secondary">暂无持仓</Text>
-                  <Button icon={<ShoppingCartOutlined />} onClick={() => navigate('/screen')}>
-                    去信号筛选选股
+                  <Button icon={<ShoppingCartOutlined />} onClick={() => navigate('/')}>
+                    查看今日选股
                   </Button>
                 </Space>
               }
@@ -204,7 +208,7 @@ export default function Portfolio() {
                       <Text code style={{ fontSize: 14, flexShrink: 0 }}>{position.code}</Text>
                       <Text strong style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>{position.name}</Text>
                     </Space>
-                    <Tag color={isProfit ? 'green' : 'red'} style={{ flexShrink: 0 }}>
+                    <Tag color={isProfit ? 'red' : 'green'} style={{ flexShrink: 0 }}>
                       {isProfit ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
                       {isProfit ? `+${profitPct.toFixed(2)}%` : `${profitPct.toFixed(2)}%`}
                     </Tag>
@@ -216,13 +220,13 @@ export default function Portfolio() {
                   </Flex>
                   <Flex justify="space-between" style={{ marginBottom: 8 }}>
                     <Text type="secondary" style={{ width: 80 }}>当前价格</Text>
-                    <Text strong style={{ fontVariantNumeric: 'tabular-nums', textAlign: 'right', flex: 1, color: isProfit ? '#22c55e' : '#ef4444' }}>
+                    <Text strong style={{ fontVariantNumeric: 'tabular-nums', textAlign: 'right', flex: 1, color: isProfit ? '#ef4444' : '#22c55e' }}>
                       ¥{currentPrice.toFixed(2)}
                     </Text>
                   </Flex>
                   <Flex justify="space-between" style={{ marginBottom: 12 }}>
                     <Text type="secondary" style={{ width: 80 }}>盈亏金额</Text>
-                    <Text style={{ fontVariantNumeric: 'tabular-nums', textAlign: 'right', flex: 1, color: isProfit ? '#22c55e' : '#ef4444' }}>
+                    <Text style={{ fontVariantNumeric: 'tabular-nums', textAlign: 'right', flex: 1, color: isProfit ? '#ef4444' : '#22c55e' }}>
                       {isProfit ? '+' : ''}¥{profit.toFixed(2)}
                     </Text>
                   </Flex>

@@ -226,6 +226,37 @@
         }
       }
     },
+    "/api/agent/research": {
+      "post": {
+        "operationId": "postApiAgentResearch",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["paradigm_id"],
+                "properties": {
+                  "paradigm_id": { "type": "string" },
+                  "question": { "type": "string" },
+                  "snapshot_id": { "type": "string" },
+                  "start_date": { "type": "string" },
+                  "end_date": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Persisted evidence-backed research result" },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "422": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/agent/chat/session/list": {
       "get": {
         "operationId": "getApiAgentChatSessionList",
@@ -2029,11 +2060,11 @@
       }
     },
     "/api/paradigm/backtest": {
-      "get": {
-        "operationId": "getApiParadigmBacktest",
+      "post": {
+        "operationId": "postApiParadigmBacktest",
         "responses": {
-          "200": {
-            "description": "Successful legacy-compatible response"
+          "201": {
+            "description": "Persisted experiment completed against a frozen real-data snapshot"
           },
           "400": {
             "$ref": "#/components/responses/Error"
@@ -2059,34 +2090,6 @@
     "/api/paradigm/evaluate": {
       "post": {
         "operationId": "postApiParadigmEvaluate",
-        "responses": {
-          "200": {
-            "description": "Successful legacy-compatible response"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          },
-          "401": {
-            "$ref": "#/components/responses/Error"
-          },
-          "404": {
-            "$ref": "#/components/responses/Error"
-          },
-          "409": {
-            "$ref": "#/components/responses/Error"
-          },
-          "500": {
-            "$ref": "#/components/responses/Error"
-          },
-          "503": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/api/paradigm/history": {
-      "get": {
-        "operationId": "getApiParadigmHistory",
         "responses": {
           "200": {
             "description": "Successful legacy-compatible response"
@@ -2209,42 +2212,6 @@
     "/api/paradigm/{id}": {
       "delete": {
         "operationId": "deleteApiParadigmId",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful legacy-compatible response"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          },
-          "401": {
-            "$ref": "#/components/responses/Error"
-          },
-          "404": {
-            "$ref": "#/components/responses/Error"
-          },
-          "409": {
-            "$ref": "#/components/responses/Error"
-          },
-          "500": {
-            "$ref": "#/components/responses/Error"
-          },
-          "503": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "get": {
-        "operationId": "getApiParadigmId",
         "parameters": [
           {
             "in": "path",
@@ -3357,6 +3324,407 @@
           "503": {
             "$ref": "#/components/responses/Error"
           }
+        }
+      }
+    },
+    "/api/forward/runs": {
+      "get": {
+        "operationId": "getApiForwardRuns",
+        "responses": {
+          "200": { "description": "Success" },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "postApiForwardRuns",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Success" },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/forward/runs/{id}": {
+      "get": {
+        "operationId": "getApiForwardRunsId",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Success" },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/forward/runs/{id}/signals": {
+      "get": {
+        "operationId": "getApiForwardRunsIdSignals",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Success" },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/forward/runs/{id}/equity": {
+      "get": {
+        "operationId": "getApiForwardRunsIdEquity",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Success" },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/forward/runs/{id}/compare": {
+      "get": {
+        "operationId": "getApiForwardRunsIdCompare",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Success" },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/forward/runs/{id}/execute": {
+      "post": {
+        "operationId": "postApiForwardRunsIdExecute",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Success" },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/forward/runs/{id}/finalize": {
+      "post": {
+        "operationId": "postApiForwardRunsIdFinalize",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Success" },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/forward/signals": {
+      "get": {
+        "operationId": "getApiForwardSignals",
+        "responses": {
+          "200": { "description": "Success" },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/forward/signals/{id}": {
+      "get": {
+        "operationId": "getApiForwardSignalsId",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Success" },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/methods": {
+      "get": {
+        "operationId": "getApiMethods",
+        "parameters": [
+          { "in": "query", "name": "status", "schema": { "type": "string" } },
+          { "in": "query", "name": "market", "schema": { "type": "string" } },
+          { "in": "query", "name": "universe", "schema": { "type": "string" } },
+          { "in": "query", "name": "holding_min_days", "schema": { "type": "integer" } },
+          { "in": "query", "name": "holding_max_days", "schema": { "type": "integer" } },
+          { "in": "query", "name": "family_id", "schema": { "type": "string" } },
+          { "in": "query", "name": "limit", "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "Success" }, "400": { "$ref": "#/components/responses/Error" }, "401": { "$ref": "#/components/responses/Error" }, "500": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/api/methods/{id}": {
+      "get": {
+        "operationId": "getApiMethodsId",
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Success" }, "401": { "$ref": "#/components/responses/Error" }, "404": { "$ref": "#/components/responses/Error" }, "500": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/api/methods/{id}/audit": {
+      "get": {
+        "operationId": "getApiMethodsIdAudit",
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Success" }, "401": { "$ref": "#/components/responses/Error" }, "500": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/api/method-families/{id}": {
+      "get": {
+        "operationId": "getApiMethodFamiliesId",
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Success" }, "401": { "$ref": "#/components/responses/Error" }, "500": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/api/monitoring/report": {
+      "get": {
+        "operationId": "getApiMonitoringReport",
+        "responses": {
+          "200": { "description": "Success" },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/monitoring/alerts": {
+      "get": {
+        "operationId": "getApiMonitoringAlerts",
+        "responses": {
+          "200": { "description": "Success" },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/monitoring/config": {
+      "get": {
+        "operationId": "getApiMonitoringConfig",
+        "responses": {
+          "200": { "description": "Success" },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/automation/run": {"post":{"operationId":"postApiAutomationRun","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"}}}},"responses":{"200":{"description":"Idempotent daily automation job"},"422":{"$ref":"#/components/responses/Error"},"500":{"$ref":"#/components/responses/Error"},"503":{"$ref":"#/components/responses/Error"}}}},
+    "/api/automation/jobs": {"get":{"operationId":"getApiAutomationJobs","responses":{"200":{"description":"Persisted automation jobs"},"500":{"$ref":"#/components/responses/Error"},"503":{"$ref":"#/components/responses/Error"}}}},
+    "/api/automation/outbox": {"get":{"operationId":"getApiAutomationOutbox","responses":{"200":{"description":"Prioritized persistent notification outbox"},"500":{"$ref":"#/components/responses/Error"},"503":{"$ref":"#/components/responses/Error"}}}},
+    "/api/discover/run": {"post":{"operationId":"postApiDiscoverRun","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"}}}},"responses":{"200":{"description":"Discovery research result summary"},"400":{"$ref":"#/components/responses/Error"},"422":{"$ref":"#/components/responses/Error"},"500":{"$ref":"#/components/responses/Error"},"503":{"$ref":"#/components/responses/Error"}}}},
+    "/api/discover/traces": {"get":{"operationId":"getApiDiscoverTraces","parameters":[{"name":"limit","in":"query","schema":{"type":"integer"}}],"responses":{"200":{"description":"Discovery research trace summaries"},"500":{"$ref":"#/components/responses/Error"},"503":{"$ref":"#/components/responses/Error"}}}},
+    "/api/position-decisions/run": {"post":{"operationId":"postApiPositionDecisionsRun","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"}}}},"responses":{"200":{"description":"Immutable position decisions"},"422":{"$ref":"#/components/responses/Error"},"500":{"$ref":"#/components/responses/Error"},"503":{"$ref":"#/components/responses/Error"}}}},
+    "/api/position-decisions/today": {"get":{"operationId":"getApiPositionDecisionsToday","responses":{"200":{"description":"Latest position decisions"},"404":{"$ref":"#/components/responses/Error"},"500":{"$ref":"#/components/responses/Error"},"503":{"$ref":"#/components/responses/Error"}}}},
+    "/api/position-decisions/runs/{id}": {"get":{"operationId":"getApiPositionDecisionRun","parameters":[{"in":"path","name":"id","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"One position decision run"},"404":{"$ref":"#/components/responses/Error"},"500":{"$ref":"#/components/responses/Error"},"503":{"$ref":"#/components/responses/Error"}}}},
+    "/api/selections/today": {
+      "get": {
+        "operationId": "getApiSelectionsToday",
+        "parameters": [{"in":"query","name":"method_id","schema":{"type":"string"}}],
+        "responses": {
+          "200": {"description":"Latest immutable real-data selection run","content":{"application/json":{"schema":{"type":"object"}}}},
+          "404": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/selections/runs": {
+      "get": {
+        "operationId": "getApiSelectionRuns",
+        "parameters": [
+          {"in":"query","name":"date","schema":{"type":"string"}},
+          {"in":"query","name":"method_id","schema":{"type":"string"}},
+          {"in":"query","name":"limit","schema":{"type":"integer","default":30}}
+        ],
+        "responses": {
+          "200": {"description":"Historical immutable selection runs","content":{"application/json":{"schema":{"type":"object"}}}},
+          "500": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/selections/runs/{id}": {
+      "get": {
+        "operationId": "getApiSelectionRun",
+        "parameters": [
+          {"in":"path","name":"id","required":true,"schema":{"type":"string"}},
+          {"in":"query","name":"method_id","schema":{"type":"string"}}
+        ],
+        "responses": {
+          "200": {"description":"One immutable selection run","content":{"application/json":{"schema":{"type":"object"}}}},
+          "404": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/monitoring/health": {
+      "get": {
+        "operationId": "getApiMonitoringHealth",
+        "responses": {
+          "200": { "description": "Success" },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/monitoring/alerts/{id}/ack": {
+      "post": {
+        "operationId": "postApiMonitoringAlertsIdAck",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Success" },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/monitoring/alerts/{id}/resolve": {
+      "post": {
+        "operationId": "postApiMonitoringAlertsIdResolve",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Success" },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" }
         }
       }
     }

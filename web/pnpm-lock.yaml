@@ -20,6 +20,9 @@ importers:
       antd:
         specifier: ^6.3.7
         version: 6.5.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      dayjs:
+        specifier: ^1.11.21
+        version: 1.11.21
       github-markdown-css:
         specifier: ^5.9.0
         version: 5.9.0

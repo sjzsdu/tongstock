@@ -393,7 +393,7 @@ function SideContent({ paradigm, evaluatedConfirm, evaluatedInvalid, agentText, 
                   <Typography.Text strong>平仓条件（止盈）：</Typography.Text>
                   <div style={{ marginTop: 4 }}>
                     {paradigm.sell_conditions.take_profit.map((c, i) => (
-                      <div key={i} style={{ marginLeft: 12, color: '#22c55e' }}>↑ {formatCondition(c)}</div>
+                      <div key={i} style={{ marginLeft: 12, color: '#ef4444' }}>↑ {formatCondition(c)}</div>
                     ))}
                   </div>
                 </div>
@@ -403,7 +403,7 @@ function SideContent({ paradigm, evaluatedConfirm, evaluatedInvalid, agentText, 
                   <Typography.Text strong>止损条件：</Typography.Text>
                   <div style={{ marginTop: 4 }}>
                     {paradigm.sell_conditions.stop_loss.map((c, i) => (
-                      <div key={i} style={{ marginLeft: 12, color: '#ef4444' }}>↓ {formatCondition(c)}</div>
+                      <div key={i} style={{ marginLeft: 12, color: '#22c55e' }}>↓ {formatCondition(c)}</div>
                     ))}
                   </div>
                 </div>
@@ -506,7 +506,7 @@ export default function ParadigmResultDrawer({
           items={[
             ...(hasBuy ? [{
               key: 'buy',
-              label: <span style={{ color: '#22c55e' }}>📈 买入</span>,
+              label: <span style={{ color: '#ef4444' }}>📈 买入</span>,
               children: (
                 <SideContent
                   paradigm={buyParadigms[0] || paradigm}
@@ -521,7 +521,7 @@ export default function ParadigmResultDrawer({
             }] : []),
             ...(hasSell ? [{
               key: 'sell',
-              label: <span style={{ color: '#ef4444' }}>📉 卖出</span>,
+              label: <span style={{ color: '#22c55e' }}>📉 卖出</span>,
               children: (
                 <SideContent
                   paradigm={sellParadigms[0] || null}

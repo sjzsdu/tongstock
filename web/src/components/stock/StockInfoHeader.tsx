@@ -1,12 +1,12 @@
 import { Button, Card, Flex, Space, Tag, Tooltip, Typography } from 'antd';
 import { CompressOutlined, ExpandOutlined, RobotOutlined, SyncOutlined } from '@ant-design/icons';
-import type { KlineSyncState } from '../../types/api';
+import type { KlineSyncState, Quote } from '../../types/api';
 import { formatDate } from '../../lib/datetime';
-import { formatSigned } from '../../lib/stock-detail';
+import { formatSigned, getSyncStatusPresentation } from '../../lib/stock-detail';
 
 interface StockInfoHeaderProps {
   code: string;
-  quote: any;
+  quote: Quote;
   ktype: string;
   pct: number;
   valueColor: string;
@@ -17,6 +17,8 @@ interface StockInfoHeaderProps {
   onAgentClick: () => void;
   onParadigmClick: () => void;
   onParadigmRefresh: () => void;
+  /** 该股票是否已有挖掘缓存;仅缓存过才显示"重新挖掘"按钮 */
+  hasParadigmCache?: boolean;
 }
 
 export function StockInfoHeader({
@@ -32,7 +34,9 @@ export function StockInfoHeader({
   onAgentClick,
   onParadigmClick,
   onParadigmRefresh,
+  hasParadigmCache = false,
 }: StockInfoHeaderProps) {
+  const syncStatus = getSyncStatusPresentation(syncState?.status || 'unknown');
   return (
     <Card bordered={false} style={{ background: 'linear-gradient(135deg, rgba(30,41,59,0.95), rgba(15,23,42,0.92))' }}>
       <Flex justify="space-between" align="flex-start" gap={16} wrap>
@@ -44,7 +48,7 @@ export function StockInfoHeader({
               <Tag color="success">实时分析</Tag>
               {syncState?.last_date && (
                 <Tooltip title={syncState.last_sync_at ? `最后同步: ${formatDate(new Date(syncState.last_sync_at))}` : '同步时间未知'}>
-                  <Tag color={syncState.status === 'ok' ? 'cyan' : 'orange'}>
+                  <Tag color={syncState.status === 'ok' ? 'cyan' : syncStatus.color}>
                     数据截至 {syncState.last_date}
                   </Tag>
                 </Tooltip>
@@ -89,12 +93,14 @@ export function StockInfoHeader({
         >
           范式挖掘
         </Button>
-        <Button
-          icon={<SyncOutlined />}
-          onClick={onParadigmRefresh}
-        >
-          重新挖掘
-        </Button>
+        {hasParadigmCache && (
+          <Button
+            icon={<SyncOutlined />}
+            onClick={onParadigmRefresh}
+          >
+            重新挖掘
+          </Button>
+        )}
       </Flex>
     </Card>
   );

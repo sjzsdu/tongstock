@@ -87,6 +87,26 @@ func TestKlineFutureRangeClampsToCompletedTradingDay(t *testing.T) {
 	}
 }
 
+func TestRangeLessKlineFreshnessIgnoresHistoricalSuspensionGaps(t *testing.T) {
+	calendar := calendarFunc(func(day time.Time) bool {
+		return day.Weekday() != time.Saturday && day.Weekday() != time.Sunday
+	})
+	policy := NewMarketFreshnessPolicy(calendar, time.Local)
+	old := time.Date(2026, 7, 30, 0, 0, 0, 0, time.Local)
+	latest := time.Date(2026, 8, 3, 0, 0, 0, 0, time.Local)
+	decision, err := policy.Evaluate(context.Background(),
+		time.Date(2026, 8, 3, 16, 0, 0, 0, time.Local),
+		DataSpec{Type: DataKline, Market: "sh", Code: "601688"},
+		Coverage{Exists: true, Start: old, End: latest, Points: []time.Time{old, latest}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !decision.Fresh || len(decision.MissingRanges) != 0 {
+		t.Fatalf("range-less current series was marked stale: %+v", decision)
+	}
+}
+
 func TestFreshnessPolicyPassesEachExchangeToTradingCalendar(t *testing.T) {
 	var seen []string
 	calendar := tradingCalendarRecorder{seen: &seen}

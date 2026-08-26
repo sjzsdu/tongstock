@@ -196,7 +196,7 @@ func evaluateStructuredCondition(ec *EvaluatedCondition, c paradigms.Condition, 
 	if op == "" || op == "describe" {
 		return false
 	}
-	leftName := normalizeIndicator(c.Indicator)
+	leftName := paradigms.NormalizeIndicator(c.Indicator)
 	left, ok := indicator[leftName]
 	if !ok {
 		return false
@@ -250,7 +250,7 @@ func resolvePreviousPair(leftName, rightRaw string, indicator map[string]float64
 	if !ok {
 		return 0, 0, false
 	}
-	rightName := normalizeIndicator(rightRaw)
+	rightName := paradigms.NormalizeIndicator(rightRaw)
 	if prevRight, ok := indicator["prev_"+rightName]; ok {
 		return prevLeft, prevRight, true
 	}
@@ -258,26 +258,8 @@ func resolvePreviousPair(leftName, rightRaw string, indicator map[string]float64
 	return prevLeft, right, ok
 }
 
-func normalizeIndicator(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
-	s = strings.ReplaceAll(s, ".", "_")
-	s = strings.ReplaceAll(s, " ", "")
-	s = strings.Trim(s, "\"'`：:")
-	switch s {
-	case "price", "current", "当前价", "收盘价", "closeprice":
-		return "close"
-	case "成交量", "vol":
-		return "volume"
-	case "dif", "macd.dif", "macd_dif":
-		return "macd_dif"
-	case "rsi", "rsi6", "rsi14":
-		return "rsi14"
-	}
-	return s
-}
-
 func resolveConditionValue(v string, indicator map[string]float64) (float64, string, bool) {
-	label := normalizeIndicator(v)
+	label := paradigms.NormalizeIndicator(v)
 	if val, ok := indicator[label]; ok {
 		return val, label, true
 	}

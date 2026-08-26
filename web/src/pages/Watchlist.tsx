@@ -2,13 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRightOutlined,
-  ClockCircleOutlined,
   DeleteOutlined,
   EditOutlined,
   HeartOutlined,
-  InfoCircleOutlined,
   StockOutlined,
-  WarningOutlined,
 } from '@ant-design/icons';
 import {
   Button,
@@ -32,6 +29,8 @@ import {
 import { api } from '../api/client';
 import type { Quote, SyncFreshnessResult, WatchlistStock } from '../types/api';
 import StockSearchInput from '../components/StockSearchInput';
+import { FreshnessBadgeFromResult, ProductStatusBanner } from '../components/ProductStatus';
+import type { ProductStatusState } from '../hooks/useProductStatus';
 
 const { Text } = Typography;
 
@@ -40,6 +39,7 @@ const GROUP_COLORS: Record<string, string> = {
   industry: 'blue',
   concept: 'green',
   custom: 'purple',
+  paradigm: 'magenta',
 };
 
 function getGroupColor(group: string): string {
@@ -51,6 +51,7 @@ function getGroupLabel(group: string): string {
     default: '默认',
     industry: '行业',
     concept: '概念',
+    paradigm: '范式观察',
   };
   return labels[group] ?? group;
 }
@@ -66,21 +67,85 @@ function formatSignedPercent(value: number) {
 }
 
 function FreshnessBadge({ result }: { result: SyncFreshnessResult }) {
-  const configs: Record<string, { color: string; text: string; icon: React.ReactNode }> = {
-    fresh: { color: 'green', text: '数据新鲜', icon: <InfoCircleOutlined /> },
-    stale: { color: 'orange', text: '数据滞后', icon: <ClockCircleOutlined /> },
-    outdated: { color: 'red', text: '数据过期', icon: <WarningOutlined /> },
-    failed: { color: 'red', text: '同步失败', icon: <WarningOutlined /> },
-    empty: { color: 'default', text: '无数据', icon: <InfoCircleOutlined /> },
-    unknown: { color: 'default', text: '未知', icon: <InfoCircleOutlined /> },
-  };
-  const config = configs[result.freshness] || configs.unknown;
+  return <FreshnessBadgeFromResult result={result} />;
+}
+
+/**
+ * 聚合整页自选股的状态：根据所有股票的 freshness 汇总为统一的产品级状态。
+ * 不会把单一股票的陈旧数据误报为整页 fresh。
+ */
+function WatchlistStatusBar({
+  freshnessMap,
+  onRefresh,
+}: {
+  freshnessMap: Record<string, SyncFreshnessResult>;
+  onRefresh?: () => void;
+}) {
+  const entries = Object.values(freshnessMap);
+  if (entries.length === 0) return null;
+
+  const counts = entries.reduce<Record<string, number>>((acc, r) => {
+    acc[r.freshness] = (acc[r.freshness] || 0) + 1;
+    return acc;
+  }, {});
+
+  const freshCount = counts['fresh'] || 0;
+  const staleCount = (counts['stale'] || 0) + (counts['outdated'] || 0);
+  const failedCount = counts['failed'] || 0;
+  const total = entries.length;
+
+  let state: ProductStatusState;
+  if (failedCount > 0 && freshCount === 0) {
+    state = {
+      kind: 'failed',
+      meta: {
+        label: '行情同步异常',
+        actionHint: '点击刷新以重新同步行情数据',
+        level: 'error',
+        reason: `${failedCount} / ${total} 只股票同步失败`,
+      },
+      canOperate: true,
+    };
+  } else if (freshCount === 0 && staleCount > 0) {
+    state = {
+      kind: 'degraded',
+      meta: {
+        label: '行情数据延迟',
+        actionHint: '点击刷新以获取最新行情',
+        level: 'warning',
+        reason: `${staleCount} / ${total} 只股票数据延迟`,
+      },
+      canOperate: true,
+    };
+  } else if (freshCount < total) {
+    state = {
+      kind: 'degraded',
+      meta: {
+        label: '部分行情延迟',
+        actionHint: '点击刷新以同步全部行情',
+        level: 'warning',
+        reason: `${freshCount} / ${total} 只股票数据新鲜`,
+      },
+      canOperate: true,
+    };
+  } else {
+    state = {
+      kind: 'ready',
+      meta: {
+        label: '行情数据新鲜',
+        actionHint: '',
+        level: 'success',
+      },
+      canOperate: true,
+    };
+  }
+
   return (
-    <Tooltip title={result.stale_reason || result.error || `${config.text} - ${result.last_date || '-'}`}>
-      <Tag color={config.color} icon={config.icon} style={{ marginInlineEnd: 0 }}>
-        {config.text}
-      </Tag>
-    </Tooltip>
+    <ProductStatusBanner
+      state={state}
+      onRetry={onRefresh}
+      contextLabel={`共 ${total} 只股票`}
+    />
   );
 }
 
@@ -222,7 +287,7 @@ export default function Watchlist() {
 
   const groupOptions = useMemo(() => {
     const existing = (groups ?? []).map((g) => g.name);
-    const presets = ['default', 'industry', 'concept', 'custom'];
+    const presets = ['default', 'industry', 'concept', 'custom', 'paradigm'];
     const all = Array.from(new Set([...presets, ...existing]));
     return all.map((name) => ({ label: getGroupLabel(name), value: name }));
   }, [groups]);
@@ -238,6 +303,7 @@ export default function Watchlist() {
           <Typography.Text type="secondary">
             管理您的自选股列表，实时查看行情变化，按分组组织关注标的。
           </Typography.Text>
+          <WatchlistStatusBar freshnessMap={freshness} onRefresh={() => void loadWatchlist()} />
         </Space>
       </Card>
 

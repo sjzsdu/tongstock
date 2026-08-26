@@ -34,6 +34,10 @@ type paradigmAnalyzeResponse struct {
 	EvaluatedConfirm []paradigms.EvaluatedItem `json:"evaluated_confirm,omitempty"`
 	EvaluatedInvalid []paradigms.EvaluatedItem `json:"evaluated_invalid,omitempty"`
 	AgentText        string                    `json:"agent_text"`
+	ExperimentID     string                    `json:"experiment_id,omitempty"`
+	RunID            string                    `json:"run_id,omitempty"`
+	EvidenceHash     string                    `json:"evidence_hash,omitempty"`
+	Research         *agentResearchResponse    `json:"research,omitempty"`
 	Cached           bool                      `json:"cached,omitempty"`
 	Message          string                    `json:"message,omitempty"`
 	Error            string                    `json:"error,omitempty"`
@@ -49,13 +53,11 @@ func (s *Server) SetupParadigmRoutes(api *gin.RouterGroup) {
 	{
 		p.POST("/analyze", s.handleParadigmAnalyze)
 		p.POST("/evaluate", s.handleParadigmEvaluate)
-		p.GET("/backtest", s.handleParadigmBacktest)
+		p.POST("/backtest", s.handleParadigmBacktest)
 		p.GET("/list", s.handleParadigmList)
 		p.GET("/alerts", s.handleParadigmAlerts)
 		p.GET("/stats", s.handleParadigmStats)
 		p.GET("/stock/:code", s.handleParadigmByStock)
-		p.GET("/history", s.handleParadigmHistory)
-		p.GET("/:id", s.handleParadigmGet)
 		p.PUT("/:id/review", s.handleParadigmReview)
 		p.DELETE("/:id", s.handleParadigmDelete)
 	}
@@ -156,149 +158,6 @@ type paradigmStatsResponse struct {
 	AverageReturn   float64 `json:"average_return"`
 	AverageRating   float64 `json:"average_rating"`
 	HighReliability int     `json:"high_reliability"`
-}
-
-type paradigmBacktestResponse struct {
-	ParadigmID  string  `json:"paradigm_id"`
-	StockCode   string  `json:"stock_code"`
-	SampleSize  int     `json:"sample_size"`
-	WinRate5    float64 `json:"win_rate_5"`
-	WinRate10   float64 `json:"win_rate_10"`
-	WinRate20   float64 `json:"win_rate_20"`
-	AvgReturn5  float64 `json:"avg_return_5"`
-	AvgReturn10 float64 `json:"avg_return_10"`
-	AvgReturn20 float64 `json:"avg_return_20"`
-	MaxDrawdown float64 `json:"max_drawdown"`
-	Error       string  `json:"error,omitempty"`
-}
-
-func (s *Server) handleParadigmBacktest(c *gin.Context) {
-	if s.paradigmStore == nil {
-		c.JSON(http.StatusOK, []paradigmBacktestResponse{})
-		return
-	}
-	id := c.Query("id")
-	stockCode := c.Query("stock_code")
-	var list []*paradigms.Paradigm
-	if id != "" {
-		p, err := s.paradigmStore.Get(id)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-			return
-		}
-		list = []*paradigms.Paradigm{p}
-	} else if stockCode != "" {
-		list = s.paradigmStore.ListByStockCode(stockCode)
-	} else {
-		list = s.paradigmStore.List()
-	}
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
-	if limit <= 0 || limit > 200 {
-		limit = 50
-	}
-	if len(list) > limit {
-		list = list[:limit]
-	}
-	out := make([]paradigmBacktestResponse, 0, len(list))
-	for _, p := range list {
-		out = append(out, s.backtestParadigm(p))
-	}
-	c.JSON(http.StatusOK, out)
-}
-
-func (s *Server) backtestParadigm(p *paradigms.Paradigm) paradigmBacktestResponse {
-	resp := paradigmBacktestResponse{ParadigmID: p.ID, StockCode: p.StockCode}
-	klines, err := s.svc.FetchKlineAll(p.StockCode, 0)
-	if err != nil || len(klines) < 80 {
-		resp.Error = fmt.Sprintf("kline data unavailable: %v", err)
-		return resp
-	}
-	start := 60
-	var sum5, sum10, sum20 float64
-	var wins5, wins10, wins20 int
-	maxDD := 0.0
-	for i := start; i < len(klines)-20; i++ {
-		ind := indicatorAt(klines, i)
-		matched := len(p.BuyConds) > 0
-		for _, cond := range p.BuyConds {
-			ec := EvaluatedCondition{Condition: formatConditionText(cond), Type: "buy"}
-			evaluateSingleCondition(&ec, cond, ind)
-			if ec.Status != "met" {
-				matched = false
-				break
-			}
-		}
-		if !matched {
-			continue
-		}
-		entry := klines[i].Close
-		ret5 := percentReturn(entry, klines[i+5].Close)
-		ret10 := percentReturn(entry, klines[i+10].Close)
-		ret20 := percentReturn(entry, klines[i+20].Close)
-		sum5 += ret5
-		sum10 += ret10
-		sum20 += ret20
-		if ret5 > 0 {
-			wins5++
-		}
-		if ret10 > 0 {
-			wins10++
-		}
-		if ret20 > 0 {
-			wins20++
-		}
-		for j := i + 1; j <= i+20; j++ {
-			dd := percentReturn(entry, klines[j].Low)
-			if dd < maxDD {
-				maxDD = dd
-			}
-		}
-		resp.SampleSize++
-	}
-	if resp.SampleSize > 0 {
-		n := float64(resp.SampleSize)
-		resp.AvgReturn5 = sum5 / n
-		resp.AvgReturn10 = sum10 / n
-		resp.AvgReturn20 = sum20 / n
-		resp.WinRate5 = float64(wins5) / n
-		resp.WinRate10 = float64(wins10) / n
-		resp.WinRate20 = float64(wins20) / n
-		resp.MaxDrawdown = maxDD
-	}
-	return resp
-}
-
-func indicatorAt(klines []*protocol.Kline, idx int) map[string]float64 {
-	ind := map[string]float64{"close": klines[idx].Close, "volume": klines[idx].Volume}
-	if idx > 0 {
-		ind["prev_close"] = klines[idx-1].Close
-		ind["prev_volume"] = klines[idx-1].Volume
-	}
-	for _, period := range []int{5, 10, 20, 60} {
-		if idx+1 >= period {
-			ind[fmt.Sprintf("ma%d", period)] = calcSMA(klines, period, idx)
-		}
-		if idx >= period {
-			ind[fmt.Sprintf("prev_ma%d", period)] = calcSMA(klines, period, idx-1)
-		}
-	}
-	if idx+1 >= 26 {
-		ind["macd_dif"] = calcEMA(klines[:idx+1], 12) - calcEMA(klines[:idx+1], 26)
-	}
-	if idx >= 26 {
-		ind["prev_macd_dif"] = calcEMA(klines[:idx], 12) - calcEMA(klines[:idx], 26)
-	}
-	if idx+1 >= 15 {
-		ind["rsi14"] = calcRSI(klines[:idx+1], 14)
-	}
-	return ind
-}
-
-func percentReturn(entry, exit float64) float64 {
-	if entry == 0 {
-		return 0
-	}
-	return (exit - entry) / entry * 100
 }
 
 func (s *Server) handleParadigmStats(c *gin.Context) {
@@ -417,17 +276,7 @@ func (s *Server) handleParadigmAnalyze(c *gin.Context) {
 			existing = s.paradigmStore.GetByStockCode(req.StockCode)
 		}
 		if existing != nil {
-			evalConfirm, evalInvalid := s.evaluateConditions(req.StockCode, existing)
-			c.JSON(http.StatusOK, paradigmAnalyzeResponse{
-				StockCode:        req.StockCode,
-				StockName:        req.StockName,
-				Paradigm:         existing,
-				EvaluatedConfirm: evalConfirm,
-				EvaluatedInvalid: evalInvalid,
-				AgentText:        existing.AgentText,
-				Cached:           true,
-				Message:          "返回缓存范式。传 force_refresh=true 可重新分析。",
-			})
+			s.respondWithVerifiedParadigmResearch(c, req, existing, true)
 			return
 		}
 	}
@@ -470,7 +319,7 @@ func (s *Server) handleParadigmAnalyze(c *gin.Context) {
 	if paradigm != nil {
 		paradigm.AgentText = agentResp
 		paradigm.Source = paradigms.ParadigmSource{AgentVersion: "stock-paradigm-miner", Model: s.agentState.defaults.Model, KlineType: req.KlineType, Days: req.Days, GeneratedAt: time.Now().Format(time.RFC3339), CacheKey: cacheKey}
-		paradigm.Validation = validateParadigm(paradigm)
+		paradigm.Validation = paradigms.ValidateParadigm(paradigm)
 		if !paradigm.Validation.Valid {
 			c.JSON(http.StatusOK, paradigmAnalyzeResponse{StockCode: req.StockCode, StockName: req.StockName, Paradigm: paradigm, AgentText: agentResp, Error: strings.Join(paradigm.Validation.Errors, "; ")})
 			return
@@ -478,16 +327,50 @@ func (s *Server) handleParadigmAnalyze(c *gin.Context) {
 		_ = s.paradigmStore.Save(paradigm)
 	}
 
-	// Evaluate confirmations and invalidations against current data
-	evalConfirm, evalInvalid := s.evaluateConditions(req.StockCode, paradigm)
+	if paradigm == nil {
+		c.JSON(http.StatusUnprocessableEntity, paradigmAnalyzeResponse{
+			StockCode: req.StockCode, StockName: req.StockName,
+			AgentText: "AI 输出未形成可执行、可证伪的结构化假设，拒绝给出有效性结论。",
+			Error:     "agent response did not contain a valid executable hypothesis",
+		})
+		return
+	}
+	s.respondWithVerifiedParadigmResearch(c, req, paradigm, false)
+}
 
+func (s *Server) respondWithVerifiedParadigmResearch(
+	c *gin.Context,
+	req paradigmAnalyzeRequest,
+	p *paradigms.Paradigm,
+	cached bool,
+) {
+	result, exp, run, err := s.conductVerifiedResearch(c.Request.Context(), agentResearchRequest{
+		ParadigmID: p.ID,
+		Question:   "验证 AI 生成的股票范式是否具有真实样本外证据",
+	})
+	if err != nil {
+		response := paradigmAnalyzeResponse{
+			StockCode: req.StockCode, StockName: req.StockName, Paradigm: p,
+			AgentText: "真实数据、冻结快照或实验制品不足，拒绝判断该范式有效。",
+			Error:     err.Error(), Cached: cached,
+		}
+		if exp != nil {
+			response.ExperimentID = exp.ID
+		}
+		if run != nil {
+			response.RunID = run.ID
+		}
+		c.JSON(http.StatusUnprocessableEntity, response)
+		return
+	}
+	evalConfirm, evalInvalid := s.evaluateConditions(req.StockCode, p)
 	c.JSON(http.StatusOK, paradigmAnalyzeResponse{
-		StockCode:        req.StockCode,
-		StockName:        req.StockName,
-		Paradigm:         paradigm,
-		EvaluatedConfirm: evalConfirm,
-		EvaluatedInvalid: evalInvalid,
-		AgentText:        agentResp,
+		StockCode: req.StockCode, StockName: req.StockName, Paradigm: p,
+		EvaluatedConfirm: evalConfirm, EvaluatedInvalid: evalInvalid,
+		AgentText: result.Answer, ExperimentID: result.Citation.ExperimentID,
+		RunID: result.Citation.RunID, EvidenceHash: result.Citation.EvidenceHash,
+		Research: result, Cached: cached,
+		Message: "AI 假设已通过真实冻结快照运行实验；结论仅引用返回的 Evidence 与 critic 制品。",
 	})
 }
 
@@ -556,20 +439,6 @@ func filterParadigms(list []*paradigms.Paradigm, c *gin.Context) []*paradigms.Pa
 	return out
 }
 
-func (s *Server) handleParadigmGet(c *gin.Context) {
-	if s.paradigmStore == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "paradigm store not initialized"})
-		return
-	}
-	id := c.Param("id")
-	p, err := s.paradigmStore.Get(id)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, p)
-}
-
 func (s *Server) handleParadigmByStock(c *gin.Context) {
 	if s.paradigmStore == nil {
 		c.JSON(http.StatusOK, paradigmListResponse{Paradigms: []*paradigms.Paradigm{}, Total: 0})
@@ -577,15 +446,6 @@ func (s *Server) handleParadigmByStock(c *gin.Context) {
 	}
 	code := c.Param("code")
 	list := s.paradigmStore.ListByStockCode(code)
-	c.JSON(http.StatusOK, paradigmListResponse{Paradigms: list, Total: len(list)})
-}
-
-func (s *Server) handleParadigmHistory(c *gin.Context) {
-	if s.paradigmStore == nil {
-		c.JSON(http.StatusOK, paradigmListResponse{Paradigms: []*paradigms.Paradigm{}, Total: 0})
-		return
-	}
-	list := s.paradigmStore.List()
 	c.JSON(http.StatusOK, paradigmListResponse{Paradigms: list, Total: len(list)})
 }
 
@@ -612,6 +472,21 @@ func (s *Server) handleParadigmReview(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+	if req.ReviewStatus == paradigms.StateVerified || req.ReviewStatus == paradigms.StatePromoted {
+		evidence, evidenceErr := s.latestParadigmExperimentEvidence(id, "")
+		if evidenceErr != nil {
+			c.JSON(http.StatusConflict, gin.H{"error": "无法验证真实证据: " + evidenceErr.Error()})
+			return
+		}
+		if !evidence.PromotionEligible {
+			c.JSON(http.StatusConflict, gin.H{
+				"error":              "真实证据不完整，禁止将范式标记为已验证或已晋级",
+				"promotion_blockers": evidence.PromotionBlockers,
+				"evidence":           evidence,
+			})
+			return
+		}
 	}
 
 	pCopy := *p
@@ -692,12 +567,14 @@ func (s *Server) buildParadigmPrompt(code, name string, days int) string {
   "sell_conditions": {"take_profit":[{"indicator":"close", "operator":"gt", "value":"12.30"}], "stop_loss":[{"indicator":"close", "operator":"lt", "value":"MA60"}]},
   "confirmations": ["确认项"],
   "invalidations": ["失效规则"],
-  "expectation": {"holding_period":"2-6周", "expected_return":"8-15%", "risk_reward_ratio":"2:1", "win_rate":0, "sample_size":0, "confidence":0.6},
+  "expectation": {"holding_period":"待验证", "expected_return":"待真实实验验证", "risk_reward_ratio":"待真实实验验证", "win_rate":0, "sample_size":0, "confidence":0},
   "rationale": "范式逻辑"
 }
 ` + "```" + `
 
-要求：JSON 中条件必须尽量结构化。operator 只使用 gt、lt、between、near、cross_above、cross_below、describe。不要输出投资建议承诺。`)
+要求：JSON 中条件必须尽量结构化。operator 只使用 gt、lt、between、near、cross_above、cross_below、describe。
+你只负责生成可证伪假设，不得声称回测通过，不得编造收益率、胜率、样本量、交易记录或置信度；
+验证结论将由服务端真实冻结快照、持久化实验、Evidence 和 critic 生成。`)
 	return b.String()
 }
 
@@ -974,58 +851,6 @@ func extractParadigmJSON(text, stockCode, stockName string) *paradigms.Paradigm 
 		return &p
 	}
 	return nil
-}
-
-func validateParadigm(p *paradigms.Paradigm) paradigms.ValidationSummary {
-	s := paradigms.ValidationSummary{Valid: true, DataCompleteness: 1}
-	if p == nil {
-		return paradigms.ValidationSummary{Valid: false, Errors: []string{"empty paradigm"}}
-	}
-	if p.ID == "" {
-		s.Errors = append(s.Errors, "id is required")
-	}
-	if p.Name == "" {
-		s.Errors = append(s.Errors, "name is required")
-	}
-	if p.Side != "buy" && p.Side != "sell" {
-		s.Errors = append(s.Errors, "side must be buy or sell")
-	}
-	if len(p.BuyConds) == 0 {
-		s.Warnings = append(s.Warnings, "buy_conditions is empty")
-	}
-	conds := append([]paradigms.Condition{}, p.BuyConds...)
-	conds = append(conds, p.SellConds.TakeProfit...)
-	conds = append(conds, p.SellConds.StopLoss...)
-	s.TotalConditions = len(conds)
-	for _, c := range conds {
-		if c.Indicator == "" {
-			s.Warnings = append(s.Warnings, "condition indicator is empty")
-			continue
-		}
-		if isAutoEvaluableCondition(c) {
-			s.AutoEvaluable++
-		}
-	}
-	if s.TotalConditions > 0 {
-		s.AutoEvaluableRatio = float64(s.AutoEvaluable) / float64(s.TotalConditions)
-	}
-	if len(s.Errors) > 0 {
-		s.Valid = false
-	}
-	s.ReliabilityLabel = "low"
-	if s.Valid && s.AutoEvaluableRatio >= 0.7 {
-		s.ReliabilityLabel = "high"
-	} else if s.Valid && s.AutoEvaluableRatio >= 0.4 {
-		s.ReliabilityLabel = "medium"
-	}
-	return s
-}
-
-func isAutoEvaluableCondition(c paradigms.Condition) bool {
-	ind := normalizeIndicator(c.Indicator)
-	val := normalizeIndicator(c.Value)
-	supported := map[string]bool{"close": true, "volume": true, "ma5": true, "ma10": true, "ma20": true, "ma60": true, "rsi14": true, "macd_dif": true}
-	return supported[ind] || supported[val] || c.Operator == "describe"
 }
 
 func extractField(text, field string) string {

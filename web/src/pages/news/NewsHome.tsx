@@ -418,7 +418,7 @@ export default function NewsHome() {
                   <>
                     <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', padding: '20px 0', gap: 16 }}>
                       <div style={{ textAlign: 'center', flex: 1 }}>
-                        <div style={{ fontSize: 32, fontWeight: 'bold', color: '#22c55e' }}>{(positivePct * 100).toFixed(1)}%</div>
+                        <div style={{ fontSize: 32, fontWeight: 'bold', color: '#ef4444' }}>{(positivePct * 100).toFixed(1)}%</div>
                         <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>正面</div>
                       </div>
                       <div style={{ textAlign: 'center', flex: 1 }}>
@@ -426,7 +426,7 @@ export default function NewsHome() {
                         <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>中性</div>
                       </div>
                       <div style={{ textAlign: 'center', flex: 1 }}>
-                        <div style={{ fontSize: 32, fontWeight: 'bold', color: '#ef4444' }}>{(negativePct * 100).toFixed(1)}%</div>
+                        <div style={{ fontSize: 32, fontWeight: 'bold', color: '#22c55e' }}>{(negativePct * 100).toFixed(1)}%</div>
                         <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>负面</div>
                       </div>
                     </div>
@@ -435,7 +435,7 @@ export default function NewsHome() {
                         style={{
                           height: '100%',
                           width: '100%',
-                          background: `linear-gradient(90deg, #22c55e ${positivePct * 100}%, #f59e0b ${(positivePct + neutralPct) * 100}%, #ef4444 100%)`,
+                          background: `linear-gradient(90deg, #ef4444 ${positivePct * 100}%, #f59e0b ${(positivePct + neutralPct) * 100}%, #22c55e 100%)`,
                           borderRadius: 4,
                         }}
                       />

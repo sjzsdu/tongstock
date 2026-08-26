@@ -147,6 +147,826 @@ CREATE INDEX IF NOT EXISTS idx_data_sync_lookup
 	ON data_sync_state(data_type, market, code, granularity);
 `,
 	},
+	{
+		version: 3,
+		name:    "xdxr_and_adjustment_factor",
+		sql: `
+CREATE TABLE IF NOT EXISTS xdxr_event (
+	code TEXT NOT NULL,
+	date TEXT NOT NULL,   -- 除权除息/公司行为日期 (YYYY-MM-DD)
+	category INTEGER NOT NULL,
+	fen_hong REAL NOT NULL DEFAULT 0,       -- 每股分红 (元)
+	pei_gu_jia REAL NOT NULL DEFAULT 0,      -- 配股价
+	song_zhuan_gu REAL NOT NULL DEFAULT 0,   -- 每10股送转
+	pei_gu REAL NOT NULL DEFAULT 0,          -- 每10股配股
+	suo_gu REAL NOT NULL DEFAULT 0,          -- 缩股比例
+	qian_liu_tong REAL NOT NULL DEFAULT 0,   -- 前流通股本(万股)
+	hou_liu_tong REAL NOT NULL DEFAULT 0,    -- 后流通股本(万股)
+	qian_zong REAL NOT NULL DEFAULT 0,       -- 前总股本(万股)
+	hou_zong REAL NOT NULL DEFAULT 0,        -- 后总股本(万股)
+	source_updated_at INTEGER NOT NULL DEFAULT 0,
+	created_at INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (code, date, category)
+);
+CREATE INDEX IF NOT EXISTS idx_xdxr_event_code_date
+	ON xdxr_event(code, date);
+
+CREATE TABLE IF NOT EXISTS adjustment_factor (
+	code TEXT NOT NULL,
+	date TEXT NOT NULL,  -- 除权除息日
+	prev_close REAL NOT NULL DEFAULT 0,     -- 前收盘价 (不复权)
+	forward_factor REAL NOT NULL DEFAULT 1, -- 前复权因子: 历史价格 * forward_factor
+	backward_factor REAL NOT NULL DEFAULT 1,-- 后复权因子: 历史价格 / backward_factor
+	cum_forward REAL NOT NULL DEFAULT 1,    -- 累计前复权因子 (截至该日)
+	cum_backward REAL NOT NULL DEFAULT 1,   -- 累计后复权因子 (截至该日)
+	reason TEXT NOT NULL DEFAULT '',       -- 触发原因 (ex_dividend / split / ...)
+	created_at INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (code, date)
+);
+CREATE INDEX IF NOT EXISTS idx_adj_factor_code
+	ON adjustment_factor(code);
+`,
+	},
+	{
+		version: 4,
+		name:    "point_in_time_securities_master",
+		sql: `
+-- 证券状态历史: 记录每只证券的可交易/ST/停牌等状态变更区间
+CREATE TABLE IF NOT EXISTS security_status_history (
+	code TEXT NOT NULL,
+	effective_from TEXT NOT NULL,       -- 状态生效起始日 (YYYY-MM-DD), 包含
+	effective_to TEXT NOT NULL,         -- 状态失效日 (YYYY-MM-DD), 包含; '' 表示仍在生效
+	status TEXT NOT NULL,               -- normal / st / *st / suspended / delisted / halted
+	reason TEXT NOT NULL DEFAULT '',    -- 触发原因 (停牌/摘牌/ST 原因等)
+	source TEXT NOT NULL DEFAULT '',    -- 数据来源 (tdx/f10/manual)
+	created_at INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (code, effective_from, status)
+);
+CREATE INDEX IF NOT EXISTS idx_status_hist_code_date
+	ON security_status_history(code, effective_from, effective_to);
+CREATE INDEX IF NOT EXISTS idx_status_hist_status
+	ON security_status_history(status);
+`,
+		after: func(tx *sql.Tx) error {
+			// 扩展 stockinfo 增加上市/退市/ST 标记字段
+			additional := []struct {
+				name string
+				ddl  string
+			}{
+				{"ipo_date_txt", `TEXT NOT NULL DEFAULT ''`},
+				{"delist_date", `TEXT NOT NULL DEFAULT ''`},
+				{"st_flag", `INTEGER NOT NULL DEFAULT 0`},
+			}
+			for _, c := range additional {
+				if err := ensureSQLiteColumn(tx, "stockinfo", c.name, c.ddl); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		version: 5,
+		name:    "dataset_snapshot_and_lineage",
+		sql: `
+-- 数据快照: 用于绑定实验, 确保不可变和可追溯
+CREATE TABLE IF NOT EXISTS dataset_snapshot (
+	id TEXT PRIMARY KEY,
+	version TEXT NOT NULL,
+	date_range_start TEXT NOT NULL,
+	date_range_end TEXT NOT NULL,
+	universe TEXT NOT NULL DEFAULT '[]',  -- JSON array of codes
+	market TEXT NOT NULL DEFAULT 'ALL',
+	price_adjustment TEXT NOT NULL DEFAULT 'raw',
+	description TEXT NOT NULL DEFAULT '',
+	created_at INTEGER NOT NULL DEFAULT 0,
+	frozen INTEGER NOT NULL DEFAULT 0   -- 1 = immutable
+);
+CREATE INDEX IF NOT EXISTS idx_ds_created_at
+	ON dataset_snapshot(created_at);
+
+-- 快照中的数据源明细 (血缘追踪)
+CREATE TABLE IF NOT EXISTS snapshot_data_source (
+	snapshot_id TEXT NOT NULL,
+	source_type TEXT NOT NULL,         -- kline / quote / finance / news / factor
+	source_version TEXT NOT NULL,
+	as_of INTEGER NOT NULL DEFAULT 0,
+	source_updated_at INTEGER NOT NULL DEFAULT 0,
+	hash TEXT NOT NULL DEFAULT '',
+	created_at INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (snapshot_id, source_type),
+	FOREIGN KEY (snapshot_id) REFERENCES dataset_snapshot(id)
+);
+CREATE INDEX IF NOT EXISTS idx_snapshot_source_type
+	ON snapshot_data_source(source_type);
+
+-- 实验-快照绑定: 记录每个实验使用的不可变快照 ID 列表
+CREATE TABLE IF NOT EXISTS experiment_snapshot_binding (
+	experiment_id TEXT NOT NULL,
+	snapshot_id TEXT NOT NULL,
+	bound_at INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (experiment_id, snapshot_id)
+);
+CREATE INDEX IF NOT EXISTS idx_exp_binding_exp
+	ON experiment_snapshot_binding(experiment_id);
+`,
+	},
+	{
+		version: 6,
+		name:    "feature_registry",
+		sql: `
+-- 特征规格表: 统一特征定义 (TA/量价/相对强弱/市场状态/财务/事件)
+CREATE TABLE IF NOT EXISTS feature_spec (
+	id TEXT NOT NULL,
+	version INTEGER NOT NULL DEFAULT 1,
+	name TEXT NOT NULL,
+	category TEXT NOT NULL,
+	description TEXT NOT NULL DEFAULT '',
+	default_params TEXT NOT NULL DEFAULT '{}',   -- JSON
+	window INTEGER NOT NULL DEFAULT 0,
+	min_samples INTEGER NOT NULL DEFAULT 1,
+	dependencies TEXT NOT NULL DEFAULT '[]',     -- JSON array
+	timing TEXT NOT NULL DEFAULT 'end_of_day',
+	data_required TEXT NOT NULL DEFAULT '[]',   -- JSON array
+	formula_hash TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'active',
+	created_at INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_feature_spec_category
+	ON feature_spec(category);
+CREATE INDEX IF NOT EXISTS idx_feature_spec_status
+	ON feature_spec(status);
+
+-- 特征集合表: 一组特征的打包定义
+CREATE TABLE IF NOT EXISTS feature_set_spec (
+	id TEXT NOT NULL,
+	version INTEGER NOT NULL DEFAULT 1,
+	name TEXT NOT NULL,
+	description TEXT NOT NULL DEFAULT '',
+	features TEXT NOT NULL DEFAULT '[]',         -- JSON array of feature IDs
+	category TEXT NOT NULL DEFAULT 'technical',
+	price_req TEXT NOT NULL DEFAULT 'raw',
+	created_at INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_feature_set_category
+	ON feature_set_spec(category);
+
+-- 特征计算结果表: 记录每次特征计算的结果
+CREATE TABLE IF NOT EXISTS feature_value (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	feature_id TEXT NOT NULL,
+	feature_version INTEGER NOT NULL DEFAULT 1,
+	stock_code TEXT NOT NULL,
+	date TEXT NOT NULL,
+	value REAL NOT NULL DEFAULT 0,
+	source_data TEXT NOT NULL DEFAULT '',
+	computed_at INTEGER NOT NULL DEFAULT 0,
+	as_of INTEGER NOT NULL DEFAULT 0,
+	leak_checked INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_feature_value_lookup
+	ON feature_value(stock_code, date, feature_id);
+CREATE INDEX IF NOT EXISTS idx_feature_value_feature
+	ON feature_value(feature_id, feature_version);
+`,
+	},
+	{
+		version: 7,
+		name:    "quality_gate",
+		sql: `
+-- 数据质量报告表: 每个数据快照/数据集对应一个质量报告
+CREATE TABLE IF NOT EXISTS quality_report (
+	id TEXT PRIMARY KEY,
+	snapshot_id TEXT NOT NULL DEFAULT '',
+	stock_code TEXT NOT NULL DEFAULT '',
+	date_range_start TEXT NOT NULL DEFAULT '',
+	date_range_end TEXT NOT NULL DEFAULT '',
+	source TEXT NOT NULL DEFAULT 'kline',
+	as_of INTEGER NOT NULL DEFAULT 0,
+	passed INTEGER NOT NULL DEFAULT 1,
+	blocked INTEGER NOT NULL DEFAULT 0,
+	total_issues INTEGER NOT NULL DEFAULT 0,
+	critical_count INTEGER NOT NULL DEFAULT 0,
+	warning_count INTEGER NOT NULL DEFAULT 0,
+	info_count INTEGER NOT NULL DEFAULT 0,
+	checked_records INTEGER NOT NULL DEFAULT 0,
+	passed_records INTEGER NOT NULL DEFAULT 0,
+	failed_records INTEGER NOT NULL DEFAULT 0,
+	coverage_percent REAL NOT NULL DEFAULT 0,
+	report_hash TEXT NOT NULL DEFAULT '',
+	created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_quality_report_snapshot
+	ON quality_report(snapshot_id);
+CREATE INDEX IF NOT EXISTS idx_quality_report_stock
+	ON quality_report(stock_code);
+CREATE INDEX IF NOT EXISTS idx_quality_report_created
+	ON quality_report(created_at);
+
+-- 质量问题明细表
+CREATE TABLE IF NOT EXISTS quality_issue (
+	id TEXT PRIMARY KEY,
+	report_id TEXT NOT NULL,
+	category TEXT NOT NULL,
+	severity TEXT NOT NULL,
+	stock_code TEXT NOT NULL DEFAULT '',
+	date TEXT NOT NULL DEFAULT '',
+	metric TEXT NOT NULL DEFAULT '',
+	expected TEXT NOT NULL DEFAULT '',
+	actual TEXT NOT NULL DEFAULT '',
+	description TEXT NOT NULL DEFAULT '',
+	created_at INTEGER NOT NULL DEFAULT 0,
+	FOREIGN KEY (report_id) REFERENCES quality_report(id)
+);
+CREATE INDEX IF NOT EXISTS idx_quality_issue_report
+	ON quality_issue(report_id);
+CREATE INDEX IF NOT EXISTS idx_quality_issue_severity
+	ON quality_issue(severity);
+
+-- 质量门配置表: 可持久化质量门参数
+CREATE TABLE IF NOT EXISTS quality_gate_config (
+	id TEXT PRIMARY KEY DEFAULT 'default',
+	max_price_change_pct REAL NOT NULL DEFAULT 5.0,
+	max_volume_ratio REAL NOT NULL DEFAULT 10.0,
+	min_coverage_percent REAL NOT NULL DEFAULT 95.0,
+	max_missing_days INTEGER NOT NULL DEFAULT 5,
+	max_financial_lag_days INTEGER NOT NULL DEFAULT 60,
+	block_on_critical INTEGER NOT NULL DEFAULT 1,
+	updated_at INTEGER NOT NULL DEFAULT 0
+);
+`,
+	},
+	{
+		version: 8,
+		name:    "immutable_kline_snapshot_content",
+		sql: `
+CREATE TABLE IF NOT EXISTS snapshot_kline_manifest (
+	snapshot_id TEXT NOT NULL,
+	code TEXT NOT NULL,
+	ktype INTEGER NOT NULL,
+	start_date TEXT NOT NULL,
+	end_date TEXT NOT NULL,
+	row_count INTEGER NOT NULL,
+	content_hash TEXT NOT NULL,
+	PRIMARY KEY (snapshot_id, code, ktype),
+	FOREIGN KEY (snapshot_id) REFERENCES dataset_snapshot(id)
+);
+CREATE INDEX IF NOT EXISTS idx_snapshot_kline_manifest_snapshot
+	ON snapshot_kline_manifest(snapshot_id);
+
+CREATE TABLE IF NOT EXISTS snapshot_kline_bar (
+	snapshot_id TEXT NOT NULL,
+	code TEXT NOT NULL,
+	ktype INTEGER NOT NULL,
+	date TEXT NOT NULL,
+	open REAL NOT NULL,
+	high REAL NOT NULL,
+	low REAL NOT NULL,
+	close REAL NOT NULL,
+	volume REAL NOT NULL,
+	amount REAL NOT NULL,
+	PRIMARY KEY (snapshot_id, code, ktype, date),
+	FOREIGN KEY (snapshot_id) REFERENCES dataset_snapshot(id)
+);
+CREATE INDEX IF NOT EXISTS idx_snapshot_kline_bar_lookup
+	ON snapshot_kline_bar(snapshot_id, code, ktype, date);
+`,
+		after: func(tx *sql.Tx) error {
+			return ensureSQLiteColumn(tx, "dataset_snapshot", "content_hash", `TEXT NOT NULL DEFAULT ''`)
+		},
+	},
+	{
+		version: 9,
+		name:    "persistent_experiment_runs",
+		sql: `
+CREATE TABLE IF NOT EXISTS experiment_registry (
+	id TEXT PRIMARY KEY,
+	name TEXT NOT NULL,
+	description TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL,
+	config_json TEXT NOT NULL,
+	config_hash TEXT NOT NULL,
+	environment_json TEXT NOT NULL,
+	created_at_ns INTEGER NOT NULL,
+	updated_at_ns INTEGER NOT NULL,
+	completed_at_ns INTEGER,
+	created_by TEXT NOT NULL DEFAULT '',
+	tags_json TEXT NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS idx_experiment_registry_created
+	ON experiment_registry(created_at_ns);
+CREATE INDEX IF NOT EXISTS idx_experiment_registry_config_hash
+	ON experiment_registry(config_hash);
+
+CREATE TABLE IF NOT EXISTS experiment_run (
+	id TEXT PRIMARY KEY,
+	experiment_id TEXT NOT NULL,
+	status TEXT NOT NULL,
+	start_time_ns INTEGER NOT NULL,
+	end_time_ns INTEGER,
+	duration_ns INTEGER NOT NULL DEFAULT 0,
+	metrics_json TEXT,
+	error_message TEXT NOT NULL DEFAULT '',
+	logs TEXT NOT NULL DEFAULT '',
+	config_hash TEXT NOT NULL,
+	result_hash TEXT NOT NULL DEFAULT '',
+	reproducible INTEGER NOT NULL DEFAULT 0,
+	reproducibility_note TEXT NOT NULL DEFAULT '',
+	FOREIGN KEY (experiment_id) REFERENCES experiment_registry(id)
+);
+CREATE INDEX IF NOT EXISTS idx_experiment_run_experiment
+	ON experiment_run(experiment_id, start_time_ns);
+CREATE INDEX IF NOT EXISTS idx_experiment_run_result_hash
+	ON experiment_run(result_hash);
+
+CREATE TABLE IF NOT EXISTS experiment_run_artifact (
+	id TEXT PRIMARY KEY,
+	run_id TEXT NOT NULL,
+	type TEXT NOT NULL,
+	name TEXT NOT NULL,
+	description TEXT NOT NULL DEFAULT '',
+	content BLOB,
+	content_hash TEXT NOT NULL DEFAULT '',
+	file_path TEXT NOT NULL DEFAULT '',
+	created_at_ns INTEGER NOT NULL,
+	FOREIGN KEY (run_id) REFERENCES experiment_run(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_experiment_artifact_run
+	ON experiment_run_artifact(run_id, type, name);
+`,
+	},
+	{
+		version: 10,
+		name:    "persistent_forward_ledger",
+		sql: `
+CREATE TABLE IF NOT EXISTS forward_run (
+	id TEXT PRIMARY KEY,
+	paradigm_version_id TEXT NOT NULL,
+	start_date_ns INTEGER NOT NULL,
+	status TEXT NOT NULL,
+	updated_at_ns INTEGER NOT NULL,
+	data_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_forward_run_created
+	ON forward_run(start_date_ns DESC);
+CREATE INDEX IF NOT EXISTS idx_forward_run_paradigm
+	ON forward_run(paradigm_version_id, start_date_ns DESC);
+
+CREATE TABLE IF NOT EXISTS forward_signal (
+	id TEXT PRIMARY KEY,
+	run_id TEXT NOT NULL,
+	paradigm_version_id TEXT NOT NULL,
+	stock_code TEXT NOT NULL,
+	signal_date_ns INTEGER NOT NULL,
+	content_hash TEXT NOT NULL,
+	data_json TEXT NOT NULL,
+	FOREIGN KEY (run_id) REFERENCES forward_run(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_forward_signal_run
+	ON forward_signal(run_id, signal_date_ns, id);
+CREATE INDEX IF NOT EXISTS idx_forward_signal_paradigm
+	ON forward_signal(paradigm_version_id, signal_date_ns, id);
+CREATE INDEX IF NOT EXISTS idx_forward_signal_stock
+	ON forward_signal(stock_code, signal_date_ns, id);
+`,
+	},
+	{
+		version: 11,
+		name:    "daily_market_and_feature_snapshot_with_readiness",
+		sql: `
+-- 每日市场快照: 绑定特定交易日的 universe + 数据水位 + 完整率 + 内容哈希。
+-- 下游（选股、回测、AI 方法挖掘）只能引用 status = 'ready' 且 frozen = 1 的 snapshot_id。
+CREATE TABLE IF NOT EXISTS market_snapshot (
+	id TEXT PRIMARY KEY,
+	snapshot_date TEXT NOT NULL,                -- YYYY-MM-DD，必须是交易日
+	universe_definition TEXT NOT NULL DEFAULT '',  -- universe_xx 的名字或 SQL 表达式
+	market TEXT NOT NULL DEFAULT 'CN-A',
+	price_adjustment TEXT NOT NULL DEFAULT 'forward',
+	kline_expected_codes INTEGER NOT NULL DEFAULT 0,
+	kline_ready_codes INTEGER NOT NULL DEFAULT 0,
+	quote_ready_codes INTEGER NOT NULL DEFAULT 0,
+	finance_ready_codes INTEGER NOT NULL DEFAULT 0,
+	xdxr_ready_codes INTEGER NOT NULL DEFAULT 0,
+	coverage_pct REAL NOT NULL DEFAULT 0.0,
+	status TEXT NOT NULL DEFAULT 'building',   -- building / ready / failed / partial
+	readiness_reason TEXT NOT NULL DEFAULT '',
+	universe_hash TEXT NOT NULL DEFAULT '',
+	content_hash TEXT NOT NULL DEFAULT '',
+	frozen INTEGER NOT NULL DEFAULT 0,
+	built_at INTEGER NOT NULL DEFAULT 0,
+	frozen_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_market_snapshot_date_univ ON market_snapshot(snapshot_date, universe_definition, price_adjustment);
+CREATE INDEX IF NOT EXISTS idx_market_snapshot_status ON market_snapshot(status);
+
+-- 快照内的单股水位 (用于 tracing 缺口)
+CREATE TABLE IF NOT EXISTS market_snapshot_code_state (
+	snapshot_id TEXT NOT NULL,
+	code TEXT NOT NULL,
+	universe_member INTEGER NOT NULL DEFAULT 1,
+	ipo_date TEXT NOT NULL DEFAULT '',
+	delist_date TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'normal',       -- normal / st / suspended / delisted / halted
+	kline_last_date TEXT NOT NULL DEFAULT '',
+	kline_row_count INTEGER NOT NULL DEFAULT 0,
+	quote_ok INTEGER NOT NULL DEFAULT 0,
+	finance_ok INTEGER NOT NULL DEFAULT 0,
+	xdxr_ok INTEGER NOT NULL DEFAULT 0,
+	gap_days INTEGER NOT NULL DEFAULT 0,          -- 到 snapshot_date 连续缺失的天数
+	last_error TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (snapshot_id, code),
+	FOREIGN KEY (snapshot_id) REFERENCES market_snapshot(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_mss_code ON market_snapshot_code_state(code);
+
+-- 每日特征快照: 对固定 {universe, date, feature_list} 的全量物化，
+-- 作为选股/AI 训练的确定性输入。同一 (snapshot_id, feature_version_list) 哈希不变。
+CREATE TABLE IF NOT EXISTS feature_snapshot (
+	id TEXT PRIMARY KEY,
+	market_snapshot_id TEXT NOT NULL,
+	snapshot_date TEXT NOT NULL,
+	feature_ids_json TEXT NOT NULL,           -- sorted feature IDs JSON
+	feature_total INTEGER NOT NULL DEFAULT 0,
+	rows_written INTEGER NOT NULL DEFAULT 0,
+	leak_checked INTEGER NOT NULL DEFAULT 0,
+	price_adjustment TEXT NOT NULL DEFAULT 'forward',
+	status TEXT NOT NULL DEFAULT 'building',
+	as_of_ns INTEGER NOT NULL DEFAULT 0,
+	content_hash TEXT NOT NULL DEFAULT '',
+	built_at INTEGER NOT NULL DEFAULT 0,
+	FOREIGN KEY (market_snapshot_id) REFERENCES market_snapshot(id)
+);
+CREATE INDEX IF NOT EXISTS idx_feature_snapshot_market ON feature_snapshot(market_snapshot_id);
+CREATE INDEX IF NOT EXISTS idx_feature_snapshot_date ON feature_snapshot(snapshot_date);
+
+CREATE TABLE IF NOT EXISTS feature_snapshot_value (
+	snapshot_id TEXT NOT NULL,
+	code TEXT NOT NULL,
+	feature_id TEXT NOT NULL,
+	feature_version INTEGER NOT NULL DEFAULT 1,
+	value REAL NOT NULL DEFAULT 0,
+	as_of INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (snapshot_id, code, feature_id, feature_version),
+	FOREIGN KEY (snapshot_id) REFERENCES feature_snapshot(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_fsv_lookup ON feature_snapshot_value(snapshot_id, code, feature_id);
+`,
+	},
+	{
+		version: 12,
+		name:    "validation_evidence_artifact",
+		sql: `
+CREATE TABLE IF NOT EXISTS validation_evidence_artifact (
+	result_hash TEXT PRIMARY KEY,
+	job_hash TEXT NOT NULL,
+	method_hash TEXT NOT NULL,
+	snapshot_id TEXT NOT NULL,
+	confidence TEXT NOT NULL,
+	passable INTEGER NOT NULL DEFAULT 0,
+	evidence_json TEXT NOT NULL,
+	created_at_ns INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_validation_evidence_job
+	ON validation_evidence_artifact(job_hash, created_at_ns DESC);
+CREATE INDEX IF NOT EXISTS idx_validation_evidence_method
+	ON validation_evidence_artifact(method_hash, created_at_ns DESC);
+CREATE INDEX IF NOT EXISTS idx_validation_evidence_snapshot
+	ON validation_evidence_artifact(snapshot_id, created_at_ns DESC);
+`,
+	},
+	{
+		version: 13,
+		name:    "discovery_research_trace",
+		sql: `
+CREATE TABLE IF NOT EXISTS discovery_research_trace (
+	research_id TEXT PRIMARY KEY,
+	result_hash TEXT NOT NULL UNIQUE,
+	snapshot_id TEXT NOT NULL,
+	conclusion TEXT NOT NULL,
+	discovery_trials INTEGER NOT NULL,
+	trace_json TEXT NOT NULL,
+	created_at_ns INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_discovery_trace_snapshot
+	ON discovery_research_trace(snapshot_id, created_at_ns DESC);
+`,
+	},
+	{
+		version: 14,
+		name:    "method_source_research_evidence",
+		sql: `
+CREATE TABLE IF NOT EXISTS method_research_artifact (
+	research_id TEXT PRIMARY KEY,
+	family_id TEXT NOT NULL,
+	result_hash TEXT NOT NULL UNIQUE,
+	status TEXT NOT NULL,
+	method_name TEXT NOT NULL,
+	result_json TEXT NOT NULL,
+	created_at_ns INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_method_research_status ON method_research_artifact(status, created_at_ns DESC);
+CREATE INDEX IF NOT EXISTS idx_method_research_family ON method_research_artifact(family_id, created_at_ns DESC);
+
+CREATE TABLE IF NOT EXISTS method_source_evidence (
+	research_id TEXT NOT NULL,
+	source_id TEXT NOT NULL,
+	source_url TEXT NOT NULL,
+	content_hash TEXT NOT NULL,
+	tier TEXT NOT NULL,
+	source_json TEXT NOT NULL,
+	retrieved_at_ns INTEGER NOT NULL,
+	PRIMARY KEY (research_id, source_id),
+	FOREIGN KEY (research_id) REFERENCES method_research_artifact(research_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_method_source_hash ON method_source_evidence(content_hash);
+CREATE INDEX IF NOT EXISTS idx_method_source_url ON method_source_evidence(source_url);
+
+CREATE TABLE IF NOT EXISTS method_validation_queue (
+	job_id TEXT PRIMARY KEY,
+	research_id TEXT NOT NULL,
+	family_id TEXT NOT NULL,
+	variant_id TEXT NOT NULL,
+	method_hash TEXT NOT NULL,
+	scope TEXT NOT NULL,
+	stock_code TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL,
+	created_at_ns INTEGER NOT NULL,
+	FOREIGN KEY (research_id) REFERENCES method_research_artifact(research_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_method_validation_queue_status ON method_validation_queue(status, created_at_ns);
+CREATE INDEX IF NOT EXISTS idx_method_validation_queue_family ON method_validation_queue(family_id, status);
+`,
+	},
+	{
+		version: 15,
+		name:    "investment_method_registry",
+		sql: `
+CREATE TABLE IF NOT EXISTS investment_method_registry (
+	method_id TEXT PRIMARY KEY,
+	family_id TEXT NOT NULL,
+	variant_id TEXT NOT NULL,
+	status TEXT NOT NULL,
+	market TEXT NOT NULL,
+	universe TEXT NOT NULL,
+	holding_min_days INTEGER NOT NULL DEFAULT 0,
+	holding_max_days INTEGER NOT NULL DEFAULT 0,
+	current_version INTEGER NOT NULL,
+	method_json TEXT NOT NULL,
+	created_at_ns INTEGER NOT NULL,
+	updated_at_ns INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_investment_method_family_variant ON investment_method_registry(family_id,variant_id);
+CREATE INDEX IF NOT EXISTS idx_investment_method_filters ON investment_method_registry(status,market,universe,holding_min_days,holding_max_days);
+
+CREATE TABLE IF NOT EXISTS investment_method_audit (
+	event_id TEXT PRIMARY KEY,
+	method_id TEXT NOT NULL,
+	from_status TEXT NOT NULL,
+	to_status TEXT NOT NULL,
+	action TEXT NOT NULL,
+	evidence_hash TEXT NOT NULL DEFAULT '',
+	event_json TEXT NOT NULL,
+	created_at_ns INTEGER NOT NULL,
+	FOREIGN KEY (method_id) REFERENCES investment_method_registry(method_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_investment_method_audit_method ON investment_method_audit(method_id,created_at_ns);
+`,
+	},
+	{
+		version: 16,
+		name:    "daily_ai_selection_runs",
+		sql: `
+CREATE TABLE IF NOT EXISTS daily_selection_run (
+	run_id TEXT PRIMARY KEY,
+	run_hash TEXT NOT NULL UNIQUE,
+	snapshot_id TEXT NOT NULL,
+	feature_snapshot_id TEXT NOT NULL,
+	snapshot_date TEXT NOT NULL,
+	status TEXT NOT NULL,
+	eligible_methods INTEGER NOT NULL,
+	scanned_stocks INTEGER NOT NULL,
+	candidate_count INTEGER NOT NULL,
+	buy_count INTEGER NOT NULL,
+	run_json TEXT NOT NULL,
+	created_at_ns INTEGER NOT NULL,
+	FOREIGN KEY (snapshot_id) REFERENCES market_snapshot(id),
+	FOREIGN KEY (feature_snapshot_id) REFERENCES feature_snapshot(id)
+);
+CREATE INDEX IF NOT EXISTS idx_daily_selection_run_date ON daily_selection_run(snapshot_date DESC,created_at_ns DESC);
+
+CREATE TABLE IF NOT EXISTS daily_selection_candidate (
+	run_id TEXT NOT NULL,
+	code TEXT NOT NULL,
+	rank INTEGER NOT NULL,
+	action TEXT NOT NULL,
+	score REAL NOT NULL,
+	method_ids_json TEXT NOT NULL,
+	candidate_json TEXT NOT NULL,
+	PRIMARY KEY (run_id,code),
+	FOREIGN KEY (run_id) REFERENCES daily_selection_run(run_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_daily_selection_candidate_action ON daily_selection_candidate(run_id,action,rank);
+
+CREATE TABLE IF NOT EXISTS daily_selection_exclusion (
+	run_id TEXT NOT NULL,
+	ordinal INTEGER NOT NULL,
+	method_id TEXT NOT NULL DEFAULT '',
+	code TEXT NOT NULL DEFAULT '',
+	reason_code TEXT NOT NULL,
+	detail TEXT NOT NULL,
+	PRIMARY KEY (run_id,ordinal),
+	FOREIGN KEY (run_id) REFERENCES daily_selection_run(run_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_daily_selection_exclusion_reason ON daily_selection_exclusion(run_id,reason_code);
+`,
+	},
+	{
+		version: 17,
+		name:    "position_decision_and_lineage",
+		sql: `
+CREATE TABLE IF NOT EXISTS position_method_link (
+	trade_id INTEGER PRIMARY KEY,
+	quantity INTEGER NOT NULL,
+	selection_run_id TEXT NOT NULL DEFAULT '',
+	method_id TEXT NOT NULL DEFAULT '',
+	method_version_id TEXT NOT NULL DEFAULT '',
+	buy_reason TEXT NOT NULL DEFAULT '',
+	created_at_ns INTEGER NOT NULL,
+	FOREIGN KEY (trade_id) REFERENCES trades(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS position_decision_run (
+	run_id TEXT PRIMARY KEY,
+	run_hash TEXT NOT NULL UNIQUE,
+	engine_version TEXT NOT NULL,
+	snapshot_id TEXT NOT NULL,
+	feature_snapshot_id TEXT NOT NULL,
+	snapshot_date TEXT NOT NULL,
+	decision_json TEXT NOT NULL,
+	created_at_ns INTEGER NOT NULL,
+	FOREIGN KEY (snapshot_id) REFERENCES market_snapshot(id),
+	FOREIGN KEY (feature_snapshot_id) REFERENCES feature_snapshot(id)
+);
+CREATE INDEX IF NOT EXISTS idx_position_decision_date ON position_decision_run(snapshot_date DESC,created_at_ns DESC);
+`,
+	},
+	{
+		version: 18,
+		name:    "daily_automation_job_and_outbox",
+		sql: `
+CREATE TABLE IF NOT EXISTS automation_job_run (
+	job_id TEXT PRIMARY KEY,
+	idempotency_key TEXT NOT NULL UNIQUE,
+	snapshot_id TEXT NOT NULL,
+	status TEXT NOT NULL,
+	attempt INTEGER NOT NULL,
+	selection_run_id TEXT NOT NULL DEFAULT '',
+	position_run_id TEXT NOT NULL DEFAULT '',
+	error TEXT NOT NULL DEFAULT '',
+	started_at_ns INTEGER NOT NULL,
+	finished_at_ns INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_automation_job_status ON automation_job_run(status,started_at_ns DESC);
+CREATE TABLE IF NOT EXISTS automation_outbox (
+	event_key TEXT PRIMARY KEY,
+	job_id TEXT NOT NULL,
+	event_type TEXT NOT NULL,
+	priority TEXT NOT NULL,
+	payload_json TEXT NOT NULL,
+	status TEXT NOT NULL DEFAULT 'pending',
+	created_at_ns INTEGER NOT NULL,
+	delivered_at_ns INTEGER NOT NULL DEFAULT 0,
+	FOREIGN KEY (job_id) REFERENCES automation_job_run(job_id)
+);
+CREATE INDEX IF NOT EXISTS idx_automation_outbox_pending ON automation_outbox(status,priority,created_at_ns);
+`,
+	},
+	{
+		version: 19,
+		name:    "kline_integrity_quarantine",
+		sql: `
+CREATE TABLE IF NOT EXISTS kline_quarantine (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	code TEXT NOT NULL,
+	ktype INTEGER NOT NULL,
+	date TEXT NOT NULL,
+	open REAL,
+	high REAL,
+	low REAL,
+	close REAL,
+	volume REAL,
+	amount REAL,
+	reason TEXT NOT NULL,
+	quarantined_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_kline_quarantine_series
+	ON kline_quarantine(code,ktype,quarantined_at);
+
+INSERT INTO kline_quarantine
+	(code,ktype,date,open,high,low,close,volume,amount,reason,quarantined_at)
+SELECT code,ktype,date,open,high,low,close,volume,amount,
+	CASE
+		WHEN length(CAST(date AS TEXT)) <> 8
+			OR CAST(date AS TEXT) NOT GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+			OR CAST(date AS TEXT) < '19900101'
+			OR CAST(date AS TEXT) > strftime('%Y%m%d','now','+1 day') THEN 'invalid_date'
+		WHEN typeof(open) NOT IN ('integer','real') OR typeof(high) NOT IN ('integer','real')
+			OR typeof(low) NOT IN ('integer','real') OR typeof(close) NOT IN ('integer','real')
+			OR open <= 0 OR high <= 0 OR low <= 0 OR close <= 0
+			OR open > 1000000 OR high > 1000000 OR low > 1000000 OR close > 1000000 THEN 'invalid_price'
+		WHEN high < low OR high < open OR high < close OR low > open OR low > close THEN 'invalid_ohlc'
+		ELSE 'invalid_turnover'
+	END,
+	CAST(strftime('%s','now') AS INTEGER)
+FROM kline
+WHERE length(CAST(date AS TEXT)) <> 8
+	OR CAST(date AS TEXT) NOT GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+	OR CAST(date AS TEXT) < '19900101'
+	OR CAST(date AS TEXT) > strftime('%Y%m%d','now','+1 day')
+	OR typeof(open) NOT IN ('integer','real') OR typeof(high) NOT IN ('integer','real')
+	OR typeof(low) NOT IN ('integer','real') OR typeof(close) NOT IN ('integer','real')
+	OR open <= 0 OR high <= 0 OR low <= 0 OR close <= 0
+	OR open > 1000000 OR high > 1000000 OR low > 1000000 OR close > 1000000
+	OR high < low OR high < open OR high < close OR low > open OR low > close
+	OR typeof(volume) NOT IN ('integer','real') OR typeof(amount) NOT IN ('integer','real')
+	OR volume < 0 OR amount < 0;
+
+DELETE FROM kline_sync_state
+WHERE EXISTS (
+	SELECT 1 FROM kline_quarantine q
+	WHERE q.code = kline_sync_state.code AND q.ktype = kline_sync_state.ktype
+);
+DELETE FROM data_sync_state
+WHERE data_type = 'kline' AND EXISTS (
+	SELECT 1 FROM kline_quarantine q WHERE q.code = data_sync_state.code
+);
+DELETE FROM kline
+WHERE length(CAST(date AS TEXT)) <> 8
+	OR CAST(date AS TEXT) NOT GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+	OR CAST(date AS TEXT) < '19900101'
+	OR CAST(date AS TEXT) > strftime('%Y%m%d','now','+1 day')
+	OR typeof(open) NOT IN ('integer','real') OR typeof(high) NOT IN ('integer','real')
+	OR typeof(low) NOT IN ('integer','real') OR typeof(close) NOT IN ('integer','real')
+	OR open <= 0 OR high <= 0 OR low <= 0 OR close <= 0
+	OR open > 1000000 OR high > 1000000 OR low > 1000000 OR close > 1000000
+	OR high < low OR high < open OR high < close OR low > open OR low > close
+	OR typeof(volume) NOT IN ('integer','real') OR typeof(amount) NOT IN ('integer','real')
+	OR volume < 0 OR amount < 0;
+
+DROP TRIGGER IF EXISTS trg_kline_validate_insert;
+CREATE TRIGGER trg_kline_validate_insert
+BEFORE INSERT ON kline
+WHEN length(CAST(NEW.date AS TEXT)) <> 8
+	OR CAST(NEW.date AS TEXT) NOT GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+	OR CAST(NEW.date AS TEXT) < '19900101'
+	OR CAST(NEW.date AS TEXT) > strftime('%Y%m%d','now','+1 day')
+	OR typeof(NEW.open) NOT IN ('integer','real') OR typeof(NEW.high) NOT IN ('integer','real')
+	OR typeof(NEW.low) NOT IN ('integer','real') OR typeof(NEW.close) NOT IN ('integer','real')
+	OR NEW.open <= 0 OR NEW.high <= 0 OR NEW.low <= 0 OR NEW.close <= 0
+	OR NEW.open > 1000000 OR NEW.high > 1000000 OR NEW.low > 1000000 OR NEW.close > 1000000
+	OR NEW.high < NEW.low OR NEW.high < NEW.open OR NEW.high < NEW.close
+	OR NEW.low > NEW.open OR NEW.low > NEW.close
+	OR typeof(NEW.volume) NOT IN ('integer','real') OR typeof(NEW.amount) NOT IN ('integer','real')
+	OR NEW.volume < 0 OR NEW.amount < 0
+BEGIN
+	SELECT RAISE(ABORT, 'invalid kline data');
+END;
+
+DROP TRIGGER IF EXISTS trg_kline_validate_update;
+CREATE TRIGGER trg_kline_validate_update
+BEFORE UPDATE ON kline
+WHEN length(CAST(NEW.date AS TEXT)) <> 8
+	OR CAST(NEW.date AS TEXT) NOT GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+	OR CAST(NEW.date AS TEXT) < '19900101'
+	OR CAST(NEW.date AS TEXT) > strftime('%Y%m%d','now','+1 day')
+	OR typeof(NEW.open) NOT IN ('integer','real') OR typeof(NEW.high) NOT IN ('integer','real')
+	OR typeof(NEW.low) NOT IN ('integer','real') OR typeof(NEW.close) NOT IN ('integer','real')
+	OR NEW.open <= 0 OR NEW.high <= 0 OR NEW.low <= 0 OR NEW.close <= 0
+	OR NEW.open > 1000000 OR NEW.high > 1000000 OR NEW.low > 1000000 OR NEW.close > 1000000
+	OR NEW.high < NEW.low OR NEW.high < NEW.open OR NEW.high < NEW.close
+	OR NEW.low > NEW.open OR NEW.low > NEW.close
+	OR typeof(NEW.volume) NOT IN ('integer','real') OR typeof(NEW.amount) NOT IN ('integer','real')
+	OR NEW.volume < 0 OR NEW.amount < 0
+BEGIN
+	SELECT RAISE(ABORT, 'invalid kline data');
+END;
+`,
+	},
+	{
+		version: 20,
+		name:    "remove_legacy_index_from_stock_klines",
+		sql: `
+INSERT INTO kline_quarantine
+	(code,ktype,date,open,high,low,close,volume,amount,reason,quarantined_at)
+SELECT code,ktype,date,open,high,low,close,volume,amount,
+	'legacy_index_misroute', CAST(strftime('%s','now') AS INTEGER)
+FROM kline WHERE code = '999999';
+DELETE FROM kline_sync_state WHERE code = '999999';
+DELETE FROM data_sync_state WHERE data_type = 'kline' AND code = '999999';
+DELETE FROM kline WHERE code = '999999';
+`,
+	},
 }
 
 // Migrate upgrades the SQLite database transactionally. Store constructors

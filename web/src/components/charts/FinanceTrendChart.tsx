@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
-import { createChart, LineSeries, type IChartApi, type TickMarkType, type Time } from 'lightweight-charts';
+import { createChart, LineSeries, type IChartApi, type Time } from 'lightweight-charts';
 import type { FinanceTrendRecord } from '../../types/api';
 
 export type FinanceTrendMetric = {
@@ -81,7 +81,7 @@ const FinanceTrendChart = forwardRef<FinanceTrendChartHandle, Props>(function Fi
         borderColor: '#334155',
         timeVisible: true,
         secondsVisible: false,
-        tickMarkFormatter: (_time: Time, _tickMarkType: TickMarkType, _locale: string) => {
+        tickMarkFormatter: () => {
           return '';
         },
       },

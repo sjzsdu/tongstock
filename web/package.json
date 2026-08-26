@@ -21,6 +21,7 @@
     "@tailwindcss/vite": "^4.2.2",
     "@tanstack/react-virtual": "^3.13.23",
     "antd": "^6.3.7",
+    "dayjs": "^1.11.21",
     "github-markdown-css": "^5.9.0",
     "highlight.js": "^11.11.1",
     "lightweight-charts": "^5.1.0",

@@ -5,11 +5,23 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	pinyin "github.com/mozillazg/go-pinyin"
+	"github.com/sjzsdu/tongstock/internal/adapter/discoveryrepo"
+	"github.com/sjzsdu/tongstock/internal/ai_tools"
+	"github.com/sjzsdu/tongstock/internal/app/discoveryapp"
 	"github.com/sjzsdu/tongstock/internal/app/stockdata"
+	"github.com/sjzsdu/tongstock/internal/automation"
+	"github.com/sjzsdu/tongstock/internal/experiment"
+	"github.com/sjzsdu/tongstock/internal/ledger"
+	"github.com/sjzsdu/tongstock/internal/methodregistry"
+	"github.com/sjzsdu/tongstock/internal/monitoring"
+	"github.com/sjzsdu/tongstock/internal/paradigm"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
+	"github.com/sjzsdu/tongstock/internal/positiondecision"
+	"github.com/sjzsdu/tongstock/internal/selection"
 	"github.com/sjzsdu/tongstock/pkg/history"
 	"github.com/sjzsdu/tongstock/pkg/stockinfo"
 	"github.com/sjzsdu/tongstock/pkg/stockpool"
+	"github.com/sjzsdu/tongstock/pkg/storage"
 	"github.com/sjzsdu/tongstock/pkg/tdx"
 	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
 	"github.com/sjzsdu/tongstock/pkg/trading"
@@ -34,7 +46,23 @@ type Server struct {
 	agentState            *AgentState
 	agentListFunc         func() ([]EmbeddedAgent, error)
 	agentInitError        string
+	ledger                *ledger.SignalLedger
 	paradigmStore         *paradigms.Store
+	methodRegistry        *methodregistry.Registry
+	selectionRuns         selection.Repository
+	positionEngine        *positiondecision.Engine
+	positionRuns          positiondecision.Repository
+	automationEngine      *automation.Orchestrator
+	automationRuns        automation.Repository
+	discoverRunner        *discoveryapp.Runner
+	discoverTraces        *discoveryrepo.TraceRepository
+	paradigmSnapshots     *paradigm.DatasetSnapshotStore
+	experimentRegistry    *experiment.SQLiteRegistry
+	researchTools         *ai_tools.ToolRegistry
+	storage               *storage.Storage
+	monitoringMu          sync.RWMutex
+	monitoringEngine      *monitoring.MonitorEngine
+	monitoringReport      *monitoring.MonitorReport
 	paradigmAlertMu       sync.RWMutex
 	paradigmAlertCache    []paradigmAlert
 	paradigmAlertLastScan time.Time
@@ -98,11 +126,13 @@ type Dependencies struct {
 	StockInfo   *stockinfo.Store
 	Newsfeed    *NewsfeedHandler
 	Diagnostics DiagnosticsProvider
+	Storage     *storage.Storage
+	Ledger      *ledger.SignalLedger
 }
 
 // NewServer creates a transport adapter from explicitly composed modules.
 func NewServer(deps Dependencies) *Server {
-	return &Server{
+	s := &Server{
 		svc:                   deps.StockData,
 		stockData:             deps.UnifiedData,
 		historyDB:             deps.History,
@@ -111,9 +141,22 @@ func NewServer(deps Dependencies) *Server {
 		stockpoolDB:           deps.StockPool,
 		stockinfoDB:           deps.StockInfo,
 		stockSearchIndexCache: stockSearchIndexCache{},
+		ledger:                deps.Ledger,
 		newsfeedHandler:       deps.Newsfeed,
 		diagnostics:           deps.Diagnostics,
+		storage:               deps.Storage,
+		monitoringEngine:      monitoring.NewMonitorEngine(monitoring.NewDefaultMonitorConfig()),
 	}
+	if deps.Storage != nil {
+		s.paradigmSnapshots = paradigm.NewDatasetSnapshotStore(deps.Storage)
+		s.experimentRegistry, _ = experiment.NewSQLiteRegistry(deps.Storage)
+		s.researchTools = ai_tools.NewToolRegistry()
+		_ = s.researchTools.Register(&verifiedResearchEvidenceTool{server: s})
+	}
+	if s.ledger == nil {
+		s.ledger = ledger.NewSignalLedger()
+	}
+	return s
 }
 
 func (s *Server) SetChatStore(store *ChatStore) {
@@ -126,6 +169,26 @@ func (s *Server) SetChatStore(store *ChatStore) {
 // SetParadigmStore sets the paradigm store on the server instance.
 func (s *Server) SetParadigmStore(store *paradigms.Store) {
 	s.paradigmStore = store
+}
+
+func (s *Server) SetMethodRegistry(registry *methodregistry.Registry) { s.methodRegistry = registry }
+func (s *Server) SetSelectionRuns(runs selection.Repository)          { s.selectionRuns = runs }
+func (s *Server) SetPositionDecision(engine *positiondecision.Engine, runs positiondecision.Repository) {
+	s.positionEngine, s.positionRuns = engine, runs
+}
+func (s *Server) SetAutomation(engine *automation.Orchestrator, runs automation.Repository) {
+	s.automationEngine, s.automationRuns = engine, runs
+}
+
+// SetDiscoverRunner registers the discovery application service and its trace
+// repository on the server instance.
+func (s *Server) SetDiscoverRunner(runner *discoveryapp.Runner, traces *discoveryrepo.TraceRepository) {
+	s.discoverRunner, s.discoverTraces = runner, traces
+}
+
+// SetLedger sets the signal ledger on the server instance.
+func (s *Server) SetLedger(ledger *ledger.SignalLedger) {
+	s.ledger = ledger
 }
 
 // SetAgentLister registers an agent list function on the server instance.

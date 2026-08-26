@@ -593,7 +593,7 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
-    void loadConfig();
+	queueMicrotask(() => void loadConfig());
   }, []);
 
   const handleSave = async () => {

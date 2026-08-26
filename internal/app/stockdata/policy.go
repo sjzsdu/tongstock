@@ -87,12 +87,18 @@ func (p *MarketFreshnessPolicy) evaluateQuote(ctx context.Context, now time.Time
 func (p *MarketFreshnessPolicy) evaluateKline(ctx context.Context, now time.Time, spec DataSpec, coverage Coverage) (FreshnessDecision, error) {
 	start := dayOnly(spec.Start, p.Location)
 	end := dayOnly(spec.End, p.Location)
-	if start.IsZero() {
-		start = coverage.Start
-	}
 	latest, err := p.latestCompletedTradingDay(ctx, spec.Market, now)
 	if err != nil {
 		return FreshnessDecision{}, err
+	}
+	// A range-less request asks whether the series is current, not whether the
+	// stock traded on every exchange session since listing. Historical absences
+	// can be legitimate suspensions and must not make a freshly synced series
+	// permanently stale.
+	if start.IsZero() && end.IsZero() {
+		start, end = latest, latest
+	} else if start.IsZero() {
+		start = coverage.Start
 	}
 	if end.IsZero() || end.After(latest) {
 		end = latest

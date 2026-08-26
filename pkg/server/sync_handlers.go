@@ -67,8 +67,8 @@ func (s *Server) handleSyncState(c *gin.Context) {
 		})
 		if err == nil {
 			status := coverage.Status
-			if status == "" && coverage.Exists {
-				status = "ok"
+			if status == "" {
+				status = "unknown"
 			}
 			freshness := "stale"
 			if !coverage.Exists {
@@ -78,12 +78,16 @@ func (s *Server) handleSyncState(c *gin.Context) {
 			} else if !coverage.LastSyncAt.IsZero() && time.Since(coverage.LastSyncAt) > 24*time.Hour {
 				freshness = "outdated"
 			}
-			c.JSON(http.StatusOK, gin.H{
+			payload := gin.H{
 				"code": code, "ktype": ktype, "status": status,
 				"first_date": formatSyncDate(coverage.Start), "last_date": formatSyncDate(coverage.End),
-				"row_count": len(coverage.Points), "last_sync_at": formatSyncTime(coverage.LastSyncAt),
+				"row_count": len(coverage.Points),
 				"freshness": freshness, "stale_reason": decision.Reason,
-			})
+			}
+			if !coverage.LastSyncAt.IsZero() {
+				payload["last_sync_at"] = formatSyncTime(coverage.LastSyncAt)
+			}
+			c.JSON(http.StatusOK, payload)
 			return
 		}
 	}

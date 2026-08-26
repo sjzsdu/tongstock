@@ -23,11 +23,12 @@ func runQuote(cmd *cobra.Command, args []string) error {
 	defer cleanup()
 
 	for _, code := range args {
-		result, err := service.Query(cmd.Context(), cliDataRequest(stockdata.DataSpec{
+		spec := stockdata.DataSpec{
 			Type: stockdata.DataQuote, Market: cliMarketForCode(code), Code: code,
-		}))
+		}
+		result, err := service.Query(cmd.Context(), cliDataRequest(spec))
 		if err != nil {
-			return fmt.Errorf("获取行情失败: %w", err)
+			return fmt.Errorf("获取行情失败: %w", cliDataError(err, spec))
 		}
 		q := result.Quote
 		fmt.Printf("%s %s\n", q.Code, q.Name)
@@ -113,10 +114,22 @@ func init() {
 	codesCmd.PersistentFlags().StringVarP(&codesExchange, "exchange", "e", "sz", "交易所: sz/sh/bj")
 	codesListCmd.Flags().StringVarP(&codesCategory, "category", "c", "", "分类过滤: stock/fund/etf/bond/index/gem/all")
 	codesStatsCmd.Flags().BoolVarP(&codesStats, "all", "a", false, "显示所有交易所统计")
+}
 
-	companyContentCmd.Flags().Uint32VarP(&companyContentStart, "start", "s", 0, "起始位置")
-	companyContentCmd.Flags().Uint32VarP(&companyContentLength, "length", "l", 10000, "内容长度")
-	companyContentCmd.Flags().StringVarP(&companyContentBlock, "block", "b", "", "块名称（如：公司概况）")
+// cliMarketForCode 根据 code 前缀推断子市场（用于 DataSpec.Market 字段）。
+// "SH" / "SZ" / "BJ" 三种结果，分别对应 6/0 开头，以及 4/8 开头（北交所）。
+// 其他代码回退到 "CN-A"，避免 panic。
+func cliMarketForCode(code string) string {
+	c := strings.TrimSpace(code)
+	switch {
+	case strings.HasPrefix(c, "6"):
+		return "SH"
+	case strings.HasPrefix(c, "0") || strings.HasPrefix(c, "3"):
+		return "SZ"
+	case strings.HasPrefix(c, "8") || strings.HasPrefix(c, "4"):
+		return "BJ"
+	}
+	return "CN-A"
 }
 
 func runCodesStats(cmd *cobra.Command, args []string) error {

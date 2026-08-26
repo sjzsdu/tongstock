@@ -89,20 +89,20 @@ func (s *CaiLianSheSource) parseNewsItems(items []caiLianSheItem) []*newsfeed.Ne
 	var news []*newsfeed.NewsItem
 	for _, item := range items {
 		newsItem := &newsfeed.NewsItem{
-			ID:          generateID(),
-			Source:      newsfeed.SourceCaiLianShe,
-			NewsType:    newsfeed.NewsTypeFlash,
-			Title:       cleanText(item.Title),
-			Summary:     cleanText(item.Summary),
-			Content:     cleanText(item.Content),
-			PublishTime: parseTime(item.PublishTime, []string{"2006-01-02 15:04:05"}),
-			HotScore:    item.HotScore,
-			Tags:        item.Tags,
+			ID:            generateID(),
+			Source:        newsfeed.SourceCaiLianShe,
+			NewsType:      newsfeed.NewsTypeFlash,
+			Title:         cleanText(item.Title),
+			Summary:       cleanText(item.Summary),
+			Content:       cleanText(item.Content),
+			PublishTime:   parseTime(item.PublishTime, []string{"2006-01-02 15:04:05"}),
+			HotScore:      item.HotScore,
+			Tags:          item.Tags,
 			RelatedStocks: extractStockCodes(item.Title + item.Summary),
-			URL:         s.baseURL + item.URL,
-			OriginalID:  fmt.Sprintf("cls_%d", item.ID),
-			CreatedAt:   time.Now(),
-			UpdatedAt:   time.Now(),
+			URL:           s.baseURL + item.URL,
+			OriginalID:    fmt.Sprintf("cls_%d", item.ID),
+			CreatedAt:     time.Now(),
+			UpdatedAt:     time.Now(),
 		}
 		news = append(news, newsItem)
 	}
@@ -111,9 +111,9 @@ func (s *CaiLianSheSource) parseNewsItems(items []caiLianSheItem) []*newsfeed.Ne
 
 // caiLianSheResponse 财联社API响应结构
 type caiLianSheResponse struct {
-	Code int              `json:"code"`
-	Msg  string           `json:"msg"`
-	Data caiLianSheData   `json:"data"`
+	Code int            `json:"code"`
+	Msg  string         `json:"msg"`
+	Data caiLianSheData `json:"data"`
 }
 
 type caiLianSheData struct {

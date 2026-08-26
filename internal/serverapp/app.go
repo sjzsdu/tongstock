@@ -17,9 +17,23 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sjzsdu/tongstock/internal/adapter/automationrepo"
+	"github.com/sjzsdu/tongstock/internal/adapter/discoveryrepo"
+	"github.com/sjzsdu/tongstock/internal/adapter/marketsnapshotrepo"
+	"github.com/sjzsdu/tongstock/internal/adapter/methodregistryrepo"
+	"github.com/sjzsdu/tongstock/internal/adapter/paradigmrepo"
+	"github.com/sjzsdu/tongstock/internal/adapter/positiondecisionrepo"
+	"github.com/sjzsdu/tongstock/internal/adapter/selectionrepo"
+	"github.com/sjzsdu/tongstock/internal/adapter/stockpoolrepo"
 	"github.com/sjzsdu/tongstock/internal/agents"
+	"github.com/sjzsdu/tongstock/internal/app/discoveryapp"
 	"github.com/sjzsdu/tongstock/internal/app/stockdata"
+	"github.com/sjzsdu/tongstock/internal/automation"
+	"github.com/sjzsdu/tongstock/internal/ledger"
+	"github.com/sjzsdu/tongstock/internal/methodregistry"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
+	"github.com/sjzsdu/tongstock/internal/positiondecision"
+	"github.com/sjzsdu/tongstock/internal/selection"
 	"github.com/sjzsdu/tongstock/internal/serviceproc"
 	"github.com/sjzsdu/tongstock/pkg/config"
 	"github.com/sjzsdu/tongstock/pkg/history"
@@ -192,11 +206,74 @@ func NewApp(cfg *config.Config, opts Options) (_ *App, err error) {
 		app.setModule("newsfeed", "ready", "")
 	}
 
+	forwardLedger, err := ledger.NewSQLiteSignalLedger(app.storage)
+	if err != nil {
+		return nil, fmt.Errorf("初始化持久化前向账本失败: %w", err)
+	}
 	app.api = server.NewServer(server.Dependencies{
 		StockData: app.data, UnifiedData: app.stockData, History: historyStore, Watchlist: watchlistStore,
 		Trading: tradingStore, StockPool: stockpoolStore, StockInfo: stockinfoStore,
 		Newsfeed: newsHandler, Diagnostics: server.DiagnosticsFunc(app.Diagnostics),
+		Storage: app.storage, Ledger: forwardLedger,
 	})
+	methodRepo, err := methodregistryrepo.New(app.storage)
+	if err != nil {
+		return nil, fmt.Errorf("初始化投资方法仓库失败: %w", err)
+	}
+	methodRegistry, err := methodregistry.New(methodRepo)
+	if err != nil {
+		return nil, fmt.Errorf("初始化投资方法库失败: %w", err)
+	}
+	app.api.SetMethodRegistry(methodRegistry)
+	app.setModule("method_registry", "ready", "")
+	selectionRuns, err := selectionrepo.New(app.storage)
+	if err != nil {
+		return nil, fmt.Errorf("初始化每日选股仓库失败: %w", err)
+	}
+	app.api.SetSelectionRuns(selectionRuns)
+	app.setModule("daily_selection", "ready", "")
+	positionRuns, err := positiondecisionrepo.New(app.storage)
+	if err != nil {
+		return nil, fmt.Errorf("初始化持仓判断仓库失败: %w", err)
+	}
+	marketSnapshots, err := marketsnapshotrepo.New(app.storage)
+	if err != nil {
+		return nil, fmt.Errorf("初始化市场快照仓库失败: %w", err)
+	}
+	positionEngine, err := positiondecision.NewEngine(marketSnapshots, tradingStore, methodRepo, positionRuns)
+	if err != nil {
+		return nil, fmt.Errorf("初始化持仓判断引擎失败: %w", err)
+	}
+	app.api.SetPositionDecision(positionEngine, positionRuns)
+	app.setModule("position_decision", "ready", "")
+	selectionEngine, err := selection.NewEngine(marketSnapshots, methodRepo, selectionRuns)
+	if err != nil {
+		return nil, fmt.Errorf("初始化每日选股引擎失败: %w", err)
+	}
+	automationRuns, err := automationrepo.New(app.storage)
+	if err != nil {
+		return nil, fmt.Errorf("初始化自动任务仓库失败: %w", err)
+	}
+	automationEngine, err := automation.New(selectionEngine, positionEngine, marketSnapshots, forwardLedger, automationRuns)
+	if err != nil {
+		return nil, fmt.Errorf("初始化自动任务引擎失败: %w", err)
+	}
+	app.api.SetAutomation(automationEngine, automationRuns)
+	app.api.StartAutomationScheduler(app.runCtx, marketSnapshots)
+	app.setModule("daily_automation", "ready", "")
+
+	// 规律发现应用服务：CLI 与 HTTP 共用同一 Runner。
+	discoverResolver, err := stockpoolrepo.NewResolver(app.storage)
+	if err != nil {
+		return nil, fmt.Errorf("初始化股票池解析器失败: %w", err)
+	}
+	discoverTraces, err := discoveryrepo.NewTraceRepository(app.storage)
+	if err != nil {
+		return nil, fmt.Errorf("初始化发现轨迹仓库失败: %w", err)
+	}
+	discoverRunner := discoveryapp.NewRunner(app.storage, discoverResolver, app.data)
+	app.api.SetDiscoverRunner(discoverRunner, discoverTraces)
+	app.setModule("discovery", "ready", "")
 
 	app.configureOptionalModules()
 	router := app.buildRouter()
@@ -257,7 +334,13 @@ func (a *App) configureOptionalModules() {
 		a.setModule("chat", "ready", "")
 	}
 
-	paradigmStore, err := paradigms.NewStoreWithStorage("", a.storage)
+	paradigmRepo, err := paradigmrepo.NewSQLiteRepository(a.storage)
+	if err != nil {
+		log.Printf("paradigm initialization degraded: %v", err)
+		a.setModule("paradigm", "degraded", "paradigm repository init failed")
+		return
+	}
+	paradigmStore, err := paradigms.NewStoreWithRepository(paradigmRepo)
 	if err != nil {
 		log.Printf("paradigm initialization degraded: %v", err)
 		a.setModule("paradigm", "degraded", "paradigm initialization failed")

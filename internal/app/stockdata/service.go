@@ -263,9 +263,9 @@ func validateDataset(spec DataSpec, dataset Dataset, requested TimeRange) error 
 			return errors.New("provider returned no klines")
 		}
 		seen := make(map[string]struct{}, len(dataset.Klines))
-		for _, item := range dataset.Klines {
-			if item == nil || item.Time.IsZero() || item.High < item.Low || item.Close <= 0 {
-				return errors.New("provider returned invalid kline")
+		for index, item := range dataset.Klines {
+			if err := validateKlineRecord(item, time.Now()); err != nil {
+				return fmt.Errorf("provider returned invalid kline at index %d: %w", index, err)
 			}
 			if (!requested.Start.IsZero() && item.Time.Before(requested.Start)) ||
 				(!requested.End.IsZero() && item.Time.After(requested.End.Add(24*time.Hour-time.Nanosecond))) {

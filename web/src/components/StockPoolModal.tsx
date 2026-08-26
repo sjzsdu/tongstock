@@ -205,7 +205,7 @@ export function StockPoolModal({ visible, onCancel, onSave, editingPool }: Stock
         });
       }
       onCancel();
-    } catch (error) {
+    } catch {
       message.error('请填写必填项');
     }
   };

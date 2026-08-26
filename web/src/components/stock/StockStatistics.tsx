@@ -1,9 +1,10 @@
 import 'react';
 import { Card, Col, Row, Statistic } from 'antd';
 import { amountWanToYi } from '../../lib/stock-detail';
+import type { Quote } from '../../types/api';
 
 interface StockStatisticsProps {
-  quote: any;
+  quote: Quote;
   latestClose: number | undefined;
   valueColor: string;
 }

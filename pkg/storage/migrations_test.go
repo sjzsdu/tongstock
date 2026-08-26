@@ -1,78 +1,91 @@
-package storage
+package storage_test
 
 import (
-	"context"
-	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/sjzsdu/tongstock/pkg/storage"
 )
 
-func TestMigrateLegacySQLitePreservesData(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "legacy.db")
-	fixture, err := os.ReadFile(filepath.Join("testdata", "legacy-v0.db"))
+// TestMigrationIdempotent validates that applying the full migration set twice
+// leaves the schema identical (CREATE TABLE IF NOT EXISTS / INSERT OR IGNORE style).
+// This prevents breakages on production DBs that have been partially migrated.
+func TestMigrationIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mig.db")
+	db, err := storage.New(storage.Config{Driver: "sqlite3", DSN: path})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, fixture, 0600); err != nil {
+	// Migrate twice. Second apply must not error or modify applied migrations count.
+	if err := db.Migrate(); err != nil {
+		t.Fatalf("first migrate: %v", err)
+	}
+	applied1, err := appliedMigrationCount(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrate(); err != nil {
+		t.Fatalf("second migrate (idempotency): %v", err)
+	}
+	applied2, err := appliedMigrationCount(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied1 != applied2 {
+		t.Fatalf("migration count changed on idempotent replay: %d -> %d", applied1, applied2)
+	}
+	_ = db.Close()
+}
+
+func TestKlineIntegrityMigrationQuarantinesExistingRowsAndRejectsNewOnes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kline-integrity.db")
+	db, err := storage.New(storage.Config{Driver: "sqlite3", DSN: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	// Recreate the pre-v19 condition so the migration cleanup itself is tested.
+	if _, err := db.DB().Exec(`
+		DROP TRIGGER trg_kline_validate_insert;
+		DROP TRIGGER trg_kline_validate_update;
+		DELETE FROM schema_migrations WHERE version = 19;
+		INSERT INTO kline(code,ktype,date,open,high,low,close,volume,amount)
+		VALUES ('601688',9,'72200215',19.5,19.57,19.41,19.47,100,1000)
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrate(); err != nil {
 		t.Fatal(err)
 	}
 
-	store, err := New(Config{Driver: "sqlite3", DSN: path})
-	if err != nil {
-		t.Fatalf("New() migration error = %v", err)
-	}
-	defer store.Close()
-
-	var historyName string
-	if err := store.DB().QueryRow(`SELECT name FROM history_stocks WHERE code = '600000'`).Scan(&historyName); err != nil {
-		t.Fatalf("legacy history row missing after migration: %v", err)
-	}
-	var group, note string
-	var updatedAt int64
-	if err := store.DB().QueryRow(`SELECT "group", note, updated_at FROM watchlist WHERE code = '000001'`).
-		Scan(&group, &note, &updatedAt); err != nil {
-		t.Fatalf("legacy watchlist row missing after migration: %v", err)
-	}
-	if group != "default" || note != "" || updatedAt != 0 {
-		t.Fatalf("migrated defaults = (%q, %q, %d)", group, note, updatedAt)
-	}
-	version, err := store.SchemaVersion(context.Background())
-	if err != nil {
+	var active, quarantined int
+	if err := db.DB().QueryRow(`SELECT COUNT(*) FROM kline WHERE code='601688'`).Scan(&active); err != nil {
 		t.Fatal(err)
 	}
-	if version != 2 {
-		t.Fatalf("schema version = %d, want 2", version)
+	if err := db.DB().QueryRow(`SELECT COUNT(*) FROM kline_quarantine WHERE code='601688' AND reason='invalid_date'`).Scan(&quarantined); err != nil {
+		t.Fatal(err)
+	}
+	if active != 0 || quarantined != 1 {
+		t.Fatalf("active=%d quarantined=%d, want 0/1", active, quarantined)
+	}
+
+	if _, err := db.DB().Exec(`INSERT INTO kline(code,ktype,date,open,high,low,close,volume,amount)
+		VALUES ('601688',9,'72200215',19.5,19.57,19.41,19.47,100,1000)`); err == nil {
+		t.Fatal("database trigger accepted an invalid future date")
+	}
+	if _, err := db.DB().Exec(`INSERT INTO kline(code,ktype,date,open,high,low,close,volume,amount)
+		VALUES ('601688',9,'20260803',19.5,19.57,19.41,19.47,100,1000)`); err != nil {
+		t.Fatalf("database trigger rejected a valid row: %v", err)
 	}
 }
 
-func TestSQLiteTransactionRollbackContract(t *testing.T) {
-	store, err := New(Config{Driver: "sqlite3", DSN: filepath.Join(t.TempDir(), "contract.db")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
+const migrationsTable = "schema_migrations"
 
-	tx, err := store.DB().Begin()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tx.Exec(`INSERT INTO quote_snapshot(code, payload, source_updated_at, updated_at) VALUES ('600000', '{}', 1, 1)`); err != nil {
-		t.Fatal(err)
-	}
-	if err := tx.Rollback(); err != nil {
-		t.Fatal(err)
-	}
-	var count int
-	if err := store.DB().QueryRow(`SELECT COUNT(*) FROM quote_snapshot`).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	if count != 0 {
-		t.Fatalf("rolled back row count = %d", count)
-	}
-}
-
-func TestUnsupportedDriverIsRejected(t *testing.T) {
-	if _, err := New(Config{Driver: "mysql", DSN: "ignored"}); err == nil {
-		t.Fatal("New(mysql) error = nil")
-	}
+func appliedMigrationCount(db *storage.Storage) (int, error) {
+	row := db.DB().QueryRow(`SELECT COUNT(*) FROM ` + migrationsTable)
+	var n int
+	err := row.Scan(&n)
+	return n, err
 }

@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import { Button, Card, Col, Empty, Flex, Row, Space, Spin, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import type { MinuteItem } from '../../types/api';
+import type { Finance, MinuteItem, Quote } from '../../types/api';
 import MinuteChart from '../charts/MinuteChart';
 import { formatShortDate, formatTime } from '../../lib/datetime';
 
@@ -10,8 +10,8 @@ interface IntradayTabContentProps {
   minuteDate: string;
   minuteLoading: boolean;
   minuteError: string;
-  quote: any;
-  finance: any;
+  quote: Quote;
+  finance: Finance | null;
   highlightedIdx: number;
   setHighlightedIdx: (idx: number) => void;
 }
@@ -52,7 +52,7 @@ export function IntradayTabContent({
   const totalVol = innerVol + outerVol;
   const innerPct = totalVol > 0 ? (innerVol / totalVol) * 100 : 50;
   const outerPct = totalVol > 0 ? (outerVol / totalVol) * 100 : 50;
-  const turnover = finance?.LiuTongGuBen > 0 ? ((quote?.Volume || 0) / finance.LiuTongGuBen) * 100 : 0;
+  const turnover = finance && finance.LiuTongGuBen > 0 ? (quote.Volume / finance.LiuTongGuBen) * 100 : 0;
 
   const minuteColumns: ColumnsType<MinuteItem> = [
     { title: '时间', dataIndex: 'Time', width: 90, render: (value: string) => formatTime(value) },

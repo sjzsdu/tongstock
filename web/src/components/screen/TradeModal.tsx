@@ -78,7 +78,7 @@ export function TradeModal({
                 <Text
                   style={{
                     fontVariantNumeric: 'tabular-nums',
-                    color: profit >= 0 ? '#22c55e' : '#ef4444',
+                    color: profit >= 0 ? '#ef4444' : '#22c55e',
                   }}
                 >
                   {profit >= 0 ? `+${profit.toFixed(2)}%` : `${profit.toFixed(2)}%`}

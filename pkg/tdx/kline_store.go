@@ -44,6 +44,32 @@ func NewKlineStore(s *storage.Storage) (*KlineStore, error) {
 func (s *KlineStore) SaveKline(code string, ktype uint8, klines []*protocol.Kline) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.saveKlinesLocked(code, ktype, klines, false)
+}
+
+// ReplaceKlines atomically replaces one complete code/type series. It is used
+// by full synchronization so stale rows that no longer exist upstream cannot
+// survive an otherwise successful refresh.
+func (s *KlineStore) ReplaceKlines(code string, ktype uint8, klines []*protocol.Kline) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.saveKlinesLocked(code, ktype, klines, true)
+}
+
+func (s *KlineStore) saveKlinesLocked(code string, ktype uint8, klines []*protocol.Kline, replace bool) error {
+	now := time.Now()
+	maxDate := now.AddDate(0, 0, 1)
+	minDate := time.Date(1990, 1, 1, 0, 0, 0, 0, s.loc)
+	valid := make([]*protocol.Kline, 0, len(klines))
+	for _, k := range klines {
+		if k == nil || k.Time.Before(minDate) || k.Time.After(maxDate) || validateKline(k) != "" {
+			continue
+		}
+		valid = append(valid, k)
+	}
+	if replace && len(valid) == 0 {
+		return errors.New("kline: refusing to replace series with no valid records")
+	}
 
 	tx, err := s.s.DB().Begin()
 	if err != nil {
@@ -57,26 +83,17 @@ func (s *KlineStore) SaveKline(code string, ktype uint8, klines []*protocol.Klin
 	}
 	defer stmt.Close()
 
-	// 日期范围检查
-	now := time.Now()
-	maxDate := now.AddDate(0, 0, 1)
-	minDate := time.Date(1990, 1, 1, 0, 0, 0, 0, s.loc)
-
-	skipped := 0
-	for _, k := range klines {
-		// 检查日期是否异常
-		if k.Time.Before(minDate) || k.Time.After(maxDate) {
-			skipped++
-			continue
+	if replace {
+		if _, err := tx.Exec(fmt.Sprintf(`DELETE FROM kline WHERE code = %s AND ktype = %s`, s.ph(1), s.ph(2)), code, ktype); err != nil {
+			return err
 		}
-		if reason := validateKline(k); reason != "" {
-			skipped++
-			continue
-		}
+	}
+	for _, k := range valid {
 		if _, err := stmt.Exec(code, ktype, k.Time.Format("20060102"), k.Open, k.High, k.Low, k.Close, k.Volume, k.Amount); err != nil {
 			return err
 		}
 	}
+	skipped := len(klines) - len(valid)
 	if skipped > 0 {
 		log.Printf("[kline] skipped %d invalid records for %s", skipped, code)
 	}
@@ -164,10 +181,13 @@ func (s *KlineStore) GetKline(code string, ktype uint8, startDate, endDate strin
 			continue
 		}
 		// 检查与前一条有效 K 线的价格变化
+		// 注意: A股存在除权除息、停牌复牌等公司行为，单一价格跳变并非必然是脏数据。
+		// 调整因子的识别应由 adjustment service (基于 xdxr 事件) 完成。
+		// 这里仅过滤极端异常 (单日涨/跌超过 5x)，其余跳空视为正常价格行为。
 		if lastClose > 0 {
 			ratio := k.Close / lastClose
-			if ratio > 3.0 || ratio < 0.33 {
-				continue // 跳过异常跳变
+			if ratio > 5.0 || ratio < 0.2 {
+				continue
 			}
 		}
 		lastClose = k.Close
@@ -295,6 +315,7 @@ func (s *KlineStore) DetectAndCleanCorruptedKlines(code string, ktype uint8) (in
 				isCorrupted = true
 			} else if idx > 0 && lastClose > 0 {
 				r := close / lastClose
+				// 放宽阈值: A股除权/复牌可能产生大跳空，5x 内视为合法。
 				if r > 5 || r < 0.2 {
 					isCorrupted = true
 				} else {

@@ -58,8 +58,8 @@ func TestSaveKlineRejectsInvalidRecords(t *testing.T) {
 	validDate := time.Date(2026, time.June, 22, 0, 0, 0, 0, time.Local)
 	klines := []*protocol.Kline{
 		{Time: validDate, Open: 2, High: 3, Low: 1, Close: 2.5, Volume: 100, Amount: 1000},
-		{Time: validDate.AddDate(0, 0, 1), Open: 0, High: 3, Low: 1, Close: 2.5},    // Invalid: Open=0
-		{Time: validDate.AddDate(0, 0, 2), Open: 2, High: 1, Low: 3, Close: 2.5},    // Invalid: High<Low
+		{Time: validDate.AddDate(0, 0, 1), Open: 0, High: 3, Low: 1, Close: 2.5},           // Invalid: Open=0
+		{Time: validDate.AddDate(0, 0, 2), Open: 2, High: 1, Low: 3, Close: 2.5},           // Invalid: High<Low
 		{Time: validDate.AddDate(0, 0, 3), Open: 2, High: math.Inf(1), Low: 1, Close: 2.5}, // Invalid: Inf
 	}
 	if err := store.SaveKline("000001", 9, klines); err != nil {
@@ -72,5 +72,45 @@ func TestSaveKlineRejectsInvalidRecords(t *testing.T) {
 	}
 	if len(got) != 1 {
 		t.Fatalf("len(got) = %d, want 1", len(got))
+	}
+}
+
+func TestReplaceKlinesRemovesStaleRowsAtomically(t *testing.T) {
+	s, err := storage.New(storage.Config{Driver: "sqlite3", DSN: t.TempDir() + "/replace-kline.db"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	store, err := NewKlineStore(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	day := time.Now().AddDate(0, 0, -2)
+	old := []*protocol.Kline{
+		{Time: day, Open: 10, High: 11, Low: 9, Close: 10, Volume: 1, Amount: 1},
+		{Time: day.AddDate(0, 0, 1), Open: 11, High: 12, Low: 10, Close: 11, Volume: 1, Amount: 1},
+	}
+	if err := store.SaveKline("601688", 9, old); err != nil {
+		t.Fatal(err)
+	}
+	replacement := []*protocol.Kline{{Time: day, Open: 20, High: 21, Low: 19, Close: 20, Volume: 2, Amount: 2}}
+	if err := store.ReplaceKlines("601688", 9, replacement); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.GetKline("601688", 9, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Close != 20 {
+		t.Fatalf("replacement result = %+v", got)
+	}
+
+	if err := store.ReplaceKlines("601688", 9, []*protocol.Kline{{Time: day, Open: 0}}); err == nil {
+		t.Fatal("empty valid replacement was accepted")
+	}
+	got, err = store.GetKline("601688", 9, "", "")
+	if err != nil || len(got) != 1 || got[0].Close != 20 {
+		t.Fatalf("failed replacement changed existing data: rows=%+v err=%v", got, err)
 	}
 }

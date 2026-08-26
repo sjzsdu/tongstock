@@ -451,6 +451,43 @@ export interface AgentChatResponse {
   error?: string;
 }
 
+export interface AgentResearchRequest {
+  paradigm_id: string;
+  question?: string;
+  snapshot_id?: string;
+  start_date?: string;
+  end_date?: string;
+}
+
+export interface AgentResearchResponse {
+  conclusion: 'evidence_passed' | 'not_verified' | string;
+  answer: string;
+  citation: {
+    experiment_id: string;
+    run_id: string;
+    snapshot_id: string;
+    evidence_hash: string;
+    result_hash: string;
+    trade_ids?: string[];
+  };
+  evidence: EvidenceCard;
+  critic: {
+    id: string;
+    target_id: string;
+    conclusion: string;
+    hard_blocked: boolean;
+    summary?: string;
+    issues: Array<{
+      id: string;
+      dimension: string;
+      severity: string;
+      title: string;
+      evidence?: string;
+      is_hard_threshold: boolean;
+    }>;
+  };
+}
+
 export interface AgentSessionsResponse {
   sessions: AgentSessionInfo[];
   missing?: boolean;
@@ -589,6 +626,10 @@ export interface ParadigmAnalyzeResponse {
   evaluated_confirm?: EvaluatedItem[];
   evaluated_invalid?: EvaluatedItem[];
   agent_text: string;
+  experiment_id?: string;
+  run_id?: string;
+  evidence_hash?: string;
+  research?: AgentResearchResponse;
   cached?: boolean;
   message?: string;
   error?: string;
@@ -643,16 +684,202 @@ export interface ParadigmStatsResponse {
 export interface ParadigmBacktestItem {
   paradigm_id: string;
   stock_code: string;
-  sample_size: number;
-  win_rate_5: number;
-  win_rate_10: number;
-  win_rate_20: number;
-  avg_return_5: number;
-  avg_return_10: number;
-  avg_return_20: number;
-  max_drawdown: number;
-  error?: string;
+  experiment_id: string;
+  run_id: string;
+  snapshot_id: string;
+  config_hash: string;
+  result_hash: string;
+  metrics: {
+    total_trades?: number;
+    win_rate?: number;
+    total_return?: number;
+    max_drawdown?: number;
+    net_pnl?: number;
+    custom?: Record<string, number>;
+  };
+  segmented_metrics: unknown[];
+  artifacts: Array<{
+    id: string;
+    type: string;
+    name: string;
+    content_hash?: string;
+    content?: unknown;
+  }>;
 }
+
+// Evidence Card types
+export interface SampleResult {
+  period: string;
+  sample_size: number;
+  total_return?: number;
+  annual_return?: number;
+  sharpe_ratio?: number;
+  win_rate?: number;
+  max_drawdown?: number;
+  trades_count: number;
+  gross_pnl?: number;
+  net_pnl?: number;
+}
+
+export interface CIResult {
+  period: string;
+  sample_size: number;
+  mean_return: number;
+  ci_95_lower: number;
+  ci_95_upper: number;
+  ci_95_width: number;
+  t_statistic: number;
+  p_value: number;
+  significant: boolean;
+  notes?: string[];
+}
+
+export interface CostBreakdown {
+  gross_return?: number;
+  net_return?: number;
+  total_cost: number;
+  cost_per_trade?: number;
+  cost_ratio?: number;
+  net_retention?: number;
+  slippage_cost: number;
+  commission_cost: number;
+  tax_cost: number;
+  transfer_fee: number;
+}
+
+export interface DrawdownInfo {
+  max_drawdown: number;
+  drawdown_ratio?: number;
+  warning?: string;
+}
+
+export interface ParamSweep {
+  param_name: string;
+  param_value: number;
+  return: number;
+  change_pct: number;
+}
+
+export interface ParamSensitivityInfo {
+  sensitivity_index: number;
+  perturbation_pass: boolean;
+  perturbation_delta: number;
+  nearby_params: ParamSweep[];
+  warning?: string;
+}
+
+export interface HoldingItem {
+  stock_code: string;
+  stock_name: string;
+  weight: number;
+}
+
+export interface ConcentrationInfo {
+  max_position_weight: number;
+  concentration_index: number;
+  top_holdings: HoldingItem[];
+  sector_exposure?: Record<string, number>;
+  diversification_score: number;
+}
+
+export interface CounterExample {
+  type: string;
+  description: string;
+  period: string;
+  return?: number;
+  reason: string;
+  severity: string;
+}
+
+export interface RiskFlag {
+  category: string;
+  level: string;
+  message: string;
+  mitigation?: string;
+}
+
+export interface ReviewRecord {
+  reviewer: string;
+  action: string;
+  note?: string;
+  rating?: number;
+  timestamp: string;
+}
+
+export interface DataLineage {
+  data_source: string;
+  data_version: string;
+  data_range: string;
+  data_start: string;
+  data_end: string;
+  last_updated: string;
+  generated_by: string;
+  generated_at: string;
+  source_hash: string;
+  snapshot_id: string;
+  experiment_id: string;
+  run_id: string;
+  result_hash: string;
+  artifact_hashes: Record<string, string>;
+  kline_manifest_hashes: Record<string, string>;
+  review_history?: ReviewRecord[];
+}
+
+export interface TradeRecord {
+  trade_id: string;
+  window: number;
+  segment: string;
+  stock_code: string;
+  buy_signal_date: string;
+  buy_execution_date: string;
+  sell_signal_date: string;
+  sell_execution_date: string;
+  quantity: number;
+  buy_price: number;
+  sell_price: number;
+  gross_pnl: number;
+  net_pnl: number;
+  total_cost: number;
+  return?: number;
+}
+
+export interface EvidenceCard {
+  paradigm_id: string;
+  paradigm_name: string;
+  stock_code: string;
+  stock_name: string;
+  generated_at: string;
+  available: boolean;
+  promotion_eligible: boolean;
+  unavailable_reasons?: string[];
+  promotion_blockers?: string[];
+  experiment_id?: string;
+  run_id?: string;
+  snapshot_id?: string;
+  evidence_hash?: string;
+  result_hash?: string;
+  in_sample?: SampleResult;
+  out_of_sample?: SampleResult;
+  confidence_interval?: CIResult;
+  cost_analysis?: CostBreakdown;
+  drawdown_analysis?: DrawdownInfo;
+  param_sensitivity?: ParamSensitivityInfo;
+  concentration?: ConcentrationInfo;
+  counter_evidence: CounterExample[];
+  risk_flags: RiskFlag[];
+  lineage?: DataLineage;
+  trade_samples?: TradeRecord[];
+}
+
+// Paradigm lifecycle state machine types
+export type ParadigmState =
+  | 'pending'
+  | 'reviewed'
+  | 'verified'
+  | 'promoted'
+  | 'degraded'
+  | 'suspended'
+  | 'rejected';
 
 export interface ChatSessionInfo {
   id: string;
@@ -774,4 +1001,464 @@ export interface AlertRule {
   enabled: boolean;
   lastTrigger: string;
   createdAt: string;
+}
+
+// Forward Run & Signal Ledger types
+export interface ConstraintsSnapshot {
+  enable_t_1: boolean;
+  enable_price_limit: boolean;
+  enable_suspension: boolean;
+  board: string;
+  min_trade_unit: number;
+  commission_rate: number;
+  slippage_bps: number;
+  stamp_duty_rate: number;
+  min_commission: number;
+  transfer_fee_rate: number;
+}
+
+export interface ForwardPositionState {
+  stock_code: string;
+  quantity: number;
+  average_price: number;
+  accrued_buy_fees: number;
+  buy_date: string;
+  last_price: number;
+  updated_at: string;
+}
+
+export interface ForwardRun {
+  id: string;
+  paradigm_version_id: string;
+  start_date: string;
+  end_date?: string;
+  status: string; // active / completed / stopped
+  initial_cash: number;
+  final_cash: number;
+  final_position_value: number;
+  total_pnl: number;
+  total_return: number;
+  signal_count: number;
+  filled_count: number;
+  rejected_count: number;
+  executed_count: number;
+  max_drawdown: number;
+  win_rate: number;
+  sharpe_ratio: number;
+  positions: Record<string, ForwardPositionState>;
+  equity_curve: EquityPoint[];
+  constraints_snapshot: ConstraintsSnapshot;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DataSnapshot {
+  dataset_id: string;
+  feature_set_id: string;
+  rule_set_id: string;
+  data_hash: string;
+  captured_at: string;
+}
+
+export interface SignalSource {
+  rule_id: string;
+  rule_desc: string;
+  triggered_by: string;
+  context_tags?: Record<string, string>;
+}
+
+export interface ExecutionRecord {
+  status: string; // pending / filled / partial / rejected / cancelled
+  market: ExecutionMarket;
+  exec_price: number;
+  exec_qty: number;
+  fee: number;
+  gross_pnl: number;
+  pnl: number;
+  hold_qty: number;
+  hold_cost: number;
+  reject_reason?: string;
+  executed_at: string;
+}
+
+export interface ExecutionMarket {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  pre_close: number;
+  volume: number;
+  amount: number;
+  limit_up: number;
+  limit_down: number;
+  suspended: boolean;
+  board: string;
+}
+
+export interface SignalEntry {
+  id: string;
+  run_id: string;
+  paradigm_version_id: string;
+  stock_code: string;
+  direction: string;
+  signal_date: string;
+  execution_date?: string;
+  price: number;
+  pre_close: number;
+  limit_up: number;
+  limit_down: number;
+  suspended: boolean;
+  board: string;
+  market: ExecutionMarket;
+  confidence: number;
+  data_snapshot: DataSnapshot;
+  source: SignalSource;
+  execution?: ExecutionRecord;
+  content_hash: string;
+  created_at: string;
+}
+
+export interface ForwardRunCreateRequest {
+  paradigm_version_id: string;
+  start_date: string;
+  initial_cash: number;
+  enable_t_1?: boolean;
+  enable_price_limit?: boolean;
+  enable_suspension?: boolean;
+  board?: string;
+  commission_rate?: number;
+  slippage_bps?: number;
+  stamp_duty_rate?: number;
+}
+
+export interface ForwardRunExecuteRequest {
+  from_date?: string;
+  to_date?: string;
+  signal_id?: string;
+}
+
+export interface ForwardRunExecuteResponse {
+  executed: number;
+  rejected: number;
+  results?: ExecutionRecord[];
+}
+
+export interface ForwardRunCompareRequest {
+  theoretical_return: number;
+  theoretical_max_drawdown: number;
+  theoretical_sharpe: number;
+  theoretical_win_rate: number;
+  theoretical_signals: number;
+  theoretical_annualized_return: number;
+}
+
+export interface TheoreticalMetrics {
+  total_return: number;
+  annualized_ret: number;
+  max_drawdown: number;
+  sharpe_ratio: number;
+  win_rate: number;
+  signal_count: number;
+  ideal_pnl: number;
+}
+
+export interface ActualMetrics {
+  total_return: number;
+  annualized_ret: number;
+  max_drawdown: number;
+  sharpe_ratio: number;
+  win_rate: number;
+  signal_count: number;
+  filled_count: number;
+  rejected_count: number;
+  actual_pnl: number;
+  missed_trades: number;
+}
+
+export interface GapAnalysis {
+  return_gap: number;
+  return_gap_pct: number;
+  drawdown_gap: number;
+  sharpe_gap: number;
+  win_rate_gap: number;
+  exec_loss: number;
+  constraint_impact: number;
+  key_insights: string[];
+}
+
+export interface ComparisonReport {
+  paradigm_version_id: string;
+  run_id: string;
+  compare_date: string;
+  theoretical: TheoreticalMetrics;
+  actual: ActualMetrics;
+  gap: GapAnalysis;
+}
+
+export interface EquityPoint {
+  date: string;
+  cash: number;
+  value: number;
+  total: number;
+}
+
+// ============================================================================
+// 监控模块类型
+// ============================================================================
+
+export interface DriftDetectionResult {
+  type: string;
+  significant: boolean;
+  severity: string;
+  metric_name: string;
+  old_value: number;
+  new_value: number;
+  delta: number;
+  delta_pct: number;
+  p_value: number;
+  threshold: number;
+  sample_size: number;
+  description: string;
+}
+
+export interface DriftSummary {
+  total_detections: number;
+  significant_count: number;
+  severe_count: number;
+  average_delta_pct: number;
+  overall_status: string;
+}
+
+export interface DecayDetectionResult {
+  type: string;
+  is_decaying: boolean;
+  severity: string;
+  current_value: number;
+  historical_avg: number;
+  change_pct: number;
+  window_days: number;
+  confidence: number;
+  description: string;
+  detected_at: string;
+}
+
+export interface DecaySummary {
+  total_detections: number;
+  decaying_count: number;
+  critical_count: number;
+  avg_confidence: number;
+  overall_status: string;
+}
+
+export interface ConcentrationResult {
+  type: string;
+  hhi: number;
+  effective_count: number;
+  is_concentrated: boolean;
+  severity: string;
+  top_contributor: string;
+  top_weight: number;
+  threshold: number;
+  breakdown: Record<string, number>;
+  description: string;
+}
+
+export interface ConcentrationSummary {
+  total_detections: number;
+  concentrated_count: number;
+  critical_count: number;
+  avg_hhi: number;
+  overall_status: string;
+}
+
+export interface AlertItem {
+  id: string;
+  category: string;
+  level: string;
+  status: string;
+  title: string;
+  message: string;
+  source: string;
+  metric_name: string;
+  metric_value: number;
+  threshold: number;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  acked_at?: string;
+  resolved_at?: string;
+  acked_by?: string;
+}
+
+export interface AlertSummary {
+  total_alerts: number;
+  active_count: number;
+  acked_count: number;
+  resolved_count: number;
+  suppressed_count: number;
+  critical_count: number;
+  danger_count: number;
+  warning_count: number;
+  info_count: number;
+}
+
+export interface MonitoringReport {
+  source: string;
+  generated_at: string;
+  period: {
+    start_date: string;
+    end_date: string;
+    window_days: number;
+  };
+  drift_results: DriftDetectionResult[];
+  drift_summary: DriftSummary;
+  decay_results: DecayDetectionResult[];
+  decay_summary: DecaySummary;
+  concentration_results: ConcentrationResult[];
+  concentration_summary: ConcentrationSummary;
+  generated_alerts: AlertItem[];
+  alert_summary: AlertSummary;
+  recommendations: string[];
+  health_score: number;
+}
+
+export interface PositionItem {
+  code: string;
+  name?: string;
+  industry: string;
+  weight: number;
+  value?: number;
+}
+
+export interface MonitoringAlertAckRequest {
+  user?: string;
+}
+
+// ============================================================================
+// 监控模块类型
+// ============================================================================
+
+export interface DriftDetectionResult {
+  type: string;
+  significant: boolean;
+  severity: string;
+  metric_name: string;
+  old_value: number;
+  new_value: number;
+  delta: number;
+  delta_pct: number;
+  p_value: number;
+  threshold: number;
+  sample_size: number;
+  description: string;
+}
+
+export interface DriftSummary {
+  total_detections: number;
+  significant_count: number;
+  severe_count: number;
+  average_delta_pct: number;
+  overall_status: string;
+}
+
+export interface DecayDetectionResult {
+  type: string;
+  is_decaying: boolean;
+  severity: string;
+  current_value: number;
+  historical_avg: number;
+  change_pct: number;
+  window_days: number;
+  confidence: number;
+  description: string;
+  detected_at: string;
+}
+
+export interface DecaySummary {
+  total_detections: number;
+  decaying_count: number;
+  critical_count: number;
+  avg_confidence: number;
+  overall_status: string;
+}
+
+export interface ConcentrationResult {
+  type: string;
+  hhi: number;
+  effective_count: number;
+  is_concentrated: boolean;
+  severity: string;
+  top_contributor: string;
+  top_weight: number;
+  threshold: number;
+  breakdown: Record<string, number>;
+  description: string;
+}
+
+export interface ConcentrationSummary {
+  total_detections: number;
+  concentrated_count: number;
+  critical_count: number;
+  avg_hhi: number;
+  overall_status: string;
+}
+
+export interface AlertItem {
+  id: string;
+  category: string;
+  level: string;
+  status: string;
+  title: string;
+  message: string;
+  source: string;
+  metric_name: string;
+  metric_value: number;
+  threshold: number;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  acked_at?: string;
+  resolved_at?: string;
+  acked_by?: string;
+}
+
+export interface AlertSummary {
+  total_alerts: number;
+  active_count: number;
+  acked_count: number;
+  resolved_count: number;
+  suppressed_count: number;
+  critical_count: number;
+  danger_count: number;
+  warning_count: number;
+  info_count: number;
+}
+
+export interface MonitoringReport {
+  source: string;
+  generated_at: string;
+  period: {
+    start_date: string;
+    end_date: string;
+    window_days: number;
+  };
+  drift_results: DriftDetectionResult[];
+  drift_summary: DriftSummary;
+  decay_results: DecayDetectionResult[];
+  decay_summary: DecaySummary;
+  concentration_results: ConcentrationResult[];
+  concentration_summary: ConcentrationSummary;
+  generated_alerts: AlertItem[];
+  alert_summary: AlertSummary;
+  recommendations: string[];
+  health_score: number;
+}
+
+export interface PositionItem {
+  code: string;
+  name?: string;
+  industry: string;
+  weight: number;
+  value?: number;
 }

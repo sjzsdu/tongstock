@@ -185,7 +185,7 @@ export default function OvernightArbitrage() {
       setInputLoading(false);
       setInputCode('');
     }
-  }, [inputCode, stockList, preloadCodesCache, addCodes]);
+  }, [inputCode, stockList, preloadCodesCache, addCodes, messageApi]);
 
   // Open block modal
   const openBlockModal = useCallback(async () => {

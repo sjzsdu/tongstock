@@ -13,6 +13,7 @@ var (
 	blockFile     string
 	blockType     string
 	blockShowCode string
+	countExchange string = "sz"
 )
 
 var blockSort bool

@@ -15,6 +15,8 @@ import type {
   AgentState,
   AgentDiagnosticResponse,
   AgentChatResponse,
+  AgentResearchRequest,
+  AgentResearchResponse,
   AgentSessionsResponse,
   AgentTranscriptResponse,
   AgentDebateResponse,
@@ -38,6 +40,17 @@ import type {
   AlertRecord,
   AlertRule,
   SyncFreshnessResult,
+  ForwardRun,
+  ForwardRunCreateRequest,
+  ForwardRunExecuteRequest,
+  ForwardRunExecuteResponse,
+  ForwardRunCompareRequest,
+  ComparisonReport,
+  SignalEntry,
+  EquityPoint,
+  MonitoringReport,
+  AlertItem,
+  AlertSummary,
 } from '../types/api';
 import type { ErrorEnvelope } from './generated';
 
@@ -298,6 +311,46 @@ export const api = {
       method: 'DELETE',
     }),
 
+  // Discovery research APIs
+  discoverRun: (req: { pool_id?: string; codes?: string[]; question?: string; hold_days?: number; search_budget?: number }) =>
+    fetchJSON<{
+      research_id: string;
+      snapshot_id: string;
+      conclusion: string;
+      candidate_count: number;
+      candidates: {
+        rank: number;
+        template_id: string;
+        method: { name: string; content_hash: string };
+        observations: number;
+        mean_forward_return: number;
+        win_rate: number;
+        baseline_return: number;
+        lift: number;
+        t_statistic: number;
+        validation_evidence: { stock_code: string; status: string; confidence?: string; passable?: boolean }[];
+      }[];
+      rejected_count: number;
+    }>('/api/discover/run', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+
+  discoverTraces: (limit?: number) =>
+    fetchJSON<{
+      traces: {
+        research_id: string;
+        snapshot_id: string;
+        conclusion: string;
+        discovery_trials: number;
+        created_at: string;
+        candidate_count: number;
+        passable_count: number;
+        stock_codes?: string[];
+      }[];
+      total: number;
+    }>(`/api/discover/traces${limit ? `?limit=${limit}` : ''}`),
+
   // Stockinfo APIs
   stockinfoList: (minMarketCap?: number, maxMarketCap?: number, exchange?: string) => {
     const params = new URLSearchParams();
@@ -376,6 +429,12 @@ export const api = {
       body: JSON.stringify({ message, agent, session }),
     }),
 
+  agentResearch: (payload: AgentResearchRequest) =>
+    fetchJSON<AgentResearchResponse>('/api/agent/research', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
   agentSessions: () =>
     fetchJSON<AgentSessionsResponse>('/api/agent/sessions'),
 
@@ -410,9 +469,6 @@ export const api = {
     return fetchJSON<ParadigmListResponse>(`/api/paradigm/list${q ? '?' + q : ''}`);
   },
 
-  paradigmGet: (id: string) =>
-    fetchJSON<ParadigmItem>(`/api/paradigm/${id}`),
-
   paradigmEvaluate: (stockCode: string) =>
     fetchJSON<ParadigmEvaluateResponse>('/api/paradigm/evaluate', {
       method: 'POST',
@@ -425,16 +481,14 @@ export const api = {
   paradigmStats: () =>
     fetchJSON<ParadigmStatsResponse>('/api/paradigm/stats'),
 
-  paradigmBacktest: (id?: string, stockCode?: string) => {
-    const params = new URLSearchParams();
-    if (id) params.set('id', id);
-    if (stockCode) params.set('stock_code', stockCode);
-    const q = params.toString();
-    return fetchJSON<ParadigmBacktestItem[]>(`/api/paradigm/backtest${q ? `?${q}` : ''}`);
-  },
-
-  paradigmHistory: () =>
-    fetchJSON<ParadigmListResponse>('/api/paradigm/history'),
+  paradigmBacktest: (paradigmId: string, snapshotId?: string) =>
+    fetchJSON<ParadigmBacktestItem>('/api/paradigm/backtest', {
+      method: 'POST',
+      body: JSON.stringify({
+        paradigm_id: paradigmId,
+        ...(snapshotId ? { snapshot_id: snapshotId } : {}),
+      }),
+    }),
 
   paradigmReview: (id: string, review: { review_status: string; review_note?: string; review_rating?: number; actual_return?: number }) =>
     fetchJSON<ParadigmItem>(`/api/paradigm/${id}/review`, {
@@ -592,7 +646,88 @@ export const api = {
 			method: 'POST',
 			body: JSON.stringify({ stockCodes }),
 		}),
+
+	// Forward Run APIs
+	forwardRuns: (limit?: number) =>
+		fetchJSON<{ runs: ForwardRun[]; total: number }>(
+			'/api/forward/runs' + (limit ? `?limit=${limit}` : '')),
+
+	forwardRunCreate: (payload: ForwardRunCreateRequest) =>
+		fetchJSON<{ run: ForwardRun }>('/api/forward/runs', {
+			method: 'POST',
+			body: JSON.stringify(payload),
+		}),
+
+	forwardRunGet: (id: string) =>
+		fetchJSON<{ run: ForwardRun }>(`/api/forward/runs/${id}`),
+
+	forwardRunExecute: (id: string, payload?: ForwardRunExecuteRequest) =>
+		fetchJSON<ForwardRunExecuteResponse>(`/api/forward/runs/${id}/execute`, {
+			method: 'POST',
+			body: JSON.stringify(payload || {}),
+		}),
+
+	forwardRunFinalize: (id: string, endDate?: string) =>
+		fetchJSON<{ run: ForwardRun }>(
+			`/api/forward/runs/${id}/finalize` + (endDate ? `?end_date=${endDate}` : '')),
+
+	forwardRunSignals: (runId: string) =>
+		fetchJSON<{ signals: SignalEntry[]; total: number }>(`/api/forward/runs/${runId}/signals`),
+
+	forwardSignalGet: (id: string) =>
+		fetchJSON<{ signal: SignalEntry }>(`/api/forward/signals/${id}`),
+
+	forwardSignalsList: (params: { paradigm_version_id?: string; run_id?: string; date?: string }) => {
+		const q = new URLSearchParams();
+		if (params.paradigm_version_id) q.set('paradigm_version_id', params.paradigm_version_id);
+		if (params.run_id) q.set('run_id', params.run_id);
+		if (params.date) q.set('date', params.date);
+		return fetchJSON<{ signals: SignalEntry[]; total: number }>('/api/forward/signals' + (q.toString() ? `?${q}` : ''));
+	},
+
+	forwardRunEquity: (id: string) =>
+		fetchJSON<{ run: ForwardRun; curve: EquityPoint[] }>(`/api/forward/runs/${id}/equity`),
+
+	forwardRunCompare: (id: string, payload: ForwardRunCompareRequest) =>
+		fetchJSON<{ report: ComparisonReport; pass: boolean; warnings: string[] }>(
+			`/api/forward/runs/${id}/compare`, {
+				method: 'POST',
+				body: JSON.stringify(payload),
+			}),
+
+	// Monitoring APIs
+	monitoringReport: () =>
+		fetchJSON<{ report: MonitoringReport }>('/api/monitoring/report'),
+
+	monitoringAlerts: () =>
+		fetchJSON<{ alerts: AlertItem[]; summary: AlertSummary }>('/api/monitoring/alerts'),
+
+	monitoringAlertAck: (id: string, user?: string) =>
+		fetchJSON<{ status: string; id: string }>(`/api/monitoring/alerts/${id}/ack` + (user ? `?user=${user}` : ''), {
+			method: 'POST',
+		}),
+
+	monitoringAlertResolve: (id: string) =>
+		fetchJSON<{ status: string; id: string }>(`/api/monitoring/alerts/${id}/resolve`, {
+			method: 'POST',
+		}),
+
+	monitoringConfig: () =>
+		fetchJSON<{ config: Record<string, unknown> }>('/api/monitoring/config'),
+
+  monitoringHealth: () =>
+		fetchJSON<{ status: string; engine_source: string; alert_summary: AlertSummary }>('/api/monitoring/health'),
+
+  selectionToday: () => fetchJSON<SelectionRun>('/api/selections/today'),
+  positionDecisionToday: () => fetchJSON<PositionDecisionRun>('/api/position-decisions/today'),
+  methodCards: (status = '') => fetchJSON<{ items: MethodCard[]; total: number }>(`/api/methods${status ? `?status=${encodeURIComponent(status)}` : ''}`),
 };
+
+export interface SelectionCandidate { rank:number;code:string;action:'buy'|'watch'|'avoid'|'insufficient_data';score:number;data_date:string;buy_window:string;position_cap_pct:number;exit:{max_holding_days?:number;stop_loss_pct?:number;take_profit_pct?:number;complete:boolean};risks?:string[];explanation:string;triggers:Array<{method_id:string;method_name:string;score:number}> }
+export interface SelectionRun { id:string;snapshot_id:string;feature_snapshot_id:string;snapshot_date:string;candidate_count:number;buy_count:number;candidates:SelectionCandidate[];exclusions:Array<{reason_code:string;detail:string}> }
+export interface PositionDecision { code:string;name:string;action:'hold'|'watch'|'reduce'|'exit'|'insufficient_data';priority:string;deadline:string;inferred:boolean;executable:boolean;constraint?:string;return_pct:number;price_time:string;explanation:string }
+export interface PositionDecisionRun { id:string;snapshot_id:string;snapshot_date:string;decisions:PositionDecision[] }
+export interface MethodCard { id:string;name:string;status:string;market:string;universe:string;holding_period:string;entry_summary:string;exit_summary:string;invalidations?:string[];evidence?:{confidence:string;oos_trades:number;oos_return:number;oos_max_drawdown:number};updated_at:string }
 
 export interface OvernightCriteria {
 	change_pct: boolean;
