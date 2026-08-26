@@ -107,19 +107,47 @@ type agentSessionsResponse struct {
 
 const maxTranscriptBytes = 256 * 1024
 
-// InitAgentState initializes the picoclaw runtime and runner
+type AgentRuntimeOptions struct {
+	Backend    string
+	Home       string
+	ConfigPath string
+	Provider   string
+	APIBase    string
+	APIKeyEnv  string
+	Model      string
+	Agent      string
+	Session    string
+	StockAgent string
+	Workspace  string
+}
+
+// InitAgentState initializes the legacy PicoClaw-file runtime and runner.
+// Deprecated: use InitAgentStateWithOptions for native TongStock settings.
 func (s *Server) InitAgentState(home, configPath, model, agentID, stockAgent, workspace string) error {
-	if workspace == "" {
-		workspace, _ = os.Getwd()
+	return s.InitAgentStateWithOptions(AgentRuntimeOptions{
+		Backend: "picoclaw", Home: home, ConfigPath: configPath, Model: model,
+		Agent: agentID, StockAgent: stockAgent, Workspace: workspace,
+	})
+}
+
+// InitAgentStateWithOptions initializes the selected runtime backend. Agent
+// definitions are owned by TongStock and supplied through SetAgentLister.
+func (s *Server) InitAgentStateWithOptions(opt AgentRuntimeOptions) error {
+	if opt.Workspace == "" {
+		workspace, _ := os.Getwd()
+		opt.Workspace = workspace
+	}
+	if strings.TrimSpace(opt.Session) == "" {
+		opt.Session = "tongstock:default"
 	}
 
 	rt, err := pcwrap.Load(pcwrap.Options{
-		Home:   home,
-		Config: configPath,
-		Model:  model,
+		Backend: opt.Backend, Home: opt.Home, Config: opt.ConfigPath,
+		Provider: opt.Provider, APIBase: opt.APIBase, APIKeyEnv: opt.APIKeyEnv,
+		Model: opt.Model,
 	})
 	if err != nil {
-		return fmt.Errorf("load picoclaw runtime failed: %w", err)
+		return fmt.Errorf("load agent runtime failed: %w", err)
 	}
 
 	var embeddedAgents []EmbeddedAgent
@@ -131,9 +159,9 @@ func (s *Server) InitAgentState(home, configPath, model, agentID, stockAgent, wo
 	}
 
 	runner, err := rt.NewDirectRunner(pcwrap.RunOptions{
-		Agent:          agentID,
-		Model:          model,
-		Workspace:      workspace,
+		Agent:          opt.Agent,
+		Model:          opt.Model,
+		Workspace:      opt.Workspace,
 		Quiet:          true,
 		EmbeddedAgents: embeddedAgents,
 	})
@@ -145,13 +173,13 @@ func (s *Server) InitAgentState(home, configPath, model, agentID, stockAgent, wo
 		rt:        rt,
 		runner:    runner,
 		embedded:  embeddedAgents,
-		workspace: workspace,
+		workspace: opt.Workspace,
 		started:   time.Now(),
 		defaults: AgentDefaults{
-			Agent:      agentID,
-			Model:      model,
-			Session:    "tongstock:default",
-			StockAgent: stockAgent,
+			Agent:      opt.Agent,
+			Model:      opt.Model,
+			Session:    opt.Session,
+			StockAgent: opt.StockAgent,
 		},
 	}
 	return nil
@@ -186,7 +214,7 @@ func (s *Server) handleAgentDiagnose(c *gin.Context) {
 	resp := agentDiagnosticResponse{Enabled: s.agentState != nil, Ready: s.agentState != nil && s.agentState.runner != nil}
 	if s.agentState == nil {
 		resp.Errors = append(resp.Errors, "agent service is not initialized")
-		resp.Hints = append(resp.Hints, "在 ~/.tongstock/config.yaml 中启用 agent.enabled，并配置 picoclaw home/config/model")
+		resp.Hints = append(resp.Hints, "在 ~/.tongstock/config.yaml 中启用 agent.enabled，并配置 provider/model/api_key_env")
 		c.JSON(http.StatusOK, resp)
 		return
 	}
@@ -195,7 +223,7 @@ func (s *Server) handleAgentDiagnose(c *gin.Context) {
 		resp.Checks = append(resp.Checks, "workspace: "+s.agentState.workspace)
 	}
 	if s.agentState.defaults.Model == "" {
-		resp.Hints = append(resp.Hints, "未显式配置模型，将使用 picoclaw 默认模型")
+		resp.Hints = append(resp.Hints, "未显式配置模型，将使用所选运行时的默认模型")
 	} else {
 		resp.Checks = append(resp.Checks, "model: "+s.agentState.defaults.Model)
 	}

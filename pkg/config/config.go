@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	yaml "gopkg.in/yaml.v3"
 )
@@ -50,13 +51,40 @@ type DatabaseConfig struct {
 
 // AgentConfig AI Agent 配置
 type AgentConfig struct {
-	Enabled    bool   `yaml:"enabled"`
-	Home       string `yaml:"home"`
-	Config     string `yaml:"config"`
-	Model      string `yaml:"model"`
-	Agent      string `yaml:"agent"`
-	Session    string `yaml:"session"`
-	StockAgent string `yaml:"stock_agent"` // default agent for stock analysis panel
+	Enabled    bool     `yaml:"enabled"`
+	Backend    string   `yaml:"backend"`
+	Provider   string   `yaml:"provider"`
+	APIBase    string   `yaml:"api_base"`
+	APIKeyEnv  string   `yaml:"api_key_env"`
+	AgentPaths []string `yaml:"agent_paths"`
+	Model      string   `yaml:"model"`
+	Agent      string   `yaml:"agent"`
+	Session    string   `yaml:"session"`
+	StockAgent string   `yaml:"stock_agent"` // default agent for stock analysis panel
+
+	// Home and Config are retained for existing PicoClaw-based installations.
+	// New installations should use the builtin backend and configure the model
+	// directly in TongStock.
+	Home   string `yaml:"home"`
+	Config string `yaml:"config"`
+}
+
+const (
+	AgentBackendBuiltin  = "builtin"
+	AgentBackendPicoClaw = "picoclaw"
+)
+
+// EffectiveBackend selects the native TongStock configuration unless legacy
+// PicoClaw paths are present. This makes old configuration files migrate
+// without requiring an explicit backend field.
+func (c AgentConfig) EffectiveBackend() string {
+	if backend := strings.ToLower(strings.TrimSpace(c.Backend)); backend != "" {
+		return backend
+	}
+	if strings.TrimSpace(c.Home) != "" || strings.TrimSpace(c.Config) != "" {
+		return AgentBackendPicoClaw
+	}
+	return AgentBackendBuiltin
 }
 
 // DefaultConfig 返回一个包含默认值的 Config 实例
@@ -105,15 +133,23 @@ database:
   # 连接字符串
   # dsn: ~/.tongstock/cache/tongstock.db
 
-# AI Agent 配置 (可选，需要 picoclaw)
+# AI Agent 配置（可选，默认使用 TongStock 内建配置）
 # agent:
 #   enabled: true
-#   home: ~/.picoclaw
-#   config: ~/.picoclaw/config.json
-#   model: ""
-#   agent: ""
+#   backend: builtin
+#   provider: deepseek
+#   model: deepseek-chat
+#   api_key_env: DEEPSEEK_API_KEY
+#   # api_base: https://api.deepseek.com/v1
+#   # agent_paths: [~/.tongstock/agents]
+#   agent: stock-analyst
 #   session: ""
 #   stock_agent: "stock-analyst"  # 个股分析面板默认 agent
+#
+# 兼容旧 PicoClaw 配置：保留 home/config 即可自动使用 picoclaw backend
+#   # backend: picoclaw
+#   # home: ~/.picoclaw
+#   # config: ~/.picoclaw/config.json
 `
 }
 
@@ -181,6 +217,21 @@ func Load() (*Config, error) {
 	}
 	if tmp.Agent.Model != "" {
 		merged.Agent.Model = tmp.Agent.Model
+	}
+	if tmp.Agent.Backend != "" {
+		merged.Agent.Backend = tmp.Agent.Backend
+	}
+	if tmp.Agent.Provider != "" {
+		merged.Agent.Provider = tmp.Agent.Provider
+	}
+	if tmp.Agent.APIBase != "" {
+		merged.Agent.APIBase = tmp.Agent.APIBase
+	}
+	if tmp.Agent.APIKeyEnv != "" {
+		merged.Agent.APIKeyEnv = tmp.Agent.APIKeyEnv
+	}
+	if len(tmp.Agent.AgentPaths) > 0 {
+		merged.Agent.AgentPaths = append([]string(nil), tmp.Agent.AgentPaths...)
 	}
 	if tmp.Agent.Agent != "" {
 		merged.Agent.Agent = tmp.Agent.Agent

@@ -4,6 +4,7 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -36,21 +37,77 @@ func List() ([]pcwrap.EmbeddedAgent, error) {
 		return nil, err
 	}
 	agents := make([]pcwrap.EmbeddedAgent, 0, len(paths))
-	indexByID := map[string]int{}
 	for _, path := range paths {
-		agent, err := loadMarkdownAgent(path)
+		agent, err := loadMarkdownAgentFS(embeddedFS, path)
 		if err != nil {
 			return nil, err
 		}
-		if idx, exists := indexByID[agent.ID]; exists {
+		agents = append(agents, agent)
+	}
+	return mergeAgents(agents), nil
+}
+
+// ListWithPaths returns built-in agents plus user supplied Markdown agents.
+// A path may point to a single file or a directory. External definitions with
+// the same ID intentionally replace built-ins, which provides a small and
+// stable extension point without requiring changes to the server runtime.
+func ListWithPaths(customPaths []string) ([]pcwrap.EmbeddedAgent, error) {
+	agents, err := List()
+	if err != nil {
+		return nil, err
+	}
+	for _, path := range customPaths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil, fmt.Errorf("read agent path %s failed: %w", path, err)
+		}
+		if !info.IsDir() {
+			agent, err := loadMarkdownAgentFile(path)
+			if err != nil {
+				return nil, err
+			}
+			agents = append(agents, agent)
+			continue
+		}
+		err = filepath.WalkDir(path, func(filePath string, entry fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".md") {
+				return nil
+			}
+			agent, err := loadMarkdownAgentFile(filePath)
+			if err != nil {
+				return err
+			}
+			agents = append(agents, agent)
+			return nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("read agent directory %s failed: %w", path, err)
+		}
+	}
+	return mergeAgents(agents), nil
+}
+
+func mergeAgents(items []pcwrap.EmbeddedAgent) []pcwrap.EmbeddedAgent {
+	agents := make([]pcwrap.EmbeddedAgent, 0, len(items))
+	indexByID := map[string]int{}
+	for _, agent := range items {
+		key := strings.ToLower(agent.ID)
+		if idx, exists := indexByID[key]; exists {
 			agents[idx] = agent
 		} else {
-			indexByID[agent.ID] = len(agents)
+			indexByID[key] = len(agents)
 			agents = append(agents, agent)
 		}
 	}
 	sort.Slice(agents, func(i, j int) bool { return agents[i].ID < agents[j].ID })
-	return agents, nil
+	return agents
 }
 
 func Get(id string) (pcwrap.EmbeddedAgent, error) {
@@ -89,23 +146,35 @@ func embeddedAgentPaths() ([]string, error) {
 	return paths, nil
 }
 
-func loadMarkdownAgent(path string) (pcwrap.EmbeddedAgent, error) {
-	data, err := embeddedFS.ReadFile(path)
+func loadMarkdownAgentFS(source fs.ReadFileFS, path string) (pcwrap.EmbeddedAgent, error) {
+	data, err := source.ReadFile(path)
 	if err != nil {
-		return pcwrap.EmbeddedAgent{}, fmt.Errorf("read embedded agent %s failed: %w", path, err)
+		return pcwrap.EmbeddedAgent{}, fmt.Errorf("read agent %s failed: %w", path, err)
 	}
+	return parseMarkdownAgent(path, data)
+}
+
+func loadMarkdownAgentFile(path string) (pcwrap.EmbeddedAgent, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return pcwrap.EmbeddedAgent{}, fmt.Errorf("read agent %s failed: %w", path, err)
+	}
+	return parseMarkdownAgent(path, data)
+}
+
+func parseMarkdownAgent(path string, data []byte) (pcwrap.EmbeddedAgent, error) {
 	meta, body, err := splitFrontMatter(string(data))
 	if err != nil {
-		return pcwrap.EmbeddedAgent{}, fmt.Errorf("parse embedded agent %s failed: %w", path, err)
+		return pcwrap.EmbeddedAgent{}, fmt.Errorf("parse agent %s failed: %w", path, err)
 	}
 	var def definition
 	if err := yaml.Unmarshal([]byte(meta), &def); err != nil {
-		return pcwrap.EmbeddedAgent{}, fmt.Errorf("parse embedded agent %s frontmatter failed: %w", path, err)
+		return pcwrap.EmbeddedAgent{}, fmt.Errorf("parse agent %s frontmatter failed: %w", path, err)
 	}
 	def.ID = strings.TrimSpace(def.ID)
 	def.Name = strings.TrimSpace(def.Name)
 	if def.ID == "" {
-		return pcwrap.EmbeddedAgent{}, fmt.Errorf("embedded agent %s missing id", path)
+		return pcwrap.EmbeddedAgent{}, fmt.Errorf("agent %s missing id", path)
 	}
 	if def.Name == "" {
 		def.Name = def.ID

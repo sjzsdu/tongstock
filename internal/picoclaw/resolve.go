@@ -104,6 +104,11 @@ func (opt RunOptions) findEmbeddedAgent(id string) (EmbeddedAgent, bool) {
 		if strings.EqualFold(str(agent.ID), want) {
 			return agent, true
 		}
+		for _, alias := range agent.Aliases {
+			if strings.EqualFold(str(alias), want) {
+				return agent, true
+			}
+		}
 	}
 	return EmbeddedAgent{}, false
 }

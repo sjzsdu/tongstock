@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	pcpkg "github.com/sipeed/picoclaw/pkg"
 	pcbus "github.com/sipeed/picoclaw/pkg/bus"
@@ -12,9 +13,13 @@ import (
 )
 
 type Options struct {
-	Home   string
-	Config string
-	Model  string
+	Backend   string
+	Home      string
+	Config    string
+	Model     string
+	Provider  string
+	APIBase   string
+	APIKeyEnv string
 }
 
 type Runtime struct {
@@ -25,6 +30,16 @@ type Runtime struct {
 }
 
 func Load(opt Options) (*Runtime, error) {
+	if strings.EqualFold(str(opt.Backend), "builtin") {
+		return loadBuiltin(opt)
+	}
+	if backend := str(opt.Backend); backend != "" && !strings.EqualFold(backend, "picoclaw") {
+		return nil, fmt.Errorf("unsupported agent backend %q", backend)
+	}
+	return loadPicoClaw(opt)
+}
+
+func loadPicoClaw(opt Options) (*Runtime, error) {
 	home := resolveHome(opt.Home)
 	cfgPath := resolveConfigPath(home, opt.Config)
 
@@ -47,6 +62,68 @@ func Load(opt Options) (*Runtime, error) {
 		Skills:     loadSkills(cfg, home),
 	}
 	return rt, nil
+}
+
+func loadBuiltin(opt Options) (*Runtime, error) {
+	model := str(opt.Model)
+	if model == "" {
+		return nil, fmt.Errorf("agent.model is required for builtin backend")
+	}
+	home := str(opt.Home)
+	if home == "" {
+		home = defaultBuiltinHome()
+	}
+	provider := strings.ToLower(str(opt.Provider))
+	apiKeyEnv := str(opt.APIKeyEnv)
+	if apiKeyEnv == "" {
+		apiKeyEnv = defaultAPIKeyEnv(provider)
+	}
+	apiKey := ""
+	if apiKeyEnv != "" {
+		apiKey = strings.TrimSpace(os.Getenv(apiKeyEnv))
+	}
+
+	cfg := pcconfig.DefaultConfig()
+	cfg.Agents.Defaults.ModelName = model
+	cfg.Agents.Defaults.Workspace = filepath.Join(home, "workspace")
+	cfg.ModelList = []*pcconfig.ModelConfig{{
+		ModelName: model,
+		Provider:  provider,
+		Model:     model,
+		APIBase:   str(opt.APIBase),
+		APIKeys:   pcconfig.SimpleSecureStrings(apiKey),
+		Enabled:   true,
+	}}
+	return &Runtime{
+		Home:       home,
+		ConfigPath: "",
+		Config:     cfg,
+		Skills:     loadSkills(cfg, home),
+	}, nil
+}
+
+func defaultBuiltinHome() string {
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, ".tongstock", "agent-runtime")
+	}
+	return filepath.Join(".tongstock", "agent-runtime")
+}
+
+func defaultAPIKeyEnv(provider string) string {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "openai":
+		return "OPENAI_API_KEY"
+	case "anthropic":
+		return "ANTHROPIC_API_KEY"
+	case "deepseek":
+		return "DEEPSEEK_API_KEY"
+	case "openrouter":
+		return "OPENROUTER_API_KEY"
+	case "zhipu":
+		return "ZHIPU_API_KEY"
+	default:
+		return ""
+	}
 }
 
 func resolveHome(home string) string {
