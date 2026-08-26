@@ -23,6 +23,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: sjzsdu/picoclaw
+          ref: 1f8286e5e91187a1d978d0a1869d9ddb5a1d9c9c
           path: picoclaw
 
       - name: Set up Go

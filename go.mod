@@ -1,6 +1,6 @@
 module github.com/sjzsdu/tongstock
 
-go 1.25.11
+go 1.25.12
 
 require (
 	github.com/getlantern/systray v1.2.2
