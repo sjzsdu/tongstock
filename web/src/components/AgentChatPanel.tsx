@@ -54,7 +54,7 @@ export default function AgentChatPanel({ stockCode, stockName, open, onClose }: 
         const defaultAgent = state.defaults?.stock_agent || state.defaults?.agent || '';
         setSelectedAgent(defaultAgent);
         if (!state.agents?.length) {
-          setMessages([{ role: 'system', content: 'Agent 未配置。请在 ~/.tongstock/config.yaml 中设置 agent.enabled: true 并配置 picoclaw。' }]);
+          setMessages([{ role: 'system', content: 'Agent 未配置。请在 ~/.tongstock/config.yaml 中设置 agent.enabled: true，并配置 provider、model 和 api_key_env。' }]);
         }
       }).catch(() => {
         setMessages([{ role: 'system', content: '无法连接到 Agent 服务。请确保后端已启动且 agent 功能已启用。' }]);

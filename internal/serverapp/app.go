@@ -300,13 +300,24 @@ func NewApp(cfg *config.Config, opts Options) (_ *App, err error) {
 }
 
 func (a *App) configureOptionalModules() {
-	a.api.SetAgentLister(embeddedAgentLister)
+	agentPaths := make([]string, 0, len(a.cfg.Agent.AgentPaths))
+	for _, path := range a.cfg.Agent.AgentPaths {
+		agentPaths = append(agentPaths, expandHome(path))
+	}
+	a.api.SetAgentLister(func() ([]server.EmbeddedAgent, error) {
+		return configuredAgentLister(agentPaths)
+	})
 	if a.cfg.Agent.Enabled {
 		home := expandHome(a.cfg.Agent.Home)
 		configPath := expandHome(a.cfg.Agent.Config)
-		if err := a.api.InitAgentState(home, configPath, a.cfg.Agent.Model, a.cfg.Agent.Agent, a.cfg.Agent.StockAgent, ""); err != nil {
+		if err := a.api.InitAgentStateWithOptions(server.AgentRuntimeOptions{
+			Backend: a.cfg.Agent.EffectiveBackend(), Home: home, ConfigPath: configPath,
+			Provider: a.cfg.Agent.Provider, APIBase: a.cfg.Agent.APIBase, APIKeyEnv: a.cfg.Agent.APIKeyEnv,
+			Model: a.cfg.Agent.Model, Agent: a.cfg.Agent.Agent, Session: a.cfg.Agent.Session,
+			StockAgent: a.cfg.Agent.StockAgent,
+		}); err != nil {
 			log.Printf("agent initialization degraded: %v", err)
-			a.setModule("agent", "degraded", "agent initialization failed")
+			a.setModule("agent", "degraded", err.Error())
 		} else {
 			a.setModule("agent", "ready", "")
 		}
@@ -341,7 +352,11 @@ func (a *App) configureOptionalModules() {
 }
 
 func embeddedAgentLister() ([]server.EmbeddedAgent, error) {
-	allAgents, err := agents.All()
+	return configuredAgentLister(nil)
+}
+
+func configuredAgentLister(paths []string) ([]server.EmbeddedAgent, error) {
+	allAgents, err := agents.ListWithPaths(paths)
 	if err != nil {
 		return nil, err
 	}
@@ -349,7 +364,7 @@ func embeddedAgentLister() ([]server.EmbeddedAgent, error) {
 	for i, agent := range allAgents {
 		result[i] = server.EmbeddedAgent{
 			ID: agent.ID, Name: agent.Name, Description: agent.Description,
-			Prompt: agent.Prompt, Soul: agent.Soul, Skills: agent.Skills,
+			Prompt: agent.Prompt, Soul: agent.Soul, Aliases: agent.Aliases, Skills: agent.Skills,
 			Tools: agent.Tools, NoHistory: agent.NoHistory,
 		}
 	}

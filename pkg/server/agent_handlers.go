@@ -52,6 +52,7 @@ type agentInfo struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`
 	Description string   `json:"description,omitempty"`
+	Aliases     []string `json:"aliases,omitempty"`
 	Skills      []string `json:"skills,omitempty"`
 	Tools       []string `json:"tools,omitempty"`
 }
@@ -107,19 +108,53 @@ type agentSessionsResponse struct {
 
 const maxTranscriptBytes = 256 * 1024
 
-// InitAgentState initializes the picoclaw runtime and runner
+type AgentRuntimeOptions struct {
+	Backend    string
+	Home       string
+	ConfigPath string
+	Provider   string
+	APIBase    string
+	APIKeyEnv  string
+	Model      string
+	Agent      string
+	Session    string
+	StockAgent string
+	Workspace  string
+}
+
+// InitAgentState initializes the legacy PicoClaw-file runtime and runner.
+// Deprecated: use InitAgentStateWithOptions for native TongStock settings.
 func (s *Server) InitAgentState(home, configPath, model, agentID, stockAgent, workspace string) error {
-	if workspace == "" {
-		workspace, _ = os.Getwd()
+	return s.InitAgentStateWithOptions(AgentRuntimeOptions{
+		Backend: "picoclaw", Home: home, ConfigPath: configPath, Model: model,
+		Agent: agentID, StockAgent: stockAgent, Workspace: workspace,
+	})
+}
+
+// InitAgentStateWithOptions initializes the selected runtime backend. Agent
+// definitions are owned by TongStock and supplied through SetAgentLister.
+func (s *Server) InitAgentStateWithOptions(opt AgentRuntimeOptions) (err error) {
+	s.agentInitError = ""
+	defer func() {
+		if err != nil {
+			s.agentInitError = err.Error()
+		}
+	}()
+	if opt.Workspace == "" {
+		workspace, _ := os.Getwd()
+		opt.Workspace = workspace
+	}
+	if strings.TrimSpace(opt.Session) == "" {
+		opt.Session = "tongstock:default"
 	}
 
 	rt, err := pcwrap.Load(pcwrap.Options{
-		Home:   home,
-		Config: configPath,
-		Model:  model,
+		Backend: opt.Backend, Home: opt.Home, Config: opt.ConfigPath,
+		Provider: opt.Provider, APIBase: opt.APIBase, APIKeyEnv: opt.APIKeyEnv,
+		Model: opt.Model,
 	})
 	if err != nil {
-		return fmt.Errorf("load picoclaw runtime failed: %w", err)
+		return fmt.Errorf("load agent runtime failed: %w", err)
 	}
 
 	var embeddedAgents []EmbeddedAgent
@@ -131,9 +166,9 @@ func (s *Server) InitAgentState(home, configPath, model, agentID, stockAgent, wo
 	}
 
 	runner, err := rt.NewDirectRunner(pcwrap.RunOptions{
-		Agent:          agentID,
-		Model:          model,
-		Workspace:      workspace,
+		Agent:          opt.Agent,
+		Model:          opt.Model,
+		Workspace:      opt.Workspace,
 		Quiet:          true,
 		EmbeddedAgents: embeddedAgents,
 	})
@@ -145,13 +180,13 @@ func (s *Server) InitAgentState(home, configPath, model, agentID, stockAgent, wo
 		rt:        rt,
 		runner:    runner,
 		embedded:  embeddedAgents,
-		workspace: workspace,
+		workspace: opt.Workspace,
 		started:   time.Now(),
 		defaults: AgentDefaults{
-			Agent:      agentID,
-			Model:      model,
-			Session:    "tongstock:default",
-			StockAgent: stockAgent,
+			Agent:      opt.Agent,
+			Model:      opt.Model,
+			Session:    opt.Session,
+			StockAgent: opt.StockAgent,
 		},
 	}
 	return nil
@@ -184,10 +219,22 @@ type agentDiagnosticResponse struct {
 }
 
 func (s *Server) handleAgentDiagnose(c *gin.Context) {
-	resp := agentDiagnosticResponse{Enabled: s.agentState != nil, Ready: s.agentState != nil && s.agentState.runner != nil}
-	if s.agentState == nil {
-		resp.Errors = append(resp.Errors, "agent service is not initialized")
-		resp.Hints = append(resp.Hints, "在 ~/.tongstock/config.yaml 中启用 agent.enabled，并配置 picoclaw home/config/model")
+	resp := agentDiagnosticResponse{
+		Enabled: s.agentState != nil || s.agentInitError != "",
+		Ready:   s.agentState != nil && s.agentState.runner != nil,
+	}
+	if s.agentState == nil || s.agentState.runner == nil {
+		if s.agentInitError != "" {
+			resp.Errors = append(resp.Errors, s.agentInitError)
+			if strings.Contains(s.agentInitError, "agent.model") {
+				resp.Hints = append(resp.Hints, "内建后端需要配置 agent.model；如需沿用 PicoClaw，请设置 backend: picoclaw 或保留 home/config")
+			} else if strings.Contains(s.agentInitError, "api key") || strings.Contains(s.agentInitError, "api_key_env") {
+				resp.Hints = append(resp.Hints, "远程 provider 需要有效的 agent.api_key_env；Ollama、vLLM、LM Studio 等本地 provider 可不配置密钥")
+			}
+		} else {
+			resp.Errors = append(resp.Errors, "agent service is not initialized")
+			resp.Hints = append(resp.Hints, "在 ~/.tongstock/config.yaml 中启用 agent.enabled，并配置 provider/model/api_key_env")
+		}
 		c.JSON(http.StatusOK, resp)
 		return
 	}
@@ -196,7 +243,7 @@ func (s *Server) handleAgentDiagnose(c *gin.Context) {
 		resp.Checks = append(resp.Checks, "workspace: "+s.agentState.workspace)
 	}
 	if s.agentState.defaults.Model == "" {
-		resp.Hints = append(resp.Hints, "未显式配置模型，将使用 picoclaw 默认模型")
+		resp.Hints = append(resp.Hints, "未显式配置模型，将使用所选运行时的默认模型")
 	} else {
 		resp.Checks = append(resp.Checks, "model: "+s.agentState.defaults.Model)
 	}
@@ -290,6 +337,7 @@ func (s *Server) handleAgentState(c *gin.Context) {
 			ID:          agent.ID,
 			Name:        agent.Name,
 			Description: agent.Description,
+			Aliases:     agent.Aliases,
 			Skills:      agent.Skills,
 			Tools:       agent.Tools,
 		})
@@ -324,10 +372,12 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	if req.Agent == "" {
 		req.Agent = s.agentState.defaults.Agent
 	}
-	if !s.isValidAgent(req.Agent) {
+	canonicalAgent, ok := s.resolveAgentID(req.Agent)
+	if !ok {
 		c.JSON(http.StatusBadRequest, agentChatResponse{Error: "unknown agent: " + req.Agent})
 		return
 	}
+	req.Agent = canonicalAgent
 	if req.Agent == "stock-paradigm-miner" {
 		c.JSON(http.StatusConflict, agentChatResponse{
 			Error: "范式研究禁止直接 Prompt 出具结论；请使用 /api/agent/research 并提供 paradigm_id，以生成真实实验和 Evidence 引用。",
@@ -403,10 +453,12 @@ func (s *Server) handleAgentChatStream(c *gin.Context) {
 	if req.Agent == "" {
 		req.Agent = s.agentState.defaults.Agent
 	}
-	if !s.isValidAgent(req.Agent) {
+	canonicalAgent, ok := s.resolveAgentID(req.Agent)
+	if !ok {
 		WriteError(c, http.StatusBadRequest, "unknown_agent", "指定的 Agent 不存在")
 		return
 	}
+	req.Agent = canonicalAgent
 	if req.Agent == "stock-paradigm-miner" {
 		WriteError(c, http.StatusConflict, "verified_research_required",
 			"范式研究禁止直接 Prompt 出具结论；请使用 /api/agent/research 并提供 paradigm_id")
@@ -612,16 +664,19 @@ func chatSessionContentSize(sess *ChatSession) int64 {
 	return size
 }
 
-func (s *Server) isValidAgent(agentID string) bool {
+func (s *Server) resolveAgentID(agentID string) (string, bool) {
 	if s.agentState == nil {
-		return false
+		return "", false
 	}
-	for _, a := range s.agentState.embedded {
-		if a.ID == agentID {
-			return true
-		}
+	if agent, ok := pcwrap.ResolveEmbeddedAgent(s.agentState.embedded, agentID); ok {
+		return strings.TrimSpace(agent.ID), true
 	}
-	return agentID == s.agentState.defaults.Agent
+	want := strings.TrimSpace(agentID)
+	defaultAgent := strings.TrimSpace(s.agentState.defaults.Agent)
+	if want != "" && defaultAgent != "" && strings.EqualFold(want, defaultAgent) {
+		return defaultAgent, true
+	}
+	return "", false
 }
 
 // Helper functions
@@ -977,12 +1032,14 @@ func (s *Server) handleAgentDebate(c *gin.Context) {
 		req.Agents = []string{"stock-quant-technician", "stock-fundamental-analyst"}
 	}
 
-	// Validate agents
-	for _, agentID := range req.Agents {
-		if !s.isValidAgent(agentID) {
+	// Validate agents and replace aliases/case variants with canonical IDs.
+	for i, agentID := range req.Agents {
+		canonicalAgent, ok := s.resolveAgentID(agentID)
+		if !ok {
 			c.JSON(http.StatusBadRequest, agentDebateResponse{Error: "unknown agent: " + agentID})
 			return
 		}
+		req.Agents[i] = canonicalAgent
 	}
 
 	stockCtx := req.StockCode

@@ -45,6 +45,7 @@ type Server struct {
 	stockSearchIndexCache stockSearchIndexCache
 	agentState            *AgentState
 	agentListFunc         func() ([]EmbeddedAgent, error)
+	agentInitError        string
 	ledger                *ledger.SignalLedger
 	paradigmStore         *paradigms.Store
 	methodRegistry        *methodregistry.Registry

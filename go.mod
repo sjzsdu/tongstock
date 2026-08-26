@@ -1,6 +1,6 @@
 module github.com/sjzsdu/tongstock
 
-go 1.25.11
+go 1.25.12
 
 require (
 	github.com/getlantern/systray v1.2.2
@@ -10,7 +10,7 @@ require (
 	github.com/sipeed/picoclaw v0.0.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/sync v0.21.0
-	golang.org/x/text v0.38.0
+	golang.org/x/text v0.39.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 

@@ -90,6 +90,8 @@ npx skills add sjzsdu/tongstock
 | 新闻 | `/news` | 新闻流、热点事件和情绪 |
 | 设置 | `/settings` | 指标参数等本地设置 |
 
+Agent 默认支持由 TongStock 直接配置模型和注册自定义角色，不再要求单独维护 PicoClaw 配置文件。详见 [Agent 配置与扩展](docs/agents.md)。现有 PicoClaw `home/config` 配置仍可直接使用并自动进入兼容模式。
+
 ### 开发模式
 
 ```bash
