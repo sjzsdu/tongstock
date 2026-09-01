@@ -105,12 +105,6 @@ func applyEmbeddedAgentTools(cfg *pcconfig.Config, tools []string) {
 			cfg.Tools.Spawn.Enabled = true
 		case "subagent":
 			cfg.Tools.Subagent.Enabled = true
-		// TongStock internal research tools – recognized and wired through
-		// the server-side research tool registry rather than the picoclaw config.
-		case "data_snapshot", "feature_query", "experiment_report",
-			"paradigm_version", "forward_run", "evidence_drilldown",
-			"verified_research_evidence":
-			// Enabled via server research tool registry; no picoclaw config change needed.
 		}
 	}
 }

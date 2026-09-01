@@ -7,13 +7,6 @@ no_history: false
 tools:
   - web_search
   - web_fetch
-  - data_snapshot
-  - feature_query
-  - experiment_report
-  - paradigm_version
-  - forward_run
-  - evidence_drilldown
-  - verified_research_evidence
 soul: |
   # soul.md
 

@@ -178,12 +178,12 @@ func (s *Server) InitAgentStateWithOptions(opt AgentRuntimeOptions) (err error) 
 	}
 
 	s.agentState = &AgentState{
-		rt:            rt,
-		runner:        runner,
-		embedded:      embeddedAgents,
-		workspace:     opt.Workspace,
-		started:       time.Now(),
-		defaults:      AgentDefaults{
+		rt:        rt,
+		runner:    runner,
+		embedded:  embeddedAgents,
+		workspace: opt.Workspace,
+		started:   time.Now(),
+		defaults: AgentDefaults{
 			Agent:      opt.Agent,
 			Model:      opt.Model,
 			Session:    opt.Session,
@@ -380,6 +380,16 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		return
 	}
 	req.Agent = canonicalAgent
+	// Paradigm mining requires the verified research pipeline.  The direct
+	// chat runner only exposes PicoClaw tools, so allowing this request through
+	// would make the model appear to have research tools that are not actually
+	// registered.  Keep the explicit API contract until tool bridging is added.
+	if req.Agent == "stock-paradigm-miner" {
+		c.JSON(http.StatusConflict, agentChatResponse{
+			Error: "范式研究禁止直接 Prompt 出具结论；请使用 /api/agent/research 并提供 paradigm_id，以生成真实实验和 Evidence 引用。",
+		})
+		return
+	}
 	if req.Session == "" {
 		req.Session = s.agentState.defaults.Session
 	}
@@ -455,6 +465,11 @@ func (s *Server) handleAgentChatStream(c *gin.Context) {
 		return
 	}
 	req.Agent = canonicalAgent
+	if req.Agent == "stock-paradigm-miner" {
+		WriteError(c, http.StatusConflict, "verified_research_required",
+			"范式研究禁止直接 Prompt 出具结论；请使用 /api/agent/research 并提供 paradigm_id")
+		return
+	}
 	if req.Session == "" {
 		req.Session = s.agentState.defaults.Session
 	}
