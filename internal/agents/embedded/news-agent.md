@@ -7,6 +7,8 @@ no_history: false
 tools:
   - web_search
   - web_fetch
+  - data_snapshot
+  - feature_query
 soul: |
   # soul.md
 
