@@ -6,7 +6,7 @@ import (
 
 func evidence(passable bool, confidence string, extra map[string]string) EvidenceInput {
 	e := EvidenceInput{
-		ResultHash:  "rh", ComputedHash: "rh",
+		ResultHash: "rh", ComputedHash: "rh",
 		SnapshotID: "snap-1", JobHash: "job-1", MethodHash: "mh",
 		StockCode: "000001", Confidence: confidence, Passable: passable,
 	}

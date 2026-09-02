@@ -23,14 +23,15 @@ type EmbeddedAgent = pcwrap.EmbeddedAgent
 
 // AgentState holds the picoclaw runtime state for the server
 type AgentState struct {
-	mu        sync.Mutex
-	rt        *pcwrap.Runtime
-	runner    *pcwrap.DirectRunner
-	embedded  []pcwrap.EmbeddedAgent
-	workspace string
-	started   time.Time
-	defaults  AgentDefaults
-	chatStore *ChatStore
+	mu            sync.Mutex
+	rt            *pcwrap.Runtime
+	runner        *pcwrap.DirectRunner
+	embedded      []pcwrap.EmbeddedAgent
+	workspace     string
+	started       time.Time
+	defaults      AgentDefaults
+	chatStore     *ChatStore
+	researchTools *ai_tools.ToolRegistry
 }
 
 type AgentDefaults struct {
@@ -188,6 +189,7 @@ func (s *Server) InitAgentStateWithOptions(opt AgentRuntimeOptions) (err error) 
 			Session:    opt.Session,
 			StockAgent: opt.StockAgent,
 		},
+		researchTools: s.researchTools,
 	}
 	return nil
 }
@@ -378,6 +380,10 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		return
 	}
 	req.Agent = canonicalAgent
+	// Paradigm mining requires the verified research pipeline.  The direct
+	// chat runner only exposes PicoClaw tools, so allowing this request through
+	// would make the model appear to have research tools that are not actually
+	// registered.  Keep the explicit API contract until tool bridging is added.
 	if req.Agent == "stock-paradigm-miner" {
 		c.JSON(http.StatusConflict, agentChatResponse{
 			Error: "范式研究禁止直接 Prompt 出具结论；请使用 /api/agent/research 并提供 paradigm_id，以生成真实实验和 Evidence 引用。",
