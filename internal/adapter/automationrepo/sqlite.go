@@ -101,7 +101,8 @@ func (r *SQLiteRepository) ListJobs(ctx context.Context, limit int) ([]automatio
 	}
 	return out, rows.Err()
 }
-func (r *SQLiteRepository) ListEvents(ctx context.Context, status string, limit int) ([]automation.Event, error) {	if limit <= 0 {
+func (r *SQLiteRepository) ListEvents(ctx context.Context, status string, limit int) ([]automation.Event, error) {
+	if limit <= 0 {
 		limit = 100
 	}
 	q := `SELECT event_key,job_id,event_type,priority,payload_json,status,created_at_ns FROM automation_outbox`

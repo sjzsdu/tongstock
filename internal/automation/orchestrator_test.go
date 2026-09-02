@@ -20,11 +20,11 @@ import (
 
 // fakeRepo 记录 Orchestrator 与仓库的交互，用于断言幂等与失败语义。
 type fakeRepo struct {
-	claimJob   automation.Job
-	claimOwner bool
-	claimErr   error
-	completed  bool
-	failed     bool
+	claimJob    automation.Job
+	claimOwner  bool
+	claimErr    error
+	completed   bool
+	failed      bool
 	completeErr error
 	failErr     error
 }

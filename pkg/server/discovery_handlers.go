@@ -42,12 +42,12 @@ func (s *Server) handleDiscoverRun(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"research_id":    result.ResearchID,
-		"snapshot_id":    result.SnapshotID,
-		"conclusion":     result.Conclusion,
+		"research_id":     result.ResearchID,
+		"snapshot_id":     result.SnapshotID,
+		"conclusion":      result.Conclusion,
 		"candidate_count": len(result.Candidates),
-		"candidates":     result.Candidates,
-		"rejected_count": len(result.Rejected),
+		"candidates":      result.Candidates,
+		"rejected_count":  len(result.Rejected),
 	})
 }
 
@@ -64,4 +64,3 @@ func (s *Server) handleDiscoverTraces(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"traces": summaries, "total": len(summaries)})
 }
-
