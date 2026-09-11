@@ -17,6 +17,8 @@ func NewSource(sourceType newsfeed.SourceType) (newsfeed.Feed, error) {
 	switch sourceType {
 	case newsfeed.SourceCaiLianShe:
 		return NewCaiLianSheSource(), nil
+	case newsfeed.SourceEastMoney:
+		return NewEastMoneySource(), nil
 	case newsfeed.SourceXueQiu:
 		return NewXueQiuSource(), nil
 	case newsfeed.SourceJuChao:
@@ -26,13 +28,14 @@ func NewSource(sourceType newsfeed.SourceType) (newsfeed.Feed, error) {
 	}
 }
 
-// NewAllSources 创建所有数据源实例（不含浏览器源，浏览器源需单独注册）
+// NewAllSources 创建所有数据源实例（不含浏览器源，浏览器源需单独注册）。
+// 雪球与巨潮默认不注册：雪球的 FetchByStock 实际打的是搜索接口而非新闻接口，
+// 巨潮只产出公告。留着它们只会用坏数据污染个股资讯结果。
 func NewAllSources() []newsfeed.Feed {
 	var feeds []newsfeed.Feed
 	types := []newsfeed.SourceType{
+		newsfeed.SourceEastMoney,
 		newsfeed.SourceCaiLianShe,
-		newsfeed.SourceXueQiu,
-		newsfeed.SourceJuChao,
 	}
 	for _, t := range types {
 		if feed, err := NewSource(t); err == nil {
@@ -183,6 +186,12 @@ func cleanText(s string) string {
 	s = strings.ReplaceAll(s, "\n", " ")
 	s = strings.ReplaceAll(s, "\t", " ")
 	return strings.TrimSpace(s)
+}
+
+// generateID 生成新闻 ID。真实 ID 在落库时由存储层统一分配，
+// 这里只给源内部临时使用。
+func generateID() string {
+	return fmt.Sprintf("news_%d_%d", time.Now().UnixNano(), time.Now().Unix())
 }
 
 // parseTime 解析时间字符串

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AreaChartOutlined, BankOutlined, BarChartOutlined, ClockCircleOutlined, DollarOutlined, FileExcelOutlined, GiftOutlined, InfoCircleOutlined, ThunderboltOutlined, WarningOutlined } from '@ant-design/icons';
-import { Button, Card, Empty, Flex, List, Space, Spin, Tabs, Tag, Tooltip, Typography } from 'antd';
+import { Button, Card, Empty, Flex, Space, Spin, Tabs, Tag, Tooltip, Typography } from 'antd';
 import { api } from '../../api/client';
-import type { NewsSummary, XdXrItem } from '../../types/api';
+import type { XdXrItem } from '../../types/api';
 import CandlestickChart from '../../components/charts/CandlestickChart';
 import ChartToolbar from '../../components/charts/ChartToolbar';
 import StockCompareView from '../../components/StockCompareView';
@@ -16,6 +16,7 @@ import { FinanceTabContent } from '../../components/stock/FinanceTabContent';
 import { CompanyTabContent } from '../../components/stock/CompanyTabContent';
 import { DividendTabContent } from '../../components/stock/DividendTabContent';
 import { IntradayTabContent } from '../../components/stock/IntradayTabContent';
+import { NewsTabContent } from '../../components/stock/NewsTabContent';
 import { useStockDetail } from '../../hooks/useStockDetail';
 import { useStockChart } from '../../hooks/useStockChart';
 import { useStockFinance } from '../../hooks/useStockFinance';
@@ -23,6 +24,7 @@ import { useStockCompany } from '../../hooks/useStockCompany';
 import { useStockMinute } from '../../hooks/useStockMinute';
 import { useStockCompare } from '../../hooks/useStockCompare';
 import { useParadigmAnalysis } from '../../hooks/useParadigmAnalysis';
+import { useStockNews } from '../../hooks/useStockNews';
 import { getSyncAgeDays, getSyncStatusPresentation, getValueColor } from '../../lib/stock-detail';
 
 type Tab = 'chart' | 'signal' | 'compare' | 'finance' | 'company' | 'dividend' | 'intraday' | 'news';
@@ -45,9 +47,7 @@ export default function StockDetail() {
   const [dividends, setDividends] = useState<XdXrItem[]>([]);
   const [fullscreen, setFullscreen] = useState(false);
   const [agentPanelOpen, setAgentPanelOpen] = useState(false);
-  const [paradigmCached, setParadigmCached] = useState(false);
-  const [newsFeed, setNewsFeed] = useState<NewsSummary[]>([]);
-  const [newsLoading, setNewsLoading] = useState(false);
+  const [paradigmCachedFromServer, setParadigmCachedFromServer] = useState(false);
 
   const { code, quote, loading, detailStatus, detailError, syncState, refreshSyncState, ktype, setKtype } = useStockDetail();
   const { klines, indicator, chartLoading, analysis, sortedSignals, sortedSignalOutcomes, latestClose, mainOverlay, setMainOverlay, subPanel, setSubPanel } = useStockChart(code, ktype, detailStatus, refreshSyncState);
@@ -55,7 +55,8 @@ export default function StockDetail() {
   const { companyCats, companyContent, selectedCat, loadCompanyContent } = useStockCompany(code, detailStatus);
   const { minuteData, minuteDate, minuteLoading, minuteError, highlightedIdx, setHighlightedIdx } = useStockMinute(code, detailStatus);
   const { compareData, compareLoading } = useStockCompare(code, detailStatus);
-  const { paradigmResult, paradigmLoading, paradigmAgentText, paradigmEvalConfirm, paradigmEvalInvalid, paradigmDrawerOpen, setParadigmDrawerOpen, analyzeParadigm } = useParadigmAnalysis();
+  const { paradigmResult, paradigmLoading, paradigmCached: paradigmCachedByAnalysis, paradigmAgentText, paradigmEvalConfirm, paradigmEvalInvalid, paradigmDrawerOpen, setParadigmDrawerOpen, analyzeParadigm } = useParadigmAnalysis();
+  const { news: newsResult, loading: newsLoading } = useStockNews(code, tab === 'news' && detailStatus === 'ready');
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -77,16 +78,15 @@ export default function StockDetail() {
     let cancelled = false;
     api.paradigmListByStock(code)
       .then((r) => {
-        if (!cancelled) setParadigmCached((r.total ?? r.paradigms?.length ?? 0) > 0);
+        if (!cancelled) setParadigmCachedFromServer((r.total ?? r.paradigms?.length ?? 0) > 0);
       })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [code, detailStatus]);
 
-  // 挖掘成功(或命中缓存)后,该股票即视为已有缓存
-  useEffect(() => {
-    if (paradigmResult) setParadigmCached(true);
-  }, [paradigmResult]);
+  // 挖掘成功后该股票即视为已有缓存。用派生值而不是 effect 里 setState：
+  // 后者会触发级联渲染，也违反 react-hooks/set-state-in-effect。
+  const paradigmCached = paradigmCachedFromServer || paradigmCachedByAnalysis;
 
   const switchTab = (nextTab: Tab) => {
     setTab(nextTab);
@@ -96,19 +96,6 @@ export default function StockDetail() {
   useEffect(() => {
     if (!code || detailStatus !== 'ready') return;
     if (tab === 'dividend') api.xdxr(code).then((d) => setDividends([...d].reverse())).catch(() => {});
-    if (tab === 'news') {
-      setNewsLoading(true);
-      api.newsStock(code)
-        .then((result) => {
-          setNewsFeed(result.items || []);
-        })
-        .catch(() => {
-          setNewsFeed([]);
-        })
-        .finally(() => {
-          setNewsLoading(false);
-        });
-    }
   }, [code, tab, detailStatus]);
 
   const pct = quote ? ((quote.Price - quote.LastClose) / quote.LastClose) * 100 : 0;
@@ -333,40 +320,7 @@ export default function StockDetail() {
         )}
 
         {showTabs && tab === 'news' && (
-          <Space direction="vertical" size={16} style={{ display: 'flex' }}>
-            {newsLoading ? (
-              <Card><Flex justify="center" align="center" style={{ minHeight: 240 }}><Spin size="large" /></Flex></Card>
-            ) : newsFeed.length === 0 ? (
-              <Card><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无关联资讯" /></Card>
-            ) : (
-              <Card title="关联资讯">
-                <List
-                  dataSource={newsFeed}
-                  renderItem={(item) => (
-                    <List.Item
-                      actions={[
-                        <Typography.Text type="secondary">{item.source}</Typography.Text>,
-                        <Typography.Text type="secondary">{new Date(item.publishTime).toLocaleString()}</Typography.Text>,
-                      ]}
-                    >
-                      <List.Item.Meta
-                        title={<Typography.Text strong>{item.title}</Typography.Text>}
-                        description={item.summary}
-                      />
-                      {item.tags && item.tags.length > 0 && (
-                        <Space size={4} wrap>
-                          {item.tags.map((tag) => (
-                            <Tag key={tag}>{tag}</Tag>
-                          ))}
-                        </Space>
-                      )}
-                    </List.Item>
-                  )}
-                  pagination={{ pageSize: 10, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
-                />
-              </Card>
-            )}
-          </Space>
+          <NewsTabContent result={newsResult} loading={newsLoading} />
         )}
         <AgentChatPanel
           stockCode={code}

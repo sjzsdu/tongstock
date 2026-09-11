@@ -75,5 +75,9 @@ test_api "indicator" "$URL/api/indicator?code=000001&type=day"
 test_api "screen" "$URL/api/screen?codes=000001,600519&type=day"
 test_api "screen:signal" "$URL/api/screen?codes=000001,600519&type=day&signal=golden_cross"
 
+test_api "news:feed" "$URL/api/news/feed"
+test_api "news:stock" "$URL/api/news/stock/000001?consistency=cache_only"
+test_api "news:stock:flash" "$URL/api/news/stock/000001?consistency=cache_only&type=快讯"
+
 echo ""
 echo "测试完成"

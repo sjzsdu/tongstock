@@ -32,6 +32,7 @@ import type {
   NewsItem,
   NewsSummary,
   FeedResult,
+  StockNewsResult,
   HotEvent,
   EventResult,
   MarketSentiment,
@@ -548,8 +549,14 @@ export const api = {
 	newsItem: (id: string) =>
 		fetchJSON<NewsItem>(`/api/news/item/${id}`),
 
-	newsStock: (code: string) =>
-		fetchJSON<FeedResult>(`/api/news/stock/${code}`),
+	newsStock: (code: string, params?: { limit?: number; days?: number; allMentions?: boolean }) => {
+		const q = new URLSearchParams();
+		if (params?.limit) q.set('limit', String(params.limit));
+		if (params?.days) q.set('days', String(params.days));
+		if (params?.allMentions) q.set('all_mentions', 'true');
+		const suffix = q.toString() ? '?' + q.toString() : '';
+		return fetchJSON<StockNewsResult>(`/api/news/stock/${code}${suffix}`);
+	},
 
 	newsSearch: (keyword: string) =>
 		fetchJSON<{ total: number; items: NewsSummary[] }>(`/api/news/search?keyword=${encodeURIComponent(keyword)}`),

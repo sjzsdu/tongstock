@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/sjzsdu/tongstock/pkg/storage"
@@ -48,8 +49,15 @@ type Store interface {
 
 // SQLiteStore SQLite存储实现
 type SQLiteStore struct {
-	db    *sql.DB
-	owner *storage.Storage
+	db      *sql.DB
+	owner   *storage.Storage
+	matcher *EntityMatcher
+}
+
+// SetEntityMatcher 注入实体识别器，用于在保存时补充推测关联。
+// 不注入则只保留数据源自带的关联——宁可关联少，也不凭空猜测。
+func (s *SQLiteStore) SetEntityMatcher(m *EntityMatcher) {
+	s.matcher = m
 }
 
 // NewSQLiteStore creates a standalone compatibility store. Application code
@@ -91,6 +99,15 @@ func (s *SQLiteStore) SaveNews(ctx context.Context, news []*NewsItem) error {
 		}
 		item.UpdatedAt = time.Now()
 
+		// 先解析关联再落库，保证 related_stocks 与 news_stock_ref 一致。
+		refs := s.resolveRefs(item)
+		if len(refs) > 0 {
+			item.RelatedStocks = make([]string, 0, len(refs))
+			for _, r := range refs {
+				item.RelatedStocks = append(item.RelatedStocks, r.Code)
+			}
+		}
+
 		tagsJSON, _ := json.Marshal(item.Tags)
 		stocksJSON, _ := json.Marshal(item.RelatedStocks)
 
@@ -117,9 +134,100 @@ func (s *SQLiteStore) SaveNews(ctx context.Context, news []*NewsItem) error {
 		if err != nil {
 			return err
 		}
+
+		if err := s.saveRefsWith(ctx, tx, item, refs); err != nil {
+			return err
+		}
 	}
 
 	return tx.Commit()
+}
+
+// saveRefsWith 写入新闻与股票的关联
+func (s *SQLiteStore) saveRefsWith(ctx context.Context, tx *sql.Tx, item *NewsItem, refs []StockRef) error {
+	if len(refs) == 0 {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM news_stock_ref WHERE news_id = ?`, item.ID); err != nil {
+		return err
+	}
+	for _, ref := range refs {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT OR REPLACE INTO news_stock_ref (news_id, code, match_type, confidence, created_at)
+			VALUES (?, ?, ?, ?, ?)
+		`, item.ID, ref.Code, ref.MatchType, ref.Confidence, time.Now().Format(time.RFC3339)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// resolveRefs 合并数据源自带关联与实体识别结果。同一代码保留置信度更高的来源。
+func (s *SQLiteStore) resolveRefs(item *NewsItem) []StockRef {
+	best := make(map[string]StockRef)
+	for _, r := range item.StockRefs {
+		if r.Code == "" {
+			continue
+		}
+		if prev, ok := best[r.Code]; ok && prev.Confidence >= r.Confidence {
+			continue
+		}
+		best[r.Code] = r
+	}
+	if s.matcher != nil && !s.matcher.Empty() {
+		// 标题命中与正文命中必须分开评估：正文里出现股票简称的情况远多于
+		// 真正「关于这只股票」的文章。混在一起会让榜单类文章拿到和头条
+		// 新闻一样的置信度，相关性过滤随之失效。
+		add := func(refs []StockRef) {
+			for _, r := range refs {
+				if prev, ok := best[r.Code]; ok && prev.Confidence >= r.Confidence {
+					continue
+				}
+				best[r.Code] = r
+			}
+		}
+		add(s.matcher.Match(item.Title))
+		body := s.matcher.Match(item.Summary + " " + item.Content)
+		for i := range body {
+			body[i].Confidence *= bodyMatchPenalty
+		}
+		add(body)
+	}
+	out := make([]StockRef, 0, len(best))
+	for _, r := range best {
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Confidence != out[j].Confidence {
+			return out[i].Confidence > out[j].Confidence
+		}
+		return out[i].Code < out[j].Code
+	})
+	return out
+}
+
+// bodyMatchPenalty 是正文命中相对标题命中的置信度折扣。
+// 取 0.4 使「正文代码命中」落在 0.4、「正文简称命中」落在 0.36，
+// 明确低于默认阈值 0.5，不会卡在边界上；需要时可用 --all-mentions 找回。
+const bodyMatchPenalty = 0.4
+
+// loadRefs 读取某条新闻的关联
+func (s *SQLiteStore) loadRefs(ctx context.Context, newsID string) ([]StockRef, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT code, match_type, confidence FROM news_stock_ref WHERE news_id = ? ORDER BY confidence DESC, code`, newsID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var refs []StockRef
+	for rows.Next() {
+		var r StockRef
+		if err := rows.Scan(&r.Code, &r.MatchType, &r.Confidence); err != nil {
+			return nil, err
+		}
+		refs = append(refs, r)
+	}
+	return refs, rows.Err()
 }
 
 // GetNewsByID 根据ID获取新闻
@@ -165,7 +273,8 @@ func (s *SQLiteStore) GetNewsByID(ctx context.Context, id string) (*NewsItem, er
 
 // FilterNews 按条件筛选新闻
 func (s *SQLiteStore) FilterNews(ctx context.Context, filter FeedFilter) (*FeedResult, error) {
-	query := `SELECT id, source, news_type, title, summary, publish_time, hot_score, tags, related_stocks, url FROM news_items WHERE 1=1`
+	// 条件单独拼进 where，列表与总数共用同一套，避免两者口径不一致。
+	where := ""
 	args := []interface{}{}
 
 	// 按来源筛选
@@ -175,7 +284,7 @@ func (s *SQLiteStore) FilterNews(ctx context.Context, filter FeedFilter) (*FeedR
 			placeholders[i] = "?"
 			args = append(args, source)
 		}
-		query += fmt.Sprintf(" AND source IN (%s)", joinStrings(placeholders))
+		where += fmt.Sprintf(" AND source IN (%s)", joinStrings(placeholders))
 	}
 
 	// 按新闻类型筛选
@@ -185,37 +294,48 @@ func (s *SQLiteStore) FilterNews(ctx context.Context, filter FeedFilter) (*FeedR
 			placeholders[i] = "?"
 			args = append(args, nt)
 		}
-		query += fmt.Sprintf(" AND news_type IN (%s)", joinStrings(placeholders))
+		where += fmt.Sprintf(" AND news_type IN (%s)", joinStrings(placeholders))
+	}
+
+	// 按关联股票筛选。必须走 news_stock_ref 关联表，不能对 related_stocks
+	// 这个 JSON 文本列做 LIKE —— 后者既用不上索引，也会误命中。
+	if len(filter.RelatedStocks) > 0 {
+		placeholders := make([]string, len(filter.RelatedStocks))
+		for i, code := range filter.RelatedStocks {
+			placeholders[i] = "?"
+			args = append(args, code)
+		}
+		where += fmt.Sprintf(
+			" AND EXISTS (SELECT 1 FROM news_stock_ref r WHERE r.news_id = news_items.id AND r.code IN (%s)",
+			joinStrings(placeholders),
+		)
+		if filter.MinConfidence > 0 {
+			where += " AND r.confidence >= ?"
+			args = append(args, filter.MinConfidence)
+		}
+		where += ")"
 	}
 
 	// 按时间范围筛选
 	if filter.StartTime != nil {
-		query += " AND publish_time >= ?"
+		where += " AND publish_time >= ?"
 		args = append(args, filter.StartTime.Format(time.RFC3339))
 	}
 	if filter.EndTime != nil {
-		query += " AND publish_time <= ?"
+		where += " AND publish_time <= ?"
 		args = append(args, filter.EndTime.Format(time.RFC3339))
 	}
 
 	// 按热度筛选
 	if filter.HotScoreMin > 0 {
-		query += " AND hot_score >= ?"
+		where += " AND hot_score >= ?"
 		args = append(args, filter.HotScoreMin)
 	}
 
-	// 排序
 	sortBy := filter.SortBy
 	if sortBy == "" {
 		sortBy = "time"
 	}
-	if sortBy == "hot" {
-		query += " ORDER BY hot_score DESC, publish_time DESC"
-	} else {
-		query += " ORDER BY publish_time DESC"
-	}
-
-	// 分页
 	if filter.PageSize <= 0 {
 		filter.PageSize = 20
 	}
@@ -223,7 +343,20 @@ func (s *SQLiteStore) FilterNews(ctx context.Context, filter FeedFilter) (*FeedR
 		filter.PageNum = 1
 	}
 	offset := (filter.PageNum - 1) * filter.PageSize
-	query += " LIMIT ? OFFSET ?"
+
+	// 总数与列表口径一致：去掉排序后复用同一套条件，只是不分页。
+	var total int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM news_items WHERE 1=1`+where, args...).Scan(&total); err != nil {
+		return nil, err
+	}
+
+	order := " ORDER BY publish_time DESC"
+	if sortBy == "hot" {
+		order = " ORDER BY hot_score DESC, publish_time DESC"
+	}
+	query := `SELECT id, source, news_type, title, summary, publish_time, hot_score, tags, related_stocks, url FROM news_items WHERE 1=1` +
+		where + order + " LIMIT ? OFFSET ?"
 	args = append(args, filter.PageSize, offset)
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
@@ -232,7 +365,9 @@ func (s *SQLiteStore) FilterNews(ctx context.Context, filter FeedFilter) (*FeedR
 	}
 	defer rows.Close()
 
-	var items []NewsSummary
+	// 显式初始化为空切片：返回 null 会让调用方多一层判空，
+	// 列表接口应始终是数组。
+	items := make([]NewsSummary, 0)
 	for rows.Next() {
 		var item NewsSummary
 		var tagsJSON, stocksJSON, publishTimeStr string
@@ -256,15 +391,11 @@ func (s *SQLiteStore) FilterNews(ctx context.Context, filter FeedFilter) (*FeedR
 		json.Unmarshal([]byte(stocksJSON), &item.RelatedStocks)
 		items = append(items, item)
 	}
-
-	// 获取总数
-	countQuery := `SELECT COUNT(*) FROM news_items WHERE 1=1`
-	countArgs := args[:len(args)-2] // 移除 LIMIT 和 OFFSET 参数
-	var total int
-	err = s.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total)
-	if err != nil {
+	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+
+	attachRefs(ctx, s.db, items)
 
 	return &FeedResult{
 		Total:    total,
@@ -274,7 +405,38 @@ func (s *SQLiteStore) FilterNews(ctx context.Context, filter FeedFilter) (*FeedR
 	}, nil
 }
 
-// SaveHotEvent 保存热点事件
+// attachRefs 批量读取并挂载股票关联，避免逐条查询。
+func attachRefs(ctx context.Context, db *sql.DB, items []NewsSummary) {
+	if len(items) == 0 {
+		return
+	}
+	ids := make([]any, 0, len(items))
+	placeholders := make([]string, 0, len(items))
+	index := make(map[string]int, len(items))
+	for i, it := range items {
+		ids = append(ids, it.ID)
+		placeholders = append(placeholders, "?")
+		index[it.ID] = i
+	}
+	rows, err := db.QueryContext(ctx,
+		`SELECT news_id, code, match_type, confidence FROM news_stock_ref WHERE news_id IN (`+
+			joinStrings(placeholders)+`) ORDER BY confidence DESC, code`, ids...)
+	if err != nil {
+		return // 关联读取失败不应让整个查询失败
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var newsID string
+		var r StockRef
+		if err := rows.Scan(&newsID, &r.Code, &r.MatchType, &r.Confidence); err != nil {
+			return
+		}
+		if i, ok := index[newsID]; ok {
+			items[i].StockRefs = append(items[i].StockRefs, r)
+		}
+	}
+}
+
 func (s *SQLiteStore) SaveHotEvent(ctx context.Context, event *HotEvent) error {
 	if event.ID == "" {
 		event.ID = generateID()

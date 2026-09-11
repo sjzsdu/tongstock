@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -19,6 +20,14 @@ type NewsfeedHandler struct {
 	store        *newsfeed.SQLiteStore
 	sentimentSvc *newsfeed.SentimentService
 	alertSvc     *newsfeed.AlertService
+	// stockNewsSvc 是个股资讯应用服务。未设置时个股接口退化为只读库，
+	// 此时会明确返回 insufficient_data 而不是拿别的新闻凑数。
+	stockNewsSvc *newsfeed.Service
+}
+
+// SetStockNewsService 注入个股资讯服务
+func (h *NewsfeedHandler) SetStockNewsService(s *newsfeed.Service) {
+	h.stockNewsSvc = s
 }
 
 // NewNewsfeedHandler 创建新闻聚合处理器
@@ -283,23 +292,96 @@ func (h *NewsfeedHandler) handleRefreshHotEvents(c *gin.Context) {
 }
 
 // handleStockNews 获取个股关联资讯
+//
+// 走个股资讯服务（DB-first + 一致性契约），而不是直接读库：
+// 直接读库的结果取决于后台有没有恰好抓过这只股票，基本等于不可用。
 func (h *NewsfeedHandler) handleStockNews(c *gin.Context) {
-	code := c.Param("code")
-
-	// 从存储中查询
-	filter := newsfeed.FeedFilter{
-		RelatedStocks: []string{code},
-		PageSize:      20,
-		SortBy:        "time",
-	}
-
-	result, err := h.store.FilterNews(c.Request.Context(), filter)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	code := strings.TrimSpace(c.Param("code"))
+	if len(code) != 6 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "code 必须为 6 位股票代码"})
 		return
 	}
 
+	// 未注入服务时退化为只读库，并如实标注状态。
+	if h.stockNewsSvc == nil {
+		filter := newsfeed.FeedFilter{
+			RelatedStocks: []string{code},
+			MinConfidence: newsfeed.DefaultMinConfidence,
+			PageSize:      queryInt(c, "limit", 20),
+			PageNum:       queryInt(c, "page", 1),
+			SortBy:        "time",
+		}
+		result, err := h.store.FilterNews(c.Request.Context(), filter)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		status := "ok"
+		if len(result.Items) == 0 {
+			status = "insufficient_data"
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"code": code, "status": status, "items": result.Items,
+			"message": "个股资讯服务未启用，仅返回库内已有数据",
+		})
+		return
+	}
+
+	mode := newsfeed.NewsRequireFresh
+	switch strings.ToLower(c.DefaultQuery("consistency", "require_fresh")) {
+	case "allow_stale":
+		mode = newsfeed.NewsAllowStale
+	case "cache_only":
+		mode = newsfeed.NewsCacheOnly
+	}
+
+	req := newsfeed.StockNewsRequest{
+		Code:            code,
+		Mode:            mode,
+		ForceRefresh:    c.Query("refresh") == "true",
+		Limit:           queryInt(c, "limit", 20),
+		Days:            queryInt(c, "days", 0),
+		IncludeMentions: c.Query("all_mentions") == "true",
+		MinConfidence:   queryFloat(c, "min_confidence", 0),
+	}
+	if t := strings.TrimSpace(c.Query("type")); t != "" {
+		req.NewsTypes = []newsfeed.NewsType{newsfeed.NewsType(t)}
+	}
+
+	result, err := h.stockNewsSvc.StockNews(c.Request.Context(), req)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, newsfeed.ErrFetchUnavailable) {
+			status = http.StatusBadGateway
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, result)
+}
+
+func queryInt(c *gin.Context, key string, def int) int {
+	v := strings.TrimSpace(c.Query(key))
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return def
+	}
+	return n
+}
+
+func queryFloat(c *gin.Context, key string, def float64) float64 {
+	v := strings.TrimSpace(c.Query(key))
+	if v == "" {
+		return def
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil || f < 0 || f > 1 {
+		return def
+	}
+	return f
 }
 
 // handleSearchNews 搜索新闻

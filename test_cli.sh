@@ -261,6 +261,36 @@ echo "----------------------------------------"
 $CLI_PATH screen --codes "000001,600519,000858" --type day --signal oversold
 echo ""
 
+echo "42. 测试 news query 命令 - 只读库（cache_only，不依赖网络）"
+echo "----------------------------------------"
+$CLI_PATH news query 000001 --consistency cache_only
+echo ""
+
+echo "43. 测试 news query 命令 - JSON 输出"
+echo "----------------------------------------"
+$CLI_PATH news query 000001 --consistency cache_only --json
+echo ""
+
+echo "44. 测试 news query 命令 - 实时抓取（require_fresh，依赖网络）"
+echo "----------------------------------------"
+$CLI_PATH news query 600519 --limit 5
+echo ""
+
+echo "45. 测试 news query 命令 - 研报类型筛选（cache_only）"
+echo "----------------------------------------"
+$CLI_PATH news query 600519 --type 研报 --consistency cache_only
+echo ""
+
+echo "46. 测试 news fetch 命令 - 抓取单只股票并入库"
+echo "----------------------------------------"
+$CLI_PATH news fetch 600519
+echo ""
+
+echo "47. 测试 news fetch 命令 - 全局快讯流"
+echo "----------------------------------------"
+$CLI_PATH news fetch --global
+echo ""
+
 echo "========================================"
 echo "测试完成"
 echo "========================================"

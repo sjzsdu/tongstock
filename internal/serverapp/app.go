@@ -38,6 +38,7 @@ import (
 	"github.com/sjzsdu/tongstock/pkg/config"
 	"github.com/sjzsdu/tongstock/pkg/history"
 	"github.com/sjzsdu/tongstock/pkg/newsfeed"
+	"github.com/sjzsdu/tongstock/pkg/newsfeed/sources"
 	"github.com/sjzsdu/tongstock/pkg/param"
 	"github.com/sjzsdu/tongstock/pkg/server"
 	"github.com/sjzsdu/tongstock/pkg/stockinfo"
@@ -68,16 +69,17 @@ type Options struct {
 // Stores borrow Storage and never close it. Shutdown is safe to call multiple
 // times and closes resources in the reverse order of construction.
 type App struct {
-	cfg        *config.Config
-	storage    *storage.Storage
-	executor   tdx.Executor
-	data       *tdx.Service
-	stockData  *stockdata.Service
-	api        *server.Server
-	newsfeed   *newsfeed.SQLiteStore
-	httpServer *http.Server
-	listen     func(network, address string) (net.Listener, error)
-	addr       string
+	cfg         *config.Config
+	storage     *storage.Storage
+	executor    tdx.Executor
+	data        *tdx.Service
+	stockData   *stockdata.Service
+	api         *server.Server
+	newsfeed    *newsfeed.SQLiteStore
+	newsService *newsfeed.Service
+	httpServer  *http.Server
+	listen      func(network, address string) (net.Listener, error)
+	addr        string
 
 	runCtx context.Context
 	cancel context.CancelFunc
@@ -203,7 +205,19 @@ func NewApp(cfg *config.Config, opts Options) (_ *App, err error) {
 		app.setModule("newsfeed", "degraded", "newsfeed initialization failed")
 	} else {
 		newsHandler = server.NewNewsfeedHandler(app.newsfeed)
-		app.setModule("newsfeed", "ready", "")
+		// 个股资讯服务：注入数据源与股票名录，并启动实体识别。
+		// 没有它，/api/news/stock/:code 只能读库，永远拿不到新数据。
+		newsSvc, svcErr := newsfeed.NewService(
+			app.newsfeed, newsSources(), newsfeed.NewDBDirectory(app.storage.DB()))
+		if svcErr != nil {
+			log.Printf("newsfeed service degraded: %v", svcErr)
+			app.setModule("newsfeed", "degraded", "newsfeed service init failed")
+		} else {
+			app.newsService = newsSvc
+			newsHandler.SetStockNewsService(newsSvc)
+			app.setModule("newsfeed", "ready", "")
+			app.startNewsBackgroundSync()
+		}
 	}
 
 	forwardLedger, err := ledger.NewSQLiteSignalLedger(app.storage)
@@ -551,4 +565,45 @@ func Run() error {
 	}()
 	log.Printf("TongStock server starting on %s", app.addr)
 	return app.Run(signalCtx)
+}
+
+// newsSources 构造启用的资讯数据源。东财负责个股新闻与研报，
+// 财联社提供实时快讯。雪球与巨潮的个股接口不可用，默认不启用。
+func newsSources() []newsfeed.Feed {
+	feeds := make([]newsfeed.Feed, 0, 2)
+	for _, f := range sources.NewAllSources() {
+		if f != nil {
+			feeds = append(feeds, f)
+		}
+	}
+	return feeds
+}
+
+// startNewsBackgroundSync 定时抓取全局快讯。
+// 之前聚合器的 StartBackgroundFetch 全仓库没有任何调用点，
+// 库里的数据只能靠手动触发，很快就过期了。这里把它接到应用生命周期上。
+func (a *App) startNewsBackgroundSync() {
+	if a.newsService == nil {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-a.runCtx.Done():
+				return
+			case <-ticker.C:
+				ctx, cancel := context.WithTimeout(a.runCtx, 60*time.Second)
+				n, degraded := a.newsService.GlobalSync(ctx)
+				cancel()
+				if n > 0 {
+					log.Printf("news: 后台同步写入 %d 条", n)
+				}
+				for _, d := range degraded {
+					log.Printf("news: 数据源 %s 降级 - %s", d.Source, d.Error)
+				}
+			}
+		}
+	}()
 }

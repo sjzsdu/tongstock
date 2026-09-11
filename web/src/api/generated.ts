@@ -51,6 +51,41 @@ export interface Quote {
   "Volume"?: number;
 }
 
+export interface StockRef {
+  "code"?: string;
+  "match_type"?: string;
+  "confidence"?: number;
+}
+
+export interface NewsSummary {
+  "id"?: string;
+  "source"?: string;
+  "newsType"?: string;
+  "title"?: string;
+  "summary"?: string;
+  "publishTime"?: string;
+  "hotScore"?: number;
+  "tags"?: string[];
+  "stockRefs"?: StockRef[];
+  "relatedStocks"?: string[];
+  "url"?: string;
+}
+
+export interface SourceDegradation {
+  "source"?: string;
+  "error"?: string;
+}
+
+export interface StockNewsResult {
+  "code"?: string;
+  "status"?: string;
+  "items"?: NewsSummary[];
+  "asOf"?: string;
+  "degraded"?: SourceDegradation[];
+  "message"?: string;
+  "weakCount"?: number;
+}
+
 export const operations = {
   postApiAgentChat: { method: "POST", path: "/api/agent/chat" },
   postApiAgentResearch: { method: "POST", path: "/api/agent/research" },

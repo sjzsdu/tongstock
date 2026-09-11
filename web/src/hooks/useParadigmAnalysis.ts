@@ -5,6 +5,8 @@ import type { EvaluatedItem, ParadigmItem } from '../types/api';
 export interface UseParadigmAnalysisReturn {
   paradigmResult: ParadigmItem | null;
   paradigmLoading: boolean;
+  /** 该股票是否已有范式缓存。挖掘成功即视为有缓存。 */
+  paradigmCached: boolean;
   paradigmAgentText: string;
   paradigmEvalConfirm: EvaluatedItem[];
   paradigmEvalInvalid: EvaluatedItem[];
@@ -15,6 +17,7 @@ export interface UseParadigmAnalysisReturn {
 
 export function useParadigmAnalysis(): UseParadigmAnalysisReturn {
   const [paradigmResult, setParadigmResult] = useState<ParadigmItem | null>(null);
+  const [paradigmCached, setParadigmCached] = useState(false);
   const [paradigmLoading, setParadigmLoading] = useState(false);
   const [paradigmAgentText, setParadigmAgentText] = useState('');
   const [paradigmEvalConfirm, setParadigmEvalConfirm] = useState<EvaluatedItem[]>([]);
@@ -31,6 +34,7 @@ export function useParadigmAnalysis(): UseParadigmAnalysisReturn {
         setParadigmAgentText(result.error);
       } else {
         setParadigmResult(result.paradigm || null);
+        if (result.paradigm) setParadigmCached(true);
         setParadigmEvalConfirm(result.evaluated_confirm || []);
         setParadigmEvalInvalid(result.evaluated_invalid || []);
         setParadigmAgentText(result.agent_text || '');
@@ -45,6 +49,7 @@ export function useParadigmAnalysis(): UseParadigmAnalysisReturn {
   return {
     paradigmResult,
     paradigmLoading,
+    paradigmCached,
     paradigmAgentText,
     paradigmEvalConfirm,
     paradigmEvalInvalid,

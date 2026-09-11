@@ -193,4 +193,5 @@ func init() {
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(qualityCmd)
 	rootCmd.AddCommand(archCmd)
+	rootCmd.AddCommand(newsCmd)
 }

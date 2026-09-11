@@ -909,6 +909,14 @@ export interface NewsItem {
   updatedAt: string;
 }
 
+/** 新闻与股票的关联。matchType 区分「数据源原生」与「本地识别」，
+ *  置信度用于区分标题命中与正文提及。 */
+export interface StockRef {
+  code: string;
+  match_type: 'native' | 'code_hit' | 'name_hit';
+  confidence: number;
+}
+
 export interface NewsSummary {
   id: string;
   source: string;
@@ -918,8 +926,27 @@ export interface NewsSummary {
   publishTime: string;
   hotScore: number;
   tags: string[];
+  stockRefs?: StockRef[];
   relatedStocks: string[];
   url?: string;
+}
+
+/** 单个数据源本次不可用的降级信息 */
+export interface SourceDegradation {
+  source: string;
+  error: string;
+}
+
+/** 个股资讯结果。status 为 insufficient_data 时表示没有足够数据，
+ *  系统不会用无关新闻凑数。 */
+export interface StockNewsResult {
+  code: string;
+  status: 'ok' | 'stale' | 'insufficient_data';
+  items: NewsSummary[];
+  asOf?: string;
+  degraded?: SourceDegradation[];
+  message?: string;
+  weakCount?: number;
 }
 
 export interface FeedResult {

@@ -967,6 +967,32 @@ DELETE FROM data_sync_state WHERE data_type = 'kline' AND code = '999999';
 DELETE FROM kline WHERE code = '999999';
 `,
 	},
+	{
+		version: 21,
+		name:    "news_stock_ref_and_sync_state",
+		sql: `
+CREATE TABLE IF NOT EXISTS news_stock_ref (
+	news_id TEXT NOT NULL,
+	code TEXT NOT NULL,
+	match_type TEXT NOT NULL,
+	confidence REAL NOT NULL DEFAULT 1.0,
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY (news_id, code)
+);
+CREATE INDEX IF NOT EXISTS idx_news_ref_code ON news_stock_ref(code);
+CREATE INDEX IF NOT EXISTS idx_news_ref_type ON news_stock_ref(match_type);
+CREATE TABLE IF NOT EXISTS news_sync_state (
+	scope TEXT NOT NULL,
+	source TEXT NOT NULL,
+	last_fetch_at DATETIME,
+	last_success_at DATETIME,
+	last_item_count INTEGER NOT NULL DEFAULT 0,
+	last_error TEXT NOT NULL DEFAULT '',
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY (scope, source)
+);
+`,
+	},
 }
 
 // Migrate upgrades the SQLite database transactionally. Store constructors

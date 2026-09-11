@@ -1,6 +1,6 @@
 ---
 name: tongstock-workflow
-description: "Chinese A-share stock analysis workflows using TongStock CLI (Shanghai, Shenzhen, Beijing exchanges only). Use when user asks to analyze a stock, screen stocks by fundamentals, check dividend history, compare sector performance, build a stock research report, analyze technical indicators, or screen stocks by signals. Triggers on: analyze stock, stock screening, 股票分析, 基本面, 选股, research report, sector analysis, dividend analysis, 技术指标, MACD, KDJ, BOLL, RSI, 信号筛选, 指标分析, indicator, screen, signal, golden cross, death cross, overbought, oversold."
+description: "Chinese A-share stock analysis workflows using TongStock CLI (Shanghai, Shenzhen, Beijing exchanges only). Use when user asks to analyze a stock, screen stocks by fundamentals, check dividend history, compare sector performance, build a stock research report, analyze technical indicators, screen stocks by signals, or pull latest company news. Triggers on: analyze stock, stock screening, 股票分析, 基本面, 选股, research report, sector analysis, dividend analysis, 技术指标, MACD, KDJ, BOLL, RSI, 信号筛选, 指标分析, indicator, screen, signal, golden cross, death cross, overbought, oversold, stock news, 个股新闻, 新闻资讯, 研报, 快讯, 公司新闻."
 license: MIT
 allowed-tools: Bash
 ---
@@ -322,3 +322,42 @@ tongstock-cli screen -f banking.txt -t day -s golden_cross -p 8
 
 **Output table columns:**
 - Code, Date, Close, MA5/10/20, DIF, K, J, Latest Signals
+
+## Workflow 10: 个股新闻资讯 (Stock News)
+
+Combine latest company news with the existing fundamentals/technicals to produce a more complete read on a stock. News data comes from 东方财富 (新闻/研报) and 财联社 (快讯), associated to the stock via entity recognition.
+
+```bash
+# 1. Latest strong-related news for the stock (titles + native/title hits)
+tongstock news query <code>
+
+# 2. Recent news only (e.g. last 7 days), JSON for easy parsing
+tongstock news query <code> --days 7 --json
+
+# 3. Include weak mentions (only referenced in body text)
+tongstock news query <code> --all-mentions
+
+# 4. Merge with fundamentals + technicals for full context
+tongstock finance <code>
+tongstock indicator -c <code> -t day --json
+```
+
+**How to interpret the news output:**
+- `关联=原生` — data source natively tagged the stock (highest confidence, e.g. Cailianpress `stock_list`, Eastmoney research `stockName`).
+- `关联=标题命中` — stock short name matched in the headline (high confidence ≥ 0.9).
+- `关联=正文提及` — only mentioned in the body (weak; filtered by default threshold 0.5, use `--all-mentions`).
+- `weakCount` — number of body-only mentions hidden by the confidence threshold.
+- `status`:
+  - `ok` — fresh data fetched/served.
+  - `stale` — data sources failed, serving cached data (see `degraded`).
+  - `insufficient_data` — nothing in cache and `cache_only` was requested (or service not enabled).
+
+**Recommended analysis flow:**
+1. Lead with `news query <code>` to surface what the market is currently talking about (events, ratings, announcements).
+2. Cross-check against `finance` (profit/dividend trends) and `indicator` (trend/signals) from Workflow 8.
+3. Pay attention to `研报` (research reports) for analyst rating changes and `快讯` (flash news) for real-time catalysts.
+4. Note risk: news is aggregated from third-party sources, not investment advice.
+
+**Offline / deterministic mode:** pass `--consistency cache_only` (or `?consistency=cache_only` on the API) to read only locally cached news without network access. Use `--refresh` to force a re-fetch when you suspect stale data.
+
+> Installation / upgrade: see the `tongstock-cli` skill — it auto-installs the latest GitHub Release binary (with `gh` draft fallback and source-build fallback).

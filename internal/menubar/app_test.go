@@ -34,6 +34,23 @@ func isolateServiceDiscovery(t *testing.T) {
 	})
 }
 
+// requireProcessInspection skips a test when the underlying process-inspection
+// tooling (ps) is unavailable in the current environment. Locked-down sandboxes
+// block /bin/ps with "Operation not permitted", which the menubar's process
+// detection (serviceproc.ProcessStatus / CommandLine) relies on to recognise
+// zombies and match TongStock server processes. These tests assert real OS
+// process behaviour that cannot be exercised without process visibility, so we
+// skip them rather than fail in restricted environments. On a normal host ps
+// works and the tests run as usual.
+func requireProcessInspection(t *testing.T) {
+	t.Helper()
+	out, err := exec.Command("ps", "-o", "pid=", "-p", strconv.Itoa(os.Getpid())).Output()
+	if err != nil {
+		t.Skipf("process inspection unavailable in this environment (ps failed: %v); skipping", err)
+	}
+	_ = out
+}
+
 func copyTestServerBinary(t *testing.T, dir string) string {
 	t.Helper()
 	testBinary, err := os.Executable()
@@ -99,6 +116,7 @@ func TestUnifiedServerCommandUsesSameExecutable(t *testing.T) {
 }
 
 func TestProcessStatusRecognizesZombieAsExited(t *testing.T) {
+	requireProcessInspection(t)
 	cmd := exec.Command("/bin/sh", "-c", "exit 0")
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start helper: %v", err)
@@ -120,6 +138,7 @@ func TestProcessStatusRecognizesZombieAsExited(t *testing.T) {
 }
 
 func TestStopManagedServerWaitsAndClearsPID(t *testing.T) {
+	requireProcessInspection(t)
 	useTemporaryHome(t)
 	isolateServiceDiscovery(t)
 	cmd := exec.Command("/bin/sh", "-c", `trap 'exit 0' TERM; while :; do sleep 0.1; done`)
@@ -151,6 +170,7 @@ func TestStopManagedServerWaitsAndClearsPID(t *testing.T) {
 }
 
 func TestManagedServerStartRestartStopLifecycle(t *testing.T) {
+	requireProcessInspection(t)
 	home := useTemporaryHome(t)
 	isolateServiceDiscovery(t)
 	serverPath := copyTestServerBinary(t, home)
@@ -259,6 +279,7 @@ func TestInspectServiceMarksUnrelatedListenerAsConflict(t *testing.T) {
 }
 
 func TestStopManagedServerStopsExternalTongStockProcess(t *testing.T) {
+	requireProcessInspection(t)
 	home := useTemporaryHome(t)
 	healthBefore := healthFinder
 	listenerBefore := listenerFinder
