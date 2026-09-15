@@ -23,15 +23,14 @@ type EmbeddedAgent = pcwrap.EmbeddedAgent
 
 // AgentState holds the picoclaw runtime state for the server
 type AgentState struct {
-	mu            sync.Mutex
-	rt            *pcwrap.Runtime
-	runner        *pcwrap.DirectRunner
-	embedded      []pcwrap.EmbeddedAgent
-	workspace     string
-	started       time.Time
-	defaults      AgentDefaults
-	chatStore     *ChatStore
-	researchTools *ai_tools.ToolRegistry
+	mu        sync.Mutex
+	rt        *pcwrap.Runtime
+	runner    *pcwrap.DirectRunner
+	embedded  []pcwrap.EmbeddedAgent
+	workspace string
+	started   time.Time
+	defaults  AgentDefaults
+	chatStore *ChatStore
 }
 
 type AgentDefaults struct {
@@ -189,7 +188,6 @@ func (s *Server) InitAgentStateWithOptions(opt AgentRuntimeOptions) (err error) 
 			Session:    opt.Session,
 			StockAgent: opt.StockAgent,
 		},
-		researchTools: s.researchTools,
 	}
 	return nil
 }
