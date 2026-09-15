@@ -28,3 +28,5 @@ reasonix.toml
 .mimocode
 sessions
 .codex
+# Local AI runtime state
+.atl/

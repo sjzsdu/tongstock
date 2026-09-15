@@ -2,6 +2,18 @@
 
 # TongStock CLI 测试脚本
 # 用于验证所有 CLI 命令的运行结果
+# 用法: bash test_cli.sh [all|kline]
+
+TEST_SCOPE="${1:-all}"
+if [ "$TEST_SCOPE" != "all" ] && [ "$TEST_SCOPE" != "kline" ]; then
+    echo "用法: bash test_cli.sh [all|kline]"
+    exit 2
+fi
+
+# 聚焦模式用于 CI/开发验证，任一 K 线命令失败即退出。
+if [ "$TEST_SCOPE" = "kline" ]; then
+    set -euo pipefail
+fi
 
 CLI="tongstock"
 
@@ -56,69 +68,79 @@ echo ""
 
 echo "6. 测试 kline 命令 - 日K"
 echo "----------------------------------------"
-$CLI_PATH kline --code 000001 --type day | head -10
+"$CLI_PATH" kline --code 000001 --type day --count 5
+echo ""
+
+echo "7. 测试 kline 命令 - 日K JSON 输出"
+echo "----------------------------------------"
+"$CLI_PATH" kline --code 000001 --type day --count 2 --json | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+assert data["code"] == "000001"
+assert data["type"] == "day"
+assert 0 < len(data["items"]) <= 2
+assert {"time", "open", "high", "low", "close", "volume", "amount"} <= set(data["items"][0])
+assert "metadata" in data
+print(json.dumps(data, ensure_ascii=False, indent=2))
+'
+echo ""
+
+echo "8. 测试 kline 命令 - 周K"
+echo "----------------------------------------"
+"$CLI_PATH" kline --code 000001 --type week --count 5
+echo ""
+
+echo "9. 测试 kline 命令 - 月K"
+echo "----------------------------------------"
+"$CLI_PATH" kline --code 000001 --type month --count 5
+echo ""
+
+echo "10. 测试 kline 命令 - 1分钟K"
+echo "----------------------------------------"
+"$CLI_PATH" kline --code 000001 --type 1m --count 5
+echo ""
+
+echo "11. 测试 kline 命令 - 5分钟K"
+echo "----------------------------------------"
+"$CLI_PATH" kline --code 000001 --type 5m --count 5
+echo ""
+
+echo "12. 测试 kline 命令 - 60分钟K"
+echo "----------------------------------------"
+"$CLI_PATH" kline --code 000001 --type 60m --count 5
+echo ""
+
+echo "13. 测试 kline 命令 - 季K"
+echo "----------------------------------------"
+"$CLI_PATH" kline --code 000001 --type quarter --count 5
+echo ""
+
+echo "14. 测试 kline 命令 - 年K"
+echo "----------------------------------------"
+"$CLI_PATH" kline --code 000001 --type year --count 5
+echo ""
+
+echo "15. 测试 kline 命令 - 全部历史日K（仅展示前10条）"
+echo "----------------------------------------"
+"$CLI_PATH" kline --code 000001 --type day --all | sed -n '1,10p'
 echo "... (仅显示前10条)"
 echo ""
 
-echo "7. 测试 kline 命令 - 周K"
+echo "16. 测试 kline 命令 - 拒绝无效K线类型"
 echo "----------------------------------------"
-$CLI_PATH kline --code 000001 --type week | head -10
-echo "... (仅显示前10条)"
+if "$CLI_PATH" kline --code 000001 --type invalid >/dev/null 2>&1; then
+    echo "错误: 无效K线类型未被拒绝"
+    exit 1
+fi
+echo "无效K线类型已正确拒绝"
 echo ""
 
-echo "8. 测试 kline 命令 - 月K"
-echo "----------------------------------------"
-$CLI_PATH kline --code 000001 --type month | head -10
-echo "... (仅显示前10条)"
-echo ""
-
-echo "9. 测试 kline 命令 - 1分钟K"
-echo "----------------------------------------"
-$CLI_PATH kline --code 000001 --type 1m | head -10
-echo "... (仅显示前10条)"
-echo ""
-
-echo "10. 测试 kline 命令 - 5分钟K"
-echo "----------------------------------------"
-$CLI_PATH kline --code 000001 --type 5m | head -10
-echo "... (仅显示前10条)"
-echo ""
-
-echo "11. 测试 kline 命令 - 1分钟K"
-echo "----------------------------------------"
-$CLI_PATH kline --code 000001 --type 1m | head -10
-echo "... (仅显示前10条)"
-echo ""
-
-echo "12. 测试 kline 命令 - 5分钟K"
-echo "----------------------------------------"
-$CLI_PATH kline --code 000001 --type 5m | head -10
-echo "... (仅显示前10条)"
-echo ""
-
-echo "13. 测试 kline 命令 - 60分钟K"
-echo "----------------------------------------"
-$CLI_PATH kline --code 000001 --type 60m | head -10
-echo "... (仅显示前10条)"
-echo ""
-
-echo "14. 测试 kline 命令 - 季K"
-echo "----------------------------------------"
-$CLI_PATH kline --code 000001 --type quarter | head -10
-echo "... (仅显示前10条)"
-echo ""
-
-echo "15. 测试 kline 命令 - 年K"
-echo "----------------------------------------"
-$CLI_PATH kline --code 000001 --type year | head -10
-echo "... (仅显示前10条)"
-echo ""
-
-echo "16. 测试 kline 命令 - 全部历史日K"
-echo "----------------------------------------"
-$CLI_PATH kline --code 000001 --type day --all | head -10
-echo "... (仅显示前10条)"
-echo ""
+if [ "$TEST_SCOPE" = "kline" ]; then
+    echo "========================================"
+    echo "K线 CLI 测试完成"
+    echo "========================================"
+    exit 0
+fi
 
 echo "17. 测试 minute 命令 - 当日分时"
 echo "----------------------------------------"
