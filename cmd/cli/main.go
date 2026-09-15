@@ -188,6 +188,7 @@ func init() {
 	rootCmd.AddCommand(blockCmd)
 	rootCmd.AddCommand(countCmd)
 	rootCmd.AddCommand(auctionCmd)
+	rootCmd.AddCommand(klineCmd)
 	rootCmd.AddCommand(indicatorCmd)
 	rootCmd.AddCommand(screenCmd)
 	rootCmd.AddCommand(syncCmd)
