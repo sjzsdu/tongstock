@@ -169,7 +169,8 @@ func (s *Service) syncAndReload(ctx context.Context, request DataRequest, decisi
 		if metadata.SourceUpdatedAt.IsZero() {
 			metadata.SourceUpdatedAt = s.clock.Now()
 		}
-		if err := validateDataset(request.Spec, dataset, missing); err != nil {
+		allowEmptyKlines := request.Spec.Type == DataKline && decision.Reason == "kline_recent_overlap_expired"
+		if err := validateDataset(request.Spec, dataset, missing, allowEmptyKlines); err != nil {
 			return DataResult{}, &Error{Code: ErrUpstream, Op: "validate_upstream", Err: err}
 		}
 		switch request.Spec.Type {
@@ -256,10 +257,10 @@ func validateRequest(request DataRequest) error {
 	return nil
 }
 
-func validateDataset(spec DataSpec, dataset Dataset, requested TimeRange) error {
+func validateDataset(spec DataSpec, dataset Dataset, requested TimeRange, allowEmptyKlines bool) error {
 	switch spec.Type {
 	case DataKline:
-		if len(dataset.Klines) == 0 {
+		if len(dataset.Klines) == 0 && !allowEmptyKlines {
 			return errors.New("provider returned no klines")
 		}
 		seen := make(map[string]struct{}, len(dataset.Klines))

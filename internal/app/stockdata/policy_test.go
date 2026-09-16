@@ -97,7 +97,10 @@ func TestRangeLessKlineFreshnessIgnoresHistoricalSuspensionGaps(t *testing.T) {
 	decision, err := policy.Evaluate(context.Background(),
 		time.Date(2026, 8, 3, 16, 0, 0, 0, time.Local),
 		DataSpec{Type: DataKline, Market: "sh", Code: "601688"},
-		Coverage{Exists: true, Start: old, End: latest, Points: []time.Time{old, latest}},
+		Coverage{
+			Exists: true, Start: old, End: latest, Points: []time.Time{old, latest},
+			SourceUpdatedAt: time.Date(2026, 8, 3, 15, 30, 0, 0, time.Local),
+		},
 	)
 	if err != nil {
 		t.Fatal(err)

@@ -279,6 +279,88 @@ func TestKlineSyncRequestsOnlyMissingRange(t *testing.T) {
 	}
 }
 
+func TestRangeLessKlineRefreshesRecentOverlapAndRepairsInternalOmission(t *testing.T) {
+	_, repository := testRepository(t)
+	ctx := context.Background()
+	friday := time.Date(2026, 9, 11, 0, 0, 0, 0, time.Local)
+	monday := time.Date(2026, 9, 14, 0, 0, 0, 0, time.Local)
+	tuesday := time.Date(2026, 9, 15, 0, 0, 0, 0, time.Local)
+	now := time.Date(2026, 9, 15, 16, 0, 0, 0, time.Local)
+	spec := DataSpec{Type: DataKline, Market: "sh", Code: "600000", Granularity: "day", KType: 9}
+	if err := repository.SaveSynced(ctx, spec, Dataset{Klines: []*protocol.Kline{
+		validKline(friday, 10), validKline(tuesday, 12),
+	}}, SyncMetadata{
+		SourceUpdatedAt: time.Date(2026, 9, 11, 16, 0, 0, 0, time.Local),
+		Quality:         "validated",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var calls atomic.Int32
+	var gotRange TimeRange
+	service, _ := NewService(repository, providerFunc(func(_ context.Context, request SyncRequest) (Dataset, SyncMetadata, error) {
+		calls.Add(1)
+		gotRange = request.Range
+		return Dataset{Klines: []*protocol.Kline{
+			validKline(friday, 10), validKline(monday, 11), validKline(tuesday, 12),
+		}}, SyncMetadata{SourceUpdatedAt: now, Quality: "validated"}, nil
+	}), NewMarketFreshnessPolicy(WeekdayCalendar{}, time.Local), fixedClock{now})
+
+	first, err := service.Query(ctx, DataRequest{Spec: spec, Mode: RequireFresh})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 1 || first.Metadata.SyncStatus != "synced" || len(first.Klines) != 3 {
+		t.Fatalf("first query calls=%d result=%+v", calls.Load(), first)
+	}
+	wantStart := time.Date(2026, 9, 9, 0, 0, 0, 0, time.Local)
+	if !gotRange.Start.Equal(wantStart) || !gotRange.End.Equal(tuesday) {
+		t.Fatalf("overlap range = %s..%s, want %s..%s", gotRange.Start, gotRange.End, wantStart, tuesday)
+	}
+	if !first.Klines[1].Time.Equal(monday) {
+		t.Fatalf("missing session was not repaired: %+v", first.Klines)
+	}
+
+	second, err := service.Query(ctx, DataRequest{Spec: spec, Mode: RequireFresh})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 1 || second.Metadata.SyncStatus != "cache" || len(second.Klines) != 3 {
+		t.Fatalf("cache reuse calls=%d result=%+v", calls.Load(), second)
+	}
+}
+
+func TestExplicitKlineRangeDoesNotUseOverlapRefresh(t *testing.T) {
+	_, repository := testRepository(t)
+	ctx := context.Background()
+	friday := time.Date(2026, 9, 11, 0, 0, 0, 0, time.Local)
+	monday := time.Date(2026, 9, 14, 0, 0, 0, 0, time.Local)
+	tuesday := time.Date(2026, 9, 15, 0, 0, 0, 0, time.Local)
+	now := time.Date(2026, 9, 15, 16, 0, 0, 0, time.Local)
+	spec := DataSpec{
+		Type: DataKline, Market: "sh", Code: "600000", Granularity: "day", KType: 9,
+		Start: friday, End: tuesday,
+	}
+	if err := repository.SaveSynced(ctx, spec, Dataset{Klines: []*protocol.Kline{
+		validKline(friday, 10), validKline(monday, 11), validKline(tuesday, 12),
+	}}, SyncMetadata{SourceUpdatedAt: friday, Quality: "validated"}); err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	service, _ := NewService(repository, providerFunc(func(context.Context, SyncRequest) (Dataset, SyncMetadata, error) {
+		calls.Add(1)
+		return Dataset{}, SyncMetadata{}, errors.New("explicit complete range must stay cached")
+	}), NewMarketFreshnessPolicy(WeekdayCalendar{}, time.Local), fixedClock{now})
+
+	result, err := service.Query(ctx, DataRequest{Spec: spec, Mode: RequireFresh})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 0 || result.Metadata.SyncStatus != "cache" || len(result.Klines) != 3 {
+		t.Fatalf("explicit range calls=%d result=%+v", calls.Load(), result)
+	}
+}
+
 func TestKlineMultipleGapsAreMinimalAndCommitAtomically(t *testing.T) {
 	store, repository := testRepository(t)
 	ctx := context.Background()
