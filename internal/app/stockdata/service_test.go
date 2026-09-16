@@ -330,6 +330,40 @@ func TestRangeLessKlineRefreshesRecentOverlapAndRepairsInternalOmission(t *testi
 	}
 }
 
+func TestRangeLessKlineStaleCoverageRefreshesWithoutSkippingInterval(t *testing.T) {
+	_, repository := testRepository(t)
+	ctx := context.Background()
+	coverageEnd := time.Date(2026, 8, 15, 0, 0, 0, 0, time.Local)
+	latest := time.Date(2026, 9, 15, 0, 0, 0, 0, time.Local)
+	now := time.Date(2026, 9, 15, 16, 0, 0, 0, time.Local)
+	spec := DataSpec{Type: DataKline, Market: "sh", Code: "600000", Granularity: "day", KType: 9}
+	if err := repository.SaveSynced(ctx, spec,
+		Dataset{Klines: []*protocol.Kline{validKline(coverageEnd, 10)}},
+		SyncMetadata{SourceUpdatedAt: now, Quality: "validated"}); err != nil {
+		t.Fatal(err)
+	}
+
+	var gotRange TimeRange
+	service, _ := NewService(repository, providerFunc(func(_ context.Context, request SyncRequest) (Dataset, SyncMetadata, error) {
+		gotRange = request.Range
+		return Dataset{Klines: []*protocol.Kline{
+			validKline(coverageEnd, 10), validKline(latest, 11),
+		}}, SyncMetadata{SourceUpdatedAt: now, Quality: "validated"}, nil
+	}), NewMarketFreshnessPolicy(WeekdayCalendar{}, time.Local), fixedClock{now})
+
+	result, err := service.Query(ctx, DataRequest{Spec: spec, Mode: RequireFresh})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantStart := coverageEnd.AddDate(0, 0, -(klineRecentOverlapDays - 1))
+	if !gotRange.Start.Equal(wantStart) || !gotRange.End.Equal(latest) {
+		t.Fatalf("refresh range = %s..%s, want %s..%s", gotRange.Start, gotRange.End, wantStart, latest)
+	}
+	if result.Metadata.SyncStatus != "synced" || len(result.Klines) != 2 {
+		t.Fatalf("result = %+v", result)
+	}
+}
+
 func TestExplicitKlineRangeDoesNotUseOverlapRefresh(t *testing.T) {
 	_, repository := testRepository(t)
 	ctx := context.Background()

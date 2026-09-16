@@ -97,21 +97,27 @@ func (p *MarketFreshnessPolicy) evaluateKline(ctx context.Context, now time.Time
 		return FreshnessDecision{}, err
 	}
 	// A range-less request cannot infer completeness from individual exchange
-	// sessions because a stock may legitimately be suspended. Instead, refresh a
-	// bounded overlap once per day. Re-fetching recent bars lets the repository's
-	// upsert repair provider omissions without downloading the full history or
-	// calling the provider on every query.
+	// sessions because a stock may legitimately be suspended. Refresh from a
+	// bounded overlap before the coverage watermark through the latest completed
+	// session so stale coverage cannot leave an unfetched interval. When coverage
+	// is already current, overlap the latest sessions to repair provider omissions.
 	if start.IsZero() && end.IsZero() {
 		refreshedAt := coverage.SourceUpdatedAt
 		if refreshedAt.IsZero() {
 			refreshedAt = coverage.LastSyncAt
 		}
+		coverageEnd := dayOnly(coverage.End, p.Location)
 		completedAt := latest.Add(15*time.Hour + 10*time.Minute)
 		age := now.Sub(refreshedAt.In(p.Location))
-		if !refreshedAt.IsZero() && !refreshedAt.Before(completedAt) && age >= 0 && age <= klineRefreshTTL {
+		if !coverageEnd.Before(latest) && !refreshedAt.IsZero() &&
+			!refreshedAt.Before(completedAt) && age >= 0 && age <= klineRefreshTTL {
 			return FreshnessDecision{Fresh: true, Reason: "kline_recent_overlap_current", AsOf: coverage.End}, nil
 		}
-		start = latest.AddDate(0, 0, -(klineRecentOverlapDays - 1))
+		refreshAnchor := latest
+		if !coverageEnd.IsZero() && coverageEnd.Before(latest) {
+			refreshAnchor = coverageEnd
+		}
+		start = refreshAnchor.AddDate(0, 0, -(klineRecentOverlapDays - 1))
 		return FreshnessDecision{
 			Fresh: false, Reason: "kline_recent_overlap_expired", AsOf: coverage.End,
 			MissingRanges: []TimeRange{{Start: start, End: latest}},
