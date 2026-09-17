@@ -313,6 +313,26 @@ echo "----------------------------------------"
 $CLI_PATH news fetch --global
 echo ""
 
+echo "48. 测试 topic 命令 - 今日热门股票（cache_only，不依赖网络）"
+echo "----------------------------------------"
+$CLI_PATH topic --consistency cache_only
+echo ""
+
+echo "49. 测试 topic 命令 - 指定日期 + JSON 输出"
+echo "----------------------------------------"
+$CLI_PATH topic $(date +%Y-%m-%d) --consistency cache_only --json
+echo ""
+
+echo "50. 测试 topic 命令 - 完整明细（cache_only）"
+echo "----------------------------------------"
+$CLI_PATH topic --wide --consistency cache_only
+echo ""
+
+echo "51. 测试 topic 命令 - 实时抓取（require_fresh，依赖网络）"
+echo "----------------------------------------"
+$CLI_PATH topic --top 5
+echo ""
+
 echo "========================================"
 echo "测试完成"
 echo "========================================"

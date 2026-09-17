@@ -30,3 +30,4 @@ sessions
 .codex
 # Local AI runtime state
 .atl/
+.freebuff

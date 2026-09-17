@@ -71,6 +71,38 @@ export interface NewsSummary {
   "url"?: string;
 }
 
+export interface HotTopicHeadline {
+  "newsId"?: string;
+  "title"?: string;
+  "source"?: string;
+  "publishTime"?: string;
+  "url"?: string;
+}
+
+export interface HotTopicStock {
+  "code"?: string;
+  "name"?: string;
+  "mentions"?: number;
+  "titleHits"?: number;
+  "nativeHits"?: number;
+  "avgHotScore"?: number;
+  "sources"?: string[];
+  "hotScore"?: number;
+  "headlines"?: HotTopicHeadline[];
+}
+
+export interface HotTopicResult {
+  "date"?: string;
+  "tradingDate"?: string;
+  "fallback"?: boolean;
+  "status"?: string;
+  "items"?: HotTopicStock[];
+  "asOf"?: string;
+  "syncedCount"?: number;
+  "degraded"?: SourceDegradation[];
+  "message"?: string;
+}
+
 export interface SourceDegradation {
   "source"?: string;
   "error"?: string;
@@ -145,6 +177,7 @@ export const operations = {
   getApiNewsSentimentMarket: { method: "GET", path: "/api/news/sentiment/market" },
   getApiNewsSentimentStockCode: { method: "GET", path: "/api/news/sentiment/stock/{code}" },
   getApiNewsSentimentTrend: { method: "GET", path: "/api/news/sentiment/trend" },
+  getApiNewsTopics: { method: "GET", path: "/api/news/topics" },
   getApiNewsStockCode: { method: "GET", path: "/api/news/stock/{code}" },
   getApiParadigmAlerts: { method: "GET", path: "/api/paradigm/alerts" },
   postApiParadigmAnalyze: { method: "POST", path: "/api/paradigm/analyze" },

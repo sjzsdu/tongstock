@@ -73,6 +73,9 @@ func (h *NewsfeedHandler) SetupRoutes(r *gin.RouterGroup) {
 		// 个股关联资讯
 		news.GET("/stock/:code", h.handleStockNews)
 
+		// 按日期的热门股票榜单
+		news.GET("/topics", h.handleHotTopics)
+
 		// 搜索
 		news.GET("/search", h.handleSearchNews)
 
@@ -349,6 +352,45 @@ func (h *NewsfeedHandler) handleStockNews(c *gin.Context) {
 	}
 
 	result, err := h.stockNewsSvc.StockNews(c.Request.Context(), req)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, newsfeed.ErrFetchUnavailable) {
+			status = http.StatusBadGateway
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// handleHotTopics 指定日期热门股票榜单。
+//
+// 走个股资讯服务的 HotStockTopics（DB-first + 一致性契约），与个股资讯
+// 保持同一套降级语义；服务未注入时如实报 503，而不是拿空列表凑数。
+func (h *NewsfeedHandler) handleHotTopics(c *gin.Context) {
+	if h.stockNewsSvc == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "个股资讯服务未启用，热门股票榜单不可用"})
+		return
+	}
+
+	mode := newsfeed.NewsRequireFresh
+	switch strings.ToLower(c.DefaultQuery("consistency", "require_fresh")) {
+	case "allow_stale":
+		mode = newsfeed.NewsAllowStale
+	case "cache_only":
+		mode = newsfeed.NewsCacheOnly
+	}
+
+	req := newsfeed.HotTopicsRequest{
+		Date:           strings.TrimSpace(c.Query("date")),
+		Top:            queryInt(c, "top", newsfeed.DefaultTopicTop),
+		Mode:           mode,
+		ForceRefresh:   c.Query("refresh") == "true",
+		IncludeWeekend: c.Query("include_weekend") == "true",
+		MinConfidence:  queryFloat(c, "min_confidence", 0),
+	}
+
+	result, err := h.stockNewsSvc.HotStockTopics(c.Request.Context(), req)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, newsfeed.ErrFetchUnavailable) {

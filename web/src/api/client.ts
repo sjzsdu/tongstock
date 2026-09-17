@@ -33,6 +33,7 @@ import type {
   NewsSummary,
   FeedResult,
   StockNewsResult,
+  HotTopicResult,
   HotEvent,
   EventResult,
   MarketSentiment,
@@ -560,6 +561,18 @@ export const api = {
 
 	newsSearch: (keyword: string) =>
 		fetchJSON<{ total: number; items: NewsSummary[] }>(`/api/news/search?keyword=${encodeURIComponent(keyword)}`),
+
+	/** 指定日期新闻里的热门股票榜单（date 缺省为今天） */
+	newsTopics: (params?: { date?: string; top?: number; consistency?: string; includeWeekend?: boolean; minConfidence?: number }) => {
+		const q = new URLSearchParams();
+		if (params?.date) q.set('date', params.date);
+		if (params?.top) q.set('top', String(params.top));
+		if (params?.consistency) q.set('consistency', params.consistency);
+		if (params?.includeWeekend) q.set('include_weekend', 'true');
+		if (params?.minConfidence) q.set('min_confidence', String(params.minConfidence));
+		const suffix = q.toString() ? '?' + q.toString() : '';
+		return fetchJSON<HotTopicResult>(`/api/news/topics${suffix}`);
+	},
 
 	newsFetch: () =>
 		fetchJSON<{ count: number; msg: string }>('/api/news/fetch', { method: 'POST' }),

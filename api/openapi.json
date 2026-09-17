@@ -259,6 +259,118 @@
           }
         }
       },
+      "HotTopicHeadline": {
+        "type": "object",
+        "properties": {
+          "newsId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "publishTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "HotTopicStock": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "mentions": {
+            "type": "integer",
+            "description": "当日强关联新闻条数"
+          },
+          "titleHits": {
+            "type": "integer",
+            "description": "标题/代码命中条数"
+          },
+          "nativeHits": {
+            "type": "integer",
+            "description": "数据源原生关联条数"
+          },
+          "avgHotScore": {
+            "type": "number",
+            "description": "关联新闻平均热度 0-100"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "hotScore": {
+            "type": "integer",
+            "description": "综合热度分，仅用于排序展示"
+          },
+          "headlines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HotTopicHeadline"
+            }
+          }
+        }
+      },
+      "HotTopicResult": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "请求统计日期 YYYY-MM-DD"
+          },
+          "tradingDate": {
+            "type": "string",
+            "description": "实际统计交易日 YYYY-MM-DD"
+          },
+          "fallback": {
+            "type": "boolean",
+            "description": "请求日期为非交易日时已回溯"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "stale",
+              "insufficient_data"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HotTopicStock"
+            }
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "syncedCount": {
+            "type": "integer",
+            "description": "本次实际抓取入库的新闻条数"
+          },
+          "degraded": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourceDegradation"
+            }
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
       "SourceDegradation": {
         "type": "object",
         "properties": {
@@ -2107,6 +2219,111 @@
             "$ref": "#/components/responses/Error"
           }
         }
+      }
+    },
+    "/api/news/topics": {
+      "get": {
+        "operationId": "getApiNewsTopics",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "目标日期（YYYY-MM-DD 或 YYYYMMDD），默认今天"
+          },
+          {
+            "in": "query",
+            "name": "top",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10
+            },
+            "description": "返回榜单条数"
+          },
+          {
+            "in": "query",
+            "name": "consistency",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "require_fresh",
+                "allow_stale",
+                "cache_only"
+              ],
+              "default": "require_fresh"
+            },
+            "description": "数据一致性"
+          },
+          {
+            "in": "query",
+            "name": "refresh",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "为 true 时跳过新鲜窗口强制重新抓取"
+          },
+          {
+            "in": "query",
+            "name": "include_weekend",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "为 true 时不回溯交易日，严格按指定日期统计"
+          },
+          {
+            "in": "query",
+            "name": "min_confidence",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "description": "关联置信度下限，0 表示使用默认值"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "热门股票榜单",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HotTopicResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          },
+          "502": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "获取指定日期新闻里的热门股票",
+        "description": "聚合指定日期（默认今天）全局新闻中各股票的提及与关联强度，按热度排序。请求日期为非交易日时自动回溯到最近交易日。"
       }
     },
     "/api/news/stock/{code}": {

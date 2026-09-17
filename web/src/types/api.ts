@@ -937,6 +937,47 @@ export interface SourceDegradation {
   error: string;
 }
 
+/** 热门股票的一条代表新闻 */
+export interface HotTopicHeadline {
+  newsId: string;
+  title: string;
+  source: string;
+  publishTime: string;
+  url?: string;
+}
+
+/** 热门股票榜单中的一行 */
+export interface HotTopicStock {
+  code: string;
+  name?: string;
+  /** 当日强关联新闻条数 */
+  mentions: number;
+  /** 标题/代码命中条数 */
+  titleHits: number;
+  /** 数据源原生关联条数 */
+  nativeHits: number;
+  /** 关联新闻平均热度 0-100 */
+  avgHotScore: number;
+  sources: string[];
+  /** 综合热度分，仅用于排序展示 */
+  hotScore: number;
+  headlines?: HotTopicHeadline[];
+}
+
+/** 指定日期的热门股票榜单。请求日期为非交易日时自动回溯到最近交易日 */
+export interface HotTopicResult {
+  date: string;
+  tradingDate: string;
+  fallback: boolean;
+  status: 'ok' | 'stale' | 'insufficient_data';
+  items: HotTopicStock[];
+  asOf?: string;
+  /** 本次实际抓取入库的新闻条数 */
+  syncedCount?: number;
+  degraded?: SourceDegradation[];
+  message?: string;
+}
+
 /** 个股资讯结果。status 为 insufficient_data 时表示没有足够数据，
  *  系统不会用无关新闻凑数。 */
 export interface StockNewsResult {

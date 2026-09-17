@@ -360,4 +360,34 @@ tongstock indicator -c <code> -t day --json
 
 **Offline / deterministic mode:** pass `--consistency cache_only` (or `?consistency=cache_only` on the API) to read only locally cached news without network access. Use `--refresh` to force a re-fetch when you suspect stale data.
 
+## Workflow 11: 热门股票 (Daily Hot Stocks)
+
+Aggregate what the market is talking about on a given date (default: today). Pulls the global flash/article feeds from 东方财富 and 财联社, then ranks stocks by how many strongly-related news items mention them that day.
+
+```bash
+# 1. Today's hot stocks (auto-falls back to the most recent trading day on weekends/holidays)
+tongstock topic
+
+# 2. A specific date, JSON for parsing
+tongstock topic 2026-09-17 --json
+
+tongstock topic 20260917 --json
+
+# 3. Full detail: representative headlines and sources per stock
+tongstock topic --wide
+
+# 4. Bigger board / strict date (no trading-day fallback)
+tongstock topic --top 20
+ tongstock topic --strict
+```
+
+**How to interpret the output:**
+- `提及 N 条` — number of strongly-related news items that day (title hits or source-native tags only; body-only mentions never count).
+- `标题/原生` vs `原生` — how many were title/code matches vs natively tagged by the source.
+- `热度` — composite ranking score (mentions + title/native hits + avg hot score + source diversity). Display only.
+- `fallback` / 回溯提示 — the requested date was a non-trading day and the board actually covers the previous trading day; pass `--strict` to disable.
+- `status`: `ok` / `stale` (sources failed, serving cached data) / `insufficient_data` (nothing for that date yet — try again later or run `tongstock news fetch --global`).
+
+**Recommended flow:** pair `topic` with `news query <code>` for the stocks that make the board to drill into each stock's own news, then cross-check with `finance`/`indicator`.
+
 > Installation / upgrade: see the `tongstock-cli` skill — it auto-installs the latest GitHub Release binary (with `gh` draft fallback and source-build fallback).
