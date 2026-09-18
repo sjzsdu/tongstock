@@ -941,9 +941,11 @@ export interface SourceDegradation {
 export interface HotTopicHeadline {
   newsId: string;
   title: string;
+  summary?: string; // 新闻摘要，便于快速浏览
   source: string;
   publishTime: string;
   url?: string;
+  matchReason?: string; // 关联原因（如数据源原生关联、代码匹配、名称匹配）
 }
 
 /** 热门股票榜单中的一行 */

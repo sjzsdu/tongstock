@@ -129,6 +129,12 @@ func printTopics(r *newsfeed.HotTopicResult) {
 		if topicWide {
 			for _, h := range it.Headlines {
 				fmt.Printf("      · [%s] [%s] %s\n", h.PublishTime.Format("01-02 15:04"), h.Source, h.Title)
+				if h.Summary != "" {
+					fmt.Printf("        %s\n", h.Summary)
+				}
+				if h.MatchReason != "" {
+					fmt.Printf("        ↳ 关联: %s\n", h.MatchReason)
+				}
 			}
 			if len(it.Sources) > 0 {
 				fmt.Printf("      来源: %s\n", strings.Join(it.Sources, "、"))

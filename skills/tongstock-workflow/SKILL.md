@@ -15,24 +15,27 @@ Full research report for one stock. Run all steps and synthesize.
 
 ```bash
 # Step 1: Real-time quote with 5-level bid/ask
-tongstock-cli quote <code>
+tongstock quote <code>
 
 # Step 2: Financial fundamentals
-tongstock-cli finance <code>
+tongstock finance <code>
 
 # Step 3: Ex-rights/dividend history
-tongstock-cli xdxr <code>
+tongstock xdxr <code>
 
 # Step 4: Recent daily K-lines (price trend)
-tongstock-cli kline -c <code> -t day
+tongstock kline -c <code> -t day
 
 # Step 5: Company F10 info categories
-tongstock-cli company <code>
+tongstock company <code>
 
 # Step 6: Get specific F10 content
-tongstock-cli company-content <code> --block "公司概况"  # Company profile
-tongstock-cli company-content <code> --block "财务分析"  # Financial analysis
-tongstock-cli company-content <code> --block "股东研究"  # Shareholder research
+tongstock company-content <code> --block "公司概况"  # Company profile
+tongstock company-content <code> --block "财务分析"  # Financial analysis
+tongstock company-content <code> --block "股东研究"  # Shareholder research
+
+# Step 7: Stock basic info (from local DB)
+tongstock stockinfo <code>
 ```
 
 **Analysis checklist:**
@@ -48,14 +51,17 @@ Screen stocks by retrieving financial data for a batch of codes.
 
 ```bash
 # Step 1: Get all stock codes for a market
-tongstock-cli codes -e sz > /tmp/sz_codes.txt
+tongstock codes -e sz > /tmp/sz_codes.txt
 
 # Step 2: For each candidate, fetch finance data
 for code in 000001 600519 000858 601318; do
   echo "=== $code ==="
-  tongstock-cli finance $code
+  tongstock finance $code
   echo ""
 done
+
+# Or use stockinfo for batch listing
+tongstock stockinfo --exchange sh  # List all SH stocks
 ```
 
 **Screening criteria to evaluate:**
@@ -71,7 +77,7 @@ Find stocks with consistent dividend history.
 
 ```bash
 # Get ex-rights/dividend records
-tongstock-cli xdxr <code>
+tongstock xdxr <code>
 ```
 
 **What to look for in output:**
@@ -87,16 +93,16 @@ Find which stocks belong to a sector, then analyze the sector.
 
 ```bash
 # Step 1: List industry sectors
-tongstock-cli block -f block_fg.dat
+tongstock block -f block_fg.dat
 
 # Step 2: List concept sectors
-tongstock-cli block -f block_gn.dat
+tongstock block -f block_gn.dat
 
 # Step 3: For interesting sector stocks, get quotes
-tongstock-cli quote <code1> <code2> <code3>
+tongstock quote <code1> <code2> <code3>
 
 # Step 4: Compare with index
-tongstock-cli index -c 999999 -t day
+tongstock index -c 999999 -t day
 ```
 
 **Analysis approach:**
@@ -110,13 +116,13 @@ Fast technical overview using multiple timeframes.
 
 ```bash
 # Multi-timeframe K-lines
-tongstock-cli kline -c <code> -t day     # Trend
-tongstock-cli kline -c <code> -t 60m     # Intraday trend
-tongstock-cli kline -c <code> -t 5m      # Short-term momentum
+tongstock kline -c <code> -t day     # Trend
+tongstock kline -c <code> -t 60m     # Intraday trend
+tongstock kline -c <code> -t 5m      # Short-term momentum
 
 # Today's tick-level activity
-tongstock-cli minute <code>              # Minute-by-minute
-tongstock-cli trade <code>               # Tick trades (买卖方向)
+tongstock minute <code>              # Minute-by-minute
+tongstock trade <code>               # Tick trades (买卖方向)
 ```
 
 **What to evaluate:**
@@ -132,10 +138,10 @@ Quick pulse of the overall market.
 
 ```bash
 # Major indices
-tongstock-cli index -c 999999 -t day     # 上证指数
-tongstock-cli index -c 399001 -t day     # 深证成指
-tongstock-cli index -c 399006 -t day     # 创业板指
-tongstock-cli index -c 399300 -t day     # 沪深300
+tongstock index -c 999999 -t day     # 上证指数
+tongstock index -c 399001 -t day     # 深证成指
+tongstock index -c 399006 -t day     # 创业板指
+tongstock index -c 399300 -t day     # 沪深300
 ```
 
 **Key metrics from index bars:**
@@ -193,40 +199,103 @@ done
 | 11-12 | Share consolidation |
 | 13-14 | Warrant issuance |
 
-## Workflow 8: Technical Indicator Analysis (技术指标分析)
+## Workflow 7: Company F10 Information (公司F10资料)
+
+Access detailed company information from TDX F10 data.
+
+```bash
+# List available F10 categories
+tongstock company <code>
+
+# Get specific F10 content
+tongstock company-content <code> --block "公司概况"     # Company profile
+tongstock company-content <code> --block "财务分析"     # Financial analysis
+tongstock company-content <code> --block "股东研究"     # Shareholder research
+tongstock company-content <code> --block "公司公告"     # Company announcements
+tongstock company-content <code> --block "行业分析"     # Industry analysis
+
+# JSON output for parsing
+tongstock company <code> --json
+tongstock company-content <code> --block "公司概况" --json
+```
+
+**Common F10 blocks:**
+- 公司概况 - Company overview, business description
+- 财务分析 - Detailed financial statements and analysis
+- 股东研究 - Shareholder structure and institutional holdings
+- 公司公告 - Company announcements and disclosures
+- 行业分析 - Industry comparison and market position
+- 资本运作 - Capital structure changes
+- 分红送转 - Dividend and bonus share history
+
+## Workflow 8: Stock Basic Info (股票基础信息)
+
+Quick access to stock fundamentals from the local database.
+
+```bash
+# First, sync data from TDX (required before first use)
+tongstock stockinfo sync           # Sync all exchanges
+tongstock stockinfo sync --force   # Force full sync (ignore 24h freshness)
+
+# Single stock info
+tongstock stockinfo <code>
+
+# List all stocks (top 50)
+tongstock stockinfo
+
+# Filter by exchange
+tongstock stockinfo --exchange sh  # Shanghai
+tongstock stockinfo --exchange sz  # Shenzhen
+tongstock stockinfo --exchange bj  # Beijing
+
+# JSON output
+tongstock stockinfo <code> --json
+```
+
+**Fields available:**
+- Price, Open, High, Low, LastClose - Price data
+- Volume, Amount, TurnoverRate - Trading activity
+- LiuTongGuBen, ZongGuBen - Share structure
+- MarketCap, TotalMarketCap - Market valuation
+- JingZiChan, JingLiRun, MeiGuJingZiChan - Financial metrics
+- StFlag - ST stock indicator
+
+**Note:** Data must be synced from TDX before use. The sync command pulls latest quotes and finance data for all A-share stocks.
+
+## Workflow 9: Technical Indicator Analysis (技术指标分析)
 
 Compute and display technical indicators for a single stock.
 
 ```bash
 # Single stock with default parameters (table output)
-tongstock-cli indicator -c <code> -t day
+tongstock indicator -c <code> -t day
 
 # JSON format output (single day)
-tongstock-cli indicator -c <code> -t day --json
+tongstock indicator -c <code> -t day --json
 
 # JSON format with multiple days history
-tongstock-cli indicator -c <code> -t day --json --days 5
+tongstock indicator -c <code> -t day --json --days 5
 
 # All historical data
-tongstock-cli indicator -c <code> -t day --all
+tongstock indicator -c <code> -t day --all
 
 # Custom parameter config file
-tongstock-cli indicator -c <code> -t day --config configs/params.yaml
+tongstock indicator -c <code> -t day --config configs/params.yaml
 
 # Different timeframes
-tongstock-cli indicator -c <code> -t 60m    # 60-minute
-tongstock-cli indicator -c <code> -t week   # Weekly
+tongstock indicator -c <code> -t 60m    # 60-minute
+tongstock indicator -c <code> -t week   # Weekly
 ```
 
-## Workflow 9: Natural-Language Stock Screening (自然语言选股)
+## Workflow 10: Natural-Language Stock Screening (自然语言选股)
 
 Use this workflow when the user describes conditions in plain Chinese or English, e.g. “找最近20日放量突破且 MACD 金叉的半导体股票”, “筛选自选股里超卖反弹的票”, or “找概念板块里多头排列的股票”. Translate the request into a concrete stock universe, timeframe, signal filters, and optional post-filters.
 
 ```bash
 # 1. Resolve the universe
 # Optional: inspect block files and constituents when the user mentions industry/concept/theme.
-tongstock-cli block -f block_fg.dat
-tongstock-cli block -f block_gn.dat
+tongstock block -f block_fg.dat
+tongstock block -f block_gn.dat
 
 # 2. Run signal screening for candidate codes through the HTTP API when server is available.
 # codes should be comma-separated, type can be day/week/60m/30m/15m.
@@ -288,19 +357,19 @@ curl -s "http://localhost:8080/api/finance?code=<code>" | jq .
 - Per-stock override > Category override (large_cap/small_cap) > Default
 - Categories auto-detected by code prefix (600xxx = large_cap, 002xxx = small_cap)
 
-## Workflow 9: Batch Signal Screening (批量信号筛选)
+## Workflow 11: Batch Signal Screening (批量信号筛选)
 
 Screen a list of stocks for specific signals using parallel computation.
 
 ```bash
 # Screen specific stocks for golden cross
-tongstock-cli screen -c "000001,600519,000858,601318" -t day -s golden_cross
+tongstock screen -c "000001,600519,000858,601318" -t day -s golden_cross
 
 # Screen from file (one code per line)
-tongstock-cli screen -f codes.txt -t day -s oversold
+tongstock screen -f codes.txt -t day -s oversold
 
 # Screen with concurrency control
-tongstock-cli screen -c "000001,600519" -p 5 -s death_cross
+tongstock screen -c "000001,600519" -p 5 -s death_cross
 ```
 
 **Available signal filters (-s):**
@@ -314,16 +383,16 @@ tongstock-cli screen -c "000001,600519" -p 5 -s death_cross
 **Combination with sector analysis:**
 ```bash
 # Step 1: Get sector stocks
-tongstock-cli block -f block_fg.dat | grep "银行" > banking.txt
+tongstock block -f block_fg.dat | grep "银行" > banking.txt
 
 # Step 2: Screen for signals
-tongstock-cli screen -f banking.txt -t day -s golden_cross -p 8
+tongstock screen -f banking.txt -t day -s golden_cross -p 8
 ```
 
 **Output table columns:**
 - Code, Date, Close, MA5/10/20, DIF, K, J, Latest Signals
 
-## Workflow 10: 个股新闻资讯 (Stock News)
+## Workflow 12: 个股新闻资讯 (Stock News)
 
 Combine latest company news with the existing fundamentals/technicals to produce a more complete read on a stock. News data comes from 东方财富 (新闻/研报) and 财联社 (快讯), associated to the stock via entity recognition.
 
@@ -340,6 +409,9 @@ tongstock news query <code> --all-mentions
 # 4. Merge with fundamentals + technicals for full context
 tongstock finance <code>
 tongstock indicator -c <code> -t day --json
+
+# 5. Get company F10 info for deeper context
+tongstock company-content <code> --block "公司概况"
 ```
 
 **How to interpret the news output:**
@@ -360,7 +432,7 @@ tongstock indicator -c <code> -t day --json
 
 **Offline / deterministic mode:** pass `--consistency cache_only` (or `?consistency=cache_only` on the API) to read only locally cached news without network access. Use `--refresh` to force a re-fetch when you suspect stale data.
 
-## Workflow 11: 热门股票 (Daily Hot Stocks)
+## Workflow 13: 热门股票 (Daily Hot Stocks)
 
 Aggregate what the market is talking about on a given date (default: today). Pulls the global flash/article feeds from 东方财富 and 财联社, then ranks stocks by how many strongly-related news items mention them that day.
 
@@ -370,7 +442,6 @@ tongstock topic
 
 # 2. A specific date, JSON for parsing
 tongstock topic 2026-09-17 --json
-
 tongstock topic 20260917 --json
 
 # 3. Full detail: representative headlines and sources per stock
@@ -378,8 +449,17 @@ tongstock topic --wide
 
 # 4. Bigger board / strict date (no trading-day fallback)
 tongstock topic --top 20
- tongstock topic --strict
+tongstock topic --strict
 ```
+
+**How to interpret the output:**
+- `提及 N 条` — number of strongly-related news items that day (title hits or source-native tags only; body-only mentions never count).
+- `标题/原生` vs `原生` — how many were title/code matches vs natively tagged by the source.
+- `热度` — composite ranking score (mentions + title/native hits + avg hot score + source diversity). Display only.
+- `fallback` / 回溯提示 — the requested date was a non-trading day and the board actually covers the previous trading day; pass `--strict` to disable.
+- `status`: `ok` / `stale` (sources failed, serving cached data) / `insufficient_data` (nothing for that date yet — try again later or run `tongstock news fetch --global`).
+
+**Recommended flow:** pair `topic` with `news query <code>` for the stocks that make the board to drill into each stock's own news, then cross-check with `finance`/`indicator`/`company-content`.
 
 **How to interpret the output:**
 - `提及 N 条` — number of strongly-related news items that day (title hits or source-native tags only; body-only mentions never count).

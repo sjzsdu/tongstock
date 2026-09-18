@@ -196,4 +196,9 @@ func init() {
 	rootCmd.AddCommand(archCmd)
 	rootCmd.AddCommand(newsCmd)
 	rootCmd.AddCommand(topicCmd)
+	rootCmd.AddCommand(companyCmd)
+	rootCmd.AddCommand(companyContentCmd)
+	rootCmd.AddCommand(financeCmd)
+	rootCmd.AddCommand(xdxrCmd)
+	rootCmd.AddCommand(stockinfoCmd)
 }

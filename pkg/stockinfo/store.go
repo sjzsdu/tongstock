@@ -139,7 +139,7 @@ func (s *Store) queryStockInfo(query string, args ...interface{}) ([]StockInfo, 
 
 // GetByExchange 根据交易所获取股票
 func (s *Store) GetByExchange(exchange string) ([]StockInfo, error) {
-	query := fmt.Sprintf(`SELECT code, name, exchange, price, market_cap FROM stockinfo WHERE exchange = %s ORDER BY code`, s.ph(1))
+	query := fmt.Sprintf(`SELECT code, name, exchange, price, market_cap, st_flag FROM stockinfo WHERE exchange = %s ORDER BY code`, s.ph(1))
 	return s.queryStockInfo(query, exchange)
 }
 

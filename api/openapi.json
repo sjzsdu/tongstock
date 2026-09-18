@@ -268,6 +268,10 @@
           "title": {
             "type": "string"
           },
+          "summary": {
+            "type": "string",
+            "description": "新闻摘要，便于快速浏览"
+          },
           "source": {
             "type": "string"
           },
@@ -277,6 +281,10 @@
           },
           "url": {
             "type": "string"
+          },
+          "matchReason": {
+            "type": "string",
+            "description": "该新闻关联到此股票的原因（如数据源原生关联、代码匹配、名称匹配）"
           }
         }
       },

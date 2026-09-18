@@ -35,9 +35,12 @@ type HotTopicStock struct {
 type HotTopicHeadline struct {
 	NewsID      string     `json:"newsId"`
 	Title       string     `json:"title"`
+	Summary     string     `json:"summary,omitempty"` // 新闻摘要，便于快速浏览
 	Source      SourceType `json:"source"`
 	PublishTime time.Time  `json:"publishTime"`
 	URL         string     `json:"url,omitempty"`
+	// MatchReason 说明这条新闻为何关联到该股票（如"原生关联"、"标题命中"）。
+	MatchReason string `json:"matchReason,omitempty"`
 }
 
 // HotTopicResult 是指定日期的热门股票榜单结果。
@@ -311,10 +314,12 @@ func (s *Service) fillTopicSources(ctx context.Context, code string, start, end 
 	return rows.Err()
 }
 
-// fillTopicHeadlines 取一只股票当日最热的几条代表新闻。
+// fillTopicHeadlines 取一只股票当日最热的几条代表新闻，同时附带新闻摘要与
+// 关联原因，便于用户快速了解该股票为何被提及。
 func (s *Service) fillTopicHeadlines(ctx context.Context, code string, start, end time.Time, minConf float64, a *topicAcc) error {
 	rows, err := s.store.db.QueryContext(ctx, `
-		SELECT n.id, n.title, n.source, n.publish_time, n.url
+		SELECT n.id, n.title, COALESCE(n.summary, ''), n.source, n.publish_time, n.url,
+		       r.match_type
 		FROM news_stock_ref r
 		JOIN news_items n ON n.id = r.news_id
 		WHERE r.code = ? AND r.confidence >= ?
@@ -329,23 +334,48 @@ func (s *Service) fillTopicHeadlines(ctx context.Context, code string, start, en
 	headlines := []HotTopicHeadline{}
 	for rows.Next() {
 		var (
-			id, title, urlStr string
-			src, pubS         string
+			id, title, summary, urlStr string
+			src, pubS, matchType       string
 		)
-		if err := rows.Scan(&id, &title, &src, &pubS, &urlStr); err != nil {
+		if err := rows.Scan(&id, &title, &summary, &src, &pubS, &urlStr, &matchType); err != nil {
 			return err
 		}
 		pub, _ := time.Parse(time.RFC3339, pubS)
 		headlines = append(headlines, HotTopicHeadline{
 			NewsID:      id,
 			Title:       title,
+			Summary:     truncateTopicSummary(summary, 120),
 			Source:      SourceType(src),
 			PublishTime: pub,
 			URL:         urlStr,
+			MatchReason: topicMatchReasonLabel(matchType),
 		})
 	}
 	a.item.Headlines = headlines
 	return rows.Err()
+}
+
+// truncateTopicSummary 截断摘要到指定长度，超出时加省略号。
+func truncateTopicSummary(s string, maxLen int) string {
+	s = strings.TrimSpace(s)
+	if len([]rune(s)) <= maxLen {
+		return s
+	}
+	return string([]rune(s)[:maxLen]) + "…"
+}
+
+// topicMatchReasonLabel 将 match_type 转为用户可读的关联原因。
+func topicMatchReasonLabel(matchType string) string {
+	switch matchType {
+	case "native":
+		return "数据源原生关联"
+	case "code_hit":
+		return "代码匹配"
+	case "name_hit":
+		return "名称匹配"
+	default:
+		return ""
+	}
 }
 
 // topicHotScore 折算综合热度分。

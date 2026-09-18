@@ -74,9 +74,11 @@ export interface NewsSummary {
 export interface HotTopicHeadline {
   "newsId"?: string;
   "title"?: string;
+  "summary"?: string;
   "source"?: string;
   "publishTime"?: string;
   "url"?: string;
+  "matchReason"?: string;
 }
 
 export interface HotTopicStock {

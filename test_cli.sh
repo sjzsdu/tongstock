@@ -333,6 +333,36 @@ echo "----------------------------------------"
 $CLI_PATH topic --top 5
 echo ""
 
+echo "52. 测试 company 命令 - F10 公司信息目录"
+echo "----------------------------------------"
+$CLI_PATH company 000001
+echo ""
+
+echo "53. 测试 company-content 命令 - 获取公司概况"
+echo "----------------------------------------"
+$CLI_PATH company-content 000001 --block "公司概况" 2>&1 | head -20
+echo ""
+
+echo "54. 测试 finance 命令 - 财务数据"
+echo "----------------------------------------"
+$CLI_PATH finance 000001
+echo ""
+
+echo "55. 测试 xdxr 命令 - 除权除息数据"
+echo "----------------------------------------"
+$CLI_PATH xdxr 000001
+echo ""
+
+echo "56. 测试 stockinfo 命令 - 查看股票基础信息"
+echo "----------------------------------------"
+$CLI_PATH stockinfo 000001 2>&1 || echo "（需先运行 stockinfo sync）"
+echo ""
+
+echo "57. 测试 stockinfo sync 命令 - 同步数据"
+echo "----------------------------------------"
+$CLI_PATH stockinfo sync --force 2>&1 | tail -10
+echo ""
+
 echo "========================================"
 echo "测试完成"
 echo "========================================"
