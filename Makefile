@@ -1,4 +1,4 @@
-.PHONY: all web cli server menubar install clean run check \
+.PHONY: all web cli server install clean run check \
 	fmt-check go-check go-arch-check go-migration-check web-check quality-check
 
 # Default to ~/.local/bin for installation, which is the standard user binary directory
@@ -54,12 +54,6 @@ web-build-check:
 cli: web
 	go build -o $(CLI_BIN) ./cmd/cli
 
-server: web
-	go build -o tongstock-server ./cmd/server
-
-menubar:
-	go build -o tongstock-menubar ./cmd/menubar
-
 # quality-check: the slower end-to-end, data-aware unified quality gate
 # (data quality + backtest golden + forward monitors). Distinct from `check`
 # because it needs network + local DB state. Run before release.
@@ -74,5 +68,5 @@ install: cli
 	install -m 755 $(CLI_BIN) $(BINDIR)/$(CLI_BIN)
 
 clean:
-	rm -f $(CLI_BIN) tongstock-server tongstock-menubar
+	rm -f $(CLI_BIN) tongstock-server
 	rm -rf pkg/web/dist

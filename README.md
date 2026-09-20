@@ -45,9 +45,6 @@ make cli
 
 # 启动 HTTP 服务
 ./tongstock server
-
-# macOS 启动菜单栏
-./tongstock menubar
 ```
 
 ## Skill 使用（推荐）

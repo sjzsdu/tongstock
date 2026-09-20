@@ -26,10 +26,6 @@ jobs:
           ref: 1f8286e5e91187a1d978d0a1869d9ddb5a1d9c9c
           path: picoclaw
 
-      - name: Install Linux system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libayatana-appindicator3-dev libgtk-3-dev
 
       - name: Set up Go
         uses: actions/setup-go@v5

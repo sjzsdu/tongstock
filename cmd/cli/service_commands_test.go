@@ -3,7 +3,7 @@ package main
 import "testing"
 
 func TestUnifiedServiceCommandsAreRegistered(t *testing.T) {
-	for _, name := range []string{"server", "menubar"} {
+	for _, name := range []string{"server"} {
 		cmd, _, err := rootCmd.Find([]string{name})
 		if err != nil {
 			t.Fatalf("rootCmd.Find(%q) error = %v", name, err)

@@ -149,13 +149,43 @@ tongstock index -c 399300 -t day     # 沪深300
 - Volume trend → participation level
 - Price vs. moving average crossovers
 
-## Workflow 7: HTTP API Batch Analysis (API 批量分析)
+## Workflow 7: Server Management (服务管理)
+
+Start, stop, check status, or restart the TongStock HTTP server.
+
+```bash
+# Start server in foreground (Ctrl+C to stop)
+tongstock server
+
+# Start server in background (daemon mode)
+tongstock server --daemon
+
+# Or use the dedicated start command
+tongstock server start
+
+# Check if server is running
+tongstock server status
+
+# Stop the running server
+tongstock server stop
+
+# Restart the server
+tongstock server restart
+```
+
+**Daemon mode:**
+- `tongstock server --daemon` or `tongstock server start` launches the server in the background
+- PID is recorded in `~/.tongstock/server.pid` for process management
+- Logs are written to `~/.tongstock/server.log`
+- Graceful shutdown: SIGTERM with 8s timeout, then SIGKILL
+
+## Workflow 8: HTTP API Batch Analysis (API 批量分析)
 
 When the server is running, use HTTP API for programmatic access:
 
 ```bash
 # Start server in background
-tongstock-server &
+tongstock server --daemon
 
 # Batch fetch via API (JSON output, easy to parse)
 curl -s "http://localhost:8080/api/quote?code=000001" | jq .
