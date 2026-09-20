@@ -23,6 +23,16 @@ func NewSource(sourceType newsfeed.SourceType) (newsfeed.Feed, error) {
 		return NewXueQiuSource(), nil
 	case newsfeed.SourceJuChao:
 		return NewJuChaoSource(), nil
+	case newsfeed.SourceSecuritiesTime:
+		return NewSecuritiesTimesSource(), nil
+	case newsfeed.Source21Business:
+		return NewCenturyBusinessSource(), nil
+	case newsfeed.SourceYicai:
+		return NewYicaiSource(), nil
+	case newsfeed.SourceSinaFinance:
+		return NewSinaFinanceSource(), nil
+	case newsfeed.SourceTencentFinance:
+		return NewTencentFinanceSource(), nil
 	default:
 		return nil, fmt.Errorf("unsupported source type: %s", sourceType)
 	}
@@ -36,6 +46,11 @@ func NewAllSources() []newsfeed.Feed {
 	types := []newsfeed.SourceType{
 		newsfeed.SourceEastMoney,
 		newsfeed.SourceCaiLianShe,
+		newsfeed.SourceSecuritiesTime,
+		newsfeed.Source21Business,
+		newsfeed.SourceYicai,
+		newsfeed.SourceSinaFinance,
+		newsfeed.SourceTencentFinance,
 	}
 	for _, t := range types {
 		if feed, err := NewSource(t); err == nil {

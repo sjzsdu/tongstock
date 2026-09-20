@@ -8,11 +8,16 @@ import (
 type SourceType string
 
 const (
-	SourceCaiLianShe SourceType = "财联社"
-	SourceXueQiu     SourceType = "雪球"
-	SourceJuChao     SourceType = "巨潮资讯"
-	SourceEastMoney  SourceType = "东方财富"
-	SourceUnknown    SourceType = "未知"
+	SourceCaiLianShe     SourceType = "财联社"
+	SourceXueQiu         SourceType = "雪球"
+	SourceJuChao         SourceType = "巨潮资讯"
+	SourceEastMoney      SourceType = "东方财富"
+	SourceSecuritiesTime SourceType = "证券时报"
+	Source21Business     SourceType = "21世纪经济报道"
+	SourceYicai          SourceType = "第一财经"
+	SourceSinaFinance    SourceType = "新浪财经"
+	SourceTencentFinance SourceType = "腾讯财经"
+	SourceUnknown        SourceType = "未知"
 )
 
 // NewsType 定义新闻类型
