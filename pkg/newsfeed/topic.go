@@ -75,8 +75,6 @@ type HotTopicsRequest struct {
 	Mode ConsistencyMode
 	// ForceRefresh 跳过新鲜窗口强制重新同步。
 	ForceRefresh bool
-	// IncludeWeekend 为真时不再回溯交易日，严格按请求日期统计。
-	IncludeWeekend bool
 	// MinConfidence 覆盖默认的强关联阈值；<=0 时用 DefaultMinConfidence。
 	MinConfidence float64
 }
@@ -90,6 +88,7 @@ const topicMinConfidenceFloor = 0.5
 
 // HotStockTopics 查询指定日期的热门股票。非 cache_only 且新鲜窗口外时
 // 先做一次全局同步（与后台定时同步同一条路径），再从库内聚合。
+// 注意：topic 是从媒体新闻中聚合热点，与是否交易日无关。
 func (s *Service) HotStockTopics(ctx context.Context, req HotTopicsRequest) (*HotTopicResult, error) {
 	mode := req.Mode
 	if mode == "" {
@@ -99,16 +98,6 @@ func (s *Service) HotStockTopics(ctx context.Context, req HotTopicsRequest) (*Ho
 	target, err := parseTopicDate(req.Date, s.now)
 	if err != nil {
 		return nil, err
-	}
-
-	// 交易日回溯：周末与节假日没有盘面，空榜只会让人误以为功能坏了。
-	tradingDate := target
-	fallback := false
-	if !req.IncludeWeekend {
-		if td := s.latestTradingDay(target); !td.Equal(target) {
-			tradingDate = td
-			fallback = true
-		}
 	}
 
 	var (
@@ -128,15 +117,15 @@ func (s *Service) HotStockTopics(ctx context.Context, req HotTopicsRequest) (*Ho
 		}
 	}
 
-	items, asOf, err := s.aggregateTopics(ctx, tradingDate, req.Top, req.MinConfidence)
+	items, asOf, err := s.aggregateTopics(ctx, target, req.Top, req.MinConfidence)
 	if err != nil {
 		return nil, err
 	}
 
 	out := &HotTopicResult{
 		Date:        target.Format("2006-01-02"),
-		TradingDate: tradingDate.Format("2006-01-02"),
-		Fallback:    fallback,
+		TradingDate: target.Format("2006-01-02"),
+		Fallback:    false,
 		Status:      "ok",
 		Items:       items,
 		AsOf:        asOf,
@@ -407,34 +396,6 @@ func (s *Service) topicNameOf(code string) (string, bool) {
 		return "", true
 	}
 	return s.directory.NameOf(context.Background(), code)
-}
-
-// latestTradingDay 返回 target 或其之前最近的一个交易日。
-//
-// 交易日历来自 TDX 维护的 workday 表（date 列为 20060102 格式）。
-// 库内日历未物化或不含 target 时，退化为按周判断：周末回退到周五，
-// 与 stockdata.SQLiteTradingCalendar 的降级策略一致。
-func (s *Service) latestTradingDay(target time.Time) time.Time {
-	var last string
-	err := s.store.db.QueryRow(`
-		SELECT date FROM workday
-		WHERE unix <= ?
-		ORDER BY unix DESC
-		LIMIT 1
-	`, target.Unix()).Scan(&last)
-	if err == nil {
-		if day, perr := time.ParseInLocation("20060102", strings.TrimSpace(last), target.Location()); perr == nil {
-			return day
-		}
-	}
-	// 日历不可用：只修正周末，无法识别节假日。
-	switch target.Weekday() {
-	case time.Saturday:
-		return target.AddDate(0, 0, -1)
-	case time.Sunday:
-		return target.AddDate(0, 0, -2)
-	}
-	return target
 }
 
 // parseTopicDate 解析用户输入的日期。空串表示今天。

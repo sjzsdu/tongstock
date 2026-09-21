@@ -303,9 +303,17 @@ func runBlockShow(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("获取板块信息失败: %w", err)
 	}
 
-	// 如果指定了 --code 参数，查询股票所属板块
+	// 如果指定了 --code 参数，遍历所有板块文件查找归属
 	if blockShowCode != "" {
-		return showBlocksByCode(svc, items, blockShowCode)
+		var allItems []*protocol.BlockItem
+		for _, f := range availableBlockFiles {
+			fItems, err := svc.FetchBlock(f.File)
+			if err != nil {
+				continue // 跳过加载失败的文件
+			}
+			allItems = append(allItems, fItems...)
+		}
+		return showBlocksByCode(svc, allItems, blockShowCode)
 	}
 
 	// 没有参数时，列出所有有效板块供选择

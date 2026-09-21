@@ -82,6 +82,7 @@ jobs:
 
       - name: Prepare embedded web assets
         working-directory: tongstock
+        shell: bash
         run: |
           rm -rf pkg/web/dist
           cp -r web/dist pkg/web/dist

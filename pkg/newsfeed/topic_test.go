@@ -2,7 +2,6 @@ package newsfeed
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 )
@@ -134,65 +133,25 @@ func TestHotTopicsRespectsDateWindow(t *testing.T) {
 	}
 }
 
-// 非交易日应回溯到最近交易日，并显式标记 fallback。
-func TestHotTopicsFallsBackToTradingDay(t *testing.T) {
+// topic 是从媒体新闻中聚合热点，与是否交易日无关。
+func TestHotTopicsMediaNewsAggregation(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 
-	// 周六 2026-09-19；周五 2026-09-18 有一条新闻。
-	friday := time.Date(2026, 9, 18, 10, 0, 0, 0, time.Local)
-	seedTopicNews(t, ctx, store, "fri", "周五盘面", "600519", MatchNative, 1.0, friday, 50)
+	// 周六 2026-09-19 有新闻，应该直接返回周六的数据。
+	weekend := time.Date(2026, 9, 19, 10, 0, 0, 0, time.Local)
+	seedTopicNews(t, ctx, store, "sat", "周末消息", "600519", MatchNative, 1.0, weekend, 50)
 
 	svc, _ := NewService(store, []Feed{}, testNames)
 	got, err := svc.HotStockTopics(ctx, HotTopicsRequest{Date: "2026-09-19", Mode: NewsCacheOnly})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.Fallback || got.TradingDate != "2026-09-18" {
-		t.Fatalf("应回溯到周五: %+v", got)
+	if got.Fallback {
+		t.Fatalf("topic 不应回溯交易日: %+v", got)
 	}
 	if len(got.Items) != 1 {
-		t.Fatalf("应返回周五的榜单: %+v", got.Items)
-	}
-	if !strings.Contains(got.Message, "2026-09-18") {
-		t.Fatalf("附言应说明回溯: %s", got.Message)
-	}
-
-	// IncludeWeekend 关闭回溯，严格按周六统计。
-	strict, err := svc.HotStockTopics(ctx, HotTopicsRequest{Date: "2026-09-19", Mode: NewsCacheOnly, IncludeWeekend: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strict.Fallback || len(strict.Items) != 0 || strict.Status != "insufficient_data" {
-		t.Fatalf("严格模式应返回空榜: %+v", strict)
-	}
-}
-
-// workday 表存在时优先使用真实交易日历。
-func TestHotTopicsUsesWorkdayCalendar(t *testing.T) {
-	ctx := context.Background()
-	store := newTestStore(t)
-
-	// 国庆假期：09-30 是交易日，10-01 ~ 10-07 休市（workday 表只有真实交易日）。
-	for _, d := range []int{28, 29, 30} {
-		day := time.Date(2026, 9, d, 0, 0, 0, 0, time.Local)
-		if _, err := store.db.Exec(`INSERT INTO workday (unix, date) VALUES (?, ?)`, day.Unix(), day.Format("20060102")); err != nil {
-			t.Fatal(err)
-		}
-	}
-	prev := time.Date(2026, 9, 30, 10, 0, 0, 0, time.Local)
-	seedTopicNews(t, ctx, store, "q", "节前最后交易日", "600519", MatchNative, 1.0, prev, 50)
-
-	svc, _ := NewService(store, []Feed{}, testNames)
-	got, err := svc.HotStockTopics(ctx, HotTopicsRequest{Date: "2026-10-03", Mode: NewsCacheOnly})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.TradingDate != "2026-09-30" || !got.Fallback {
-		t.Fatalf("应按 workday 表回溯到 09-30: %+v", got)
-	}
-	if len(got.Items) != 1 {
-		t.Fatalf("应返回节前榜单: %+v", got.Items)
+		t.Fatalf("应返回周六的榜单: %+v", got.Items)
 	}
 }
 

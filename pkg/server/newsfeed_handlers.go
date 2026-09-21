@@ -382,12 +382,11 @@ func (h *NewsfeedHandler) handleHotTopics(c *gin.Context) {
 	}
 
 	req := newsfeed.HotTopicsRequest{
-		Date:           strings.TrimSpace(c.Query("date")),
-		Top:            queryInt(c, "top", newsfeed.DefaultTopicTop),
-		Mode:           mode,
-		ForceRefresh:   c.Query("refresh") == "true",
-		IncludeWeekend: c.Query("include_weekend") == "true",
-		MinConfidence:  queryFloat(c, "min_confidence", 0),
+		Date:          strings.TrimSpace(c.Query("date")),
+		Top:           queryInt(c, "top", newsfeed.DefaultTopicTop),
+		Mode:          mode,
+		ForceRefresh:  c.Query("refresh") == "true",
+		MinConfidence: queryFloat(c, "min_confidence", 0),
 	}
 
 	result, err := h.stockNewsSvc.HotStockTopics(c.Request.Context(), req)

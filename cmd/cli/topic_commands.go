@@ -16,7 +16,6 @@ var (
 	topicTop    int
 	topicJSON   bool
 	topicWide   bool
-	topicStrict bool
 	topicMinCfg float64
 )
 
@@ -27,9 +26,10 @@ var topicCmd = &cobra.Command{
 	Long: `从各大新闻站点抓取指定日期的全局资讯，聚合出当日被新闻提及最多的热门股票。
 
 日期参数可省略（默认今天），支持 2006-01-02 与 20060102 两种写法。
-日期为非交易日时自动回溯到最近的一个交易日（--strict 可关闭）。
+topic 是从媒体新闻中聚合热点，与是否交易日无关。
 
-数据来自东方财富与财联社，关联通过实体识别与数据源原生标注完成；
+数据来自东方财富、财联社、证券时报、21世纪经济报道、第一财经、新浪财经、腾讯财经，
+关联通过实体识别与数据源原生标注完成；
 只统计标题命中或数据源原生关联的强相关内容，正文偶然提及不会计入榜单。
 
 一致性遵循与其他命令相同的语义：
@@ -44,7 +44,6 @@ func init() {
 	topicCmd.Flags().IntVarP(&topicTop, "top", "n", 10, "返回榜单条数")
 	topicCmd.Flags().BoolVar(&topicJSON, "json", false, "以 JSON 输出")
 	topicCmd.Flags().BoolVar(&topicWide, "wide", false, "输出完整明细（关联新闻标题与来源）")
-	topicCmd.Flags().BoolVar(&topicStrict, "strict", false, "不回溯交易日，严格按指定日期统计")
 	topicCmd.Flags().Float64Var(&topicMinCfg, "min-confidence", 0, "关联置信度下限 [0,1]，0 表示用默认值 0.5")
 }
 
@@ -67,12 +66,11 @@ func runTopic(cmd *cobra.Command, args []string) error {
 	defer cancel()
 
 	result, err := svc.HotStockTopics(ctx, newsfeed.HotTopicsRequest{
-		Date:           date,
-		Top:            topicTop,
-		Mode:           cliNewsMode(),
-		ForceRefresh:   forceRefresh,
-		IncludeWeekend: topicStrict,
-		MinConfidence:  topicMinCfg,
+		Date:          date,
+		Top:           topicTop,
+		Mode:          cliNewsMode(),
+		ForceRefresh:  forceRefresh,
+		MinConfidence: topicMinCfg,
 	})
 	if err != nil {
 		return err
