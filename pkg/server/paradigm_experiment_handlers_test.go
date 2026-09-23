@@ -15,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sjzsdu/tongstock/internal/adapter/paradigmrepo"
+	"github.com/sjzsdu/tongstock/internal/agentservice"
 	"github.com/sjzsdu/tongstock/internal/experiment"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
 	"github.com/sjzsdu/tongstock/pkg/storage"
@@ -191,7 +192,7 @@ func TestParadigmMinerDirectPromptIsBlocked(t *testing.T) {
 	_, _, api := newParadigmExperimentTestServer(t, 140)
 	api.agentState = &AgentState{
 		embedded: []EmbeddedAgent{{ID: "stock-paradigm-miner"}},
-		defaults: AgentDefaults{Agent: "stock-paradigm-miner"},
+		defaults: AgentDefaults{Agents: map[string]string{agentservice.ScenarioChat: "stock-paradigm-miner"}},
 	}
 	router := gin.New()
 	api.SetupAgentRoutes(&router.RouterGroup)

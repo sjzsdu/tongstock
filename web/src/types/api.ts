@@ -421,11 +421,11 @@ export interface AgentState {
   started_at: string;
   workspace: string;
   defaults: {
-    agent: string;
     model: string;
     session: string;
     debug: boolean;
-    stock_agent?: string;
+    /** scenario -> agent id (e.g. chat, stock), from agent.defaults in config.yaml */
+    agents?: Record<string, string>;
   };
   agents: AgentInfo[];
 }

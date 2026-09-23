@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -25,6 +27,19 @@ func TestAgentConfigEffectiveBackend(t *testing.T) {
 				t.Fatalf("EffectiveBackend() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestExpandHome(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		t.Skip("no user home directory")
+	}
+	if got := ExpandHome("~/agents"); got != filepath.Join(home, "agents") {
+		t.Fatalf("ExpandHome(~/agents) = %q, want %q", got, filepath.Join(home, "agents"))
+	}
+	if got := ExpandHome(" /tmp/x "); got != "/tmp/x" {
+		t.Fatalf("ExpandHome passthrough = %q, want trimmed input", got)
 	}
 }
 

@@ -15,17 +15,19 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sjzsdu/tongstock/internal/agentservice"
 	pcwrap "github.com/sjzsdu/tongstock/internal/picoclaw"
 )
 
 // EmbeddedAgent is a type alias to avoid import cycles
 type EmbeddedAgent = pcwrap.EmbeddedAgent
 
-// AgentState holds the picoclaw runtime state for the server
+// AgentState is the server-side view of the unified agent service. The
+// service owns runtime, definitions, and runner lifecycle; AgentState only
+// keeps the transport-local extras (chat persistence) plus cached snapshots
+// of the immutable service metadata for handlers and tests.
 type AgentState struct {
-	mu        sync.Mutex
-	rt        *pcwrap.Runtime
-	runner    *pcwrap.DirectRunner
+	svc       *agentservice.Service
 	embedded  []pcwrap.EmbeddedAgent
 	workspace string
 	started   time.Time
@@ -33,13 +35,8 @@ type AgentState struct {
 	chatStore *ChatStore
 }
 
-type AgentDefaults struct {
-	Agent      string `json:"agent"`
-	Model      string `json:"model"`
-	Session    string `json:"session"`
-	Debug      bool   `json:"debug"`
-	StockAgent string `json:"stock_agent,omitempty"`
-}
+// AgentDefaults is the default-agent selection exposed by the shared service.
+type AgentDefaults = agentservice.Defaults
 
 type agentStateResponse struct {
 	StartedAt string        `json:"started_at"`
@@ -108,31 +105,26 @@ type agentSessionsResponse struct {
 
 const maxTranscriptBytes = 256 * 1024
 
-type AgentRuntimeOptions struct {
-	Backend    string
-	Home       string
-	ConfigPath string
-	Provider   string
-	APIBase    string
-	APIKeyEnv  string
-	Model      string
-	Agent      string
-	Session    string
-	StockAgent string
-	Workspace  string
-}
+// AgentRuntimeOptions is the resolved runtime configuration shared with the
+// agent service.
+type AgentRuntimeOptions = agentservice.Config
 
 // InitAgentState initializes the legacy PicoClaw-file runtime and runner.
 // Deprecated: use InitAgentStateWithOptions for native TongStock settings.
 func (s *Server) InitAgentState(home, configPath, model, agentID, stockAgent, workspace string) error {
 	return s.InitAgentStateWithOptions(AgentRuntimeOptions{
 		Backend: "picoclaw", Home: home, ConfigPath: configPath, Model: model,
-		Agent: agentID, StockAgent: stockAgent, Workspace: workspace,
+		DefaultAgents: map[string]string{
+			agentservice.ScenarioChat:  agentID,
+			agentservice.ScenarioStock: stockAgent,
+		},
+		Workspace: workspace,
 	})
 }
 
-// InitAgentStateWithOptions initializes the selected runtime backend. Agent
-// definitions are owned by TongStock and supplied through SetAgentLister.
+// InitAgentStateWithOptions builds the shared agent service from a resolved
+// runtime config. Agent definitions default to TongStock's own loader and can
+// be replaced through SetAgentLister (tests).
 func (s *Server) InitAgentStateWithOptions(opt AgentRuntimeOptions) (err error) {
 	s.agentInitError = ""
 	defer func() {
@@ -140,54 +132,18 @@ func (s *Server) InitAgentStateWithOptions(opt AgentRuntimeOptions) (err error) 
 			s.agentInitError = err.Error()
 		}
 	}()
-	if opt.Workspace == "" {
-		workspace, _ := os.Getwd()
-		opt.Workspace = workspace
-	}
-	if strings.TrimSpace(opt.Session) == "" {
-		opt.Session = "tongstock:default"
-	}
 
-	rt, err := pcwrap.Load(pcwrap.Options{
-		Backend: opt.Backend, Home: opt.Home, Config: opt.ConfigPath,
-		Provider: opt.Provider, APIBase: opt.APIBase, APIKeyEnv: opt.APIKeyEnv,
-		Model: opt.Model,
-	})
+	svc, err := agentservice.New(opt, agentservice.Options{Lister: s.agentListFunc})
 	if err != nil {
-		return fmt.Errorf("load agent runtime failed: %w", err)
-	}
-
-	var embeddedAgents []EmbeddedAgent
-	if s.agentListFunc != nil {
-		embeddedAgents, err = s.agentListFunc()
-		if err != nil {
-			return fmt.Errorf("load embedded agents failed: %w", err)
-		}
-	}
-
-	runner, err := rt.NewDirectRunner(pcwrap.RunOptions{
-		Agent:          opt.Agent,
-		Model:          opt.Model,
-		Workspace:      opt.Workspace,
-		Quiet:          true,
-		EmbeddedAgents: embeddedAgents,
-	})
-	if err != nil {
-		return fmt.Errorf("create direct runner failed: %w", err)
+		return err
 	}
 
 	s.agentState = &AgentState{
-		rt:        rt,
-		runner:    runner,
-		embedded:  embeddedAgents,
-		workspace: opt.Workspace,
-		started:   time.Now(),
-		defaults: AgentDefaults{
-			Agent:      opt.Agent,
-			Model:      opt.Model,
-			Session:    opt.Session,
-			StockAgent: opt.StockAgent,
-		},
+		svc:       svc,
+		embedded:  svc.Definitions(),
+		workspace: svc.Workspace(),
+		started:   svc.StartedAt(),
+		defaults:  svc.Defaults(),
 	}
 	return nil
 }
@@ -221,9 +177,9 @@ type agentDiagnosticResponse struct {
 func (s *Server) handleAgentDiagnose(c *gin.Context) {
 	resp := agentDiagnosticResponse{
 		Enabled: s.agentState != nil || s.agentInitError != "",
-		Ready:   s.agentState != nil && s.agentState.runner != nil,
+		Ready:   s.agentState != nil && s.agentState.svc.Ready(),
 	}
-	if s.agentState == nil || s.agentState.runner == nil {
+	if s.agentState == nil || !s.agentState.svc.Ready() {
 		if s.agentInitError != "" {
 			resp.Errors = append(resp.Errors, s.agentInitError)
 			if strings.Contains(s.agentInitError, "agent.model") {
@@ -246,6 +202,11 @@ func (s *Server) handleAgentDiagnose(c *gin.Context) {
 		resp.Hints = append(resp.Hints, "未显式配置模型，将使用所选运行时的默认模型")
 	} else {
 		resp.Checks = append(resp.Checks, "model: "+s.agentState.defaults.Model)
+	}
+	for _, scenario := range []string{agentservice.ScenarioChat, agentservice.ScenarioStock} {
+		if id := s.agentState.defaults.Agent(scenario); id != "" {
+			resp.Checks = append(resp.Checks, "default "+scenario+" agent: "+id)
+		}
 	}
 	if len(s.agentState.embedded) == 0 {
 		resp.Errors = append(resp.Errors, "no embedded stock agents loaded")
@@ -328,9 +289,6 @@ func (s *Server) handleAgentState(c *gin.Context) {
 		return
 	}
 
-	s.agentState.mu.Lock()
-	defer s.agentState.mu.Unlock()
-
 	agentsOut := make([]agentInfo, 0, len(s.agentState.embedded))
 	for _, agent := range s.agentState.embedded {
 		agentsOut = append(agentsOut, agentInfo{
@@ -370,7 +328,7 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		return
 	}
 	if req.Agent == "" {
-		req.Agent = s.agentState.defaults.Agent
+		req.Agent = s.agentState.defaults.Agent(agentservice.ScenarioChat)
 	}
 	canonicalAgent, ok := s.resolveAgentID(req.Agent)
 	if !ok {
@@ -398,32 +356,15 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 120*time.Second)
 	defer cancel()
 
-	// Create runner under brief lock, execute outside lock
-	s.agentState.mu.Lock()
-	runner, err := s.agentState.rt.NewDirectRunner(pcwrap.RunOptions{
-		Agent:          req.Agent,
-		Model:          req.Model,
-		Workspace:      s.agentState.workspace,
-		Quiet:          true,
-		EmbeddedAgents: s.agentState.embedded,
-	})
-	s.agentState.mu.Unlock()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, agentChatResponse{Error: err.Error()})
-		return
-	}
-	defer runner.Close()
-
 	// Enrich message with stock data if a stock code is detected
 	enrichedMsg := s.enrichMessageWithData(req.Message)
 
-	response, err := runner.ProcessDirectContext(ctx, pcwrap.RunOptions{
-		Message:   enrichedMsg,
-		Agent:     req.Agent,
-		Session:   req.Session,
-		Workspace: s.agentState.workspace,
+	response, err := s.agentState.svc.Run(ctx, agentservice.Request{
+		Prompt:  enrichedMsg,
+		Agent:   req.Agent,
+		Session: req.Session,
+		Model:   req.Model,
 	})
-
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, agentChatResponse{Error: err.Error()})
 		return
@@ -455,7 +396,7 @@ func (s *Server) handleAgentChatStream(c *gin.Context) {
 		return
 	}
 	if req.Agent == "" {
-		req.Agent = s.agentState.defaults.Agent
+		req.Agent = s.agentState.defaults.Agent(agentservice.ScenarioChat)
 	}
 	canonicalAgent, ok := s.resolveAgentID(req.Agent)
 	if !ok {
@@ -484,14 +425,15 @@ func (s *Server) handleAgentChatStream(c *gin.Context) {
 	defer cancel()
 
 	var streamed strings.Builder
-	// Create runner under brief lock, execute outside lock
-	s.agentState.mu.Lock()
-	streamRunner, err := s.agentState.rt.NewDirectRunner(pcwrap.RunOptions{
-		Agent:          req.Agent,
-		Model:          req.Model,
-		Workspace:      s.agentState.workspace,
-		Quiet:          true,
-		EmbeddedAgents: s.agentState.embedded,
+
+	// Enrich message with stock data if a stock code is detected
+	enrichedMsg := s.enrichMessageWithData(req.Message)
+
+	response, err := s.agentState.svc.Run(ctx, agentservice.Request{
+		Prompt:  enrichedMsg,
+		Agent:   req.Agent,
+		Session: req.Session,
+		Model:   req.Model,
 		OnDelta: func(delta string) {
 			if ctx.Err() != nil {
 				return // context cancelled, don't write to closed connection
@@ -503,24 +445,12 @@ func (s *Server) handleAgentChatStream(c *gin.Context) {
 			writeSSE(c.Writer, flusher, agentStreamEvent{Type: "delta", Delta: delta})
 		},
 	})
-	s.agentState.mu.Unlock()
 	if err != nil {
-		writeSSEError(c, flusher, "agent_runner_failed", "Agent 运行器初始化失败")
-		flusher.Flush()
-		return
-	}
-	defer streamRunner.Close()
-
-	// Enrich message with stock data if a stock code is detected
-	enrichedMsg := s.enrichMessageWithData(req.Message)
-
-	response, err := streamRunner.ProcessDirectContext(ctx, pcwrap.RunOptions{
-		Message:   enrichedMsg,
-		Agent:     req.Agent,
-		Session:   req.Session,
-		Workspace: s.agentState.workspace,
-	})
-	if err != nil {
+		if errors.Is(err, agentservice.ErrRunner) {
+			writeSSEError(c, flusher, "agent_runner_failed", "Agent 运行器初始化失败")
+			flusher.Flush()
+			return
+		}
 		code, message := "agent_failed", "Agent 处理失败"
 		if errors.Is(err, context.DeadlineExceeded) {
 			code, message = "upstream_timeout", "Agent 处理超时"
@@ -567,7 +497,7 @@ func (s *Server) handleAgentTranscript(c *gin.Context) {
 		session = s.agentState.defaults.Session
 	}
 	if agent == "" {
-		agent = s.agentState.defaults.Agent
+		agent = s.agentState.defaults.Agent(agentservice.ScenarioChat)
 	}
 
 	if s.agentState.chatStore != nil {
@@ -676,7 +606,7 @@ func (s *Server) resolveAgentID(agentID string) (string, bool) {
 		return strings.TrimSpace(agent.ID), true
 	}
 	want := strings.TrimSpace(agentID)
-	defaultAgent := strings.TrimSpace(s.agentState.defaults.Agent)
+	defaultAgent := strings.TrimSpace(s.agentState.defaults.Agent(agentservice.ScenarioChat))
 	if want != "" && defaultAgent != "" && strings.EqualFold(want, defaultAgent) {
 		return defaultAgent, true
 	}
@@ -1071,26 +1001,12 @@ func (s *Server) handleAgentDebate(c *gin.Context) {
 		go func(idx int, aid string) {
 			defer wg.Done()
 			agentMsg := fmt.Sprintf("请对 %s 进行分析。讨论主题：%s", stockCtx, topic)
-			// Create a per-goroutine runner to avoid serializing on the shared mutex
-			s.agentState.mu.Lock()
-			runner, err := s.agentState.rt.NewDirectRunner(pcwrap.RunOptions{
-				Agent:          aid,
-				Model:          s.agentState.defaults.Model,
-				Workspace:      s.agentState.workspace,
-				Quiet:          true,
-				EmbeddedAgents: s.agentState.embedded,
-			})
-			s.agentState.mu.Unlock()
-			if err != nil {
-				participants[idx] = agentDebateParticipant{Agent: aid, AgentName: aid, Error: err.Error()}
-				return
-			}
-			defer runner.Close()
-			resp, err := runner.ProcessDirectContext(ctx, pcwrap.RunOptions{
-				Message:   agentMsg,
-				Agent:     aid,
-				Session:   session,
-				Workspace: s.agentState.workspace,
+			// The shared service creates a runner per call, so concurrent
+			// participants never serialize on a shared mutex.
+			resp, err := s.agentState.svc.Run(ctx, agentservice.Request{
+				Prompt:  agentMsg,
+				Agent:   aid,
+				Session: session,
 			})
 			participants[idx] = agentDebateParticipant{Agent: aid, AgentName: aid}
 			if err != nil {
@@ -1110,26 +1026,12 @@ func (s *Server) handleAgentDebate(c *gin.Context) {
 			hostMsg += fmt.Sprintf("【%s】的分析：\n%s\n\n", p.AgentName, p.Response)
 		}
 	}
-	s.agentState.mu.Lock()
-	hostRunner, hostErr := s.agentState.rt.NewDirectRunner(pcwrap.RunOptions{
-		Agent:          "stock-discussion-host",
-		Model:          s.agentState.defaults.Model,
-		Workspace:      s.agentState.workspace,
-		Quiet:          true,
-		EmbeddedAgents: s.agentState.embedded,
-	})
-	s.agentState.mu.Unlock()
-	if hostErr == nil {
-		defer hostRunner.Close()
-		summaryResp, err := hostRunner.ProcessDirectContext(ctx, pcwrap.RunOptions{
-			Message:   hostMsg,
-			Agent:     "stock-discussion-host",
-			Session:   session,
-			Workspace: s.agentState.workspace,
-		})
-		if err == nil {
-			summary = summaryResp
-		}
+	if summaryResp, err := s.agentState.svc.Run(ctx, agentservice.Request{
+		Prompt:  hostMsg,
+		Agent:   "stock-discussion-host",
+		Session: session,
+	}); err == nil {
+		summary = summaryResp
 	}
 
 	c.JSON(http.StatusOK, agentDebateResponse{

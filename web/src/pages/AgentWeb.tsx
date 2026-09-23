@@ -78,7 +78,7 @@ export default function AgentWeb() {
         const st = await api.agentState();
         setAgents(st.agents || []);
         setModel(st.defaults?.model || '');
-        setSelectedAgent(st.defaults?.agent || '');
+        setSelectedAgent(st.defaults?.agents?.chat || '');
         setSession(st.defaults?.session || 'web:default');
       } catch {
         // 已通过 markUnavailable 处理

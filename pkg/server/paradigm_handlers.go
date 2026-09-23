@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sjzsdu/tongstock/internal/agentservice"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
-	pcwrap "github.com/sjzsdu/tongstock/internal/picoclaw"
 	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
 )
 
@@ -287,27 +287,10 @@ func (s *Server) handleParadigmAnalyze(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 180*time.Second)
 	defer cancel()
 
-	// Create runner for paradigm-miner agent
-	s.agentState.mu.Lock()
-	runner, err := s.agentState.rt.NewDirectRunner(pcwrap.RunOptions{
-		Agent:          "stock-paradigm-miner",
-		Model:          s.agentState.defaults.Model,
-		Workspace:      s.agentState.workspace,
-		Quiet:          true,
-		EmbeddedAgents: s.agentState.embedded,
-	})
-	s.agentState.mu.Unlock()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, paradigmAnalyzeResponse{Error: err.Error()})
-		return
-	}
-	defer runner.Close()
-
-	agentResp, err := runner.ProcessDirectContext(ctx, pcwrap.RunOptions{
-		Message:   prompt,
-		Agent:     "stock-paradigm-miner",
-		Session:   fmt.Sprintf("paradigm:%s:%d", req.StockCode, time.Now().UnixNano()),
-		Workspace: s.agentState.workspace,
+	agentResp, err := s.agentState.svc.Run(ctx, agentservice.Request{
+		Prompt:  prompt,
+		Agent:   "stock-paradigm-miner",
+		Session: fmt.Sprintf("paradigm:%s:%d", req.StockCode, time.Now().UnixNano()),
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, paradigmAnalyzeResponse{Error: err.Error()})

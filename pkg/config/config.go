@@ -60,15 +60,33 @@ type AgentConfig struct {
 	// with defaults when a configuration file supplies one or more paths.
 	AgentPaths []string `yaml:"agent_paths"`
 	Model      string   `yaml:"model"`
-	Agent      string   `yaml:"agent"`
 	Session    string   `yaml:"session"`
-	StockAgent string   `yaml:"stock_agent"` // default agent for stock analysis panel
+	// Defaults maps a usage scenario to the default agent ID. It is the
+	// single place where "which agent serves which scene" is declared;
+	// both the HTTP handlers and the web UI read it through
+	// /api/agent/state.
+	Defaults AgentScenarioDefaults `yaml:"defaults"`
+
+	// Agent and StockAgent are the legacy flat fields. They still load and
+	// feed the corresponding scenario when that scenario is not set under
+	// defaults, so existing config.yaml files keep working. Prefer defaults.
+	Agent      string `yaml:"agent"`
+	StockAgent string `yaml:"stock_agent"`
 
 	// Home and Config are retained for existing PicoClaw-based installations.
 	// New installations should use the builtin backend and configure the model
 	// directly in TongStock.
 	Home   string `yaml:"home"`
 	Config string `yaml:"config"`
+}
+
+// AgentScenarioDefaults declares the default agent per usage scenario.
+type AgentScenarioDefaults struct {
+	// Chat is the general conversation default: the /agent page, API
+	// requests without an explicit agent, and transcript lookup.
+	Chat string `yaml:"chat"`
+	// Stock is the stock-detail analysis panel default.
+	Stock string `yaml:"stock"`
 }
 
 const (
@@ -87,6 +105,19 @@ func (c AgentConfig) EffectiveBackend() string {
 		return AgentBackendPicoClaw
 	}
 	return AgentBackendBuiltin
+}
+
+// ExpandHome resolves a leading "~/" against the current user's home
+// directory. Server and CLI both run agent paths through it so a single
+// config.yaml value behaves identically in every entrypoint.
+func ExpandHome(value string) string {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(value, "~/") {
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			return filepath.Join(home, strings.TrimPrefix(value, "~/"))
+		}
+	}
+	return value
 }
 
 // DefaultConfig 返回一个包含默认值的 Config 实例
@@ -135,7 +166,7 @@ database:
   # 连接字符串
   # dsn: ~/.tongstock/cache/tongstock.db
 
-# AI Agent 配置（可选，默认使用 TongStock 内建配置）
+# AI Agent 配置（可选；Server 与 CLI 共用同一段配置，默认使用内建 backend）
 # agent:
 #   enabled: true
 #   backend: builtin
@@ -144,9 +175,11 @@ database:
 #   api_key_env: DEEPSEEK_API_KEY
 #   # api_base: https://api.deepseek.com/v1
 #   # agent_paths: [~/.tongstock/agents]
-#   agent: stock-analyst
 #   session: ""
-#   stock_agent: "stock-analyst"  # 个股分析面板默认 agent
+#   # 按场景声明默认角色（HTTP handler 和 Web UI 都从这里取）
+#   defaults:
+#     chat: stock-analyst    # 通用对话：/agent 页、不带 agent 的 API 请求
+#     stock: stock-analyst   # 个股详情分析面板
 #
 # 兼容旧 PicoClaw 配置：保留 home/config 即可自动使用 picoclaw backend
 #   # backend: picoclaw
@@ -242,6 +275,12 @@ func Load() (*Config, error) {
 	}
 	if tmp.Agent.Session != "" {
 		merged.Agent.Session = tmp.Agent.Session
+	}
+	if tmp.Agent.Defaults.Chat != "" {
+		merged.Agent.Defaults.Chat = tmp.Agent.Defaults.Chat
+	}
+	if tmp.Agent.Defaults.Stock != "" {
+		merged.Agent.Defaults.Stock = tmp.Agent.Defaults.Stock
 	}
 	if tmp.Agent.StockAgent != "" {
 		merged.Agent.StockAgent = tmp.Agent.StockAgent

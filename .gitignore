@@ -31,3 +31,4 @@ sessions
 # Local AI runtime state
 .atl/
 .freebuff
+cli

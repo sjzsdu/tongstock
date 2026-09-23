@@ -50,8 +50,8 @@ export default function AgentChatPanel({ stockCode, stockName, open, onClose }: 
     if (open) {
       api.agentState().then(state => {
         setAgents(state.agents || []);
-        // Prefer stock_agent for stock detail panel, fallback to default agent
-        const defaultAgent = state.defaults?.stock_agent || state.defaults?.agent || '';
+        // Scenario defaults: stock panel prefers its own scene, then the chat default
+        const defaultAgent = state.defaults?.agents?.stock || state.defaults?.agents?.chat || '';
         setSelectedAgent(defaultAgent);
         if (!state.agents?.length) {
           setMessages([{ role: 'system', content: 'Agent 未配置。请在 ~/.tongstock/config.yaml 中设置 agent.enabled: true，并配置 provider、model 和 api_key_env。' }]);

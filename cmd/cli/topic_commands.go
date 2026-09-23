@@ -122,8 +122,8 @@ func printTopics(r *newsfeed.HotTopicResult) {
 		if name == "" {
 			name = "-"
 		}
-		fmt.Printf("%2d. %s %s  提及 %d 条（标题/原生 %d，原生 %d）热度 %d\n",
-			i+1, it.Code, name, it.Mentions, it.TitleHits, it.NativeHits, it.HotScore)
+		fmt.Printf("%2d. %s %s  提及 %d 次  热度 %d\n",
+			i+1, it.Code, name, it.Mentions, it.HotScore)
 		if topicWide {
 			for _, h := range it.Headlines {
 				fmt.Printf("      · [%s] [%s] %s\n", h.PublishTime.Format("01-02 15:04"), h.Source, h.Title)

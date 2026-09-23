@@ -6,9 +6,8 @@ import (
 
 	"github.com/sjzsdu/tongstock/internal/adapter/methodresearchai"
 	"github.com/sjzsdu/tongstock/internal/adapter/methodresearchrepo"
-	"github.com/sjzsdu/tongstock/internal/agents"
+	"github.com/sjzsdu/tongstock/internal/agentservice"
 	"github.com/sjzsdu/tongstock/internal/methodresearch"
-	"github.com/sjzsdu/tongstock/internal/picoclaw"
 	"github.com/sjzsdu/tongstock/pkg/config"
 	"github.com/sjzsdu/tongstock/pkg/storage"
 	"github.com/spf13/cobra"
@@ -33,24 +32,20 @@ var methodResearchCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if !cfg.Agent.Enabled {
-			return fmt.Errorf("AI agent 未启用：请在配置中设置 agent.enabled=true")
-		}
-		rt, err := picoclaw.Load(picoclaw.Options{Home: cfg.Agent.Home, Config: cfg.Agent.Config, Model: firstNonEmptyResearch(methodResearchModel, cfg.Agent.Model)})
-		if err != nil {
-			return fmt.Errorf("load AI runtime: %w", err)
-		}
-		agent, err := agents.Get("method-source-researcher")
+		// 统一的 agent 服务负责启用检查、运行时加载和 agent 定义（含
+		// agent_paths），与 Server 共用同一段配置。
+		svc, err := agentservice.Open(cfg.Agent, agentservice.Options{})
 		if err != nil {
 			return err
 		}
-		embedded := []picoclaw.EmbeddedAgent{agent}
-		runner, err := rt.NewDirectRunner(picoclaw.RunOptions{Agent: agent.ID, Model: firstNonEmptyResearch(methodResearchModel, cfg.Agent.Model), Session: firstNonEmptyResearch(cfg.Agent.Session, "method-source-research"), Quiet: true, EmbeddedAgents: embedded})
-		if err != nil {
-			return err
+		defer svc.Close()
+		agent, ok := svc.Resolve("method-source-researcher")
+		if !ok {
+			return fmt.Errorf("embedded agent %q not found", "method-source-researcher")
 		}
-		defer runner.Close()
-		provider, err := methodresearchai.New(runner.ProcessDirectContext, agent.ID, firstNonEmptyResearch(methodResearchModel, cfg.Agent.Model), firstNonEmptyResearch(cfg.Agent.Session, "method-source-research"), embedded)
+		model := firstNonEmptyResearch(methodResearchModel, cfg.Agent.Model)
+		session := firstNonEmptyResearch(cfg.Agent.Session, "method-source-research")
+		provider, err := methodresearchai.New(svc.Process, agent.ID, model, session, svc.Definitions())
 		if err != nil {
 			return err
 		}

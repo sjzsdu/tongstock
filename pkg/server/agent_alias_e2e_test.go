@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sjzsdu/tongstock/internal/agentservice"
 )
 
 func TestAgentHTTPAPIsResolveAliasesToCanonicalIDs(t *testing.T) {
@@ -26,12 +27,13 @@ func TestAgentHTTPAPIsResolveAliasesToCanonicalIDs(t *testing.T) {
 	s.SetAgentLister(func() ([]EmbeddedAgent, error) { return agents, nil })
 	if err := s.InitAgentStateWithOptions(AgentRuntimeOptions{
 		Backend: "builtin", Provider: "openai", APIBase: provider.URL,
-		APIKeyEnv: "TEST_AGENT_ALIAS_KEY", Model: "test-model", Agent: "Risk-Reviewer",
-		Workspace: t.TempDir(),
+		APIKeyEnv: "TEST_AGENT_ALIAS_KEY", Model: "test-model",
+		DefaultAgents: map[string]string{agentservice.ScenarioChat: "Risk-Reviewer"},
+		Workspace:     t.TempDir(),
 	}); err != nil {
 		t.Fatalf("InitAgentStateWithOptions: %v", err)
 	}
-	t.Cleanup(func() { s.agentState.runner.Close() })
+	t.Cleanup(func() { _ = s.Close() })
 	store, err := NewChatStore("")
 	if err != nil {
 		t.Fatal(err)

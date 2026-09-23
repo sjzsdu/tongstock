@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -25,7 +24,7 @@ import (
 	"github.com/sjzsdu/tongstock/internal/adapter/positiondecisionrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/selectionrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/stockpoolrepo"
-	"github.com/sjzsdu/tongstock/internal/agents"
+	"github.com/sjzsdu/tongstock/internal/agentservice"
 	"github.com/sjzsdu/tongstock/internal/app/discoveryapp"
 	"github.com/sjzsdu/tongstock/internal/app/stockdata"
 	"github.com/sjzsdu/tongstock/internal/automation"
@@ -314,22 +313,11 @@ func NewApp(cfg *config.Config, opts Options) (_ *App, err error) {
 }
 
 func (a *App) configureOptionalModules() {
-	agentPaths := make([]string, 0, len(a.cfg.Agent.AgentPaths))
-	for _, path := range a.cfg.Agent.AgentPaths {
-		agentPaths = append(agentPaths, expandHome(path))
-	}
-	a.api.SetAgentLister(func() ([]server.EmbeddedAgent, error) {
-		return configuredAgentLister(agentPaths)
-	})
 	if a.cfg.Agent.Enabled {
-		home := expandHome(a.cfg.Agent.Home)
-		configPath := expandHome(a.cfg.Agent.Config)
-		if err := a.api.InitAgentStateWithOptions(server.AgentRuntimeOptions{
-			Backend: a.cfg.Agent.EffectiveBackend(), Home: home, ConfigPath: configPath,
-			Provider: a.cfg.Agent.Provider, APIBase: a.cfg.Agent.APIBase, APIKeyEnv: a.cfg.Agent.APIKeyEnv,
-			Model: a.cfg.Agent.Model, Agent: a.cfg.Agent.Agent, Session: a.cfg.Agent.Session,
-			StockAgent: a.cfg.Agent.StockAgent,
-		}); err != nil {
+		// The shared agent service owns definition loading (embedded +
+		// agent_paths), runtime construction, and home expansion; the server
+		// only needs the resolved config.
+		if err := a.api.InitAgentStateWithOptions(agentservice.FromAgentConfig(a.cfg.Agent)); err != nil {
 			log.Printf("agent initialization degraded: %v", err)
 			a.setModule("agent", "degraded", err.Error())
 		} else {
@@ -363,26 +351,6 @@ func (a *App) configureOptionalModules() {
 		a.api.StartParadigmAlertScanner(a.runCtx, 5*time.Minute)
 		a.setModule("paradigm", "ready", "")
 	}
-}
-
-func embeddedAgentLister() ([]server.EmbeddedAgent, error) {
-	return configuredAgentLister(nil)
-}
-
-func configuredAgentLister(paths []string) ([]server.EmbeddedAgent, error) {
-	allAgents, err := agents.ListWithPaths(paths)
-	if err != nil {
-		return nil, err
-	}
-	result := make([]server.EmbeddedAgent, len(allAgents))
-	for i, agent := range allAgents {
-		result[i] = server.EmbeddedAgent{
-			ID: agent.ID, Name: agent.Name, Description: agent.Description,
-			Prompt: agent.Prompt, Soul: agent.Soul, Aliases: agent.Aliases, Skills: agent.Skills,
-			Tools: agent.Tools, NoHistory: agent.NoHistory,
-		}
-	}
-	return result, nil
 }
 
 func (a *App) buildRouter() *gin.Engine {
@@ -533,15 +501,6 @@ func (a *App) setModule(name, status, message string) {
 	a.moduleMu.Lock()
 	a.modules[name] = server.ModuleHealth{Status: status, Message: message}
 	a.moduleMu.Unlock()
-}
-
-func expandHome(value string) string {
-	if strings.HasPrefix(value, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			return filepath.Join(home, strings.TrimPrefix(value, "~/"))
-		}
-	}
-	return value
 }
 
 // Run loads configuration, constructs App, and handles OS cancellation.

@@ -200,12 +200,7 @@ func (s *Server) SetAgentLister(fn func() ([]EmbeddedAgent, error)) {
 // owned by App and are deliberately not closed here.
 func (s *Server) Close() error {
 	if s.agentState != nil {
-		s.agentState.mu.Lock()
-		defer s.agentState.mu.Unlock()
-		if s.agentState.runner != nil {
-			s.agentState.runner.Close()
-			s.agentState.runner = nil
-		}
+		s.agentState.svc.Close()
 	}
 	return nil
 }

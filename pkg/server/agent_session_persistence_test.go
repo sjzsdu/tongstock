@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sjzsdu/tongstock/internal/agentservice"
 )
 
 func TestAgentChatSessionSavedAndListedFromChatStore(t *testing.T) {
@@ -16,7 +17,7 @@ func TestAgentChatSessionSavedAndListedFromChatStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewChatStore: %v", err)
 	}
-	s := &Server{agentState: &AgentState{workspace: t.TempDir(), defaults: AgentDefaults{Agent: "stock", Session: "web:default"}, chatStore: store}}
+	s := &Server{agentState: &AgentState{workspace: t.TempDir(), defaults: AgentDefaults{Agents: map[string]string{agentservice.ScenarioChat: "stock"}, Session: "web:default"}, chatStore: store}}
 
 	s.saveAgentChatSession("web:stock:test", "stock", "分析 300418", "这是分析结果")
 
