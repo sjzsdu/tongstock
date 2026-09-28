@@ -741,6 +741,18 @@ export const api = {
   selectionToday: () => fetchJSON<SelectionRun>('/api/selections/today'),
   positionDecisionToday: () => fetchJSON<PositionDecisionRun>('/api/position-decisions/today'),
   methodCards: (status = '') => fetchJSON<{ items: MethodCard[]; total: number }>(`/api/methods${status ? `?status=${encodeURIComponent(status)}` : ''}`),
+
+  dashboardToday: () => fetchJSON<DashboardToday>('/api/dashboard/today'),
+  onboardingRun: (req: OnboardingRunRequest = {}) =>
+    fetchJSON<OnboardingResult>('/api/onboarding/run', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+  seedMethods: (req: MethodSeedRequest = {}) =>
+    fetchJSON<MethodSeedResult>('/api/methods/seed', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
 };
 
 export interface SelectionCandidate { rank:number;code:string;action:'buy'|'watch'|'avoid'|'insufficient_data';score:number;data_date:string;buy_window:string;position_cap_pct:number;exit:{max_holding_days?:number;stop_loss_pct?:number;take_profit_pct?:number;complete:boolean};risks?:string[];explanation:string;triggers:Array<{method_id:string;method_name:string;score:number}> }
@@ -798,4 +810,194 @@ export interface TradeInfo {
   ktype: string;
   reason: string;
   created_at: string;
+}
+
+// ===== 首屏「今日状态」读模型（GET /api/dashboard/today）=====
+
+/** 空榜单原因。前端据此决定展示哪种分诊文案。 */
+export type EmptyStateReason =
+  | 'data_not_synced'
+  | 'no_verified_methods'
+  | 'selection_not_run'
+  | 'no_candidates'
+  | 'has_candidates';
+
+/** 空状态下一步动作类型。 */
+export type ActionKind =
+  | 'sync'
+  | 'seed_methods'
+  | 'run_selection'
+  | 'view_exclusions'
+  | 'research';
+
+export interface DashboardAction {
+  kind: ActionKind;
+  label: string;
+  to?: string;
+  primary: boolean;
+}
+
+export interface DashboardEmptyState {
+  reason: EmptyStateReason;
+  title: string;
+  message: string;
+  actions: DashboardAction[];
+}
+
+export interface DashboardDataStatus {
+  latest_kline_date?: string;
+  latest_snapshot_date?: string;
+  latest_snapshot_id?: string;
+  snapshot_status?: string;
+  snapshot_frozen: boolean;
+  coverage_pct: number;
+  ready_codes: number;
+  expected_codes: number;
+  fresh: boolean;
+  detail: string;
+}
+
+export interface DashboardMethodStatus {
+  total: number;
+  verified: number;
+  observing: number;
+  candidate: number;
+  rejected: number;
+  degraded: number;
+  retired: number;
+  by_status: Record<string, number>;
+}
+
+export interface DashboardSelectionStatus {
+  run_id: string;
+  snapshot_id: string;
+  feature_snapshot_id: string;
+  snapshot_date: string;
+  status: string;
+  created_at: string;
+  scanned_stocks: number;
+  eligible_methods: number;
+  candidate_count: number;
+  buy_count: number;
+  action_counts: Record<string, number>;
+  exclusion_counts: Record<string, number>;
+  sample_exclusions: Array<{ method_id?: string; code?: string; reason_code: string; detail: string }>;
+  candidates: SelectionCandidate[];
+}
+
+export interface DashboardWorkLogLine {
+  key: string;
+  label: string;
+  value: number;
+  detail?: string;
+  tone: 'neutral' | 'positive' | 'warning';
+}
+
+export interface DashboardWorkLog {
+  available: boolean;
+  snapshot_date?: string;
+  lines: DashboardWorkLogLine[];
+}
+
+export interface DashboardPositionStatus {
+  holding_count: number;
+  urgent_actions: number;
+  latest_run_date?: string;
+  has_decision_run: boolean;
+}
+
+export interface DashboardSignal {
+  key: string;
+  label: string;
+  value: string;
+  status: 'ok' | 'attention' | 'blocked';
+  detail?: string;
+}
+
+export interface DashboardHealth {
+  overall: 'ok' | 'attention' | 'blocked';
+  signals: DashboardSignal[];
+}
+
+export interface DashboardToday {
+  as_of: string;
+  data: DashboardDataStatus;
+  methods: DashboardMethodStatus;
+  selection?: DashboardSelectionStatus;
+  positions: DashboardPositionStatus;
+  empty_state: DashboardEmptyState;
+  work_log: DashboardWorkLog;
+  health: DashboardHealth;
+}
+
+// ===== 一键走通（POST /api/onboarding/run）=====
+
+export interface OnboardingRunRequest {
+  date?: string;
+  universe?: string;
+  coverage_threshold?: number;
+  max_gapped_codes?: number;
+  sync?: boolean;
+  force?: boolean;
+}
+
+export interface OnboardingStep {
+  key: string;
+  label: string;
+  status: 'done' | 'skipped' | 'blocked' | 'failed';
+  detail?: string;
+}
+
+export interface OnboardingResult {
+  status: 'completed' | 'blocked' | 'failed';
+  trade_date?: string;
+  snapshot_id?: string;
+  feature_snapshot_id?: string;
+  selection_run_id?: string;
+  candidate_count: number;
+  buy_count: number;
+  scanned_stocks: number;
+  eligible_methods: number;
+  steps: OnboardingStep[];
+  blocked_reason?: string;
+  finished_at: string;
+}
+
+// ===== 内置示例方法（POST /api/methods/seed）=====
+
+export interface MethodSeedRequest {
+  snapshot_id?: string;
+  keys?: string[];
+  max_codes?: number;
+  date_start?: string;
+  date_end?: string;
+  universe?: string[];
+  split_type?: string;
+}
+
+export interface MethodSeedOutcome {
+  key: string;
+  name: string;
+  method_id?: string;
+  method_hash?: string;
+  status: string;
+  confidence?: string;
+  passable: boolean;
+  oos_trades: number;
+  oos_return: number;
+  oos_max_drawdown: number;
+  result_hash?: string;
+  blockers?: string[];
+  error?: string;
+}
+
+export interface MethodSeedResult {
+  snapshot_id: string;
+  universe_size: number;
+  date_start: string;
+  date_end: string;
+  outcomes: MethodSeedOutcome[];
+  registered: number;
+  verified: number;
+  finished_at: string;
 }

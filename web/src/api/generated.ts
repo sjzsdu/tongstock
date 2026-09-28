@@ -258,4 +258,7 @@ export const operations = {
   getApiMonitoringHealth: { method: "GET", path: "/api/monitoring/health" },
   postApiMonitoringAlertsIdAck: { method: "POST", path: "/api/monitoring/alerts/{id}/ack" },
   postApiMonitoringAlertsIdResolve: { method: "POST", path: "/api/monitoring/alerts/{id}/resolve" },
+  getApiDashboardToday: { method: "GET", path: "/api/dashboard/today" },
+  postApiOnboardingRun: { method: "POST", path: "/api/onboarding/run" },
+  postApiMethodsSeed: { method: "POST", path: "/api/methods/seed" },
 } as const;
