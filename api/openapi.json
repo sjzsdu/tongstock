@@ -4747,6 +4747,156 @@
           }
         }
       }
+    },
+    "/api/dashboard/today": {
+      "get": {
+        "operationId": "getApiDashboardToday",
+        "summary": "今日状态读模型：数据新鲜度/方法库/候选/持仓 + 空榜原因与下一步 + 工作日志 + 健康信号",
+        "responses": {
+          "200": {
+            "description": "Today status read model aggregated from real persisted facts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/onboarding/run": {
+      "post": {
+        "operationId": "postApiOnboardingRun",
+        "summary": "一键走通：同步/检查行情 → 冻结市场快照 → 物化特征快照 → 运行今日选股",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "date": {
+                    "type": "string"
+                  },
+                  "universe": {
+                    "type": "string"
+                  },
+                  "coverage_threshold": {
+                    "type": "number"
+                  },
+                  "max_gapped_codes": {
+                    "type": "integer"
+                  },
+                  "sync": {
+                    "type": "boolean"
+                  },
+                  "force": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Orchestration result with per-step real status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/methods/seed": {
+      "post": {
+        "operationId": "postApiMethodsSeed",
+        "summary": "载入内置示例方法：编译 → 冻结真实数据全池回测 → 按真实验证结论注册",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "snapshot_id": {
+                    "type": "string"
+                  },
+                  "keys": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "max_codes": {
+                    "type": "integer"
+                  },
+                  "date_start": {
+                    "type": "string"
+                  },
+                  "date_end": {
+                    "type": "string"
+                  },
+                  "universe": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "split_type": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Seed outcome per method with real validation verdict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "servers": [

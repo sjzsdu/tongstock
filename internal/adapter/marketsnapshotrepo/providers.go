@@ -3,7 +3,6 @@ package marketsnapshotrepo
 import (
 	"database/sql"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -350,72 +349,10 @@ func (e *SQLiteFeatureEngine) Compute(date string, codes []string, features []ma
 	return out, nil
 }
 
-// computeBuiltinIndicator 封装 methods.Indicator 的内建实现（与 executor.go 保持一致）。
-// 这样保持方法 DSL 与离线特征物化使用同一套算法，保证研究-交易一致性。
+// computeBuiltinIndicator 委托给 methods 包的唯一实现，保证离线物化与在线执行
+// 使用完全相同的算法（研究-交易一致性）。任何新指标只需在 methods 里加一次。
 func computeBuiltinIndicator(name string, bars []methods.Bar) (float64, bool) {
-	if len(bars) == 0 {
-		return 0, false
-	}
-	last := bars[len(bars)-1]
-	switch strings.ToLower(name) {
-	case "close":
-		return last.Close, true
-	case "open":
-		return last.Open, true
-	case "high":
-		return last.High, true
-	case "low":
-		return last.Low, true
-	case "volume":
-		return last.Volume, true
-	case "amount":
-		return last.Amount, true
-	}
-	// maN / rsiN
-	switch {
-	case strings.HasPrefix(name, "ma"):
-		n, err := strconv.Atoi(strings.TrimPrefix(name, "ma"))
-		if err != nil || n <= 0 {
-			return 0, false
-		}
-		if len(bars) < n {
-			return 0, false
-		}
-		sum := 0.0
-		for i := len(bars) - n; i < len(bars); i++ {
-			sum += bars[i].Close
-		}
-		return sum / float64(n), true
-	case strings.HasPrefix(name, "rsi"):
-		n, err := strconv.Atoi(strings.TrimPrefix(name, "rsi"))
-		if err != nil || n <= 0 {
-			return 0, false
-		}
-		if len(bars) < n+1 {
-			return 0, false
-		}
-		gains, losses, count := 0.0, 0.0, 0
-		for i := len(bars) - n; i < len(bars); i++ {
-			diff := bars[i].Close - bars[i-1].Close
-			if diff > 0 {
-				gains += diff
-			} else {
-				losses += -diff
-			}
-			count++
-		}
-		if count == 0 || (gains == 0 && losses == 0) {
-			return 50, true
-		}
-		avgG := gains / float64(count)
-		avgL := losses / float64(count)
-		if avgL == 0 {
-			return 100, true
-		}
-		rs := avgG / avgL
-		return 100 - 100/(1+rs), true
-	}
-	return 0, false
+	return methods.ComputeBuiltinIndicator(name, bars)
 }
 
 func dayDiff(a, b string) int {

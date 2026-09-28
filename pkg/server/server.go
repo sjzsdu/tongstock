@@ -10,10 +10,13 @@ import (
 	"github.com/sjzsdu/tongstock/internal/app/discoveryapp"
 	"github.com/sjzsdu/tongstock/internal/app/stockdata"
 	"github.com/sjzsdu/tongstock/internal/automation"
+	"github.com/sjzsdu/tongstock/internal/dashboard"
 	"github.com/sjzsdu/tongstock/internal/experiment"
 	"github.com/sjzsdu/tongstock/internal/ledger"
 	"github.com/sjzsdu/tongstock/internal/methodregistry"
+	"github.com/sjzsdu/tongstock/internal/methodseed"
 	"github.com/sjzsdu/tongstock/internal/monitoring"
+	"github.com/sjzsdu/tongstock/internal/onboarding"
 	"github.com/sjzsdu/tongstock/internal/paradigm"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
 	"github.com/sjzsdu/tongstock/internal/positiondecision"
@@ -54,6 +57,9 @@ type Server struct {
 	positionRuns          positiondecision.Repository
 	automationEngine      *automation.Orchestrator
 	automationRuns        automation.Repository
+	dashboardService      *dashboard.Service
+	onboardingService     *onboarding.Service
+	methodSeedService     *methodseed.Service
 	discoverRunner        *discoveryapp.Runner
 	discoverTraces        *discoveryrepo.TraceRepository
 	paradigmSnapshots     *paradigm.DatasetSnapshotStore
@@ -179,6 +185,15 @@ func (s *Server) SetPositionDecision(engine *positiondecision.Engine, runs posit
 func (s *Server) SetAutomation(engine *automation.Orchestrator, runs automation.Repository) {
 	s.automationEngine, s.automationRuns = engine, runs
 }
+
+// SetDashboard 注册「今日状态」读模型服务。
+func (s *Server) SetDashboard(svc *dashboard.Service) { s.dashboardService = svc }
+
+// SetOnboarding 注册首次引导编排服务。
+func (s *Server) SetOnboarding(svc *onboarding.Service) { s.onboardingService = svc }
+
+// SetMethodSeed 注册内置示例方法服务。
+func (s *Server) SetMethodSeed(svc *methodseed.Service) { s.methodSeedService = svc }
 
 // SetDiscoverRunner registers the discovery application service and its trace
 // repository on the server instance.

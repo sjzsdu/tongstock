@@ -30,8 +30,11 @@ type ValidationJob struct {
 	MethodName string `json:"method_name"`
 	// SnapshotID 含冻结真实 K 线的不可变数据快照 ID
 	SnapshotID string `json:"snapshot_id"`
-	// StockCode 单股验证时的代码（空=全 universe）
+	// StockCode 单股验证时的代码（空=全 universe，此时必须提供 Universe）
 	StockCode string `json:"stock_code,omitempty"`
+	// Universe 全股票池验证时的代码列表（StockCode 为空时必填）。
+	// 调用方负责给出 point-in-time 的真实代码集合，工厂不做猜测。
+	Universe []string `json:"universe,omitempty"`
 	// DateStart 数据起始日（空=快照内最早）
 	DateStart string `json:"date_start,omitempty"`
 	// DateEnd 数据截止日（空=快照内最新）
@@ -59,19 +62,22 @@ func (j *ValidationJob) Validate() error {
 
 // JobHash 计算任务配置的确定性哈希（不含运行时状态）。
 func (j *ValidationJob) JobHash() string {
+	universe := append([]string{}, j.Universe...)
+	sort.Strings(universe)
 	payload := struct {
-		MethodHash      string  `json:"mh"`
-		SnapshotID      string  `json:"sid"`
-		StockCode       string  `json:"sc,omitempty"`
-		DateStart       string  `json:"ds,omitempty"`
-		DateEnd         string  `json:"de,omitempty"`
-		SplitType       string  `json:"st,omitempty"`
-		DiscoveryTrials int     `json:"dt"`
-		BenchmarkCode   string  `json:"bc,omitempty"`
-		InitialCash     float64 `json:"ic,omitempty"`
+		MethodHash      string   `json:"mh"`
+		SnapshotID      string   `json:"sid"`
+		StockCode       string   `json:"sc,omitempty"`
+		Universe        []string `json:"uni,omitempty"`
+		DateStart       string   `json:"ds,omitempty"`
+		DateEnd         string   `json:"de,omitempty"`
+		SplitType       string   `json:"st,omitempty"`
+		DiscoveryTrials int      `json:"dt"`
+		BenchmarkCode   string   `json:"bc,omitempty"`
+		InitialCash     float64  `json:"ic,omitempty"`
 	}{
 		MethodHash: j.MethodHash, SnapshotID: j.SnapshotID, StockCode: j.StockCode,
-		DateStart: j.DateStart, DateEnd: j.DateEnd, SplitType: j.SplitType,
+		Universe: universe, DateStart: j.DateStart, DateEnd: j.DateEnd, SplitType: j.SplitType,
 		DiscoveryTrials: j.DiscoveryTrials, BenchmarkCode: j.BenchmarkCode,
 		InitialCash: j.InitialCash,
 	}
@@ -155,6 +161,7 @@ type PerformanceStats struct {
 // SegmentResult 单个切分段（训练/验证/样本外）的回测结果。
 type SegmentResult struct {
 	Segment string           `json:"segment"` // train/valid/test
+	Code    string           `json:"code,omitempty"`
 	Start   string           `json:"start"`
 	End     string           `json:"end"`
 	Stats   PerformanceStats `json:"stats"`
@@ -169,6 +176,11 @@ type EvidenceBundle struct {
 	SnapshotID  string    `json:"snapshot_id"`
 	StockCode   string    `json:"stock_code,omitempty"`
 	GeneratedAt time.Time `json:"generated_at"`
+
+	// 全股票池验证口径：参与验证的代码数、被跳过的代码及原因。
+	UniverseSize int           `json:"universe_size,omitempty"`
+	ValidCodes   int           `json:"valid_codes,omitempty"`
+	Skipped      []SkippedCode `json:"skipped,omitempty"`
 
 	// 各段回测结果
 	Segments []SegmentResult `json:"segments"`
@@ -201,18 +213,33 @@ type CriticIssue struct {
 	Message   string `json:"message"`
 }
 
+// SkippedCode 记录全股票池验证中被跳过的代码及真实原因（数据不足等）。
+// 这是审计痕迹，不允许用静默默认值代替。
+type SkippedCode struct {
+	Code   string `json:"code"`
+	Reason string `json:"reason"`
+}
+
 // ComputeResultHash 计算结果的内容哈希（确定性）。
 func (e *EvidenceBundle) ComputeResultHash() string {
 	sortedSegments := make([]SegmentResult, len(e.Segments))
 	copy(sortedSegments, e.Segments)
-	sort.Slice(sortedSegments, func(i, j int) bool {
-		return sortedSegments[i].Segment < sortedSegments[j].Segment
+	sort.SliceStable(sortedSegments, func(i, j int) bool {
+		if sortedSegments[i].Segment != sortedSegments[j].Segment {
+			return sortedSegments[i].Segment < sortedSegments[j].Segment
+		}
+		return sortedSegments[i].Code < sortedSegments[j].Code
 	})
+	skipped := append([]SkippedCode{}, e.Skipped...)
+	sort.SliceStable(skipped, func(i, j int) bool { return skipped[i].Code < skipped[j].Code })
 	payload := struct {
 		JobHash        string             `json:"jh"`
 		MethodHash     string             `json:"mh"`
 		Snapshot       string             `json:"sid"`
 		StockCode      string             `json:"stock_code,omitempty"`
+		UniverseSize   int                `json:"universe_size,omitempty"`
+		ValidCodes     int                `json:"valid_codes,omitempty"`
+		Skipped        []SkippedCode      `json:"skipped,omitempty"`
 		Segments       []SegmentResult    `json:"segs"`
 		Oos            PerformanceStats   `json:"oos"`
 		Trials         int                `json:"trials"`
@@ -223,6 +250,7 @@ func (e *EvidenceBundle) ComputeResultHash() string {
 		Passable       bool               `json:"passable"`
 	}{
 		JobHash: e.JobHash, MethodHash: e.MethodHash, Snapshot: e.SnapshotID, StockCode: e.StockCode,
+		UniverseSize: e.UniverseSize, ValidCodes: e.ValidCodes, Skipped: skipped,
 		Segments: sortedSegments, Oos: e.OosStats, Trials: e.DiscoveryTrials,
 		AdjustedPValue: e.AdjustedPValue, CriticIssues: e.CriticIssues,
 		Blockers: e.Blockers, Confidence: string(e.Confidence), Passable: e.Passable,

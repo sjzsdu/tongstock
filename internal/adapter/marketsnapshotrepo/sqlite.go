@@ -126,13 +126,24 @@ func (r *SQLiteRepository) FindMarketSnapshot(date, universeName, adj string) (*
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	var id string
-	if !rows.Next() {
-		return nil, sql.ErrNoRows
+	found := false
+	if rows.Next() {
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		found = true
 	}
-	if err := rows.Scan(&id); err != nil {
-		return nil, err
+	scanErr := rows.Err()
+	// 连接池只开了一个连接。这里只读一行、游标不会因耗尽而自动释放，
+	// 必须显式 Close，否则下面的 LoadMarketSnapshot 会永久等待同一个连接。
+	rows.Close()
+	if scanErr != nil {
+		return nil, scanErr
+	}
+	if !found {
+		return nil, sql.ErrNoRows
 	}
 	return r.LoadMarketSnapshot(id, true)
 }

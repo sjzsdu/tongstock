@@ -308,20 +308,6 @@ func evalValue(e *Expr, env *evalEnv) (float64, bool) {
 }
 
 func indicatorValue(env *evalEnv, name string, params []string) (float64, bool) {
-	switch strings.ToLower(name) {
-	case "open":
-		return env.bar.Open, true
-	case "high":
-		return env.bar.High, true
-	case "low":
-		return env.bar.Low, true
-	case "close":
-		return env.bar.Close, true
-	case "volume":
-		return env.bar.Volume, true
-	case "amount":
-		return env.bar.Amount, true
-	}
 	// A frozen FeatureSnapshot is the authoritative point-in-time value in
 	// daily decision engines. Prefer it over recomputing a rolling indicator
 	// from an incomplete one-bar execution window.
@@ -330,147 +316,16 @@ func indicatorValue(env *evalEnv, name string, params []string) (float64, bool) 
 			return v, true
 		}
 	}
-	// 参数化 MA: 名字是 "ma" 加 params[0] = N → 返回 N 日均收盘价均线。
-	if strings.HasPrefix(name, "ma") {
-		if n, err := parseIntSuffix(name, 2); err == nil {
-			return rollingMeanClose(env, n)
-		}
-		if len(params) > 0 {
-			if n, err := parseInt(params[0]); err == nil && n > 0 {
-				return rollingMeanClose(env, n)
-			}
-		}
+	if v, ok := ComputeBuiltinIndicator(name, env.all); ok {
+		return v, true
 	}
-	if strings.HasPrefix(name, "rsi") {
-		if n, err := parseIntSuffix(name, 3); err == nil && n > 0 {
-			return rsi(env, n)
-		}
-	}
-	if strings.HasPrefix(name, "prevhigh") {
-		if n, err := parseIntSuffix(name, len("prevhigh")); err == nil && n > 0 {
-			return rollingPreviousCloseExtreme(env, n, true)
-		}
-	}
-	if strings.HasPrefix(name, "prevlow") {
-		if n, err := parseIntSuffix(name, len("prevlow")); err == nil && n > 0 {
-			return rollingPreviousCloseExtreme(env, n, false)
-		}
-	}
-	if strings.HasPrefix(name, "volma") {
-		if n, err := parseIntSuffix(name, len("volma")); err == nil && n > 0 {
-			return rollingMeanVolume(env, n)
-		}
-	}
-	if strings.HasPrefix(name, "volatility") {
-		if n, err := parseIntSuffix(name, len("volatility")); err == nil && n > 1 {
-			return rollingVolatility(env, n)
-		}
-	}
-	if name == "return1" && len(env.all) >= 2 {
-		previous := env.all[len(env.all)-2].Close
-		if previous > 0 {
-			return (env.bar.Close - previous) / previous, true
-		}
-	}
-	if name == "gap_pct" && len(env.all) >= 2 {
-		previous := env.all[len(env.all)-2].Close
-		if previous > 0 {
-			return (env.bar.Open - previous) / previous, true
+	// 参数化 MA: 名字是 "ma" 但参数在 Params 里 → 返回 N 日均收盘价均线。
+	if strings.HasPrefix(strings.ToLower(name), "ma") && len(params) > 0 {
+		if n, err := parseInt(params[0]); err == nil && n > 0 {
+			return smaClose(env.all, n)
 		}
 	}
 	return 0, false
-}
-
-func rollingMeanClose(env *evalEnv, n int) (float64, bool) {
-	if n <= 0 || len(env.all) < n {
-		return 0, false
-	}
-	sum := 0.0
-	for i := len(env.all) - n; i < len(env.all); i++ {
-		sum += env.all[i].Close
-	}
-	return sum / float64(n), true
-}
-
-func rollingMeanVolume(env *evalEnv, n int) (float64, bool) {
-	if n <= 0 || len(env.all) < n {
-		return 0, false
-	}
-	var sum float64
-	for i := len(env.all) - n; i < len(env.all); i++ {
-		sum += env.all[i].Volume
-	}
-	return sum / float64(n), true
-}
-
-func rollingPreviousCloseExtreme(env *evalEnv, n int, maximum bool) (float64, bool) {
-	if n <= 0 || len(env.all) < n+1 {
-		return 0, false
-	}
-	start, end := len(env.all)-n-1, len(env.all)-1
-	value := env.all[start].Close
-	for i := start + 1; i < end; i++ {
-		if maximum && env.all[i].Close > value {
-			value = env.all[i].Close
-		}
-		if !maximum && env.all[i].Close < value {
-			value = env.all[i].Close
-		}
-	}
-	return value, true
-}
-
-func rollingVolatility(env *evalEnv, n int) (float64, bool) {
-	if n <= 1 || len(env.all) < n+1 {
-		return 0, false
-	}
-	returns := make([]float64, 0, n)
-	for i := len(env.all) - n; i < len(env.all); i++ {
-		previous := env.all[i-1].Close
-		if previous <= 0 {
-			return 0, false
-		}
-		returns = append(returns, (env.all[i].Close-previous)/previous)
-	}
-	var mean float64
-	for _, value := range returns {
-		mean += value
-	}
-	mean /= float64(len(returns))
-	var variance float64
-	for _, value := range returns {
-		delta := value - mean
-		variance += delta * delta
-	}
-	return math.Sqrt(variance / float64(len(returns)-1)), true
-}
-
-func rsi(env *evalEnv, n int) (float64, bool) {
-	if n <= 0 || len(env.all) < n+1 {
-		return 0, false
-	}
-	start := len(env.all) - n - 1
-	var gains, losses float64
-	count := 0
-	for i := start + 1; i < len(env.all); i++ {
-		diff := env.all[i].Close - env.all[i-1].Close
-		if diff > 0 {
-			gains += diff
-		} else {
-			losses -= diff
-		}
-		count++
-	}
-	if count == 0 || losses == 0 {
-		if gains == 0 {
-			return 50.0, true
-		}
-		return 100.0, true
-	}
-	avgGain := gains / float64(count)
-	avgLoss := losses / float64(count)
-	rs := avgGain / avgLoss
-	return 100 - 100/(1+rs), true
 }
 
 func parseInt(s string) (int, error) {

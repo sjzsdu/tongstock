@@ -17,6 +17,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sjzsdu/tongstock/internal/adapter/automationrepo"
+	"github.com/sjzsdu/tongstock/internal/adapter/dashboardrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/discoveryrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/marketsnapshotrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/methodregistryrepo"
@@ -24,12 +25,18 @@ import (
 	"github.com/sjzsdu/tongstock/internal/adapter/positiondecisionrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/selectionrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/stockpoolrepo"
+	"github.com/sjzsdu/tongstock/internal/adapter/validationrepo"
 	"github.com/sjzsdu/tongstock/internal/agentservice"
 	"github.com/sjzsdu/tongstock/internal/app/discoveryapp"
 	"github.com/sjzsdu/tongstock/internal/app/stockdata"
 	"github.com/sjzsdu/tongstock/internal/automation"
+	"github.com/sjzsdu/tongstock/internal/dashboard"
 	"github.com/sjzsdu/tongstock/internal/ledger"
+	"github.com/sjzsdu/tongstock/internal/marketsnapshot"
 	"github.com/sjzsdu/tongstock/internal/methodregistry"
+	"github.com/sjzsdu/tongstock/internal/methodseed"
+	"github.com/sjzsdu/tongstock/internal/onboarding"
+	"github.com/sjzsdu/tongstock/internal/paradigm"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
 	"github.com/sjzsdu/tongstock/internal/positiondecision"
 	"github.com/sjzsdu/tongstock/internal/selection"
@@ -239,6 +246,24 @@ func NewApp(cfg *config.Config, opts Options) (_ *App, err error) {
 	}
 	app.api.SetMethodRegistry(methodRegistry)
 	app.setModule("method_registry", "ready", "")
+
+	// 内置示例方法：编译 → 冻结真实数据全池回测 → 按真实验证结论注册。
+	seedEvidence, err := validationrepo.NewEvidenceRepository(app.storage)
+	if err != nil {
+		return nil, fmt.Errorf("初始化验证证据仓库失败: %w", err)
+	}
+	methodSeedService, err := methodseed.NewService(methodseed.Deps{
+		Registry:  methodRegistry,
+		Snapshots: paradigm.NewDatasetSnapshotStore(app.storage),
+		Bars:      validationrepo.New(app.storage),
+		Benchmark: validationrepo.NewBenchmark(app.storage),
+		Evidence:  seedEvidence,
+		Universe:  validationrepo.NewSnapshotUniverse(app.storage),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("初始化内置示例方法服务失败: %w", err)
+	}
+	app.api.SetMethodSeed(methodSeedService)
 	selectionRuns, err := selectionrepo.New(app.storage)
 	if err != nil {
 		return nil, fmt.Errorf("初始化每日选股仓库失败: %w", err)
@@ -274,6 +299,36 @@ func NewApp(cfg *config.Config, opts Options) (_ *App, err error) {
 	app.api.SetAutomation(automationEngine, automationRuns)
 	app.api.StartAutomationScheduler(app.runCtx, marketSnapshots)
 	app.setModule("daily_automation", "ready", "")
+
+	// 首屏「今日状态」读模型 + 首次引导编排：都只读取真实事实或调用既有引擎。
+	klineDates, err := dashboardrepo.NewKlineDateReader(app.storage)
+	if err != nil {
+		return nil, fmt.Errorf("初始化数据水位读取器失败: %w", err)
+	}
+	dashboardService, err := dashboard.NewService(dashboard.Deps{
+		Snapshots: marketSnapshots, Methods: methodRepo, Selections: selectionRuns,
+		Positions: positionRuns, Holdings: tradingStore, DataDates: klineDates,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("初始化今日状态服务失败: %w", err)
+	}
+	app.api.SetDashboard(dashboardService)
+
+	featureEngine := marketsnapshotrepo.NewSQLiteFeatureEngine(app.storage)
+	snapshotBuilder := marketsnapshot.NewBuilder(
+		marketsnapshotrepo.NewSQLiteUniverseProvider(app.storage),
+		marketsnapshotrepo.NewSQLiteWatermarkProvider(app.storage),
+		marketsnapshotrepo.NewSQLiteTradingCalendar(app.storage),
+	)
+	onboardingService, err := onboarding.NewService(onboarding.Deps{
+		Builder: snapshotBuilder, Snapshots: marketSnapshots, Features: featureEngine,
+		Selection: selectionEngine, Freshness: klineDates,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("初始化首次引导服务失败: %w", err)
+	}
+	app.api.SetOnboarding(onboardingService)
+	app.setModule("dashboard", "ready", "")
 
 	// 规律发现应用服务：CLI 与 HTTP 共用同一 Runner。
 	discoverResolver, err := stockpoolrepo.NewResolver(app.storage)
@@ -523,7 +578,22 @@ func Run() error {
 		}
 	}()
 	log.Printf("TongStock server starting on %s", app.addr)
+	log.Printf("Web UI: http://%s/", webHostPort(app.addr))
 	return app.Run(signalCtx)
+}
+
+// webHostPort turns a bound address into something a browser can open: a
+// wildcard bind (0.0.0.0/::) is reachable locally via loopback.
+func webHostPort(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
+	}
+	switch host {
+	case "", "0.0.0.0", "::", "[::]":
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(strings.Trim(host, "[]"), port)
 }
 
 // newsSources 构造启用的资讯数据源。东财负责个股新闻与研报，

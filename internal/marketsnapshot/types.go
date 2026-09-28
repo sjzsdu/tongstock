@@ -261,5 +261,14 @@ func DefaultDslFeatures() []FeatureSpec {
 		{Name: "rsi6", Category: "rsi", Window: 6},
 		{Name: "rsi14", Category: "rsi", Window: 14},
 		{Name: "rsi24", Category: "rsi", Window: 24},
+		// 动能与量能特征：内置示例方法（MACD 多头 / 量价突破）与执行器共用
+		// methods.ComputeBuiltinIndicator 的唯一实现，保证研究-交易一致。
+		{Name: "macd_dif", Category: "macd", Window: 26, Description: "MACD 快慢线之差"},
+		{Name: "macd_dea", Category: "macd", Window: 35, Description: "MACD 信号线"},
+		{Name: "macd_hist", Category: "macd", Window: 35, Description: "MACD 柱状"},
+		{Name: "volma5", Category: "volume", Window: 5, Description: "5 日均量"},
+		{Name: "volma20", Category: "volume", Window: 20, Description: "20 日均量"},
+		{Name: "prevhigh20", Category: "breakout", Window: 20, Description: "前 20 日收盘最高（不含当日）"},
+		{Name: "prevlow20", Category: "breakout", Window: 20, Description: "前 20 日收盘最低（不含当日）"},
 	}
 }

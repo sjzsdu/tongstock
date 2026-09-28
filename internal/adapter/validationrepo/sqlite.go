@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/sjzsdu/tongstock/internal/backtest"
 	"github.com/sjzsdu/tongstock/internal/paradigm"
@@ -20,11 +21,32 @@ const KlineTypeDaily uint8 = 9
 // SQLiteBarProvider 从已验证内容哈希的数据快照加载日线。
 type SQLiteBarProvider struct {
 	snapshots *paradigm.DatasetSnapshotStore
+
+	mu       sync.Mutex
+	verified map[string]error
 }
 
 // New 创建只读冻结快照的 BarProvider。
 func New(store *storage.Storage) *SQLiteBarProvider {
-	return &SQLiteBarProvider{snapshots: paradigm.NewDatasetSnapshotStore(store)}
+	return &SQLiteBarProvider{
+		snapshots: paradigm.NewDatasetSnapshotStore(store),
+		verified:  map[string]error{},
+	}
+}
+
+// verifyOnce 对同一快照只做一次整体内容哈希校验。
+// VerifyContent 会遍历并读取快照内全部分片；全池回测会为成百上千个代码
+// 调用 LoadBars，逐次校验会把成本放大成 O(代码数 × 快照大小)。
+// 缓存只记录校验结论，单个代码的哈希仍由 GetFrozenKlines 逐次核对，fail closed 不变。
+func (p *SQLiteBarProvider) verifyOnce(snapshotID string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if err, ok := p.verified[snapshotID]; ok {
+		return err
+	}
+	err := p.snapshots.VerifyContent(snapshotID)
+	p.verified[snapshotID] = err
+	return err
 }
 
 // LoadBars 实现 validation.BarProvider。
@@ -41,7 +63,7 @@ func (p *SQLiteBarProvider) LoadBars(ctx context.Context, snapshotID, code, date
 	if p == nil || p.snapshots == nil {
 		return nil, fmt.Errorf("snapshot provider is not initialized")
 	}
-	if err := p.snapshots.VerifyContent(snapshotID); err != nil {
+	if err := p.verifyOnce(snapshotID); err != nil {
 		return nil, fmt.Errorf("verify frozen snapshot %s: %w", snapshotID, err)
 	}
 	frozen, err := p.snapshots.GetFrozenKlines(snapshotID, code, KlineTypeDaily)
