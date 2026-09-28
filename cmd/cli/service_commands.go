@@ -328,7 +328,7 @@ func configuredPort() int {
 	}
 	port := cfg.Server.Port
 	if port == 0 {
-		return 8080
+		return 8106
 	}
 	return port
 }

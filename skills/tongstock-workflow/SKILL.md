@@ -188,15 +188,15 @@ When the server is running, use HTTP API for programmatic access:
 tongstock server --daemon
 
 # Batch fetch via API (JSON output, easy to parse)
-curl -s "http://localhost:8080/api/quote?code=000001" | jq .
-curl -s "http://localhost:8080/api/finance?code=000001" | jq .
-curl -s "http://localhost:8080/api/xdxr?code=000001" | jq .
-curl -s "http://localhost:8080/api/kline?code=000001&type=day" | jq .
+curl -s "http://localhost:8106/api/quote?code=000001" | jq .
+curl -s "http://localhost:8106/api/finance?code=000001" | jq .
+curl -s "http://localhost:8106/api/xdxr?code=000001" | jq .
+curl -s "http://localhost:8106/api/kline?code=000001&type=day" | jq .
 
 # Compare multiple stocks
 for code in 000001 600519 000858; do
   echo "=== $code ==="
-  curl -s "http://localhost:8080/api/finance?code=$code" | jq '{code: .code, net_profit: .JingLiRun, nav: .MeiGuJingZiChan, shareholders: .GuDongRenShu}'
+  curl -s "http://localhost:8106/api/finance?code=$code" | jq '{code: .code, net_profit: .JingLiRun, nav: .MeiGuJingZiChan, shareholders: .GuDongRenShu}'
 done
 ```
 
@@ -329,12 +329,12 @@ tongstock block -f block_gn.dat
 
 # 2. Run signal screening for candidate codes through the HTTP API when server is available.
 # codes should be comma-separated, type can be day/week/60m/30m/15m.
-curl -s "http://localhost:8080/api/screen?codes=<codes>&type=day" | jq .
+curl -s "http://localhost:8106/api/screen?codes=<codes>&type=day" | jq .
 
 # 3. For each shortlisted stock, collect evidence.
-curl -s "http://localhost:8080/api/indicator?code=<code>&type=day&days=60" | jq .
-curl -s "http://localhost:8080/api/signal-analysis?code=<code>&type=day" | jq .
-curl -s "http://localhost:8080/api/finance?code=<code>" | jq .
+curl -s "http://localhost:8106/api/indicator?code=<code>&type=day&days=60" | jq .
+curl -s "http://localhost:8106/api/signal-analysis?code=<code>&type=day" | jq .
+curl -s "http://localhost:8106/api/finance?code=<code>" | jq .
 ```
 
 **Translation rules:**

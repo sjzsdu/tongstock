@@ -123,7 +123,7 @@ func ExpandHome(value string) string {
 // DefaultConfig 返回一个包含默认值的 Config 实例
 func DefaultConfig() *Config {
 	return &Config{
-		Server:   ServerConfig{Port: 8080, BindAddress: "127.0.0.1"},
+		Server:   ServerConfig{Port: 8106, BindAddress: "127.0.0.1"},
 		TDX:      TDXConfig{Hosts: nil},
 		Cache:    CacheConfig{Backend: "sqlite", Dir: CacheDir()},
 		Database: DatabaseConfig{Driver: "sqlite3", DSN: DBPath()},
@@ -137,7 +137,7 @@ func defaultConfigTemplate() string {
 # HTTP 服务配置
 server:
   # 监听端口
-  port: 8080
+  port: 8106
   # 监听地址，默认仅本机访问
   # - 127.0.0.1: 仅本机 (安全默认值)
   # - 0.0.0.0  所有网卡，此时必须配置 access_token

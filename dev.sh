@@ -37,9 +37,9 @@ do_stop() {
         rm -f "$PID_FILE"
     fi
     
-    pids=$(lsof -ti:"8080" 2>/dev/null)
+    pids=$(lsof -ti:"8106" 2>/dev/null)
     if [ -n "$pids" ]; then
-        echo "Killing port 8080: $pids"
+        echo "Killing port 8106: $pids"
         echo "$pids" | xargs kill -9 2>/dev/null || true
     fi
     
@@ -69,7 +69,7 @@ kill_port() {
     fi
 }
 
-kill_port 8080
+kill_port 8106
 kill_port 5173
 
 # Create a symlink from pkg/web/dist to web/dist for hot reload
@@ -91,7 +91,7 @@ fi
 
 echo "Starting development servers..."
 echo ""
-echo "  Go API Server:  http://localhost:8080"
+echo "  Go API Server:  http://localhost:8106"
 echo "  Vite Dev Server: http://localhost:5173"
 echo ""
 echo "  Open http://localhost:5173 for frontend development"

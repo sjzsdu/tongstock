@@ -297,7 +297,7 @@ func NewApp(cfg *config.Config, opts Options) (_ *App, err error) {
 	}
 	port := cfg.Server.Port
 	if port == 0 {
-		port = 8080
+		port = 8106
 	}
 	app.addr = net.JoinHostPort(bind, fmt.Sprintf("%d", port))
 	app.httpServer = &http.Server{

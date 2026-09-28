@@ -62,11 +62,11 @@ npx skills add sjzsdu/tongstock
 - 板块分类与成分股查询
 - 股票代码批量操作
 
-**提示**：首次使用需确保 TongStock 服务已启动（`./tongstock server`），默认服务地址 `http://localhost:8080`
+**提示**：首次使用需确保 TongStock 服务已启动（`./tongstock server`），默认服务地址 `http://localhost:8106`
 
 ## Web UI
 
-启动 server 后访问 `http://localhost:8080` 即可使用 Web 界面。
+启动 server 后访问 `http://localhost:8106` 即可使用 Web 界面。
 
 ### 功能页面
 
@@ -94,7 +94,7 @@ Agent 默认支持由 TongStock 直接配置模型和注册自定义角色，不
 ```bash
 cd web
 pnpm install --frozen-lockfile
-pnpm dev           # 启动开发服务器，默认代理到 localhost:8080
+pnpm dev           # 启动开发服务器，默认代理到 localhost:8106
 ```
 
 ## CLI 使用方法
@@ -293,13 +293,13 @@ K线、分时、分笔、除权除息、财务、指数 K 线、F10 公司信息
 ./tongstock server
 ```
 
-服务默认只监听 `http://127.0.0.1:8080`。
+服务默认只监听 `http://127.0.0.1:8106`。
 
 如需从其他设备访问，必须同时配置非本机监听地址和访问令牌：
 
 ```yaml
 server:
-  port: 8080
+  port: 8106
   bind_address: 0.0.0.0
   access_token: "替换为足够长的随机令牌"
 ```
@@ -308,7 +308,7 @@ server:
 
 ```bash
 curl -H "Authorization: Bearer $TONGSTOCK_ACCESS_TOKEN" \
-  "http://server-host:8080/api/quote?code=000001"
+  "http://server-host:8106/api/quote?code=000001"
 ```
 
 远程打开 Web UI 时，页面第一次收到 401 会提示输入 Access Token；令牌仅保存在浏览器
@@ -346,63 +346,63 @@ localStorage 中，后续 API 和 Agent SSE 请求通过 `Authorization` Header 
 
 ```bash
 # 查询行情
-curl "http://localhost:8080/api/quote?code=000001"
+curl "http://localhost:8106/api/quote?code=000001"
 
 # 股票代码列表（带分类）
-curl "http://localhost:8080/api/codes/list?exchange=sz&category=stock"
-curl "http://localhost:8080/api/codes/list?exchange=sz&category=etf"
+curl "http://localhost:8106/api/codes/list?exchange=sz&category=stock"
+curl "http://localhost:8106/api/codes/list?exchange=sz&category=etf"
 
 # 股票代码统计
-curl "http://localhost:8080/api/codes/stats?exchange=sz"
-curl "http://localhost:8080/api/codes/stats?all=true"
+curl "http://localhost:8106/api/codes/stats?exchange=sz"
+curl "http://localhost:8106/api/codes/stats?all=true"
 
 # 查询K线
-curl "http://localhost:8080/api/kline?code=000001&type=day"
+curl "http://localhost:8106/api/kline?code=000001&type=day"
 
 # 查询当日分时数据
-curl "http://localhost:8080/api/minute?code=000001"
+curl "http://localhost:8106/api/minute?code=000001"
 
 # 查询历史分时数据
-curl "http://localhost:8080/api/minute?code=000001&history=true&date=20250314"
+curl "http://localhost:8106/api/minute?code=000001&history=true&date=20250314"
 
 # 查询证券数量
-curl "http://localhost:8080/api/count?exchange=sh"
+curl "http://localhost:8106/api/count?exchange=sh"
 
 # 查询集合竞价
-curl "http://localhost:8080/api/auction?code=000001"
+curl "http://localhost:8106/api/auction?code=000001"
 
 # 查询分笔成交
-curl "http://localhost:8080/api/trade?code=000001"
+curl "http://localhost:8106/api/trade?code=000001"
 
 # 查询历史分笔成交
-curl "http://localhost:8080/api/trade?code=000001&history=true&date=20240315"
+curl "http://localhost:8106/api/trade?code=000001&history=true&date=20240315"
 
 # 查询除权除息
-curl "http://localhost:8080/api/xdxr?code=000001"
+curl "http://localhost:8106/api/xdxr?code=000001"
 
 # 查询财务数据
-curl "http://localhost:8080/api/finance?code=000001"
+curl "http://localhost:8106/api/finance?code=000001"
 
 # 查询指数K线
-curl "http://localhost:8080/api/index?code=999999&type=day"
+curl "http://localhost:8106/api/index?code=999999&type=day"
 
 # 查询公司信息目录
-curl "http://localhost:8080/api/company?code=000001"
+curl "http://localhost:8106/api/company?code=000001"
 
 # 查询公司信息内容
-curl "http://localhost:8080/api/company/content?code=000001&filename=000001.txt"
+curl "http://localhost:8106/api/company/content?code=000001&filename=000001.txt"
 
 # 板块文件列表
-curl "http://localhost:8080/api/block/files"
+curl "http://localhost:8106/api/block/files"
 
 # 板块列表（过滤+排序）
-curl "http://localhost:8080/api/block/list?file=block_zs.dat&type=2&sort=true"
+curl "http://localhost:8106/api/block/list?file=block_zs.dat&type=2&sort=true"
 
 # 板块成分股
-curl "http://localhost:8080/api/block/show?name=沪深300&file=block_zs.dat"
+curl "http://localhost:8106/api/block/show?name=沪深300&file=block_zs.dat"
 
 # 按股票代码查询所属板块
-curl "http://localhost:8080/api/block/show?code=600519"
+curl "http://localhost:8106/api/block/show?code=600519"
 ```
 
 ### 缓存说明
@@ -431,7 +431,7 @@ CLI 使用同名全局参数，例如：
 
 ```yaml
 server:
-  port: 8080
+  port: 8106
   bind_address: 127.0.0.1
   # 非本机监听时必填
   # access_token: "替换为足够长的随机令牌"

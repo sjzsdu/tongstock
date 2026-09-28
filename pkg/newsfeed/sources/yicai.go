@@ -15,7 +15,7 @@ import (
 // 第一财经是中国领先的财经媒体集团，提供7×24小时财经资讯、深度报道、
 // 专家分析等。覆盖宏观经济、金融市场、产业经济等领域。
 //
-// 使用移动端 API 接口获取新闻数据。
+// 使用首页信息流接口 m.yicai.com/api/ajax/getAINews 获取文章列表。
 type YicaiSource struct {
 	baseURL  string
 	location *time.Location
@@ -107,8 +107,9 @@ func (s *YicaiSource) fetchArticles(ctx context.Context, limit int) ([]yicaiItem
 		limit = 20
 	}
 
-	// 使用移动端文章接口
-	req := fmt.Sprintf("%s/api/article/list?app=CailianpressWap&os=web&sv=8.4.6&rn=%d", s.baseURL, limit)
+	// 首页信息流接口：page 从 1 开始，pagesize 为每页条数（上限 30），
+	// 返回裸 JSON 数组。旧的 /api/article/list 已 404。
+	req := fmt.Sprintf("%s/api/ajax/getAINews?page=1&pagesize=%d", s.baseURL, limit)
 	data, err := httpGet(ctx, req, map[string]string{
 		"Referer":    "https://m.yicai.com/",
 		"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148",
@@ -117,16 +118,15 @@ func (s *YicaiSource) fetchArticles(ctx context.Context, limit int) ([]yicaiItem
 		return nil, err
 	}
 
-	var resp yicaiResponse
-	if err := json.Unmarshal(data, &resp); err != nil {
+	var items []yicaiItem
+	if err := json.Unmarshal(data, &items); err != nil {
 		return nil, fmt.Errorf("第一财经响应解析失败: %w", err)
 	}
 
-	if resp.Code != 0 {
-		return nil, fmt.Errorf("第一财经返回错误: %s", resp.Message)
+	if len(items) > limit {
+		items = items[:limit]
 	}
-
-	return resp.Data.List, nil
+	return items, nil
 }
 
 // parse 解析文章数据
@@ -135,12 +135,15 @@ func (s *YicaiSource) parse(items []yicaiItem) []*newsfeed.NewsItem {
 	out := make([]*newsfeed.NewsItem, 0, len(items))
 
 	for _, it := range items {
-		if it.ID == "" {
+		if it.NewsID == 0 {
 			continue
 		}
 
-		title := newsfeed.StripHTML(it.Title)
-		content := newsfeed.StripHTML(it.Content)
+		title := newsfeed.StripHTML(it.NewsTitle)
+		content := newsfeed.StripHTML(it.NewsNotes)
+		if content == "" {
+			content = newsfeed.StripHTML(it.NewsBody)
+		}
 		summary := content
 		if r := []rune(summary); len(r) > 200 {
 			summary = string(r[:200])
@@ -152,17 +155,17 @@ func (s *YicaiSource) parse(items []yicaiItem) []*newsfeed.NewsItem {
 			Title:       title,
 			Summary:     summary,
 			Content:     content,
-			PublishTime: s.parseTime(it.PublishTime),
+			PublishTime: s.parseTime(it.CreateDate),
 			HotScore:    it.hotScore(),
 			Tags:        []string{"第一财经"},
-			URL:         it.URL,
-			OriginalID:  "yicai_" + it.ID,
+			URL:         it.NewsUrl,
+			OriginalID:  fmt.Sprintf("yicai_%d", it.NewsID),
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		}
 
 		if newsItem.URL == "" {
-			newsItem.URL = fmt.Sprintf("https://www.yicai.com/news/%s.html", it.ID)
+			newsItem.URL = fmt.Sprintf("https://www.yicai.com/news/%d.html", it.NewsID)
 		}
 
 		// 提取股票代码
@@ -182,13 +185,13 @@ func (s *YicaiSource) parse(items []yicaiItem) []*newsfeed.NewsItem {
 	return out
 }
 
-// parseTime 解析时间字符串
+// parseTime 解析 CreateDate（服务端本地时间，无时区后缀）
 func (s *YicaiSource) parseTime(v string) time.Time {
 	v = strings.TrimSpace(v)
 	if v == "" {
 		return time.Now()
 	}
-	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02", time.RFC3339} {
+	for _, layout := range []string{"2006-01-02T15:04:05", "2006-01-02 15:04:05", time.RFC3339} {
 		if t, err := time.ParseInLocation(layout, v, s.location); err == nil {
 			return t
 		}
@@ -196,9 +199,9 @@ func (s *YicaiSource) parseTime(v string) time.Time {
 	return time.Now()
 }
 
-// hotScore 计算热度分数
+// hotScore 把热度与评论数折算成 0-100。
 func (it yicaiItem) hotScore() int {
-	score := it.ViewCount/1000 + it.CommentCount*2
+	score := it.NewsHot/1000 + it.CommentCount*2
 	if score > 100 {
 		score = 100
 	}
@@ -208,25 +211,14 @@ func (it yicaiItem) hotScore() int {
 	return score
 }
 
-// yicaiResponse 第一财经响应结构
-type yicaiResponse struct {
-	Code    int       `json:"code"`
-	Message string    `json:"message"`
-	Data    yicaiData `json:"data"`
-}
-
-type yicaiData struct {
-	List []yicaiItem `json:"list"`
-}
-
-// yicaiItem 第一财经文章条目
+// yicaiItem 第一财经文章条目（getAINews 信息流）
 type yicaiItem struct {
-	ID           string `json:"id"`
-	Title        string `json:"title"`
-	Content      string `json:"content"`
-	PublishTime  string `json:"publish_time"`
-	URL          string `json:"url"`
-	ViewCount    int    `json:"view_count"`
-	CommentCount int    `json:"comment_count"`
-	Category     string `json:"category"`
+	NewsID       int64  `json:"NewsID"`
+	NewsTitle    string `json:"NewsTitle"`
+	NewsBody     string `json:"NewsBody"`
+	NewsNotes    string `json:"NewsNotes"`
+	CreateDate   string `json:"CreateDate"`
+	NewsUrl      string `json:"NewsUrl"`
+	NewsHot      int    `json:"NewsHot"`
+	CommentCount int    `json:"CommentCount"`
 }

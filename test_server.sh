@@ -4,7 +4,7 @@
 # 用于验证所有 HTTP API 是否正常工作
 
 CLI="tongstock"
-URL="http://localhost:8080"
+URL="http://localhost:8106"
 
 if [ ! -f "$CLI" ] && [ ! -f "$HOME/.local/bin/$CLI" ]; then
     echo "错误: 未找到 tongstock，请先编译"

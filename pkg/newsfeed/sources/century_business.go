@@ -15,7 +15,7 @@ import (
 // 21世纪经济报道是中国领先的财经媒体，以深度财经报道和行业分析著称。
 // 提供宏观经济、金融市场、产业经济等领域的专业资讯。
 //
-// 使用移动端 API 接口获取新闻数据。
+// 使用 21 财经移动站的信息流接口 /reader/index 获取文章列表。
 type CenturyBusinessSource struct {
 	baseURL  string
 	location *time.Location
@@ -28,7 +28,7 @@ func NewCenturyBusinessSource() *CenturyBusinessSource {
 		loc = time.FixedZone("CST", 8*3600)
 	}
 	return &CenturyBusinessSource{
-		baseURL:  "https://api-api.21jingji.com",
+		baseURL:  "https://m.21jingji.com",
 		location: loc,
 	}
 }
@@ -107,8 +107,8 @@ func (s *CenturyBusinessSource) fetchArticles(ctx context.Context, limit int) ([
 		limit = 20
 	}
 
-	// 使用移动端文章接口
-	req := fmt.Sprintf("%s/api/article/list?app=CailianpressWap&os=web&sv=8.4.6&rn=%d", s.baseURL, limit)
+	// 信息流接口以裸 JSON 数组返回；旧域名 api-api.21jingji.com 已下线（DNS 不再解析）。
+	req := fmt.Sprintf("%s/reader/index?more=1&type=json&page=1", s.baseURL)
 	data, err := httpGet(ctx, req, map[string]string{
 		"Referer":    "https://m.21jingji.com/",
 		"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148",
@@ -117,16 +117,15 @@ func (s *CenturyBusinessSource) fetchArticles(ctx context.Context, limit int) ([
 		return nil, err
 	}
 
-	var resp jingjiResponse
-	if err := json.Unmarshal(data, &resp); err != nil {
+	var items []jingjiItem
+	if err := json.Unmarshal(data, &items); err != nil {
 		return nil, fmt.Errorf("21世纪经济报道响应解析失败: %w", err)
 	}
 
-	if resp.Code != 0 {
-		return nil, fmt.Errorf("21世纪经济报道返回错误: %s", resp.Message)
+	if len(items) > limit {
+		items = items[:limit]
 	}
-
-	return resp.Data.List, nil
+	return items, nil
 }
 
 // parse 解析文章数据
@@ -140,7 +139,7 @@ func (s *CenturyBusinessSource) parse(items []jingjiItem) []*newsfeed.NewsItem {
 		}
 
 		title := newsfeed.StripHTML(it.Title)
-		content := newsfeed.StripHTML(it.Content)
+		content := newsfeed.StripHTML(it.Description)
 		summary := content
 		if r := []rune(summary); len(r) > 200 {
 			summary = string(r[:200])
@@ -152,13 +151,14 @@ func (s *CenturyBusinessSource) parse(items []jingjiItem) []*newsfeed.NewsItem {
 			Title:       title,
 			Summary:     summary,
 			Content:     content,
-			PublishTime: s.parseTime(it.PublishTime),
-			HotScore:    it.hotScore(),
-			Tags:        []string{"21世纪经济报道"},
-			URL:         it.URL,
-			OriginalID:  "21jingji_" + it.ID,
-			CreatedAt:   now,
-			UpdatedAt:   now,
+			PublishTime: s.parseTime(it.UpdateTime),
+			// 接口不提供阅读/评论数，热度按无数据处理。
+			HotScore:   0,
+			Tags:       []string{"21世纪经济报道"},
+			URL:        it.URL,
+			OriginalID: "21jingji_" + it.ID,
+			CreatedAt:  now,
+			UpdatedAt:  now,
 		}
 
 		if newsItem.URL == "" {
@@ -182,13 +182,13 @@ func (s *CenturyBusinessSource) parse(items []jingjiItem) []*newsfeed.NewsItem {
 	return out
 }
 
-// parseTime 解析时间字符串
+// parseTime 解析 updatetime（服务端本地时间，通常精确到分钟）
 func (s *CenturyBusinessSource) parseTime(v string) time.Time {
 	v = strings.TrimSpace(v)
 	if v == "" {
 		return time.Now()
 	}
-	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02", time.RFC3339} {
+	for _, layout := range []string{"2006-01-02 15:04", "2006-01-02 15:04:05", "2006-01-02", time.RFC3339} {
 		if t, err := time.ParseInLocation(layout, v, s.location); err == nil {
 			return t
 		}
@@ -196,37 +196,14 @@ func (s *CenturyBusinessSource) parseTime(v string) time.Time {
 	return time.Now()
 }
 
-// hotScore 计算热度分数
-func (it jingjiItem) hotScore() int {
-	score := it.ViewCount/1000 + it.CommentCount*2
-	if score > 100 {
-		score = 100
-	}
-	if score < 0 {
-		score = 0
-	}
-	return score
-}
-
-// jingjiResponse 21世纪经济报道响应结构
-type jingjiResponse struct {
-	Code    int        `json:"code"`
-	Message string     `json:"message"`
-	Data    jingjiData `json:"data"`
-}
-
-type jingjiData struct {
-	List []jingjiItem `json:"list"`
-}
-
-// jingjiItem 21世纪经济报道文章条目
+// jingjiItem 21世纪经济报道文章条目（/reader/index 信息流）
 type jingjiItem struct {
-	ID           string `json:"id"`
-	Title        string `json:"title"`
-	Content      string `json:"content"`
-	PublishTime  string `json:"publish_time"`
-	URL          string `json:"url"`
-	ViewCount    int    `json:"view_count"`
-	CommentCount int    `json:"comment_count"`
-	Category     string `json:"category"`
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	URL         string `json:"url"`
+	UpdateTime  string `json:"updatetime"`
+	IssueDate   string `json:"issuedate"`
+	CatName     string `json:"catname"`
+	Type        string `json:"type"`
 }

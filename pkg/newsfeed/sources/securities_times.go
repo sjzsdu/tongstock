@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -15,7 +16,8 @@ import (
 // 证券时报是人民日报社主管主办的全国性财经证券类日报，是中国证监会指定
 // 信息披露平台。提供7×24小时财经资讯，包括快讯、股市新闻、研报等。
 //
-// 使用移动端 API 接口获取快讯和新闻数据。
+// 快讯数据走 H5 站点的网关接口 ewap.stcn.com/api/transform（旧的
+// m.stcn.com/nodeapi 已下线，现在返回的是 HTML 页面）。
 type SecuritiesTimesSource struct {
 	baseURL  string
 	location *time.Location
@@ -28,7 +30,7 @@ func NewSecuritiesTimesSource() *SecuritiesTimesSource {
 		loc = time.FixedZone("CST", 8*3600)
 	}
 	return &SecuritiesTimesSource{
-		baseURL:  "https://m.stcn.com",
+		baseURL:  "https://ewap.stcn.com",
 		location: loc,
 	}
 }
@@ -107,8 +109,10 @@ func (s *SecuritiesTimesSource) fetchNewsflash(ctx context.Context, limit int) (
 		limit = 20
 	}
 
-	// 使用移动端快讯接口
-	req := fmt.Sprintf("%s/nodeapi/newsflash/getList?app=CailianpressWap&os=web&sv=8.4.6&rn=%d", s.baseURL, limit)
+	// 网关接口把具体列表名放在 path 参数里，其余入参序列化成 JSON
+	// 字符串塞进 other_param。缺 post_times 会直接报参数缺失。
+	other := `{"type":"1","page":1,"max_id":1,"first_id":-1,"post_times":1}`
+	req := fmt.Sprintf("%s/api/transform?path=news-fast_info_list&other_param=%s", s.baseURL, url.QueryEscape(other))
 	data, err := httpGet(ctx, req, map[string]string{
 		"Referer":    "https://m.stcn.com/",
 		"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148",
@@ -122,11 +126,14 @@ func (s *SecuritiesTimesSource) fetchNewsflash(ctx context.Context, limit int) (
 		return nil, fmt.Errorf("证券时报响应解析失败: %w", err)
 	}
 
-	if resp.Code != 0 {
-		return nil, fmt.Errorf("证券时报返回错误: %s", resp.Message)
+	if resp.Status != 1 {
+		return nil, fmt.Errorf("证券时报返回错误: %s", resp.Msg)
 	}
 
-	return resp.Data.List, nil
+	if len(resp.Data) > limit {
+		resp.Data = resp.Data[:limit]
+	}
+	return resp.Data, nil
 }
 
 // parse 解析快讯数据
@@ -152,17 +159,17 @@ func (s *SecuritiesTimesSource) parse(items []stcnItem) []*newsfeed.NewsItem {
 			Title:       title,
 			Summary:     summary,
 			Content:     content,
-			PublishTime: s.parseTime(it.CreatedAt),
+			PublishTime: time.Unix(it.Time, 0).In(s.location),
 			HotScore:    it.hotScore(),
 			Tags:        []string{"证券时报"},
-			URL:         it.URL,
+			URL:         it.Share.ShareURL,
 			OriginalID:  fmt.Sprintf("stcn_%d", it.ID),
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		}
 
 		if newsItem.URL == "" {
-			newsItem.URL = fmt.Sprintf("https://www.stcn.com/article/detail/%d.html", it.ID)
+			newsItem.URL = fmt.Sprintf("https://h5.stcn.com/pages/detail/detail?id=%d&jump_type=fast_info", it.ID)
 		}
 
 		// 提取股票代码
@@ -182,52 +189,33 @@ func (s *SecuritiesTimesSource) parse(items []stcnItem) []*newsfeed.NewsItem {
 	return out
 }
 
-// parseTime 解析时间字符串
-func (s *SecuritiesTimesSource) parseTime(v string) time.Time {
-	v = strings.TrimSpace(v)
-	if v == "" {
-		return time.Now()
-	}
-	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02", time.RFC3339} {
-		if t, err := time.ParseInLocation(layout, v, s.location); err == nil {
-			return t
-		}
-	}
-	return time.Now()
-}
-
-// hotScore 计算热度分数
+// hotScore 接口不再回阅读量，只保留「标红快讯」这一重要性信号。
 func (it stcnItem) hotScore() int {
-	score := it.ReadingNum/100 + it.CommentNum*2 + it.ShareNum/50
-	if score > 100 {
-		score = 100
+	if it.IsRed != 0 {
+		return 60
 	}
-	if score < 0 {
-		score = 0
-	}
-	return score
+	return 0
 }
 
-// stcnResponse 证券时报响应结构
+// stcnResponse 证券时报快讯网关响应结构
 type stcnResponse struct {
-	Code    int      `json:"code"`
-	Message string   `json:"message"`
-	Data    stcnData `json:"data"`
-}
-
-type stcnData struct {
-	List []stcnItem `json:"list"`
+	Status int        `json:"status"`
+	Msg    string     `json:"msg"`
+	Data   []stcnItem `json:"data"`
 }
 
 // stcnItem 证券时报快讯条目
 type stcnItem struct {
-	ID          int64  `json:"id"`
-	Title       string `json:"title"`
-	Content     string `json:"content"`
-	CreatedAt   string `json:"created_at"`
-	URL         string `json:"url"`
-	ReadingNum  int    `json:"reading_num"`
-	CommentNum  int    `json:"comment_num"`
-	ShareNum    int    `json:"share_num"`
-	ContentType string `json:"content_type"`
+	ID      int64  `json:"item_id"`
+	Title   string `json:"wap_title"`
+	Content string `json:"wap_content"`
+	// Time 是秒级 Unix 时间戳。
+	Time  int64     `json:"time"`
+	IsRed int       `json:"is_red"`
+	Share stcnShare `json:"share"`
+}
+
+// stcnShare 分享信息，内含快讯详情页地址。
+type stcnShare struct {
+	ShareURL string `json:"share_url"`
 }
