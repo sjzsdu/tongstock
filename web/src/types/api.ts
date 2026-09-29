@@ -1413,6 +1413,31 @@ export interface PositionItem {
   value?: number;
 }
 
+// 监控输入诊断：报告用了哪个真实数据源、覆盖多少观测、缺什么。
+export interface MonitoringInputStatus {
+  source: string;
+  source_label: string;
+  universe: string[];
+  position_count: number;
+  obs_count: number;
+  forward_count: number;
+  baseline_count: number;
+  forward_start: string;
+  start: string;
+  end: string;
+  forward_runs: number;
+  signals: number;
+  trades: number;
+  notes: string[];
+  checked_at: string;
+}
+
+export interface MonitoringReportEnvelope {
+  report: MonitoringReport | null;
+  input: MonitoringInputStatus | null;
+  available?: boolean;
+}
+
 export interface MonitoringAlertAckRequest {
   user?: string;
 }

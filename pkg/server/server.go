@@ -67,8 +67,11 @@ type Server struct {
 	researchTools         *ai_tools.ToolRegistry
 	storage               *storage.Storage
 	monitoringMu          sync.RWMutex
+	monitoringBuildMu     sync.Mutex
 	monitoringEngine      *monitoring.MonitorEngine
 	monitoringReport      *monitoring.MonitorReport
+	monitoringInputStatus MonitoringInputStatus
+	monitoringGeneratedAt time.Time
 	paradigmAlertMu       sync.RWMutex
 	paradigmAlertCache    []paradigmAlert
 	paradigmAlertLastScan time.Time

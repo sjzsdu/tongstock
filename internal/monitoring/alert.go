@@ -371,6 +371,19 @@ func (e *AlertEngine) applyAlertRules(alert *Alert) {
 	}
 }
 
+// PruneSuppressed 清理已被冷却规则抑制的噪声预警。
+// 每次重算报告前调用, 避免重复预警把汇总计数越堆越大。
+func (e *AlertEngine) PruneSuppressed() {
+	kept := make([]Alert, 0, len(e.alerts))
+	for _, alert := range e.alerts {
+		if alert.Status == AlertStatusSuppressed {
+			continue
+		}
+		kept = append(kept, alert)
+	}
+	e.alerts = kept
+}
+
 // AcknowledgeAlert 确认预警
 func (e *AlertEngine) AcknowledgeAlert(id, ackedBy string) error {
 	for i := range e.alerts {

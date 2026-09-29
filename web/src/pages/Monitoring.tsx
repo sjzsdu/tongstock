@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   Col,
+  Descriptions,
   Progress,
   Row,
   Space,
@@ -30,11 +31,12 @@ import type {
   ConcentrationResult,
   DecayDetectionResult,
   DriftDetectionResult,
+  MonitoringInputStatus,
   MonitoringReport,
 } from '../types/api';
 import { api } from '../api/client';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 // 严重度颜色映射
 const severityColor: Record<string, string> = {
@@ -73,7 +75,9 @@ const statusColor: Record<string, string> = {
 
 export default function Monitoring() {
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [report, setReport] = useState<MonitoringReport | null>(null);
+  const [input, setInput] = useState<MonitoringInputStatus | null>(null);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [alertSummary, setAlertSummary] = useState<AlertSummary | null>(null);
 
@@ -86,9 +90,10 @@ export default function Monitoring() {
       ]);
       if (reportResp) {
         setReport(reportResp.report);
+        setInput(reportResp.input);
       }
       if (alertsResp) {
-        setAlerts(alertsResp.alerts);
+        setAlerts(alertsResp.alerts ?? []);
         setAlertSummary(alertsResp.summary);
       }
     } catch (err) {
@@ -101,6 +106,32 @@ export default function Monitoring() {
   useEffect(() => {
     queueMicrotask(() => void loadData());
   }, []);
+
+  // 强制按当前真实观测重算报告 (会重新读取行情与账本)
+  const handleRebuild = async () => {
+    setRefreshing(true);
+    try {
+      const [reportResp, alertsResp] = await Promise.all([
+        api.monitoringReportRefresh(),
+        api.monitoringAlerts().catch(() => null),
+      ]);
+      setReport(reportResp.report);
+      setInput(reportResp.input);
+      if (alertsResp) {
+        setAlerts(alertsResp.alerts ?? []);
+        setAlertSummary(alertsResp.summary);
+      }
+      if (reportResp.report) {
+        message.success('已按最新真实数据重算监控报告');
+      } else {
+        message.warning(reportResp.input?.notes?.[0] ?? '仍无可用的真实观测输入');
+      }
+    } catch (err) {
+      message.error(String(err));
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const handleAckAlert = async (id: string) => {
     try {
@@ -136,15 +167,55 @@ export default function Monitoring() {
   }
 
   if (!report) {
+    const notes = input?.notes ?? [];
     return (
       <div style={{ padding: 24 }}>
-        <Card>
-          <Space direction="vertical" style={{ width: '100%', justifyContent: 'center', alignItems: 'center' }}>
-            <SafetyCertificateOutlined style={{ fontSize: 48, color: '#1890ff' }} />
-            <Title level={4}>暂无监控数据</Title>
-            <Text>尚未收到真实前向收益和持仓观测，系统不会生成模拟监控报告。</Text>
-            <Text type="secondary">请先由真实账本或研究任务提交带来源和观测日期的监控输入。</Text>
-            <Button type="primary" onClick={loadData}>刷新</Button>
+        <Card
+          title={
+            <Space>
+              <SafetyCertificateOutlined />
+              <span>暂无监控数据</span>
+            </Space>
+          }
+          extra={
+            <Button type="primary" loading={refreshing} onClick={handleRebuild}>
+              按当前数据重算
+            </Button>
+          }
+        >
+          <Space direction="vertical" style={{ width: '100%' }} size={16}>
+            <Text>
+              监控报告只由真实观测生成（前向账本 / 真实交易 / 自选组合行情），系统不会伪造模拟报告。
+              下面是当前输入源的实际情况：
+            </Text>
+
+            <Descriptions bordered size="small" column={1}>
+              <Descriptions.Item label="数据源">
+                {input?.source_label || '未探测到可用数据源'}
+              </Descriptions.Item>
+              <Descriptions.Item label="前向运行 / 信号">
+                {input?.forward_runs ?? 0} / {input?.signals ?? 0}
+              </Descriptions.Item>
+              <Descriptions.Item label="成交记录">{input?.trades ?? 0} 笔</Descriptions.Item>
+              <Descriptions.Item label="可用收益观测">
+                {input?.obs_count ?? 0} 天（至少需要 80 天：20 天基准 + 60 天前向）
+              </Descriptions.Item>
+              <Descriptions.Item label="已纳入标的">
+                {input?.universe?.length ? input.universe.join('、') : '无'}
+              </Descriptions.Item>
+            </Descriptions>
+
+            {notes.length > 0 && (
+              <Space direction="vertical" style={{ width: '100%' }}>
+                {notes.map((note, idx) => (
+                  <Alert key={idx} type="warning" showIcon message={note} />
+                ))}
+              </Space>
+            )}
+
+            <Text type="secondary">
+              数据补齐后点「按当前数据重算」即可生成报告；报告缓存 15 分钟，重算会重新读取行情。
+            </Text>
           </Space>
         </Card>
       </div>
@@ -169,10 +240,28 @@ export default function Monitoring() {
         }
         extra={
           <Space>
-            <Button onClick={loadData}>刷新</Button>
+            <Button loading={refreshing} onClick={handleRebuild}>
+              重新计算
+            </Button>
           </Space>
         }
       >
+        {input && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message={
+              <Space size={8} wrap>
+                <Tag color="blue">数据源：{input.source_label || input.source}</Tag>
+                <Text type="secondary">
+                  观测 {input.obs_count} 天 · 前向 {input.forward_count} · 基准 {input.baseline_count}
+                </Text>
+                <Text type="secondary">标的 {input.position_count} 只</Text>
+              </Space>
+            }
+          />
+        )}
         <Row gutter={16}>
           <Col span={4}>
             <Card>

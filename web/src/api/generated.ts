@@ -243,6 +243,7 @@ export const operations = {
   getApiMethodsIdAudit: { method: "GET", path: "/api/methods/{id}/audit" },
   getApiMethodFamiliesId: { method: "GET", path: "/api/method-families/{id}" },
   getApiMonitoringReport: { method: "GET", path: "/api/monitoring/report" },
+  postApiMonitoringReportRefresh: { method: "POST", path: "/api/monitoring/report/refresh" },
   getApiMonitoringAlerts: { method: "GET", path: "/api/monitoring/alerts" },
   getApiMonitoringConfig: { method: "GET", path: "/api/monitoring/config" },
   postApiAutomationRun: { method: "POST", path: "/api/automation/run" },

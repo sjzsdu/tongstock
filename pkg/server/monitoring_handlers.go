@@ -1,7 +1,9 @@
 package server
 
 import (
+	"context"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sjzsdu/tongstock/internal/monitoring"
@@ -14,21 +16,98 @@ import (
 // monitoringReportResponse 监控报告响应
 type monitoringReportResponse struct {
 	Report monitoring.MonitorReport `json:"report"`
+	Input  MonitoringInputStatus    `json:"input"`
 }
 
-// handleMonitoringReport 获取最近监控报告
-// GET /api/monitoring/report
-func (s *Server) handleMonitoringReport(c *gin.Context) {
+// monitoringReportUnavailable 构造“没有真实观测”的失败响应。
+// 响应体带上 input 诊断, 让前端说清楚缺什么, 而不是静默无反应。
+func monitoringReportUnavailable(status MonitoringInputStatus) (int, gin.H) {
+	return http.StatusNotFound, gin.H{
+		"available": false,
+		"error":     "尚无基于真实观测输入的监控报告",
+		"input":     status,
+	}
+}
+
+// ensureMonitoringReport 返回缓存内的监控报告, 过期或缺失时用真实观测重算。
+// 输入构造可能涉及行情 IO, 只在 monitoringBuildMu 下串行执行;
+// 重算完成后才短暂持有 monitoringMu 写回报告。
+func (s *Server) ensureMonitoringReport(c *gin.Context, force bool) (*monitoring.MonitorReport, MonitoringInputStatus, bool) {
+	if !force {
+		if report, status, ok := s.cachedMonitoringReport(); ok {
+			return report, status, true
+		}
+	}
+
+	s.monitoringBuildMu.Lock()
+	defer s.monitoringBuildMu.Unlock()
+
+	// 拿到串行锁后可能已被并发请求算过
+	if !force {
+		if report, status, ok := s.cachedMonitoringReport(); ok {
+			return report, status, true
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), monitoringBuildTimeout)
+	defer cancel()
+
+	input, status, err := s.buildMonitoringInput(ctx)
+	if err != nil {
+		s.monitoringMu.Lock()
+		s.monitoringInputStatus = status
+		s.monitoringMu.Unlock()
+		return nil, status, false
+	}
+
+	s.monitoringMu.Lock()
+	defer s.monitoringMu.Unlock()
+	s.monitoringEngine.AlertEngine.PruneSuppressed()
+	generated := s.monitoringEngine.RunMonitoring(input)
+	generated.Source = status.Source
+	generated.Period = monitoring.MonitoringPeriod{
+		StartDate:  status.ForwardStart,
+		EndDate:    status.End,
+		WindowDays: status.ForwardCount,
+	}
+	report := &generated
+	s.monitoringReport = report
+	s.monitoringInputStatus = status
+	s.monitoringGeneratedAt = time.Now()
+	return report, status, true
+}
+
+func (s *Server) cachedMonitoringReport() (*monitoring.MonitorReport, MonitoringInputStatus, bool) {
 	s.monitoringMu.RLock()
 	defer s.monitoringMu.RUnlock()
-	if s.monitoringReport == nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"available": false,
-			"error":     "尚无基于真实观测输入生成的监控报告",
-		})
+	if s.monitoringReport == nil || time.Since(s.monitoringGeneratedAt) >= monitoringReportTTL {
+		return nil, s.monitoringInputStatus, false
+	}
+	return s.monitoringReport, s.monitoringInputStatus, true
+}
+
+// handleMonitoringReport 获取监控报告 (必要时用真实观测重算)
+// GET /api/monitoring/report
+func (s *Server) handleMonitoringReport(c *gin.Context) {
+	report, status, ok := s.ensureMonitoringReport(c, false)
+	if !ok {
+		code, body := monitoringReportUnavailable(status)
+		c.JSON(code, body)
 		return
 	}
-	c.JSON(http.StatusOK, monitoringReportResponse{Report: *s.monitoringReport})
+	c.JSON(http.StatusOK, monitoringReportResponse{Report: *report, Input: status})
+}
+
+// handleMonitoringReportRefresh 按当前真实观测强制重算监控报告
+// POST /api/monitoring/report/refresh
+func (s *Server) handleMonitoringReportRefresh(c *gin.Context) {
+	report, status, ok := s.ensureMonitoringReport(c, true)
+	if !ok {
+		code, body := monitoringReportUnavailable(status)
+		c.JSON(code, body)
+		return
+	}
+	c.JSON(http.StatusOK, monitoringReportResponse{Report: *report, Input: status})
 }
 
 // handleMonitoringAlerts 获取预警列表
@@ -108,6 +187,7 @@ func (s *Server) handleMonitoringHealth(c *gin.Context) {
 		"report_available": s.monitoringReport != nil,
 		"engine_source":    s.monitoringEngine.Config.Source,
 		"alert_summary":    s.monitoringEngine.AlertEngine.GetAlertSummary(),
+		"input":            s.monitoringInputStatus,
 	})
 }
 
@@ -116,6 +196,7 @@ func (s *Server) registerMonitoringRoutes(api *gin.RouterGroup) {
 	m := api.Group("/monitoring")
 	{
 		m.GET("/report", s.handleMonitoringReport)
+		m.POST("/report/refresh", s.handleMonitoringReportRefresh)
 		m.GET("/alerts", s.handleMonitoringAlerts)
 		m.POST("/alerts/:id/ack", s.handleMonitoringAlertAck)
 		m.POST("/alerts/:id/resolve", s.handleMonitoringAlertResolve)

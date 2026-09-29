@@ -4,6 +4,7 @@ package monitoring
 import (
 	"fmt"
 	"math"
+	"strings"
 	"time"
 )
 
@@ -165,6 +166,23 @@ func (m *ConcentrationMonitor) MonitorIndustryConcentration(positions []Position
 		return ConcentrationResult{
 			Type:        ConcentrationIndustry,
 			Description: "无持仓数据",
+			DetectedAt:  time.Now(),
+		}
+	}
+
+	// 没有任何行业标签时跳过: 否则所有标的会被归到同一个空行业,
+	// 伪造成 100% 的行业集中度。
+	industryTagged := 0
+	for _, p := range positions {
+		if strings.TrimSpace(p.Industry) != "" {
+			industryTagged++
+		}
+	}
+	if industryTagged == 0 {
+		return ConcentrationResult{
+			Type:        ConcentrationIndustry,
+			Severity:    "normal",
+			Description: "缺少行业标签, 跳过行业集中度监控",
 			DetectedAt:  time.Now(),
 		}
 	}

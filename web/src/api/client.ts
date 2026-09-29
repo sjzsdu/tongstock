@@ -51,6 +51,8 @@ import type {
   SignalEntry,
   EquityPoint,
   MonitoringReport,
+  MonitoringReportEnvelope,
+  MonitoringInputStatus,
   AlertItem,
   AlertSummary,
   NewsFacets,
@@ -84,6 +86,32 @@ export async function fetchWithAccessToken(path: string, init?: RequestInit): Pr
   window.localStorage.setItem(ACCESS_TOKEN_KEY, token);
   response = await request(token);
   return response;
+}
+
+// 监控报告特殊：404 不是错误，而是“尚无真实观测输入”，响应体携带 input 诊断。
+async function fetchMonitoringReport(path: string, init?: RequestInit): Promise<MonitoringReportEnvelope> {
+  const headers = new Headers(init?.headers);
+  headers.set('Content-Type', 'application/json');
+  const res = await fetchWithAccessToken(path, { ...init, headers });
+  const payload = await res.json().catch(() => null) as
+    | { report?: MonitoringReport; input?: MonitoringInputStatus; error?: unknown }
+    | null;
+
+  if (res.status === 404) {
+    return { available: false, report: null, input: payload?.input ?? null };
+  }
+  if (!res.ok) {
+    if (payload && typeof payload.error === 'object') {
+      const error = payload.error as { code: string; message: string; request_id?: string };
+      throw new TongStockAPIError(error.code, error.message, error.request_id, res.status);
+    }
+    throw new TongStockAPIError('http_error', '获取监控报告失败', undefined, res.status);
+  }
+  return {
+    available: true,
+    report: payload?.report ?? null,
+    input: payload?.input ?? null,
+  };
 }
 
 async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
@@ -726,8 +754,10 @@ export const api = {
 			}),
 
 	// Monitoring APIs
-	monitoringReport: () =>
-		fetchJSON<{ report: MonitoringReport }>('/api/monitoring/report'),
+	monitoringReport: () => fetchMonitoringReport('/api/monitoring/report'),
+
+	monitoringReportRefresh: () =>
+		fetchMonitoringReport('/api/monitoring/report/refresh', { method: 'POST' }),
 
 	monitoringAlerts: () =>
 		fetchJSON<{ alerts: AlertItem[]; summary: AlertSummary }>('/api/monitoring/alerts'),
