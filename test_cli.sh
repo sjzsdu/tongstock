@@ -363,14 +363,14 @@ echo "----------------------------------------"
 $CLI_PATH stockinfo sync --force 2>&1 | tail -10
 echo ""
 
-echo "58. 测试 server status 命令 - 查看服务状态"
+echo "58. 测试 serve status 命令 - 查看服务状态"
 echo "----------------------------------------"
-$CLI_PATH server status
+$CLI_PATH serve status
 echo ""
 
-echo "59. 测试 server help - 查看子命令帮助"
+echo "59. 测试 serve help - 查看子命令帮助"
 echo "----------------------------------------"
-$CLI_PATH server --help
+$CLI_PATH serve --help
 echo ""
 
 echo "========================================"

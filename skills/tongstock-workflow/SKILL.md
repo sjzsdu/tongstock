@@ -155,28 +155,28 @@ Start, stop, check status, or restart the TongStock HTTP server.
 
 ```bash
 # Start server in foreground (Ctrl+C to stop)
-tongstock server
+tongstock serve
 
 # Start server in background (daemon mode)
-tongstock server --daemon
+tongstock serve --daemon
 
 # Or use the dedicated start command
-tongstock server start
+tongstock serve start
 
 # Check if server is running
-tongstock server status
+tongstock serve status
 
 # Stop the running server
-tongstock server stop
+tongstock serve stop
 
 # Restart the server
-tongstock server restart
+tongstock serve restart
 ```
 
 **Daemon mode:**
-- `tongstock server --daemon` or `tongstock server start` launches the server in the background
+- `tongstock serve --daemon` or `tongstock serve start` launches the server in the background
 - PID is recorded in `~/.tongstock/server.pid` for process management
-- Logs are written to `~/.tongstock/server.log`
+- Logs are written to `~/server.log`
 - Graceful shutdown: SIGTERM with 8s timeout, then SIGKILL
 
 ## Workflow 8: HTTP API Batch Analysis (API 批量分析)
@@ -185,7 +185,7 @@ When the server is running, use HTTP API for programmatic access:
 
 ```bash
 # Start server in background
-tongstock server --daemon
+tongstock serve --daemon
 
 # Batch fetch via API (JSON output, easy to parse)
 curl -s "http://localhost:8106/api/quote?code=000001" | jq .

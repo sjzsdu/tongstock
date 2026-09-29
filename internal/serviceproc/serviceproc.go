@@ -121,7 +121,11 @@ func IsTongStockCommand(commandLine string) bool {
 	if name != "tongstock" {
 		return false
 	}
-	return len(fields) > 1 && fields[1] == "server"
+	if len(fields) < 2 {
+		return false
+	}
+	// "server" is the legacy subcommand name, kept as an alias of "serve".
+	return fields[1] == "serve" || fields[1] == "server"
 }
 
 func Matches(record Record) bool {

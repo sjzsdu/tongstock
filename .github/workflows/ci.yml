@@ -77,7 +77,7 @@ jobs:
       - name: Smoke test server
         working-directory: tongstock
         run: |
-          ./dist/tongstock server > server.log 2>&1 &
+          ./dist/tongstock serve > server.log 2>&1 &
           echo $! > server.pid
           for i in {1..30}; do
             if curl -fsS http://127.0.0.1:8106/health; then

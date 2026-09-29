@@ -8,6 +8,8 @@ func TestIsTongStockCommand(t *testing.T) {
 		want    bool
 	}{
 		{"/Users/me/.local/bin/tongstock server", true},
+		{"/Users/me/.local/bin/tongstock serve", true},
+		{"/Users/me/.local/bin/tongstock serve --daemon", true},
 		{"./tongstock-server", true},
 		{"/Users/me/.local/bin/tongstock quote 000001", false},
 		{"/usr/bin/python -m http.server 8080", false},

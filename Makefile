@@ -61,7 +61,7 @@ quality-check: cli
 	./$(CLI_BIN) quality check --block
 
 run: cli
-	./$(CLI_BIN) server
+	./$(CLI_BIN) serve
 
 install: cli
 	mkdir -p $(BINDIR)

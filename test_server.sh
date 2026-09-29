@@ -22,7 +22,7 @@ echo "TongStock Server API 测试"
 echo "========================================"
 echo ""
 
-"$CLI_PATH" server &
+"$CLI_PATH" serve &
 SERVER_PID=$!
 sleep 2
 

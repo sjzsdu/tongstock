@@ -44,7 +44,7 @@ cd web && pnpm install --frozen-lockfile && cd ..
 make cli
 
 # 启动 HTTP 服务
-./tongstock server
+./tongstock serve
 ```
 
 ## Skill 使用（推荐）
@@ -62,11 +62,11 @@ npx skills add sjzsdu/tongstock
 - 板块分类与成分股查询
 - 股票代码批量操作
 
-**提示**：首次使用需确保 TongStock 服务已启动（`./tongstock server`），默认服务地址 `http://localhost:8106`
+**提示**：首次使用需确保 TongStock 服务已启动（`./tongstock serve`），默认服务地址 `http://localhost:8106`
 
 ## Web UI
 
-启动 server 后访问 `http://localhost:8106` 即可使用 Web 界面。
+启动服务后访问 `http://localhost:8106` 即可使用 Web 界面。
 
 ### 功能页面
 
@@ -171,7 +171,7 @@ pnpm dev           # 启动开发服务器，默认代理到 localhost:8106
 ### 行情数据查询入口
 
 K线、分时、分笔、除权除息、财务、指数 K 线、F10 公司信息等数据已统一走 HTTP API，
-请通过 Web 界面（`/stock/:code` 个股详情、`/index/:code` 指数详情）或 `./tongstock server`
+请通过 Web 界面（`/stock/:code` 个股详情、`/index/:code` 指数详情）或 `./tongstock serve`
 提供的 REST 接口查询；CLI 保留 `quote/codes/indicator/screen/block/count/auction` 等
 轻量查询命令。
 
@@ -290,7 +290,7 @@ K线、分时、分笔、除权除息、财务、指数 K 线、F10 公司信息
 ### 启动服务
 
 ```bash
-./tongstock server
+./tongstock serve
 ```
 
 服务默认只监听 `http://127.0.0.1:8106`。

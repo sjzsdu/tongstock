@@ -3,9 +3,11 @@ package main
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -21,10 +23,12 @@ var (
 )
 
 // serverCmd is the root command for server management.
+// "server" is kept as an alias so existing scripts and launch agents keep working.
 var serverCmd = &cobra.Command{
-	Use:   "server",
-	Short: "TongStock HTTP 服务管理",
-	Long:  `启动、停止、查看状态或重启 TongStock HTTP 服务。不带子命令时默认以前台模式运行。`,
+	Use:     "serve",
+	Aliases: []string{"server"},
+	Short:   "TongStock HTTP 服务管理",
+	Long:    `启动、停止、查看状态或重启 TongStock HTTP 服务。不带子命令时默认以前台模式运行。旧命令名 server 仍可作为别名使用。`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if serverDaemon {
 			return startDaemon()
@@ -85,14 +89,18 @@ func init() {
 // --- Daemon management functions ---
 
 func startDaemon() error {
+	port := configuredPort()
+
 	// Check if already running
 	inspection := inspectServer()
 	if inspection.Running {
 		fmt.Printf("服务已在运行中 (PID %d)\n", inspection.PID)
+		fmt.Printf("  地址:   %s\n", serverBaseURL())
+		fmt.Printf("  查看:   tongstock serve status\n")
 		return nil
 	}
 	if inspection.Conflict {
-		return fmt.Errorf("端口 %d 被非 TongStock 进程占用 (PID %d)", configuredPort(), inspection.PID)
+		return fmt.Errorf("端口 %d 被非 TongStock 进程占用 (PID %d)", port, inspection.PID)
 	}
 
 	exe, err := os.Executable()
@@ -112,7 +120,7 @@ func startDaemon() error {
 	}
 
 	// Start the process in a new session (setsid)
-	cmd := exec.Command(exe, "server")
+	cmd := exec.Command(exe, "serve")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
@@ -127,7 +135,7 @@ func startDaemon() error {
 	record := serviceproc.Record{
 		PID:        cmd.Process.Pid,
 		Executable: exe,
-		Args:       []string{"server"},
+		Args:       []string{"serve"},
 		StartedAt:  time.Now(),
 	}
 	if err := serviceproc.Write(record); err != nil {
@@ -144,8 +152,24 @@ func startDaemon() error {
 		return fmt.Errorf("服务启动后立即退出，请检查日志: %s", logPath)
 	}
 
+	// Report the address right away, then wait for the HTTP endpoint so the
+	// operator gets a verified URL instead of guessing from the log.
 	fmt.Printf("服务已启动 (PID %d)\n", record.PID)
-	fmt.Printf("日志: %s\n", logPath)
+	fmt.Printf("  地址:   %s\n", serverBaseURL())
+	fmt.Printf("  日志:   %s\n", logPath)
+
+	health, healthErr := waitForHealth(record.PID, port, healthWaitTimeout)
+	switch {
+	case healthErr == nil:
+		fmt.Printf("  状态:   %s (健康检查通过)\n", health.Status)
+	case errors.Is(healthErr, errServerExited):
+		serviceproc.RemoveIfPID(record.PID)
+		return fmt.Errorf("服务启动后立即退出，请检查日志: %s", logPath)
+	default:
+		fmt.Printf("  状态:   尚未就绪 (%v)\n", healthErr)
+		fmt.Printf("  查看:   tongstock serve status 或 tail -f %s\n", logPath)
+	}
+	fmt.Printf("  停止:   tongstock serve stop\n")
 	return nil
 }
 
@@ -225,6 +249,7 @@ func showStatus() error {
 
 	fmt.Printf("✓ 服务运行中\n")
 	fmt.Printf("  PID:    %d\n", inspection.PID)
+	fmt.Printf("  地址:   %s\n", serverBaseURL())
 	fmt.Printf("  端口:   %d\n", port)
 	fmt.Printf("  来源:   %s\n", source)
 	if inspection.Record.StartedAt.IsZero() {
@@ -321,12 +346,69 @@ func inspectServer() serverInspection {
 	return serverInspection{}
 }
 
-func configuredPort() int {
+// healthWaitTimeout bounds how long `serve --daemon` waits for /health before
+// reporting the service as started but not yet ready.
+const healthWaitTimeout = 8 * time.Second
+
+// errServerExited reports that the spawned process died while we waited.
+var errServerExited = errors.New("server process exited")
+
+// waitForHealth polls /health until it answers, the process dies, or timeout
+// elapses. It also proves the printed URL actually serves traffic.
+func waitForHealth(pid, port int, timeout time.Duration) (serverHealth, error) {
+	deadline := time.Now().Add(timeout)
+	for {
+		health, err := queryHealth(port)
+		if err == nil && health.Status != "" {
+			return health, nil
+		}
+		if running, zombie := serviceproc.ProcessStatus(pid); !running || zombie {
+			return serverHealth{}, errServerExited
+		}
+		if time.Now().After(deadline) {
+			if err == nil {
+				err = errors.New("health 响应缺少 status")
+			}
+			return serverHealth{}, fmt.Errorf("%w (等待 %s)", err, timeout)
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+}
+
+// serverConfig loads the effective configuration, falling back to built-in
+// defaults so URL/status output still works when the config file is broken.
+func serverConfig() *config.Config {
 	cfg, err := config.Load()
 	if err != nil {
-		cfg = config.DefaultConfig()
+		return config.DefaultConfig()
 	}
+	return cfg
+}
+
+// serverBaseURL renders the address an operator can open in a browser.
+func serverBaseURL() string {
+	return baseURLFor(serverConfig())
+}
+
+// baseURLFor maps a configuration onto a human-openable URL. A wildcard bind
+// (0.0.0.0/::) displays loopback because that is the address that always works
+// from the machine running the CLI.
+func baseURLFor(cfg *config.Config) string {
+	host := strings.TrimSpace(cfg.Server.BindAddress)
+	switch host {
+	case "", "0.0.0.0", "::", "[::]":
+		host = "127.0.0.1"
+	}
+	host = strings.Trim(host, "[]")
 	port := cfg.Server.Port
+	if port == 0 {
+		port = 8106
+	}
+	return "http://" + net.JoinHostPort(host, strconv.Itoa(port))
+}
+
+func configuredPort() int {
+	port := serverConfig().Server.Port
 	if port == 0 {
 		return 8106
 	}
