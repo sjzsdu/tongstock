@@ -1009,6 +1009,20 @@ export interface NewsFacets {
   types: NewsFacet[];
 }
 
+/** /api/news/events 列表项：详情接口的 HotEvent 减去创建时间等重字段 */
+export interface EventSummary {
+  id: string;
+  title: string;
+  keywords: string[];
+  relatedStocks: string[];
+  hotIndex: number;
+  sourceCounts: Record<string, number>;
+  /** 关联资讯条数（后端由 newsItemIds 长度算出） */
+  newsCount: number;
+  updatedAt: string;
+  status: string;
+}
+
 export interface HotEvent {
   id: string;
   title: string;
@@ -1024,7 +1038,7 @@ export interface HotEvent {
 
 export interface EventResult {
   total: number;
-  items: HotEvent[];
+  items: EventSummary[];
 }
 
 export interface SentimentResult {
@@ -1038,6 +1052,8 @@ export interface MarketSentiment {
   positiveCount: number;
   negativeCount: number;
   neutralCount: number;
+  /** 时间窗口内资讯总数；老版本接口没有这个字段 */
+  totalCount?: number;
   sentimentIndex: number;
   hotScoreAvg: number;
   sentimentByType: Record<string, SentimentResult>;

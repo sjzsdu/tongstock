@@ -254,3 +254,17 @@ body {
   color: #9ca3af;
   font-size: 12px;
 }
+
+/* ---------------- 市场情绪 ---------------- */
+/* 百分比用 clamp 随卡片宽度缩放：右栏窄时 32px 的三列数字会互相挤压溢出 */
+.market-sentiment-pct {
+  font-size: clamp(18px, 3.2vw, 32px);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+@media (min-width: 992px) {
+  /* 桌面端右栏是固定比例的侧栏，改用容器驱动而不是视口 */
+  .market-sentiment-stats .market-sentiment-pct {
+    font-size: clamp(18px, 2.2cqw, 32px);
+  }
+}

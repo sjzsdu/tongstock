@@ -615,6 +615,8 @@ func (a *App) startNewsBackgroundSync() {
 	if a.newsService == nil {
 		return
 	}
+	// 热点事件挂在同步循环上：每次抓取完成后重建，「热点TOP10」才有数据。
+	a.newsService.SetClusterer(newsfeed.NewClusterer(a.newsfeed, newsfeed.DefaultClusterConfig()))
 	go func() {
 		ticker := time.NewTicker(10 * time.Minute)
 		defer ticker.Stop()

@@ -32,6 +32,12 @@ type Store interface {
 	// FilterNews 按条件筛选新闻
 	FilterNews(ctx context.Context, filter FeedFilter) (*FeedResult, error)
 
+	// CountNews 统计满足筛选条件的新闻条数，口径与 FilterNews 一致
+	CountNews(ctx context.Context, filter FeedFilter) (int, error)
+
+	// IterNews 分批遍历满足筛选条件的全部新闻，不受分页上限约束
+	IterNews(ctx context.Context, filter FeedFilter, fn func(*NewsItem) error) error
+
 	// SaveHotEvent 保存热点事件
 	SaveHotEvent(ctx context.Context, event *HotEvent) error
 
@@ -275,75 +281,7 @@ func (s *SQLiteStore) GetNewsByID(ctx context.Context, id string) (*NewsItem, er
 // FilterNews 按条件筛选新闻
 func (s *SQLiteStore) FilterNews(ctx context.Context, filter FeedFilter) (*FeedResult, error) {
 	// 条件单独拼进 where，列表与总数共用同一套，避免两者口径不一致。
-	where := ""
-	args := []interface{}{}
-
-	// 按来源筛选
-	if len(filter.Sources) > 0 {
-		placeholders := make([]string, len(filter.Sources))
-		for i, source := range filter.Sources {
-			placeholders[i] = "?"
-			args = append(args, source)
-		}
-		where += fmt.Sprintf(" AND source IN (%s)", joinStrings(placeholders))
-	}
-
-	// 按新闻类型筛选
-	if len(filter.NewsTypes) > 0 {
-		placeholders := make([]string, len(filter.NewsTypes))
-		for i, nt := range filter.NewsTypes {
-			placeholders[i] = "?"
-			args = append(args, nt)
-		}
-		where += fmt.Sprintf(" AND news_type IN (%s)", joinStrings(placeholders))
-	}
-
-	// 按关联股票筛选。必须走 news_stock_ref 关联表，不能对 related_stocks
-	// 这个 JSON 文本列做 LIKE —— 后者既用不上索引，也会误命中。
-	if len(filter.RelatedStocks) > 0 {
-		placeholders := make([]string, len(filter.RelatedStocks))
-		for i, code := range filter.RelatedStocks {
-			placeholders[i] = "?"
-			args = append(args, code)
-		}
-		where += fmt.Sprintf(
-			" AND EXISTS (SELECT 1 FROM news_stock_ref r WHERE r.news_id = news_items.id AND r.code IN (%s)",
-			joinStrings(placeholders),
-		)
-		if filter.MinConfidence > 0 {
-			where += " AND r.confidence >= ?"
-			args = append(args, filter.MinConfidence)
-		}
-		where += ")"
-	}
-
-	// 按时间范围筛选
-	if filter.StartTime != nil {
-		where += " AND publish_time >= ?"
-		args = append(args, filter.StartTime.Format(time.RFC3339))
-	}
-	if filter.EndTime != nil {
-		where += " AND publish_time <= ?"
-		args = append(args, filter.EndTime.Format(time.RFC3339))
-	}
-
-	// 按热度筛选
-	if filter.HotScoreMin > 0 {
-		where += " AND hot_score >= ?"
-		args = append(args, filter.HotScoreMin)
-	}
-
-	// 按关键词搜索标题与摘要。多个关键词是「且」的关系；只搜这两列，
-	// content 列体积大且不参与列表展示，LIKE 它没有意义。
-	for _, keyword := range filter.Keywords {
-		keyword = strings.TrimSpace(keyword)
-		if keyword == "" {
-			continue
-		}
-		where += ` AND (title LIKE ? ESCAPE '\' OR summary LIKE ? ESCAPE '\')`
-		pattern := "%" + escapeLikePattern(keyword) + "%"
-		args = append(args, pattern, pattern)
-	}
+	where, args := buildNewsWhere(filter)
 
 	sortBy := filter.SortBy
 	if sortBy == "" {
@@ -416,6 +354,133 @@ func (s *SQLiteStore) FilterNews(ctx context.Context, filter FeedFilter) (*FeedR
 		PageNum:  filter.PageNum,
 		PageSize: filter.PageSize,
 	}, nil
+}
+
+// buildNewsWhere 把 FeedFilter 的筛选条件拼成 where 子句（不含 WHERE 关键字）。
+// 列表、计数共用同一套条件，保证两种口径永远一致。
+func buildNewsWhere(filter FeedFilter) (string, []interface{}) {
+	where := ""
+	args := []interface{}{}
+
+	// 按来源筛选
+	if len(filter.Sources) > 0 {
+		placeholders := make([]string, len(filter.Sources))
+		for i, source := range filter.Sources {
+			placeholders[i] = "?"
+			args = append(args, source)
+		}
+		where += fmt.Sprintf(" AND source IN (%s)", joinStrings(placeholders))
+	}
+
+	// 按新闻类型筛选
+	if len(filter.NewsTypes) > 0 {
+		placeholders := make([]string, len(filter.NewsTypes))
+		for i, nt := range filter.NewsTypes {
+			placeholders[i] = "?"
+			args = append(args, nt)
+		}
+		where += fmt.Sprintf(" AND news_type IN (%s)", joinStrings(placeholders))
+	}
+
+	// 按关联股票筛选。必须走 news_stock_ref 关联表，不能对 related_stocks
+	// 这个 JSON 文本列做 LIKE —— 后者既用不上索引，也会误命中。
+	if len(filter.RelatedStocks) > 0 {
+		placeholders := make([]string, len(filter.RelatedStocks))
+		for i, code := range filter.RelatedStocks {
+			placeholders[i] = "?"
+			args = append(args, code)
+		}
+		where += fmt.Sprintf(
+			" AND EXISTS (SELECT 1 FROM news_stock_ref r WHERE r.news_id = news_items.id AND r.code IN (%s)",
+			joinStrings(placeholders),
+		)
+		if filter.MinConfidence > 0 {
+			where += " AND r.confidence >= ?"
+			args = append(args, filter.MinConfidence)
+		}
+		where += ")"
+	}
+
+	// 按时间范围筛选
+	if filter.StartTime != nil {
+		where += " AND publish_time >= ?"
+		args = append(args, filter.StartTime.Format(time.RFC3339))
+	}
+	if filter.EndTime != nil {
+		where += " AND publish_time <= ?"
+		args = append(args, filter.EndTime.Format(time.RFC3339))
+	}
+
+	// 按热度筛选
+	if filter.HotScoreMin > 0 {
+		where += " AND hot_score >= ?"
+		args = append(args, filter.HotScoreMin)
+	}
+
+	// 按关键词搜索标题与摘要。多个关键词是「且」的关系；只搜这两列，
+	// content 列体积大且不参与列表展示，LIKE 它没有意义。
+	for _, keyword := range filter.Keywords {
+		keyword = strings.TrimSpace(keyword)
+		if keyword == "" {
+			continue
+		}
+		where += ` AND (title LIKE ? ESCAPE '\' OR summary LIKE ? ESCAPE '\')`
+		pattern := "%" + escapeLikePattern(keyword) + "%"
+		args = append(args, pattern, pattern)
+	}
+
+	return where, args
+}
+
+// CountNews 统计满足筛选条件的新闻条数，口径与 FilterNews 一致。
+// 供情绪分析等「需要全窗口总数」的场景使用，不受分页上限影响。
+func (s *SQLiteStore) CountNews(ctx context.Context, filter FeedFilter) (int, error) {
+	where, args := buildNewsWhere(filter)
+	var total int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM news_items WHERE 1=1`+where, args...).Scan(&total); err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
+// IterNews 分批遍历满足筛选条件的全部新闻（按发布时间倒序），逐条回调。
+//
+// 情绪分析要扫整个时间窗口，一次 Load 成 []NewsItem 既占内存也可能上千条；
+// 这里按页取摘要、按 ID 取全文，流式喂给调用方。单条缺失只跳过不断流。
+func (s *SQLiteStore) IterNews(ctx context.Context, filter FeedFilter, fn func(*NewsItem) error) error {
+	const batchSize = 500
+	f := filter
+	f.PageSize = batchSize
+	f.PageNum = 1
+	seen := make(map[string]bool)
+	for {
+		result, err := s.FilterNews(ctx, f)
+		if err != nil {
+			return err
+		}
+		if len(result.Items) == 0 {
+			return nil
+		}
+		for _, summary := range result.Items {
+			// 遍历期间有新写入时窗口会整体位移，同一行可能再次出现，去重保证只统计一次。
+			if seen[summary.ID] {
+				continue
+			}
+			seen[summary.ID] = true
+			item, err := s.GetNewsByID(ctx, summary.ID)
+			if err != nil {
+				continue
+			}
+			if err := fn(item); err != nil {
+				return err
+			}
+		}
+		if len(result.Items) < batchSize {
+			return nil
+		}
+		f.PageNum++
+	}
 }
 
 // NewsFacets 返回来源与新闻类型在库中的条数分布，供信息流筛选器生成选项。

@@ -631,6 +631,10 @@ export const api = {
 	hotEventDetail: (id: string) =>
 		fetchJSON<{ event: HotEvent; newsItems: NewsItem[] }>(`/api/news/events/${id}`),
 
+	/** 重新聚类生成热点事件，返回本次生成的事件数 */
+	refreshHotEvents: () =>
+		fetchJSON<{ count: number }>('/api/news/events/refresh', { method: 'POST' }),
+
 	// Sentiment APIs
 	sentimentMarket: (hours?: number) => {
 		const params = hours != null ? `?hours=${hours}` : '';

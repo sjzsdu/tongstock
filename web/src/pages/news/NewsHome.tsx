@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ClockCircleOutlined, FireOutlined, RestOutlined, SearchOutlined, ThunderboltOutlined, WarningOutlined } from '@ant-design/icons';
+import { ClockCircleOutlined, FireOutlined, RestOutlined, SearchOutlined, SyncOutlined, ThunderboltOutlined, WarningOutlined } from '@ant-design/icons';
 import { Button, Card, Col, Empty, Flex, Input, List, Row, Segmented, Select, Space, Spin, Tag, Typography, message } from 'antd';
 import { api } from '../../api/client';
 import { HOT_TAG_THRESHOLD, mergeNews, stockChips } from '../../lib/newsList';
-import type { NewsSummary, HotEvent, MarketSentiment, NewsFacets } from '../../types/api';
+import type { NewsSummary, EventSummary, MarketSentiment, NewsFacets } from '../../types/api';
 
 const { Search } = Input;
 
@@ -71,7 +71,9 @@ export default function NewsHome() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [facets, setFacets] = useState<NewsFacets | null>(null);
-  const [hotEvents, setHotEvents] = useState<HotEvent[]>([]);
+  const [hotEvents, setHotEvents] = useState<EventSummary[]>([]);
+  const [loadingEvents, setLoadingEvents] = useState(true);
+  const [refreshingEvents, setRefreshingEvents] = useState(false);
   const [marketSentiment, setMarketSentiment] = useState<MarketSentiment | null>(null);
   const [fetchingBrowser, setFetchingBrowser] = useState(false);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -129,20 +131,42 @@ export default function NewsHome() {
     };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadHotEvents = () => {
+    setLoadingEvents(true);
     api
       .hotEvents({ limit: 10 })
       .then((result) => {
-        if (!cancelled) setHotEvents(result.items || []);
+        setHotEvents(result.items || []);
       })
       .catch(() => {
-        if (!cancelled) setHotEvents([]);
+        setHotEvents([]);
+      })
+      .finally(() => {
+        setLoadingEvents(false);
       });
-    return () => {
-      cancelled = true;
-    };
+  };
+
+  useEffect(() => {
+    loadHotEvents();
   }, []);
+
+  /** 空列表兜底：让后端立刻重建热点，而不是等下一次后台同步 */
+  const handleRefreshEvents = async () => {
+    setRefreshingEvents(true);
+    try {
+      const result = await api.refreshHotEvents();
+      if (result.count > 0) {
+        message.success(`已生成 ${result.count} 个热点事件`);
+      } else {
+        message.info('暂无足够新闻可生成热点');
+      }
+    } catch {
+      message.error('生成热点事件失败');
+    } finally {
+      setRefreshingEvents(false);
+      loadHotEvents();
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -411,10 +435,28 @@ export default function NewsHome() {
               热点TOP10
             </Space>
           }
+          extra={
+            <Button
+              type="text"
+              size="small"
+              icon={<SyncOutlined spin={refreshingEvents} />}
+              onClick={handleRefreshEvents}
+              title="重新聚类生成热点"
+            >
+              刷新
+            </Button>
+          }
           style={{ marginBottom: 16 }}
         >
-          {hotEvents.length === 0 ? (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无热点" />
+          {loadingEvents ? (
+            <div style={{ textAlign: 'center', padding: '32px 0' }}>
+              <Spin />
+            </div>
+          ) : hotEvents.length === 0 ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="暂无热点，点击「刷新」从最新资讯生成"
+            />
           ) : (
             <List
               dataSource={hotEvents}
@@ -437,19 +479,27 @@ export default function NewsHome() {
                           justifyContent: 'center',
                           fontSize: 12,
                           fontWeight: 'bold',
+                          flexShrink: 0,
                         }}
                       >
                         {index + 1}
                       </span>
-                      <Typography.Text strong style={{ fontSize: 14, flex: 1 }}>
+                      <Typography.Text strong style={{ fontSize: 14, flex: 1 }} ellipsis>
                         {event.title}
                       </Typography.Text>
-                      <Tag color={event.hotIndex > 100 ? 'red' : 'orange'}>{event.hotIndex}</Tag>
+                      <Tag color={event.hotIndex > 100 ? 'red' : 'orange'} style={{ flexShrink: 0 }}>
+                        {event.hotIndex}
+                      </Tag>
                     </div>
                     <Space size={4} wrap>
                       {event.keywords.slice(0, 2).map((kw) => (
                         <Tag key={kw}>{kw}</Tag>
                       ))}
+                      {event.newsCount > 0 && (
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          {event.newsCount} 条相关资讯
+                        </Typography.Text>
+                      )}
                     </Space>
                   </Space>
                 </List.Item>
@@ -469,67 +519,71 @@ export default function NewsHome() {
           style={{ marginBottom: 16 }}
         >
           {marketSentiment ? (
-            <>
-              {(() => {
-                const total = marketSentiment.positiveCount + marketSentiment.negativeCount + marketSentiment.neutralCount;
-                const positivePct = total > 0 ? marketSentiment.positiveCount / total : 0;
-                const neutralPct = total > 0 ? marketSentiment.neutralCount / total : 0;
-                const negativePct = total > 0 ? marketSentiment.negativeCount / total : 0;
-                return (
-                  <>
+            (() => {
+              // 优先用后端下发的窗口总数；老版本接口没有 totalCount 时退化为三项相加。
+              const totalCount = marketSentiment.totalCount ?? 0;
+              const total =
+                totalCount > 0
+                  ? totalCount
+                  : marketSentiment.positiveCount + marketSentiment.negativeCount + marketSentiment.neutralCount;
+              const positivePct = total > 0 ? marketSentiment.positiveCount / total : 0;
+              const neutralPct = total > 0 ? marketSentiment.neutralCount / total : 0;
+              const negativePct = total > 0 ? marketSentiment.negativeCount / total : 0;
+              return (
+                <>
+                  <div
+                    className="market-sentiment-stats"
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-around',
+                      alignItems: 'center',
+                      padding: '20px 0',
+                      gap: 8,
+                    }}
+                  >
+                    <div style={{ textAlign: 'center', flex: 1, minWidth: 0 }}>
+                      <div className="market-sentiment-pct" style={{ fontWeight: 'bold', color: '#ef4444' }}>
+                        {(positivePct * 100).toFixed(1)}%
+                      </div>
+                      <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>正面</div>
+                    </div>
+                    <div style={{ textAlign: 'center', flex: 1, minWidth: 0 }}>
+                      <div className="market-sentiment-pct" style={{ fontWeight: 'bold', color: '#f59e0b' }}>
+                        {(neutralPct * 100).toFixed(1)}%
+                      </div>
+                      <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>中性</div>
+                    </div>
+                    <div style={{ textAlign: 'center', flex: 1, minWidth: 0 }}>
+                      <div className="market-sentiment-pct" style={{ fontWeight: 'bold', color: '#22c55e' }}>
+                        {(negativePct * 100).toFixed(1)}%
+                      </div>
+                      <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>负面</div>
+                    </div>
+                  </div>
+                  <div style={{ height: 8, backgroundColor: '#1f2937', borderRadius: 4, overflow: 'hidden' }}>
                     <div
                       style={{
-                        display: 'flex',
-                        justifyContent: 'space-around',
-                        alignItems: 'center',
-                        padding: '20px 0',
-                        gap: 16,
+                        height: '100%',
+                        width: '100%',
+                        background: `linear-gradient(90deg, #ef4444 ${positivePct * 100}%, #f59e0b ${
+                          (positivePct + neutralPct) * 100
+                        }%, #22c55e 100%)`,
+                        borderRadius: 4,
                       }}
-                    >
-                      <div style={{ textAlign: 'center', flex: 1 }}>
-                        <div style={{ fontSize: 32, fontWeight: 'bold', color: '#ef4444' }}>
-                          {(positivePct * 100).toFixed(1)}%
-                        </div>
-                        <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>正面</div>
-                      </div>
-                      <div style={{ textAlign: 'center', flex: 1 }}>
-                        <div style={{ fontSize: 32, fontWeight: 'bold', color: '#f59e0b' }}>
-                          {(neutralPct * 100).toFixed(1)}%
-                        </div>
-                        <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>中性</div>
-                      </div>
-                      <div style={{ textAlign: 'center', flex: 1 }}>
-                        <div style={{ fontSize: 32, fontWeight: 'bold', color: '#22c55e' }}>
-                          {(negativePct * 100).toFixed(1)}%
-                        </div>
-                        <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>负面</div>
-                      </div>
-                    </div>
-                    <div style={{ height: 8, backgroundColor: '#1f2937', borderRadius: 4, overflow: 'hidden' }}>
-                      <div
-                        style={{
-                          height: '100%',
-                          width: '100%',
-                          background: `linear-gradient(90deg, #ef4444 ${positivePct * 100}%, #f59e0b ${
-                            (positivePct + neutralPct) * 100
-                          }%, #22c55e 100%)`,
-                          borderRadius: 4,
-                        }}
-                      />
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                        今日共 {total} 条资讯
-                      </Typography.Text>
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                        <ClockCircleOutlined style={{ marginRight: 4 }} />
-                        实时更新
-                      </Typography.Text>
-                    </div>
-                  </>
-                );
-              })()}
-            </>
+                    />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      今日共 {total} 条资讯
+                    </Typography.Text>
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      <ClockCircleOutlined style={{ marginRight: 4 }} />
+                      实时更新
+                    </Typography.Text>
+                  </div>
+                </>
+              );
+            })()
           ) : (
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无情绪数据" />
           )}

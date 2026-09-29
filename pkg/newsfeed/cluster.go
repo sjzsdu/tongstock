@@ -6,8 +6,15 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
+	"unicode/utf8"
 )
+
+// refreshScanSize 是刷新热点事件时每次扫描的新闻条数。
+// 聚类是 O(n²) 的关键词两两比对，一次吞下全库既有内存风险，
+// 也拖慢刷新节奏；分页从最新往回扫，直到凑满一个时间窗口为止。
+const refreshScanSize = 500
 
 // ClusterConfig 聚类配置
 type ClusterConfig struct {
@@ -41,7 +48,14 @@ func DefaultClusterConfig() ClusterConfig {
 type Clusterer struct {
 	config ClusterConfig
 	store  Store
+	// ensureMu/lastEnsure 用于 EnsureHotEvents 的节流，避免并发重复聚类。
+	ensureMu   sync.Mutex
+	lastEnsure time.Time
 }
+
+// ensureCooldown 是两次「热点事件补建检查」之间的最小间隔。
+// 聚类开销不小，列表页轮询不应每次都触发。
+const ensureCooldown = 5 * time.Minute
 
 // NewClusterer 创建聚类器
 func NewClusterer(store Store, config ClusterConfig) *Clusterer {
@@ -49,6 +63,74 @@ func NewClusterer(store Store, config ClusterConfig) *Clusterer {
 		config: config,
 		store:  store,
 	}
+}
+
+// RefreshEvents 扫描最近的新闻并重建热点事件。
+//
+// 热点事件此前只能靠手动 POST /events/refresh 生成，页面上的「热点TOP10」
+// 在没人调过这个接口时永远是空的。刷新流程本身与手动接口一致：
+// 按时间窗口分组 → 提取关键词 → 聚类 → 生成事件 → 落库。
+func (c *Clusterer) RefreshEvents(ctx context.Context) (int, error) {
+	if c.store == nil {
+		return 0, ErrStoreNotSet
+	}
+
+	news, err := c.scanRecentNews(ctx, c.config.TimeWindow)
+	if err != nil {
+		return 0, err
+	}
+	if len(news) == 0 {
+		return 0, nil
+	}
+
+	events, err := c.Cluster(ctx, news)
+	if err != nil {
+		return 0, err
+	}
+
+	saved := 0
+	for _, event := range events {
+		if err := c.store.SaveHotEvent(ctx, event); err != nil {
+			return saved, err
+		}
+		saved++
+	}
+	return saved, nil
+}
+
+// scanRecentNews 从最新一条新闻往回扫描，直到出现一条落在时间窗口之外的
+// 新闻为止——窗口之外的新闻与窗口内的无法聚到同一个事件里，没必要继续读。
+// FilterNews 按时间倒序返回，且排序键同时写进了 where，保证窗口判断可靠。
+func (c *Clusterer) scanRecentNews(ctx context.Context, windowMinutes int) ([]*NewsItem, error) {
+	var out []*NewsItem
+	for page := 1; ; page++ {
+		result, err := c.store.FilterNews(ctx, FeedFilter{
+			SortBy:   "time",
+			PageSize: refreshScanSize,
+			PageNum:  page,
+		})
+		if err != nil {
+			return out, err
+		}
+		if len(result.Items) == 0 {
+			break
+		}
+		for i := range result.Items {
+			summary := &result.Items[i]
+			item, err := c.store.GetNewsByID(ctx, summary.ID)
+			if err != nil {
+				continue
+			}
+			if windowMinutes > 0 && time.Since(item.PublishTime) > time.Duration(windowMinutes)*time.Minute {
+				return out, nil
+			}
+			out = append(out, item)
+		}
+		if len(result.Items) < refreshScanSize {
+			break
+		}
+	}
+	return out, nil
 }
 
 // Cluster 对新闻进行聚类，生成热点事件
@@ -137,7 +219,10 @@ func (c *Clusterer) extractKeywords(news []*NewsItem) []string {
 		keywords := c.tokenize(text)
 		for _, kw := range keywords {
 			kw = strings.ToLower(strings.TrimSpace(kw))
-			if len(kw) >= 2 && !isStopWord(kw) {
+			// 按「字符数」而非字节数判断：单个汉字占 3 字节，
+			// 用字节长度会把「日」「国」这类单字放进关键词池，
+			// 高频单字聚出来的事件标题就是无意义的字面拼凑。
+			if utf8.RuneCountInString(kw) >= 2 && !isStopWord(kw) && !isPureDigits(kw) {
 				keywordCounts[kw]++
 			}
 		}
@@ -225,6 +310,16 @@ func isChineseChar(r rune) bool {
 // isLetterOrDigit 判断是否为字母或数字
 func isLetterOrDigit(r rune) bool {
 	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+}
+
+// isPureDigits 过滤「29」「2026」这类纯数字词：日期与数字对热点命名没有意义。
+func isPureDigits(word string) bool {
+	for _, r := range word {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return len(word) > 0
 }
 
 // isStopWord 判断是否为停用词
@@ -399,7 +494,7 @@ func (c *Clusterer) createEvent(news []*NewsItem, keywords []string) *HotEvent {
 	}
 
 	return &HotEvent{
-		ID:            fmt.Sprintf("event_%d", time.Now().UnixNano()),
+		ID:            "event_" + c.eventSignature(keywords, title),
 		Title:         title,
 		Keywords:      keywords,
 		RelatedStocks: stocksList,
@@ -457,7 +552,7 @@ func (c *Clusterer) deduplicateEvents(events []*HotEvent) []*HotEvent {
 	var unique []*HotEvent
 
 	for _, event := range events {
-		signature := c.eventSignature(event)
+		signature := c.eventSignature(event.Keywords, event.Title)
 		if !seen[signature] {
 			seen[signature] = true
 			unique = append(unique, event)
@@ -467,10 +562,9 @@ func (c *Clusterer) deduplicateEvents(events []*HotEvent) []*HotEvent {
 	return unique
 }
 
-// eventSignature 生成事件签名（用于去重）
-func (c *Clusterer) eventSignature(event *HotEvent) string {
-	// 使用关键词和标题生成签名
-	sig := strings.Join(event.Keywords, "-") + "-" + event.Title
+// eventSignature 生成事件签名（关键词 + 标题，用于去重，也用作事件 ID）
+func (c *Clusterer) eventSignature(keywords []string, title string) string {
+	sig := strings.Join(keywords, "-") + "-" + title
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(sig)))[:16]
 }
 
@@ -533,6 +627,41 @@ func (c *Clusterer) UpdateEventStatus(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// EnsureHotEvents 保证「热点TOP10」有数据。
+//
+// 事件只由 RefreshEvents 生成；若从来没有刷新过（首次启动、老库升级），
+// 列表页永远是空的。这里检查是否存在活跃事件，没有且库里有新闻时
+// 先补一次刷新。带访问间隔限流：避免每次列表请求都触发一次全量聚类。
+func (c *Clusterer) EnsureHotEvents(ctx context.Context) (int, error) {
+	if c.store == nil {
+		return 0, ErrStoreNotSet
+	}
+	if !c.ensureReady() {
+		return 0, nil
+	}
+	return c.RefreshEvents(ctx)
+}
+
+// ensureReady 报告是否需要补建热点事件；通过时顺带记录本次时间。
+func (c *Clusterer) ensureReady() bool {
+	c.ensureMu.Lock()
+	defer c.ensureMu.Unlock()
+
+	if time.Since(c.lastEnsure) < ensureCooldown {
+		return false
+	}
+	c.lastEnsure = time.Now()
+
+	result, err := c.store.GetHotEvents(context.Background(), HotEventFilter{
+		Status: []EventStatus{EventStatusActive, EventStatusCooling},
+		Limit:  1,
+	})
+	if err != nil {
+		return false
+	}
+	return len(result.Items) == 0
 }
 
 // min 返回最小值

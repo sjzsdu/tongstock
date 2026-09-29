@@ -127,14 +127,107 @@ func (s *SimpleSentimentAnalyzer) AnalyzeNews(item *NewsItem) SentimentResult {
 
 // MarketSentiment 市场情绪数据
 type MarketSentiment struct {
-	Timestamp         time.Time                      `json:"timestamp"`
-	PositiveCount     int                            `json:"positiveCount"`
-	NegativeCount     int                            `json:"negativeCount"`
-	NeutralCount      int                            `json:"neutralCount"`
+	Timestamp     time.Time `json:"timestamp"`
+	PositiveCount int       `json:"positiveCount"`
+	NegativeCount int       `json:"negativeCount"`
+	NeutralCount  int       `json:"neutralCount"`
+	// TotalCount 是时间窗口内的新闻总数（含分析跳过的记录）。
+	// 正负面中性三项相加可能小于它，页面上「今日共 N 条」应显示这个值。
+	TotalCount        int                            `json:"totalCount"`
 	SentimentIndex    float64                        `json:"sentimentIndex"` // 综合情绪指数 0-100
 	HotScoreAvg       float64                        `json:"hotScoreAvg"`    // 平均热度
 	SentimentByType   map[NewsType]SentimentResult   `json:"sentimentByType"`
 	SentimentBySource map[SourceType]SentimentResult `json:"sentimentBySource"`
+
+	// totalHotScore 是流式累计的热度和，finalize 时除以样本数得到均分。
+	totalHotScore int
+}
+
+// finalize 由累计结果算出指数、均分与各维度情绪，补齐三个 map。
+func (r *MarketSentiment) finalize(
+	typeStats map[NewsType]dimensionStats,
+	sourceStats map[SourceType]dimensionStats,
+) {
+	r.SentimentByType = make(map[NewsType]SentimentResult, len(typeStats))
+	r.SentimentBySource = make(map[SourceType]SentimentResult, len(sourceStats))
+
+	total := r.PositiveCount + r.NegativeCount + r.NeutralCount
+	if total > 0 {
+		// 综合情绪指数：正面越多越高，负面越多越低，50 为中性。
+		positiveRatio := float64(r.PositiveCount) / float64(total)
+		negativeRatio := float64(r.NegativeCount) / float64(total)
+		r.SentimentIndex = 50 + (positiveRatio-negativeRatio)*50
+		r.HotScoreAvg = float64(r.totalHotScore) / float64(total)
+	}
+
+	for newsType, stats := range typeStats {
+		if stats.total > 0 {
+			score := float64(stats.pos-stats.neg) / float64(stats.total)
+			r.SentimentByType[newsType] = SentimentResult{
+				Type:       determineSentimentType(score),
+				Score:      score,
+				Confidence: float64(stats.total) / 50.0,
+			}
+		}
+	}
+
+	for source, stats := range sourceStats {
+		if stats.total > 0 {
+			score := float64(stats.pos-stats.neg) / float64(stats.total)
+			r.SentimentBySource[source] = SentimentResult{
+				Type:       determineSentimentType(score),
+				Score:      score,
+				Confidence: float64(stats.total) / 50.0,
+			}
+		}
+	}
+}
+
+// dimensionStats 累计一个维度（新闻类型/来源）的正负面与总数。
+type dimensionStats struct {
+	pos, neg, neu, total int
+}
+
+// record 把一条新闻的分析结果累加到市场结果与两个维度统计里。
+func (r *MarketSentiment) record(
+	typeStats map[NewsType]dimensionStats,
+	sourceStats map[SourceType]dimensionStats,
+	item *NewsItem,
+	sentiment SentimentResult,
+) {
+	switch sentiment.Type {
+	case SentimentPositive:
+		r.PositiveCount++
+	case SentimentNegative:
+		r.NegativeCount++
+	default:
+		r.NeutralCount++
+	}
+	r.totalHotScore += item.HotScore
+
+	ts := typeStats[item.NewsType]
+	ts.total++
+	switch sentiment.Type {
+	case SentimentPositive:
+		ts.pos++
+	case SentimentNegative:
+		ts.neg++
+	default:
+		ts.neu++
+	}
+	typeStats[item.NewsType] = ts
+
+	ss := sourceStats[item.Source]
+	ss.total++
+	switch sentiment.Type {
+	case SentimentPositive:
+		ss.pos++
+	case SentimentNegative:
+		ss.neg++
+	default:
+		ss.neu++
+	}
+	sourceStats[item.Source] = ss
 }
 
 // SentimentTrend 情绪趋势
@@ -168,6 +261,10 @@ func NewSentimentService(store Store) *SentimentService {
 }
 
 // AnalyzeMarketSentiment 分析市场整体情绪
+//
+// 覆盖整个时间窗口：窗口内新闻逐条流式分析，不设条数上限。
+// 早期的实现用分页查询取一批再分析，页大小封顶后「今日共 N 条」会
+// 钉死在分页上限（例如 1000），占比也随之失真。
 func (s *SentimentService) AnalyzeMarketSentiment(ctx context.Context, hours int) (*MarketSentiment, error) {
 	endTime := time.Now()
 	startTime := endTime.Add(-time.Duration(hours) * time.Hour)
@@ -175,114 +272,49 @@ func (s *SentimentService) AnalyzeMarketSentiment(ctx context.Context, hours int
 	filter := FeedFilter{
 		StartTime: &startTime,
 		EndTime:   &endTime,
-		PageSize:  1000,
 	}
 
-	result, err := s.store.FilterNews(ctx, filter)
+	// 总数走独立 COUNT：遍历可能因个别记录缺失提前跳过，统计口径以库为准。
+	totalCount, err := s.store.CountNews(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
 
-	// 获取完整新闻内容用于分析
-	var newsItems []*NewsItem
-	for _, summary := range result.Items {
-		if item, err := s.store.GetNewsByID(ctx, summary.ID); err == nil {
-			newsItems = append(newsItems, item)
-		}
+	result := &MarketSentiment{Timestamp: endTime, TotalCount: totalCount}
+	if totalCount == 0 {
+		result.SentimentByType = make(map[NewsType]SentimentResult)
+		result.SentimentBySource = make(map[SourceType]SentimentResult)
+		return result, nil
 	}
 
-	return s.calculateSentiment(newsItems), nil
+	typeStats := make(map[NewsType]dimensionStats)
+	sourceStats := make(map[SourceType]dimensionStats)
+
+	// 逐条流式分析，避免一次性载入整个窗口。
+	err = s.store.IterNews(ctx, filter, func(item *NewsItem) error {
+		result.record(typeStats, sourceStats, item, s.analyzer.AnalyzeNews(item))
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result.finalize(typeStats, sourceStats)
+	return result, nil
 }
 
-// calculateSentiment 计算情绪数据
+// calculateSentiment 对一小批新闻计算情绪数据，供趋势、热力图、个股使用。
+// 与市场级接口共用 record/finalize，保证各处口径一致。
 func (s *SentimentService) calculateSentiment(newsItems []*NewsItem) *MarketSentiment {
-	result := &MarketSentiment{
-		Timestamp:         time.Now(),
-		SentimentByType:   make(map[NewsType]SentimentResult),
-		SentimentBySource: make(map[SourceType]SentimentResult),
-	}
-
-	typeStats := make(map[NewsType]struct{ pos, neg, neu, total int })
-	sourceStats := make(map[SourceType]struct{ pos, neg, neu, total int })
-
-	totalHotScore := 0
+	result := &MarketSentiment{Timestamp: time.Now()}
+	typeStats := make(map[NewsType]dimensionStats)
+	sourceStats := make(map[SourceType]dimensionStats)
 
 	for _, item := range newsItems {
-		sentiment := s.analyzer.AnalyzeNews(item)
-
-		switch sentiment.Type {
-		case SentimentPositive:
-			result.PositiveCount++
-		case SentimentNegative:
-			result.NegativeCount++
-		case SentimentNeutral:
-			result.NeutralCount++
-		}
-
-		totalHotScore += item.HotScore
-
-		// 按类型统计
-		ts := typeStats[item.NewsType]
-		switch sentiment.Type {
-		case SentimentPositive:
-			ts.pos++
-		case SentimentNegative:
-			ts.neg++
-		case SentimentNeutral:
-			ts.neu++
-		}
-		ts.total++
-		typeStats[item.NewsType] = ts
-
-		// 按来源统计
-		ss := sourceStats[item.Source]
-		switch sentiment.Type {
-		case SentimentPositive:
-			ss.pos++
-		case SentimentNegative:
-			ss.neg++
-		case SentimentNeutral:
-			ss.neu++
-		}
-		ss.total++
-		sourceStats[item.Source] = ss
+		result.record(typeStats, sourceStats, item, s.analyzer.AnalyzeNews(item))
 	}
-
-	total := result.PositiveCount + result.NegativeCount + result.NeutralCount
-	if total > 0 {
-		// 计算综合情绪指数 (正面比例 * 100)
-		// 考虑负面新闻的影响，负面越多，指数越低
-		positiveRatio := float64(result.PositiveCount) / float64(total)
-		negativeRatio := float64(result.NegativeCount) / float64(total)
-		result.SentimentIndex = 50 + (positiveRatio-negativeRatio)*50
-
-		result.HotScoreAvg = float64(totalHotScore) / float64(total)
-	}
-
-	// 计算各类型情绪
-	for newsType, stats := range typeStats {
-		if stats.total > 0 {
-			score := float64(stats.pos-stats.neg) / float64(stats.total)
-			result.SentimentByType[newsType] = SentimentResult{
-				Type:       determineSentimentType(score),
-				Score:      score,
-				Confidence: float64(stats.total) / 50.0,
-			}
-		}
-	}
-
-	// 计算各来源情绪
-	for source, stats := range sourceStats {
-		if stats.total > 0 {
-			score := float64(stats.pos-stats.neg) / float64(stats.total)
-			result.SentimentBySource[source] = SentimentResult{
-				Type:       determineSentimentType(score),
-				Score:      score,
-				Confidence: float64(stats.total) / 50.0,
-			}
-		}
-	}
-
+	result.TotalCount = len(newsItems)
+	result.finalize(typeStats, sourceStats)
 	return result
 }
 

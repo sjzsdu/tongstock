@@ -61,6 +61,8 @@ type Service struct {
 	matcher         *EntityMatcher
 	freshnessWindow time.Duration
 	now             func() time.Time
+	// clusterer 用于后台同步后重建热点事件；可为 nil（不生成）。
+	clusterer *Clusterer
 }
 
 // NameResolverAware 由需要「代码 → 简称」才能检索的数据源实现。
@@ -99,6 +101,11 @@ func (s *Service) SetFreshnessWindow(d time.Duration) {
 	if d > 0 {
 		s.freshnessWindow = d
 	}
+}
+
+// SetClusterer 注入热点事件聚类器。注入后每次全量同步完成都会重建热点。
+func (s *Service) SetClusterer(c *Clusterer) {
+	s.clusterer = c
 }
 
 // RefreshEntities 从股票名录重建实体识别器。
@@ -334,6 +341,14 @@ func (s *Service) GlobalSync(ctx context.Context) (int, []SourceDegradation) {
 		total += len(items)
 	}
 	s.markSync("global", total, nil)
+
+	// 抓取完成后重建热点事件。失败以降级形式暴露，成功则静默——
+	// 结果本身就是落库的事件，列表页能直接看到。
+	if s.clusterer != nil {
+		if _, err := s.clusterer.RefreshEvents(ctx); err != nil {
+			degraded = append(degraded, SourceDegradation{Source: "hot_events", Error: err.Error()})
+		}
+	}
 	return total, degraded
 }
 

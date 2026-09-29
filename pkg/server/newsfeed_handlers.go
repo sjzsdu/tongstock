@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -211,6 +212,15 @@ func (h *NewsfeedHandler) handleNewsItem(c *gin.Context) {
 
 // handleHotEvents 获取热点事件列表
 func (h *NewsfeedHandler) handleHotEvents(c *gin.Context) {
+	// 老库可能从没生成过热点事件（此前只有手动刷新接口会写这张表），
+	// 列表为空时补建一次，否则页面上的「热点TOP10」永远是空的。
+	// EnsureHotEvents 内部有节流与「已有事件则跳过」判断，不会重复聚类。
+	if h.clusterer != nil {
+		if _, err := h.clusterer.EnsureHotEvents(c.Request.Context()); err != nil {
+			log.Printf("news: 热点事件补建失败: %v", err)
+		}
+	}
+
 	filter := newsfeed.HotEventFilter{}
 
 	// 最低热度
@@ -272,42 +282,15 @@ func (h *NewsfeedHandler) handleHotEventDetail(c *gin.Context) {
 
 // handleRefreshHotEvents 刷新热点事件
 func (h *NewsfeedHandler) handleRefreshHotEvents(c *gin.Context) {
-	// 获取最近的新闻
-	filter := newsfeed.FeedFilter{
-		PageSize: 100,
-		SortBy:   "time",
-	}
-	result, err := h.store.FilterNews(c.Request.Context(), filter)
+	// 与后台同步共用同一条刷新路径，保证口径一致。
+	count, err := h.clusterer.RefreshEvents(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-
-	// 转换为完整新闻对象
-	var news []*newsfeed.NewsItem
-	for _, summary := range result.Items {
-		if item, err := h.store.GetNewsByID(c.Request.Context(), summary.ID); err == nil {
-			news = append(news, item)
-		}
-	}
-
-	// 聚类生成热点事件
-	events, err := h.clusterer.Cluster(c.Request.Context(), news)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// 保存事件
-	for _, event := range events {
-		if err := h.store.SaveHotEvent(c.Request.Context(), event); err != nil {
-			return
-		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"count":  len(events),
-		"events": events,
+		"count": count,
 	})
 }
 
