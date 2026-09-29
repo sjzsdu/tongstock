@@ -138,6 +138,19 @@ type FeedResult struct {
 	PageSize int           `json:"pageSize"`
 }
 
+// NewsFacet 是筛选器里的一个可选值及其在库中的条数
+type NewsFacet struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+// NewsFacets 是信息流的筛选维度分布。前端据此生成来源/类型下拉框，
+// 新增数据源或新闻类型时无需再改前端硬编码列表。
+type NewsFacets struct {
+	Sources []NewsFacet `json:"sources"`
+	Types   []NewsFacet `json:"types"`
+}
+
 // EventResult 热点事件查询结果
 type EventResult struct {
 	Total int            `json:"total"`

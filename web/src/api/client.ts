@@ -53,6 +53,7 @@ import type {
   MonitoringReport,
   AlertItem,
   AlertSummary,
+  NewsFacets,
 } from '../types/api';
 import type { ErrorEnvelope } from './generated';
 
@@ -527,6 +528,7 @@ export const api = {
 	newsFeed: (params?: {
 		sources?: string;
 		types?: string;
+		keyword?: string;
 		startTime?: string;
 		endTime?: string;
 		hotScoreMin?: number;
@@ -537,6 +539,7 @@ export const api = {
 		const p = new URLSearchParams();
 		if (params?.sources) p.set('sources', params.sources);
 		if (params?.types) p.set('types', params.types);
+		if (params?.keyword) p.set('keyword', params.keyword);
 		if (params?.startTime) p.set('startTime', params.startTime);
 		if (params?.endTime) p.set('endTime', params.endTime);
 		if (params?.hotScoreMin != null) p.set('hotScoreMin', String(params.hotScoreMin));
@@ -546,6 +549,13 @@ export const api = {
 		const q = p.toString();
 		return fetchJSON<FeedResult>(`/api/news/feed${q ? '?' + q : ''}`);
 	},
+
+	/** 已注册的数据源及其健康状态 */
+	newsFeedSources: () =>
+		fetchJSON<{ sources: { name: string; interval: string; healthy: boolean }[] }>('/api/news/feed/sources'),
+
+	/** 来源与类型在库中的条数分布，供信息流筛选器生成选项 */
+	newsFacets: () => fetchJSON<NewsFacets>('/api/news/feed/facets'),
 
 	newsItem: (id: string) =>
 		fetchJSON<NewsItem>(`/api/news/item/${id}`),

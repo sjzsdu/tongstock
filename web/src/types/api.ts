@@ -997,6 +997,18 @@ export interface FeedResult {
   items: NewsSummary[];
 }
 
+/** 筛选器里的一个可选值及其在库中的条数 */
+export interface NewsFacet {
+  name: string;
+  count: number;
+}
+
+/** 信息流的来源/类型分布。筛选器选项据此生成，数据源增减时前端不用改硬编码列表 */
+export interface NewsFacets {
+  sources: NewsFacet[];
+  types: NewsFacet[];
+}
+
 export interface HotEvent {
   id: string;
   title: string;

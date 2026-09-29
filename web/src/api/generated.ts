@@ -171,6 +171,7 @@ export const operations = {
   getApiNewsEventsId: { method: "GET", path: "/api/news/events/{id}" },
   getApiNewsFeed: { method: "GET", path: "/api/news/feed" },
   getApiNewsFeedSources: { method: "GET", path: "/api/news/feed/sources" },
+  getApiNewsFeedFacets: { method: "GET", path: "/api/news/feed/facets" },
   postApiNewsFetch: { method: "POST", path: "/api/news/fetch" },
   postApiNewsFetchBrowser: { method: "POST", path: "/api/news/fetch/browser" },
   getApiNewsItemId: { method: "GET", path: "/api/news/item/{id}" },

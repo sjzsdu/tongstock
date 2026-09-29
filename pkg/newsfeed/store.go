@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/sjzsdu/tongstock/pkg/storage"
@@ -332,6 +333,18 @@ func (s *SQLiteStore) FilterNews(ctx context.Context, filter FeedFilter) (*FeedR
 		args = append(args, filter.HotScoreMin)
 	}
 
+	// 按关键词搜索标题与摘要。多个关键词是「且」的关系；只搜这两列，
+	// content 列体积大且不参与列表展示，LIKE 它没有意义。
+	for _, keyword := range filter.Keywords {
+		keyword = strings.TrimSpace(keyword)
+		if keyword == "" {
+			continue
+		}
+		where += ` AND (title LIKE ? ESCAPE '\' OR summary LIKE ? ESCAPE '\')`
+		pattern := "%" + escapeLikePattern(keyword) + "%"
+		args = append(args, pattern, pattern)
+	}
+
 	sortBy := filter.SortBy
 	if sortBy == "" {
 		sortBy = "time"
@@ -403,6 +416,43 @@ func (s *SQLiteStore) FilterNews(ctx context.Context, filter FeedFilter) (*FeedR
 		PageNum:  filter.PageNum,
 		PageSize: filter.PageSize,
 	}, nil
+}
+
+// NewsFacets 返回来源与新闻类型在库中的条数分布，供信息流筛选器生成选项。
+// 按条数倒序，条数为 0 的维度不返回——没有数据的选项只会误导筛选。
+func (s *SQLiteStore) NewsFacets(ctx context.Context) (*NewsFacets, error) {
+	facets := &NewsFacets{
+		Sources: []NewsFacet{},
+		Types:   []NewsFacet{},
+	}
+	if err := s.scanFacets(ctx,
+		`SELECT source, COUNT(*) AS cnt FROM news_items GROUP BY source ORDER BY cnt DESC, source`,
+		&facets.Sources); err != nil {
+		return nil, err
+	}
+	if err := s.scanFacets(ctx,
+		`SELECT news_type, COUNT(*) AS cnt FROM news_items GROUP BY news_type ORDER BY cnt DESC, news_type`,
+		&facets.Types); err != nil {
+		return nil, err
+	}
+	return facets, nil
+}
+
+// scanFacets 执行一条 (维度, 条数) 查询并填入目标切片
+func (s *SQLiteStore) scanFacets(ctx context.Context, query string, dest *[]NewsFacet) error {
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var facet NewsFacet
+		if err := rows.Scan(&facet.Name, &facet.Count); err != nil {
+			return err
+		}
+		*dest = append(*dest, facet)
+	}
+	return rows.Err()
 }
 
 // attachRefs 批量读取并挂载股票关联，避免逐条查询。
@@ -618,4 +668,12 @@ func joinStrings(strs []string) string {
 		result += "," + strs[i]
 	}
 	return result
+}
+
+// escapeLikePattern 转义 LIKE 通配符，配合 ESCAPE '\' 使用。
+// 用户搜 "100%" 时应当匹配字面量，而不是变成通配符。
+func escapeLikePattern(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	return strings.ReplaceAll(s, `_`, `\_`)
 }

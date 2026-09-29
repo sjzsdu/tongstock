@@ -63,6 +63,7 @@ func (h *NewsfeedHandler) SetupRoutes(r *gin.RouterGroup) {
 		// 信息流
 		news.GET("/feed", h.handleNewsFeed)
 		news.GET("/feed/sources", h.handleNewsSources)
+		news.GET("/feed/facets", h.handleNewsFeedFacets)
 		news.GET("/item/:id", h.handleNewsItem)
 
 		// 热点事件
@@ -121,6 +122,11 @@ func (h *NewsfeedHandler) handleNewsFeed(c *gin.Context) {
 		}
 	}
 
+	// 关键词搜索（标题与摘要）
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		filter.Keywords = []string{keyword}
+	}
+
 	// 时间范围
 	if startStr := c.Query("startTime"); startStr != "" {
 		if t, err := time.Parse(time.RFC3339, startStr); err == nil {
@@ -175,6 +181,17 @@ func (h *NewsfeedHandler) handleNewsSources(c *gin.Context) {
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"sources": sources})
+}
+
+// handleNewsFeedFacets 获取来源与类型的条数分布。
+// 筛选器的选项由这里下发，数据源增减时前端不用跟着改硬编码列表。
+func (h *NewsfeedHandler) handleNewsFeedFacets(c *gin.Context) {
+	facets, err := h.store.NewsFacets(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, facets)
 }
 
 // handleNewsItem 获取单条新闻详情

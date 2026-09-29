@@ -1985,6 +1985,34 @@
         }
       }
     },
+    "/api/news/feed/facets": {
+      "get": {
+        "operationId": "getApiNewsFeedFacets",
+        "responses": {
+          "200": {
+            "description": "Successful legacy-compatible response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/api/news/fetch": {
       "post": {
         "operationId": "postApiNewsFetch",

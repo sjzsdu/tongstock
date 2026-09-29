@@ -216,3 +216,41 @@ body {
 .markdown-body ul li::marker {
   color: #666;
 }
+
+/* ---------------- 资讯列表 ---------------- */
+/* 标题与摘要按行数截断：摘要长短不一时列表行高会失控 */
+.news-item {
+  transition: background-color 0.15s ease;
+}
+.news-item:hover {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+.news-item-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.news-item-summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin-top: 4px;
+  color: #9ca3af;
+  font-size: 13px;
+  line-height: 1.6;
+}
+/* 下拉选项里的「名称 / 条数」两端对齐 */
+.news-facet-option {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.news-facet-count {
+  color: #9ca3af;
+  font-size: 12px;
+}
