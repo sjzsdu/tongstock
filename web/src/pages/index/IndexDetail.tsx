@@ -29,16 +29,12 @@ import CandlestickChart from '../../components/charts/CandlestickChart';
 import ChartToolbar from '../../components/charts/ChartToolbar';
 import MinuteChart from '../../components/charts/MinuteChart';
 import { formatShortDate } from '../../lib/datetime';
+import { INDEX_NAMES } from '../../lib/pageTitle';
 
 type Tab = 'chart' | 'intraday' | 'stats' | 'components';
 type DetailStatus = 'loading' | 'ready' | 'not_found';
 
-const INDICES: Record<string, string> = {
-  '999999': '上证指数',
-  '399001': '深证成指',
-  '399006': '创业板指',
-  '399300': '沪深300',
-};
+const INDICES: Record<string, string> = INDEX_NAMES;
 
 const TAB_ITEMS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: 'chart', label: 'K线+指标', icon: <AreaChartOutlined /> },

@@ -25,6 +25,8 @@ import { useStockMinute } from '../../hooks/useStockMinute';
 import { useStockCompare } from '../../hooks/useStockCompare';
 import { useParadigmAnalysis } from '../../hooks/useParadigmAnalysis';
 import { useStockNews } from '../../hooks/useStockNews';
+import { useDocumentTitle } from '../../hooks/useDocumentTitle';
+import { stockTitle } from '../../lib/pageTitle';
 import { getSyncAgeDays, getSyncStatusPresentation, getValueColor } from '../../lib/stock-detail';
 
 type Tab = 'chart' | 'signal' | 'compare' | 'finance' | 'company' | 'dividend' | 'intraday' | 'news';
@@ -57,6 +59,9 @@ export default function StockDetail() {
   const { compareData, compareLoading } = useStockCompare(code, detailStatus);
   const { paradigmResult, paradigmLoading, paradigmCached: paradigmCachedByAnalysis, paradigmAgentText, paradigmEvalConfirm, paradigmEvalInvalid, paradigmDrawerOpen, setParadigmDrawerOpen, analyzeParadigm } = useParadigmAnalysis();
   const { news: newsResult, loading: newsLoading } = useStockNews(code, tab === 'news' && detailStatus === 'ready');
+
+  // 标签页标题：行情返回后用「名称(代码)」覆盖路由级占位标题
+  useDocumentTitle(quote?.Name ? stockTitle(quote.Name, code) : undefined);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

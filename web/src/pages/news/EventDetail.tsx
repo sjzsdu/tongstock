@@ -4,6 +4,8 @@ import { ArrowLeftOutlined, ClockCircleOutlined, StockOutlined, TagOutlined, War
 import { Card, Empty, Flex, List, Segmented, Space, Spin, Tag, Timeline, Typography } from 'antd';
 import { api } from '../../api/client';
 import type { HotEvent, NewsItem } from '../../types/api';
+import { useDocumentTitle } from '../../hooks/useDocumentTitle';
+import { clampTitle, withBrand } from '../../lib/pageTitle';
 
 type ViewMode = 'timeline' | 'list' | 'source';
 
@@ -15,6 +17,9 @@ export default function EventDetail() {
   const [newsItems, setNewsItems] = useState<NewsItem[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>('timeline');
   const [filterSource, setFilterSource] = useState<string>('all');
+
+  // 标签页标题：事件返回后用标题覆盖，超长标题截断
+  useDocumentTitle(event ? withBrand(clampTitle(event.title, 24)) : undefined);
 
   useEffect(() => {
     if (!id) return;

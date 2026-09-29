@@ -19,6 +19,8 @@ import { Avatar, Breadcrumb, Button, Drawer, Layout, Menu, Skeleton, Space, Typo
 import type { MenuProps } from 'antd';
 import StockSearchInput from './components/StockSearchInput';
 import ErrorBoundary from './components/ErrorBoundary';
+import { useDocumentTitle } from './hooks/useDocumentTitle';
+import { titleForPath } from './lib/pageTitle';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const StockDetail = lazy(() => import('./pages/stock/StockDetail'));
@@ -145,6 +147,9 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [openKeys, setOpenKeys] = useState<string[]>(DEFAULT_OPEN_KEYS);
+
+  // 浏览器标签页标题：路由级标题，详情页（个股/事件）拿到数据后会覆盖
+  useDocumentTitle(titleForPath(location.pathname));
 
   // 路由变化时自动展开选中项所属分组
   useEffect(() => {
