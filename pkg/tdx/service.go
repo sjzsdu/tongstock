@@ -299,11 +299,19 @@ func (s *Service) RefreshCompanyCategory(code string) ([]*protocol.CompanyCatego
 	return items, nil
 }
 
+// FetchCompanyContent returns UTF-8 text for a byte range of the F10 document.
+// start and length are GBK byte offsets (the unit used by
+// protocol.CompanyCategoryItem), and a length of zero reads the whole
+// document, which is cached. Callers that want one named block should use
+// FetchCompanyBlock instead: it verifies the offsets against the document
+// instead of trusting a possibly stale catalogue.
 func (s *Service) FetchCompanyContent(code, filename string, start, length uint32) (string, error) {
-	if s.company != nil && start == 0 && length == 0 {
-		if content, err := s.company.GetContent(code, filename); err == nil && content != "" {
-			return content, nil
+	if start == 0 && length == 0 {
+		doc, err := s.fetchCompanyDocument(code, filename, false)
+		if err != nil {
+			return "", err
 		}
+		return string(protocol.GBKToUTF8(doc)), nil
 	}
 	var content string
 	err := s.withClient(func(c *Client) error {
@@ -313,9 +321,6 @@ func (s *Service) FetchCompanyContent(code, filename string, start, length uint3
 	})
 	if err != nil {
 		return "", err
-	}
-	if s.company != nil && start == 0 && length == 0 {
-		_ = s.company.SaveContent(code, filename, content)
 	}
 	return content, nil
 }

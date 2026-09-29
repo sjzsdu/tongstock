@@ -622,40 +622,131 @@ func (c *Client) GetCompanyInfoCategory(code string) ([]*protocol.CompanyCategor
 	return protocol.MCompanyCategory.Decode(data)
 }
 
-func (c *Client) GetCompanyInfoContent(code, filename string, start, length uint32) (string, error) {
+// companyChunkSize is the payload requested in a single F10 content round
+// trip. The reply header carries a uint16 length, so anything at or above
+// 64KB could never come back in one piece anyway.
+const companyChunkSize uint32 = 12000
+
+// GetCompanyInfoContentRaw reads one chunk of the F10 document and returns the
+// bytes exactly as the server sent them (GBK encoded, nulls stripped by the
+// decoder). Nothing is decoded here: GBK is variable width, so decoding must
+// happen once over a byte range that is known to start on a character
+// boundary.
+func (c *Client) GetCompanyInfoContentRaw(code, filename string, start, length uint32) ([]byte, error) {
 	f, err := protocol.MCompanyContent.Frame(code, filename, start, length)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	data, err := c.send(f)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return protocol.MCompanyContent.Decode(data)
+	return protocol.MCompanyContent.DecodeRaw(data)
 }
 
-func (c *Client) GetCompanyInfoContentAll(code, filename string, start, length uint32) (string, error) {
-	if length == 0 {
-		return c.GetCompanyInfoContent(code, filename, start, length)
+// GetCompanyInfoContent reads a single reply and decodes it. It is only safe
+// when start and length are known to sit on GBK character boundaries; text
+// that may span several replies must be read through
+// GetCompanyInfoContentRawRange and decoded once at the end.
+func (c *Client) GetCompanyInfoContent(code, filename string, start, length uint32) (string, error) {
+	raw, err := c.GetCompanyInfoContentRaw(code, filename, start, length)
+	if err != nil {
+		return "", err
 	}
+	return string(protocol.GBKToUTF8(raw)), nil
+}
 
-	const chunkSize uint32 = 12000
-	var b strings.Builder
-	for offset := uint32(0); offset < length; offset += chunkSize {
-		size := chunkSize
+// GetCompanyInfoContentRawRange reads the raw bytes of [start, start+length)
+// from the F10 document, splitting the request into companyChunkSize replies
+// and concatenating them *before* any decoding happens. That ordering is what
+// keeps a reply boundary that lands inside a GBK character from turning into
+// mojibake.
+//
+// The document may end before start+length: a reply shorter than requested
+// (including an empty one) means end of file, so the result can be shorter
+// than length and callers are expected to check.
+func (c *Client) GetCompanyInfoContentRawRange(code, filename string, start, length uint32) ([]byte, error) {
+	return readF10Range(func(at, size uint32) ([]byte, error) {
+		return c.GetCompanyInfoContentRaw(code, filename, at, size)
+	}, start, length)
+}
+
+// GetCompanyInfoDocument reads the F10 document from start to end of file.
+// Reading past the last byte returns an empty reply, so the file size does not
+// have to be known in advance (the catalogue's total Length is exactly the
+// kind of stale value this avoids).
+func (c *Client) GetCompanyInfoDocument(code, filename string, start uint32) ([]byte, error) {
+	return readF10Document(func(at, size uint32) ([]byte, error) {
+		return c.GetCompanyInfoContentRaw(code, filename, at, size)
+	}, start)
+}
+
+// f10ChunkFetcher reads raw bytes of an F10 document at an absolute offset.
+type f10ChunkFetcher func(start, length uint32) ([]byte, error)
+
+// readF10Range assembles [start, start+length) out of companyChunkSize reads.
+// The pieces stay raw GBK bytes until the caller has all of them: GBK is
+// variable width, so decoding each piece on its own corrupts any character
+// that straddles a chunk boundary.
+func readF10Range(fetch f10ChunkFetcher, start, length uint32) ([]byte, error) {
+	if length == 0 {
+		return nil, nil
+	}
+	raw := make([]byte, 0, min(length, 1<<20))
+	for offset := uint32(0); offset < length; offset += companyChunkSize {
+		size := companyChunkSize
 		if remaining := length - offset; remaining < size {
 			size = remaining
 		}
-		part, err := c.GetCompanyInfoContent(code, filename, start+offset, size)
+		part, err := fetch(start+offset, size)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
-		if part == "" {
+		raw = append(raw, part...)
+		if uint32(len(part)) < size {
+			// End of file: the server returns fewer bytes than asked for
+			// (including none at all past the last byte).
 			break
 		}
-		b.WriteString(part)
 	}
-	return b.String(), nil
+	return raw, nil
+}
+
+// readF10Document reads from start until end of file, with the same raw-byte
+// assembly rules as readF10Range.
+func readF10Document(fetch f10ChunkFetcher, start uint32) ([]byte, error) {
+	const maxDocumentSize uint32 = 16 << 20
+	var raw []byte
+	for offset := start; uint32(len(raw)) < maxDocumentSize; offset += companyChunkSize {
+		part, err := fetch(offset, companyChunkSize)
+		if err != nil {
+			return nil, err
+		}
+		if len(part) == 0 {
+			break
+		}
+		raw = append(raw, part...)
+		if uint32(len(part)) < companyChunkSize {
+			break
+		}
+	}
+	return raw, nil
+}
+
+// GetCompanyInfoContentAll reads [start, start+length) of the F10 document and
+// decodes it once into UTF-8. A length of zero means "until end of file".
+func (c *Client) GetCompanyInfoContentAll(code, filename string, start, length uint32) (string, error) {
+	var raw []byte
+	var err error
+	if length == 0 {
+		raw, err = c.GetCompanyInfoDocument(code, filename, start)
+	} else {
+		raw, err = c.GetCompanyInfoContentRawRange(code, filename, start, length)
+	}
+	if err != nil {
+		return "", err
+	}
+	return string(protocol.GBKToUTF8(raw)), nil
 }
 
 func (c *Client) GetCallAuction(code string) (*protocol.CallAuctionResp, error) {

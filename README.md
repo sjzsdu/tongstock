@@ -334,7 +334,7 @@ localStorage 中，后续 API 和 Agent SSE 请求通过 `Authorization` Header 
 | `/api/finance` | GET | `code` | 财务数据 |
 | `/api/index` | GET | `code`, `type` | 指数K线 |
 | `/api/company` | GET | `code` | 公司信息目录(F10) |
-| `/api/company/content` | GET | `code`, `filename` | 公司信息内容 |
+| `/api/company/content` | GET | `code`, `block` | 公司信息内容（按 F10 分块；`block` 取 `/api/company` 返回的 `Name`，兼容旧的 `filename`+`start`+`length` 字节窗口） |
 | `/api/block` | GET | `file` | 板块分类(传统) |
 | `/api/block/files` | GET | - | 板块文件列表 |
 | `/api/block/list` | GET | `file`, `type`, `sort` | 结构化板块列表 |
@@ -389,8 +389,11 @@ curl "http://localhost:8106/api/index?code=999999&type=day"
 # 查询公司信息目录
 curl "http://localhost:8106/api/company?code=000001"
 
-# 查询公司信息内容
-curl "http://localhost:8106/api/company/content?code=000001&filename=000001.txt"
+# 查询公司信息内容（按块名，推荐）
+curl "http://localhost:8106/api/company/content?code=000001&block=公司概况"
+
+# 查询公司信息内容（旧式字节窗口：filename+start+length，单位为 GBK 字节）
+curl "http://localhost:8106/api/company/content?code=000001&filename=000001.txt&start=0&length=10000"
 
 # 板块文件列表
 curl "http://localhost:8106/api/block/files"

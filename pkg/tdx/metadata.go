@@ -2,6 +2,7 @@ package tdx
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/sjzsdu/tongstock/pkg/cache"
@@ -12,7 +13,13 @@ import (
 const (
 	xdxrTTL    = 7 * 24 * time.Hour
 	financeTTL = 7 * 24 * time.Hour
-	companyTTL = 30 * 24 * time.Hour
+	// companyTTL caps both the F10 catalogue and the cached F10 document.
+	// The document is regenerated daily, so a month-long catalogue only
+	// guarantees stale byte offsets. Correctness does not rest on this value
+	// (block reads verify their boundaries against the document), but keeping
+	// it inside the document's update period avoids paying for a catalogue
+	// refresh on every read.
+	companyTTL = 24 * time.Hour
 	blockTTL   = 24 * time.Hour
 )
 
@@ -110,9 +117,29 @@ func (s *FinanceStore) Close() error {
 	return nil
 }
 
+// companyCacheKey builds the cache key of F10 data. Stock codes reach us as
+// "000001", "sz000001" or "SZ000001" depending on the caller and file names
+// have been seen in more than one spelling, so without normalization a single
+// stock can accumulate several entries that never overwrite each other (and
+// that go stale independently).
+func companyCacheKey(code, filename string) string {
+	return normalizeCompanyCode(code) + strings.ToLower(strings.TrimSpace(filename))
+}
+
+func normalizeCompanyCode(code string) string {
+	c := strings.ToLower(strings.TrimSpace(code))
+	if len(c) == 8 {
+		switch c[:2] {
+		case "sh", "sz", "bj":
+			return c[2:]
+		}
+	}
+	return c
+}
+
 // GetCategory reads cached company categories for a code.
 func (s *CompanyStore) GetCategory(code string) ([]*protocol.CompanyCategoryItem, error) {
-	data, err := s.cache.Get("company_cat", code)
+	data, err := s.cache.Get("company_cat", companyCacheKey(code, ""))
 	if err != nil {
 		if err == cache.ErrNotFound || err == cache.ErrExpired {
 			return nil, nil
@@ -132,36 +159,41 @@ func (s *CompanyStore) SaveCategory(code string, items []*protocol.CompanyCatego
 	if err != nil {
 		return err
 	}
-	if err := s.cache.Set("company_cat", code, data, cache.WithTTL(s.ttl)); err != nil {
+	if err := s.cache.Set("company_cat", companyCacheKey(code, ""), data, cache.WithTTL(s.ttl)); err != nil {
 		return err
 	}
 	return nil
 }
 
-// GetContent reads cached company content for a code and filename.
-func (s *CompanyStore) GetContent(code, filename string) (string, error) {
-	data, err := s.cache.Get("company_content", code+filename)
+// GetContent reads the cached F10 document of a code and filename. The bytes
+// are returned exactly as they came off the wire (GBK, which is what Start and
+// Length are counted in), so callers can slice them with catalogue offsets.
+func (s *CompanyStore) GetContent(code, filename string) ([]byte, error) {
+	data, err := s.cache.Get("company_content", companyCacheKey(code, filename))
 	if err != nil {
 		if err == cache.ErrNotFound || err == cache.ErrExpired {
-			return "", nil
+			return nil, nil
 		}
-		return "", err
+		return nil, err
 	}
-	var content string
-	if err := json.Unmarshal(data, &content); err != nil {
-		// fallback: if stored as plain bytes, try to cast
-		return string(data), nil
+	var doc []byte
+	if err := json.Unmarshal(data, &doc); err != nil {
+		// Entries written before documents were stored as raw bytes hold a
+		// UTF-8 string, which cannot be sliced by GBK offsets. Treat them as
+		// a miss and let the caller refetch instead of serving misaligned
+		// text.
+		return nil, nil
 	}
-	return content, nil
+	return doc, nil
 }
 
-// SaveContent caches company content for a code and filename.
-func (s *CompanyStore) SaveContent(code, filename, content string) error {
-	data, err := json.Marshal(content)
+// SaveContent caches the raw (GBK) F10 document of a code and filename.
+func (s *CompanyStore) SaveContent(code, filename string, doc []byte) error {
+	data, err := json.Marshal(doc)
 	if err != nil {
 		return err
 	}
-	if err := s.cache.Set("company_content", code+filename, data, cache.WithTTL(s.ttl)); err != nil {
+	if err := s.cache.Set("company_content", companyCacheKey(code, filename), data, cache.WithTTL(s.ttl)); err != nil {
 		return err
 	}
 	return nil

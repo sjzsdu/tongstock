@@ -2,11 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
-	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
+	"github.com/sjzsdu/tongstock/pkg/tdx"
 	"github.com/spf13/cobra"
 )
 
@@ -96,31 +97,15 @@ func runCompanyContent(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// 获取目录找到对应块的文件信息
-	cats, err := svc.FetchCompanyCategory(code)
+	// FetchCompanyBlock resolves the block through the F10 catalogue and then
+	// verifies both ends of the byte window against the document itself, so a
+	// catalogue that is older than the daily-refreshed file cannot return text
+	// from a neighbouring block. An unknown name lists the available blocks.
+	content, err := svc.FetchCompanyBlock(code, block)
 	if err != nil {
-		return fmt.Errorf("获取 F10 目录失败: %w", err)
-	}
-
-	var target *protocol.CompanyCategoryItem
-	for _, cat := range cats {
-		if cat.Name == block {
-			target = cat
-			break
+		if errors.Is(err, tdx.ErrCompanyBlockNotFound) {
+			return err
 		}
-	}
-
-	if target == nil {
-		// 列出可用块
-		var available []string
-		for _, cat := range cats {
-			available = append(available, cat.Name)
-		}
-		return fmt.Errorf("未找到块: %s\n可用的块: %s", block, strings.Join(available, "、"))
-	}
-
-	content, err := svc.FetchCompanyContent(code, target.Filename, target.Start, target.Length)
-	if err != nil {
 		return fmt.Errorf("获取 F10 内容失败: %w", err)
 	}
 

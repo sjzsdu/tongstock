@@ -49,11 +49,25 @@ func BytesToUint16(bs []byte) uint16 {
 	return Uint16LE(Reverse(bs))
 }
 
-func UTF8ToGBK(text []byte) []byte {
+// GBKToUTF8 decodes GBK bytes into UTF-8. GBK is what TDX actually puts on
+// the wire (F10 documents, security names, ...); it is a variable width
+// encoding, so the payload must be decoded in one piece. Decoding slices that
+// begin or end inside a multi-byte character is what turns table borders such
+// as "─" (GBK A9A4) into mojibake like "ぉ".
+func GBKToUTF8(text []byte) []byte {
 	r := bytes.NewReader(text)
 	decoder := transform.NewReader(r, simplifiedchinese.GBK.NewDecoder())
 	content, _ := io.ReadAll(decoder)
 	return bytes.ReplaceAll(content, []byte{0x00}, []byte{})
+}
+
+// UTF8ToGBK encodes UTF-8 text into GBK bytes. Byte offsets into TDX
+// documents (CompanyCategoryItem.Start/Length) count these bytes, not UTF-8
+// bytes, so callers that need to search a raw document for UTF-8 text must
+// encode the needle first.
+func UTF8ToGBK(text string) ([]byte, error) {
+	out, _, err := transform.Bytes(simplifiedchinese.GBK.NewEncoder(), []byte(text))
+	return out, err
 }
 
 func DecodeStockCode(code string) (string, string, error) {

@@ -4,7 +4,7 @@
 html,
 body,
 #root {
-  min-height: 100%;
+  height: 100%;
 }
 
 body {
@@ -22,13 +22,62 @@ body {
   display: none;
 }
 
-.ant-app,
-.ant-layout {
+.ant-app {
   min-height: 100vh;
 }
 
 .ant-layout {
   background: #0b1220;
+}
+
+/* ---------------- 应用外壳布局 ----------------
+   整站固定视口高度：左侧菜单与顶部 Header 常驻，
+   只有内容区自己滚动，页面不会整体被顶走。 */
+.app-shell {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* 菜单很长时在侧栏内部滚动，不影响内容区 */
+.app-shell > .ant-layout-sider {
+  overflow: hidden;
+}
+
+/* Sider 内部统一走纵向弹性布局：头部固定，菜单/历史列表自己滚 */
+.ant-layout-sider > .ant-layout-sider-children {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/* 折叠按钮悬浮在视口底部，菜单末尾要留出空间避免被遮住 */
+.app-menu-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 56px;
+}
+
+.app-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+}
+
+/* 全屏铺满型页面（AI 助手）：内容区不再开滚动容器，交给页面内部布局 */
+.app-content-fill {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app-content-fill > .ant-layout {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .ant-card {
@@ -161,24 +210,57 @@ body {
 .markdown-body {
   color: #e0e0e0;
   background-color: transparent;
+  font-size: 13px;
+  line-height: 1.7;
+  word-break: break-word;
+}
+.markdown-body p {
+  margin: 0 0 8px;
+}
+.markdown-body p:last-child {
+  margin-bottom: 0;
 }
 .markdown-body h1, .markdown-body h2, .markdown-body h3,
 .markdown-body h4, .markdown-body h5, .markdown-body h6 {
-  color: #f0f0f0;
+  color: #f3f4f6;
   /* Compact scale: the GitHub defaults (h1 2em, h2 1.5em) assume a 16px
      document, while these chat/drawer bubbles render at 13px, so headings
      came out at 20-26px and drowned the surrounding text. */
-  margin: 12px 0 6px;
+  margin: 14px 0 6px;
   padding-bottom: 0;
   border-bottom: 0;
   line-height: 1.4;
+  font-weight: 600;
 }
-.markdown-body h1 { font-size: 15px; }
-.markdown-body h2 { font-size: 14px; }
+.markdown-body h1 {
+  font-size: 15px;
+  padding-left: 8px;
+  border-left: 3px solid #1677ff;
+}
+.markdown-body h2 {
+  font-size: 14.5px;
+  padding-left: 8px;
+  border-left: 3px solid #22c55e;
+}
 .markdown-body h3 { font-size: 13.5px; }
 .markdown-body h4,
 .markdown-body h5,
-.markdown-body h6 { font-size: 13px; }
+.markdown-body h6 { font-size: 13px; color: #d1d5db; }
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 1.5em;
+  margin: 6px 0;
+}
+.markdown-body li {
+  margin: 3px 0;
+}
+.markdown-body li > ul,
+.markdown-body li > ol {
+  margin: 2px 0;
+}
 .markdown-body code {
   background-color: rgba(255,255,255,0.08);
   color: #e0a0ff;
@@ -191,30 +273,160 @@ body {
   border: 1px solid #333;
   border-radius: 8px;
   padding: 14px;
+  overflow-x: auto;
 }
 .markdown-body pre code {
   background: transparent;
   color: #e0e0e0;
   padding: 0;
 }
+/* 宽表在气泡里横向滚动，不把气泡撑破 */
+.markdown-body table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 8px 0;
+}
 .markdown-body table th {
-  background-color: rgba(255,255,255,0.05);
+  background-color: rgba(255,255,255,0.06);
+  font-weight: 600;
 }
 .markdown-body table td, .markdown-body table th {
-  border-color: #333;
+  border: 1px solid #334155;
+  padding: 5px 10px;
 }
 .markdown-body blockquote {
   border-left-color: #555;
   color: #aaa;
+  margin: 8px 0;
+  padding: 2px 12px;
 }
 .markdown-body a {
   color: #58a6ff;
 }
+.markdown-body a:hover {
+  text-decoration: underline;
+}
 .markdown-body hr {
   border-bottom-color: #333;
+  margin: 12px 0;
 }
 .markdown-body ul li::marker {
-  color: #666;
+  color: #60a5fa;
+}
+.markdown-body ol li::marker {
+  color: #94a3b8;
+}
+
+/* 用户气泡是蓝底白字，markdown 文本要跟着换配色 */
+.markdown-body.markdown-user,
+.markdown-body.markdown-user strong {
+  color: #fff;
+}
+.markdown-body.markdown-user h1,
+.markdown-body.markdown-user h2,
+.markdown-body.markdown-user h3,
+.markdown-body.markdown-user h4,
+.markdown-body.markdown-user h5,
+.markdown-body.markdown-user h6 {
+  color: #fff;
+}
+.markdown-body.markdown-user a {
+  color: #dbeafe;
+}
+.markdown-body.markdown-user code {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+.markdown-body.markdown-user p {
+  margin: 0 0 6px;
+}
+
+/* ---------------- AI 助手会话界面 ---------------- */
+.chat-scroll {
+  overscroll-behavior: contain;
+}
+
+/* 长回答按阅读宽度居中，宽屏上不再一行拉到底 */
+.chat-stream {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 16px 16px 8px;
+}
+
+.chat-session-item {
+  transition: background-color 0.15s ease;
+}
+.chat-session-item:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+/* 气泡与复制按钮：复制按钮绝对定位在右上角 */
+.chat-bubble {
+  position: relative;
+}
+.chat-copy {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid #334155;
+  background: #111827;
+  color: #9ca3af;
+  cursor: pointer;
+}
+.chat-bubble:hover .chat-copy,
+.chat-copy:focus-visible {
+  opacity: 1;
+}
+.chat-copy:hover {
+  color: #e5e7eb;
+  border-color: #475569;
+}
+
+/* 未到底部时出现的「回到底部」 */
+.chat-jump {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: #e5e7eb;
+  background: #1f2937;
+  border: 1px solid #334155;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+  z-index: 2;
+}
+.chat-jump:hover {
+  background: #273449;
+}
+
+.chat-input-textarea {
+  flex: 1;
+  resize: none;
+  min-height: 56px;
+  max-height: 160px;
+  padding: 9px 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.chat-input-textarea::placeholder {
+  color: #6b7280;
 }
 
 /* ---------------- 资讯列表 ---------------- */

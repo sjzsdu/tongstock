@@ -34,7 +34,7 @@ func (c Code) Decode(bs []byte) (*CodeResp, error) {
 	for i := 0; i < count && len(bs) >= recordLen; i++ {
 		items = append(items, CodeItem{
 			Code: string(bs[:6]),
-			Name: string(UTF8ToGBK(bs[8:16])),
+			Name: string(GBKToUTF8(bs[8:16])),
 		})
 		bs = bs[recordLen:]
 	}

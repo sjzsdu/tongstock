@@ -173,9 +173,11 @@ function AppLayout({ children }: { children: React.ReactNode }) {
 
   const selectedKey = getSelectedKey(location.pathname);
   const breadcrumbItems = buildBreadcrumbs(location.pathname);
+  // AI 助手是对话式整屏布局：去掉内容区内边距，让它自己铺满并内部滚动
+  const isFullscreen = location.pathname.startsWith('/agent');
 
   return (
-    <Layout>
+    <Layout className="app-shell">
       {!isMobile && (
         <Sider
           width={220}
@@ -186,7 +188,13 @@ function AppLayout({ children }: { children: React.ReactNode }) {
           theme="dark"
           style={{ borderRight: '1px solid #1f2937' }}
         >
-          <div style={{ padding: collapsed ? '20px 12px' : 16, borderBottom: '1px solid #1f2937' }}>
+          <div
+            style={{
+              padding: collapsed ? '20px 12px' : 16,
+              borderBottom: '1px solid #1f2937',
+              flex: '0 0 auto',
+            }}
+          >
             <Space align="center" size={12}>
               <Avatar shape="square" icon={<StockOutlined />} style={{ backgroundColor: '#1677ff' }} />
               {!collapsed && (
@@ -201,15 +209,17 @@ function AppLayout({ children }: { children: React.ReactNode }) {
               )}
             </Space>
           </div>
-          <Menu
-            mode="inline"
-            theme="dark"
-            selectedKeys={[selectedKey]}
-            openKeys={openKeys}
-            onOpenChange={setOpenKeys}
-            items={menuItems}
-            style={{ borderInlineEnd: 0, paddingTop: 8 }}
-          />
+          <div className="app-menu-scroll">
+            <Menu
+              mode="inline"
+              theme="dark"
+              selectedKeys={[selectedKey]}
+              openKeys={openKeys}
+              onOpenChange={setOpenKeys}
+              items={menuItems}
+              style={{ borderInlineEnd: 0, paddingTop: 8 }}
+            />
+          </div>
         </Sider>
       )}
       <Layout>
@@ -222,6 +232,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
             borderBottom: '1px solid #1f2937',
             flexWrap: isMobile ? 'wrap' : 'nowrap',
             rowGap: isMobile ? '8px' : 0,
+            flex: '0 0 auto',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -232,7 +243,10 @@ function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
           <GlobalSearch />
         </Header>
-        <Content style={{ padding: isMobile ? 12 : 24, overflow: 'auto' }}>
+        <Content
+          className={`app-content${isFullscreen ? ' app-content-fill' : ''}`}
+          style={{ padding: isFullscreen ? 0 : isMobile ? 12 : 24 }}
+        >
           <Suspense fallback={<RouteFallback />}>
             {children}
           </Suspense>

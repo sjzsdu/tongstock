@@ -498,6 +498,8 @@ export interface AgentSessionInfo {
   session: string;
   agent?: string;
   path: string;
+  /** 会话列表标题：首条用户消息（服务端生成） */
+  title?: string;
   updated_at?: string;
   size?: number;
 }

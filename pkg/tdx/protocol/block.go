@@ -120,8 +120,8 @@ func ParseBlockData(bs []byte) ([]*BlockItem, error) {
 func trimNull(bs []byte) string {
 	for i, b := range bs {
 		if b == 0 {
-			return string(UTF8ToGBK(bs[:i]))
+			return string(GBKToUTF8(bs[:i]))
 		}
 	}
-	return string(UTF8ToGBK(bs))
+	return string(GBKToUTF8(bs))
 }

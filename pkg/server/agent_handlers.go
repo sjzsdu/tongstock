@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -93,6 +94,7 @@ type agentSessionInfo struct {
 	Session   string `json:"session"`
 	Agent     string `json:"agent,omitempty"`
 	Path      string `json:"path"`
+	Title     string `json:"title,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
 	Size      int64  `json:"size,omitempty"`
 }
@@ -569,6 +571,7 @@ func mergeStoredAgentSessions(existing []agentSessionInfo, stored []*ChatSession
 			Session:   sess.ID,
 			Agent:     sess.Agent,
 			Path:      "chat_store:" + sess.ID,
+			Title:     sessionTitleFromMessages(sess.Messages),
 			UpdatedAt: sess.UpdatedAt.Format(time.RFC3339),
 			Size:      chatSessionContentSize(sess),
 		}
@@ -596,6 +599,67 @@ func chatSessionContentSize(sess *ChatSession) int64 {
 		size += int64(len(msg.Role) + len(msg.Content))
 	}
 	return size
+}
+
+// sessionTitleFromMessages 取会话里的首条用户消息作为列表标题。
+// 同一角色的多段对话因此可以互相区分，而不是都显示成 agent 名。
+func sessionTitleFromMessages(messages []ChatMessage) string {
+	for _, msg := range messages {
+		if !strings.EqualFold(strings.TrimSpace(msg.Role), "user") {
+			continue
+		}
+		if title := agentSessionTitle(msg.Content); title != "" {
+			return title
+		}
+	}
+	return ""
+}
+
+// agentSessionTitle 把消息压成单行短标题。
+func agentSessionTitle(content string) string {
+	content = strings.Join(strings.Fields(content), " ")
+	if content == "" {
+		return ""
+	}
+	const maxRunes = 30
+	runes := []rune(content)
+	if len(runes) > maxRunes {
+		return string(runes[:maxRunes]) + "…"
+	}
+	return content
+}
+
+// sessionTitleFromFile 流式读取 .jsonl 转录，找到首条用户消息即返回，
+// 避免为了列表标题把整个会话文件（最大 256KB）都读进来。
+func sessionTitleFromFile(path string) string {
+	file, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxTranscriptBytes)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "...") {
+			continue
+		}
+		var raw struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+		}
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(raw.Role), "user") {
+			continue
+		}
+		if title := agentSessionTitle(decodeTranscriptContent(raw.Content)); title != "" {
+			return title
+		}
+	}
+	return ""
 }
 
 func (s *Server) resolveAgentID(agentID string) (string, bool) {
@@ -800,6 +864,7 @@ func listSessions(workspace string) ([]agentSessionInfo, error) {
 			Session:   session,
 			Agent:     agent,
 			Path:      filepath.Join(sessionsDir, entry.Name()),
+			Title:     sessionTitleFromFile(filepath.Join(sessionsDir, entry.Name())),
 			UpdatedAt: info.ModTime().Format(time.RFC3339),
 			Size:      info.Size(),
 		})
@@ -844,31 +909,38 @@ func parseTranscript(content string) []agentTranscriptMessage {
 		if role == "" {
 			role = "assistant"
 		}
-		content := strings.TrimSpace(string(raw.Content))
-		var text string
-		if len(raw.Content) > 0 {
-			if err := json.Unmarshal(raw.Content, &text); err != nil {
-				var value any
-				if err := json.Unmarshal(raw.Content, &value); err == nil {
-					if pretty, err := json.MarshalIndent(value, "", "  "); err == nil {
-						text = string(pretty)
-					}
-				}
-				if text == "" {
-					text = strings.TrimSpace(string(raw.Content))
-				}
-			}
-		}
-		text = strings.TrimSpace(text)
-		if text == "" && content != "" && content != "null" {
-			text = content
-		}
+		text := decodeTranscriptContent(raw.Content)
 		if text == "" {
 			continue
 		}
 		messages = append(messages, agentTranscriptMessage{Role: role, Content: text})
 	}
 	return messages
+}
+
+// decodeTranscriptContent 还原转录行里的 content：可能是 JSON 字符串，
+// 也可能是结构化对象（此时格式化为多行文本）。
+func decodeTranscriptContent(raw json.RawMessage) string {
+	content := strings.TrimSpace(string(raw))
+	var text string
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &text); err != nil {
+			var value any
+			if err := json.Unmarshal(raw, &value); err == nil {
+				if pretty, err := json.MarshalIndent(value, "", "  "); err == nil {
+					text = string(pretty)
+				}
+			}
+			if text == "" {
+				text = strings.TrimSpace(string(raw))
+			}
+		}
+	}
+	text = strings.TrimSpace(text)
+	if text == "" && content != "" && content != "null" {
+		text = content
+	}
+	return text
 }
 
 func sessionFilenameToken(value string) string {

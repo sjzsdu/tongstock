@@ -767,50 +767,10 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 	})
 }
 
-// fetchCompanyBlockContent fetches content from a specific block in the company's F10 data
-func (s *Server) fetchCompanyBlockContent(code, block string) (string, error) {
-	cats, err := withRetry(s, func() ([]*protocol.CompanyCategoryItem, error) {
-		return s.svc.FetchCompanyCategory(code)
-	})
-	if err != nil {
-		return "", err
-	}
-
-	return s.fetchCompanyBlockContentFromCategories(code, block, cats)
-}
-
-// fetchFinanceAnalysisContent retries once with fresh category metadata when
-// cached byte offsets point into the middle of the latest F10 file.
+// fetchFinanceAnalysisContent returns the 财务分析 block of a stock's F10 data.
+// The block reader verifies its byte boundaries against the document, so a
+// catalogue that is older than the daily-refreshed file is repaired instead of
+// slicing text out of the middle of a section.
 func (s *Server) fetchFinanceAnalysisContent(code string) (string, error) {
-	const block = "财务分析"
-
-	content, err := s.fetchCompanyBlockContent(code, block)
-	if err != nil || hasMainFinanceMetricSection(content) {
-		return content, err
-	}
-
-	cats, err := withRetry(s, func() ([]*protocol.CompanyCategoryItem, error) {
-		return s.svc.RefreshCompanyCategory(code)
-	})
-	if err != nil {
-		return "", err
-	}
-	return s.fetchCompanyBlockContentFromCategories(code, block, cats)
-}
-
-func hasMainFinanceMetricSection(content string) bool {
-	return strings.Contains(content, "【1.主要财务指标】")
-}
-
-func (s *Server) fetchCompanyBlockContentFromCategories(code, block string, cats []*protocol.CompanyCategoryItem) (string, error) {
-	for _, cat := range cats {
-		if cat.Name != block {
-			continue
-		}
-		content, err := withRetry(s, func() (string, error) {
-			return s.svc.FetchCompanyContent(code, cat.Filename, cat.Start, cat.Length)
-		})
-		return content, err
-	}
-	return "", fmt.Errorf("未找到块: %s", block)
+	return s.svc.FetchCompanyBlock(code, "财务分析")
 }

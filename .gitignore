@@ -28,6 +28,9 @@ reasonix.toml
 .mimocode
 sessions
 .codex
+# Local test runtime state / mock home directories
+.testhome/
+
 # Local AI runtime state
 .atl/
 .freebuff

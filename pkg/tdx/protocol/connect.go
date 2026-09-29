@@ -27,7 +27,7 @@ func (c Connect) Decode(bs []byte) (*ConnectResp, error) {
 	if len(bs) < 68 {
 		return nil, ErrDataLength
 	}
-	return &ConnectResp{Info: string(UTF8ToGBK(bs[68:]))}, nil
+	return &ConnectResp{Info: string(GBKToUTF8(bs[68:]))}, nil
 }
 
 type Heart struct{}

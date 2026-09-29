@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Select, Space, Spin, Typography } from 'antd';
+import { Button, Select, Space, Spin, Typography, theme } from 'antd';
 import ResizableDrawer from './ResizableDrawer';
 import { RobotOutlined, SendOutlined } from '@ant-design/icons';
 import AgentChatMessage from './AgentChatMessage';
@@ -16,10 +16,12 @@ interface AgentChatPanelProps {
 }
 
 export default function AgentChatPanel({ stockCode, stockName, open, onClose }: AgentChatPanelProps) {
+  const { token } = theme.useToken();
   const [agents, setAgents] = useState<{ id: string; name: string }[]>([]);
   const [selectedAgent, setSelectedAgent] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
+  const [inputFocused, setInputFocused] = useState(false);
   const [busy, setBusy] = useState(false);
   const messageEndRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef(`chat:${stockCode}:${Date.now()}`);
@@ -180,12 +182,14 @@ export default function AgentChatPanel({ stockCode, stockName, open, onClose }: 
         ))}
         <div ref={messageEndRef} />
       </div>
-      <div style={{ padding: '8px 12px', borderTop: '1px solid #303030' }}>
+      <div style={{ padding: '8px 12px', borderTop: `1px solid ${token.colorBorder}` }}>
         <div style={{ display: 'flex', gap: 8 }}>
           <textarea
             ref={inputRef}
             value={input}
             onChange={e => setInput(e.target.value)}
+            onFocus={() => setInputFocused(true)}
+            onBlur={() => setInputFocused(false)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
             placeholder={`向 AI 分析师提问关于 ${stockName || stockCode} 的问题...`}
             style={{
@@ -193,12 +197,14 @@ export default function AgentChatPanel({ stockCode, stockName, open, onClose }: 
               resize: 'none',
               height: 60,
               padding: '8px 12px',
-              borderRadius: 8,
-              border: '1px solid #404040',
-              background: '#1a1a1a',
-              color: '#e0e0e0',
+              borderRadius: token.borderRadiusLG,
+              border: `1px solid ${inputFocused ? token.colorPrimary : token.colorBorder}`,
+              background: token.colorBgContainer,
+              color: token.colorText,
               fontSize: 13,
               outline: 'none',
+              boxShadow: inputFocused ? `0 0 0 2px ${token.colorPrimary}40` : 'none',
+              transition: 'border-color 0.2s, box-shadow 0.2s',
             }}
           />
           <Button

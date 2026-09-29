@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/sjzsdu/tongstock/internal/app/stockdata"
@@ -786,48 +787,40 @@ func (s *Server) handleCompanyContent(c *gin.Context) {
 		return
 	}
 
-	block := c.Query("block")
+	// A named block goes through the verified block reader. The F10 file is
+	// regenerated daily while its catalogue is cached for far longer, so byte
+	// offsets taken from the catalogue can land in the middle of a different
+	// block; the reader checks both ends of the window against the document.
+	if block := c.Query("block"); block != "" {
+		s.respondCompanyBlock(c, code, block)
+		return
+	}
+
 	filename := c.Query("filename")
+	if filename == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 block 或 filename 参数"})
+		return
+	}
 
 	start := uint32(0)
 	length := uint32(10000)
+	if startStr := c.Query("start"); startStr != "" {
+		if v, err := strconv.ParseUint(startStr, 10, 32); err == nil {
+			start = uint32(v)
+		}
+	}
+	if lengthStr := c.Query("length"); lengthStr != "" {
+		if v, err := strconv.ParseUint(lengthStr, 10, 32); err == nil {
+			length = uint32(v)
+		}
+	}
 
-	if block != "" {
-		cats, err := withRetry(s, func() ([]*protocol.CompanyCategoryItem, error) {
-			return s.svc.FetchCompanyCategory(code)
-		})
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取公司信息目录失败: %v", err)})
-			return
-		}
-		found := false
-		for _, cat := range cats {
-			if cat.Name == block {
-				filename = cat.Filename
-				start = cat.Start
-				length = cat.Length
-				found = true
-				break
-			}
-		}
-		if !found {
-			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("未找到块: %s", block)})
-			return
-		}
-	} else if filename == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 block 或 filename 参数"})
+	// Callers that hand back exactly one of the catalogue's windows — the web
+	// UI does — are asking for that block whatever they call the parameters,
+	// so resolve the name and apply the same verification.
+	if name := s.companyBlockNameForWindow(code, filename, start, length); name != "" {
+		s.respondCompanyBlock(c, code, name)
 		return
-	} else {
-		if startStr := c.Query("start"); startStr != "" {
-			if v, err := strconv.ParseUint(startStr, 10, 32); err == nil {
-				start = uint32(v)
-			}
-		}
-		if lengthStr := c.Query("length"); lengthStr != "" {
-			if v, err := strconv.ParseUint(lengthStr, 10, 32); err == nil {
-				length = uint32(v)
-			}
-		}
 	}
 
 	content, err := withRetry(s, func() (string, error) {
@@ -838,6 +831,38 @@ func (s *Server) handleCompanyContent(c *gin.Context) {
 		return
 	}
 
+	c.JSON(http.StatusOK, gin.H{"content": content})
+}
+
+// companyBlockNameForWindow reports which catalogue block a (filename, start,
+// length) window refers to, or "" when it matches none of them.
+func (s *Server) companyBlockNameForWindow(code, filename string, start, length uint32) string {
+	cats, err := withRetry(s, func() ([]*protocol.CompanyCategoryItem, error) {
+		return s.svc.FetchCompanyCategory(code)
+	})
+	if err != nil {
+		return ""
+	}
+	for _, cat := range cats {
+		if cat.Filename == filename && cat.Start == start && cat.Length == length {
+			return cat.Name
+		}
+	}
+	return ""
+}
+
+func (s *Server) respondCompanyBlock(c *gin.Context, code, block string) {
+	content, err := withRetry(s, func() (string, error) {
+		return s.svc.FetchCompanyBlock(code, block)
+	})
+	if err != nil {
+		if errors.Is(err, tdx.ErrCompanyBlockNotFound) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取公司信息内容失败: %v", err)})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"content": content})
 }
 

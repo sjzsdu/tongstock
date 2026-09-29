@@ -7,7 +7,16 @@ import (
 	"github.com/sjzsdu/tongstock/pkg/utils"
 )
 
-func UTF8ToGBK(text []byte) []byte {
+// GBKToUTF8 decodes raw GBK payload bytes into UTF-8 text. TDX text is GBK on
+// the wire; the payload must be decoded as a whole because GBK is variable
+// width.
+func GBKToUTF8(text []byte) []byte {
+	return utils.GBKToUTF8(text)
+}
+
+// UTF8ToGBK encodes UTF-8 text into GBK bytes, the unit in which TDX document
+// byte offsets (CompanyCategoryItem.Start/Length) are counted.
+func UTF8ToGBK(text string) ([]byte, error) {
 	return utils.UTF8ToGBK(text)
 }
 

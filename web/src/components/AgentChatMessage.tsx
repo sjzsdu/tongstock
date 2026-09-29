@@ -1,5 +1,5 @@
-import { memo } from 'react';
-import { Typography } from 'antd';
+import { memo, useState } from 'react';
+import { Typography, theme } from 'antd';
 import MarkdownRenderer from './MarkdownRenderer';
 
 type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
@@ -16,45 +16,106 @@ function normalizeRole(role: string): MessageRole {
     : 'assistant';
 }
 
-const roleStyles: Record<MessageRole, { bg: string; align: React.CSSProperties['justifyContent']; border: string }> = {
-  user: { bg: '#1677ff', align: 'flex-end', border: '1px solid #4096ff' },
-  assistant: { bg: '#1f1f1f', align: 'flex-start', border: '1px solid #303030' },
-  system: { bg: '#1a1a2e', align: 'center', border: '1px solid #2a2a4a' },
-  tool: { bg: '#1a1a1a', align: 'flex-start', border: '1px solid #404040' },
-};
-
 function AgentChatMessageInner({ role, content, error }: AgentChatMessageProps) {
+  const { token } = theme.useToken();
+  const [copied, setCopied] = useState(false);
   const normalizedRole = normalizeRole(role);
-  const style = roleStyles[normalizedRole];
+
+  // system（"已开启一段新对话" 这类提示）做成轻分隔条，不跟正经气泡抢视觉
+  if (normalizedRole === 'system') {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          justifyContent: 'center',
+          padding: '8px 16px',
+        }}
+      >
+        <div style={{ flex: 1, height: 1, background: token.colorSplit }} />
+        <Typography.Text type="secondary" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+          {content}
+        </Typography.Text>
+        <div style={{ flex: 1, height: 1, background: token.colorSplit }} />
+      </div>
+    );
+  }
+
+  const styles: Record<
+    Exclude<MessageRole, 'system'>,
+    { bg: string; align: React.CSSProperties['justifyContent']; border: string; color: string }
+  > = {
+    user: {
+      bg: token.colorPrimary,
+      align: 'flex-end',
+      border: `1px solid ${token.colorPrimaryBorderHover}`,
+      color: '#fff',
+    },
+    assistant: {
+      bg: token.colorBgContainer,
+      align: 'flex-start',
+      border: `1px solid ${token.colorBorderSecondary}`,
+      color: token.colorText,
+    },
+    tool: {
+      bg: token.colorFillQuaternary,
+      align: 'flex-start',
+      border: `1px solid ${token.colorBorderSecondary}`,
+      color: token.colorText,
+    },
+  };
+  const style = styles[normalizedRole as Exclude<MessageRole, 'system'>];
+
+  // 回复气泡右上角常驻复制入口（右侧留白避免压住正文）
+  const showCopy = !error && normalizedRole !== 'user';
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // 剪贴板不可用时静默忽略
+    }
+  };
 
   return (
     <div
       style={{
         display: 'flex',
         justifyContent: style.align,
-        padding: '8px 16px',
+        padding: '6px 16px',
       }}
     >
       <div
+        className="chat-bubble"
         style={{
-          maxWidth: '80%',
-          padding: '10px 14px',
+          maxWidth: '100%',
+          padding: showCopy ? '10px 62px 10px 14px' : '10px 14px',
           borderRadius: 12,
           background: style.bg,
-          border: error ? '1px solid #ff4d4f' : style.border,
-          color: normalizedRole === 'user' ? '#fff' : '#e0e0e0',
+          border: error ? `1px solid ${token.colorError}` : style.border,
+          color: style.color,
           wordBreak: 'break-word',
         }}
       >
         {normalizedRole === 'tool' && (
-          <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>tool output</div>
+          <div style={{ fontSize: 11, color: token.colorTextTertiary, marginBottom: 4 }}>
+            tool output
+          </div>
         )}
-        {normalizedRole === 'system' ? (
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{content}</Typography.Text>
-        ) : normalizedRole === 'user' ? (
-          <div style={{ fontSize: 13, lineHeight: 1.6 }}>{content}</div>
+        {error ? (
+          <div style={{ fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{content}</div>
         ) : (
-          <MarkdownRenderer content={content} />
+          <MarkdownRenderer
+            content={content}
+            className={normalizedRole === 'user' ? 'markdown-user' : undefined}
+          />
+        )}
+        {showCopy && (
+          <button type="button" className="chat-copy" onClick={handleCopy} aria-label="复制内容">
+            {copied ? '已复制' : '复制'}
+          </button>
         )}
       </div>
     </div>

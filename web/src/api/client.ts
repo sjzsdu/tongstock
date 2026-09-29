@@ -204,15 +204,13 @@ export const api = {
   company: (code: string) =>
     fetchJSON<CompanyCategory[]>(`/api/company?code=${code}`),
 
-  companyContent: (code: string, blockOrCategory: string | { Name: string; Filename: string; Start: number; Length: number }) => {
+  // Blocks are always requested by name: the F10 file is regenerated daily
+  // while its byte-offset catalogue is cached for far longer, so passing
+  // Start/Length would hand back a window that has slid into a neighbouring
+  // block. The server resolves the name and verifies it against the document.
+  companyContent: (code: string, blockOrCategory: string | { Name: string }) => {
     const params = new URLSearchParams({ code });
-    if (typeof blockOrCategory === 'string') {
-      params.set('block', blockOrCategory);
-    } else {
-      params.set('filename', blockOrCategory.Filename);
-      params.set('start', String(blockOrCategory.Start));
-      params.set('length', String(blockOrCategory.Length));
-    }
+    params.set('block', typeof blockOrCategory === 'string' ? blockOrCategory : blockOrCategory.Name);
     return fetchJSON<{ content: string }>(`/api/company/content?${params}`);
   },
 

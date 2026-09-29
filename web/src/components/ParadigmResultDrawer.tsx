@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Typography, Tag, Descriptions, Spin, Empty, Space, Alert, Tooltip, Tabs, Table, Button, Input, InputNumber, Select, message } from 'antd';
+import { Typography, Tag, Descriptions, Spin, Empty, Space, Alert, Tooltip, Tabs, Table, Button, Input, InputNumber, Select, message, theme } from 'antd';
 import { CheckCircleFilled, CloseCircleFilled, QuestionCircleFilled, QuestionCircleOutlined } from '@ant-design/icons';
 import MarkdownRenderer from './MarkdownRenderer';
 import ResizableDrawer from './ResizableDrawer';
@@ -212,6 +212,7 @@ function ConditionTable({ conditions }: { conditions: EvaluatedCondition[] }) {
 }
 
 function AnalysisTab({ agentText, stockCode, stockName }: { agentText: string; stockCode: string; stockName?: string }) {
+  const { token } = theme.useToken();
   const [conditions, setConditions] = useState<EvaluatedCondition[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -239,7 +240,7 @@ function AnalysisTab({ agentText, stockCode, stockName }: { agentText: string; s
       {agentText && (
         <div>
           <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 8, fontSize: 12 }}>完整分析</Typography.Text>
-          <div style={{ background: '#1a1a1a', padding: 16, borderRadius: 8, overflow: 'auto', maxHeight: 500 }}>
+          <div style={{ background: token.colorFillQuaternary, padding: 16, borderRadius: 8, overflow: 'auto', maxHeight: 500 }}>
             <MarkdownRenderer content={agentText} />
           </div>
         </div>
