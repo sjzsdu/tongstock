@@ -47,6 +47,9 @@ type Store interface {
 	// GetHotEventDetail 获取热点事件详情
 	GetHotEventDetail(ctx context.Context, eventID string) (*HotEvent, error)
 
+	// DeleteHotEvent 删除热点事件
+	DeleteHotEvent(ctx context.Context, eventID string) error
+
 	// DeleteExpiredNews 删除过期新闻
 	DeleteExpiredNews(ctx context.Context, days int) (int, error)
 
@@ -582,6 +585,12 @@ func (s *SQLiteStore) SaveHotEvent(ctx context.Context, event *HotEvent) error {
 		event.CreatedAt.Format(time.RFC3339),
 		event.UpdatedAt.Format(time.RFC3339),
 	)
+	return err
+}
+
+// DeleteHotEvent 删除热点事件
+func (s *SQLiteStore) DeleteHotEvent(ctx context.Context, eventID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM hot_events WHERE id = ?`, eventID)
 	return err
 }
 

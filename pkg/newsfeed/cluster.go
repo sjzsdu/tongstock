@@ -88,6 +88,12 @@ func (c *Clusterer) RefreshEvents(ctx context.Context) (int, error) {
 		return 0, err
 	}
 
+	// 库里的同名旧事件会先合并进本轮事件再删除，确保同名事件只保留一条。
+	events, err = c.mergeWithActiveEvents(ctx, events)
+	if err != nil {
+		return 0, err
+	}
+
 	saved := 0
 	for _, event := range events {
 		if err := c.store.SaveHotEvent(ctx, event); err != nil {
@@ -96,6 +102,48 @@ func (c *Clusterer) RefreshEvents(ctx context.Context) (int, error) {
 		saved++
 	}
 	return saved, nil
+}
+
+// mergeWithActiveEvents 把本轮事件与库里的活跃事件按标题对齐：
+//   - 同名事件：把旧事件累积的新闻、平台计数、相关股票并入新事件后删除旧记录，
+//     再落新事件，避免同名旧事件残留；
+//   - 库里同名但本轮没再发现的事件：说明该话题最近没有新新闻，但事件窗口
+//     远大于刷新扫描窗口，直接删除会造成话题闪断，保留。
+func (c *Clusterer) mergeWithActiveEvents(ctx context.Context, events []*HotEvent) ([]*HotEvent, error) {
+	active, err := c.store.GetHotEvents(ctx, HotEventFilter{
+		Status: []EventStatus{EventStatusActive, EventStatusCooling},
+		Limit:  100,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// 先按标题索引本轮事件，再逐条处理旧事件。
+	byTitle := make(map[string]*HotEvent, len(events))
+	for _, event := range events {
+		byTitle[eventTitleKey(event.Title)] = event
+	}
+
+	for _, old := range active.Items {
+		current, ok := byTitle[eventTitleKey(old.Title)]
+		if !ok {
+			continue
+		}
+		detail, err := c.store.GetHotEventDetail(ctx, old.ID)
+		if err != nil {
+			// 旧详情读不到就直接覆盖：新事件是本次窗口的准确统计。
+			if err := c.store.DeleteHotEvent(ctx, old.ID); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		current.mergeOlder(detail)
+		if err := c.store.DeleteHotEvent(ctx, old.ID); err != nil {
+			return nil, err
+		}
+	}
+
+	return events, nil
 }
 
 // scanRecentNews 从最新一条新闻往回扫描，直到出现一条落在时间窗口之外的
@@ -213,6 +261,9 @@ func (c *Clusterer) groupByTimeWindow(news []*NewsItem) [][]*NewsItem {
 // extractKeywords 提取关键词
 func (c *Clusterer) extractKeywords(news []*NewsItem) []string {
 	keywordCounts := make(map[string]int)
+	// keywordOrder 记录关键词首次出现的顺序，同频时用于稳定排序。
+	keywordOrder := make(map[string]int)
+	order := 0
 
 	for _, item := range news {
 		text := item.Title + " " + item.Summary
@@ -222,7 +273,11 @@ func (c *Clusterer) extractKeywords(news []*NewsItem) []string {
 			// 按「字符数」而非字节数判断：单个汉字占 3 字节，
 			// 用字节长度会把「日」「国」这类单字放进关键词池，
 			// 高频单字聚出来的事件标题就是无意义的字面拼凑。
-			if utf8.RuneCountInString(kw) >= 2 && !isStopWord(kw) && !isPureDigits(kw) {
+			if utf8.RuneCountInString(kw) >= 2 && !isStopWord(kw) && !isPureDigits(kw) && !isCodeToken(kw) {
+				if _, seen := keywordCounts[kw]; !seen {
+					keywordOrder[kw] = order
+					order++
+				}
 				keywordCounts[kw]++
 			}
 		}
@@ -235,9 +290,14 @@ func (c *Clusterer) extractKeywords(news []*NewsItem) []string {
 		}
 	}
 
-	// 按频率排序
+	// 频率优先，同频按在新闻中首次出现的先后排：后者让标题读起来
+	// 接近原文语序（「ai openai」而不是「openai ai」），也让排序
+	// 不再依赖 map 遍历顺序。
 	sort.Slice(keywords, func(i, j int) bool {
-		return keywordCounts[keywords[i]] > keywordCounts[keywords[j]]
+		if keywordCounts[keywords[i]] != keywordCounts[keywords[j]] {
+			return keywordCounts[keywords[i]] > keywordCounts[keywords[j]]
+		}
+		return keywordOrder[keywords[i]] < keywordOrder[keywords[j]]
 	})
 
 	return keywords
@@ -320,6 +380,25 @@ func isPureDigits(word string) bool {
 		}
 	}
 	return len(word) > 0
+}
+
+// isCodeToken 过滤「20cm3」「7x24」「sz000408」这类代码型 token：
+// 它们是标题里的规格/栏目/代码噪声，频次高、语义弱，混进事件标题
+// 就成了「20cm3 20cm」这种不知所云的名字。
+func isCodeToken(word string) bool {
+	hasLetter, hasDigit := false, false
+	for _, r := range word {
+		switch {
+		case r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z':
+			hasLetter = true
+		case r >= '0' && r <= '9':
+			hasDigit = true
+		}
+	}
+	// 字母数字混合的英文 token（如 20cm3、7x24、a50、b20）是型号/栏目
+	// 噪声而非术语，拦截；纯英文（kkr、openai）与纯数字（已被
+	// isPureDigits 拦截）不受影响。
+	return hasLetter && hasDigit
 }
 
 // isStopWord 判断是否为停用词
@@ -494,7 +573,7 @@ func (c *Clusterer) createEvent(news []*NewsItem, keywords []string) *HotEvent {
 	}
 
 	return &HotEvent{
-		ID:            "event_" + c.eventSignature(keywords, title),
+		ID:            "event_" + c.eventSignature(title),
 		Title:         title,
 		Keywords:      keywords,
 		RelatedStocks: stocksList,
@@ -508,6 +587,10 @@ func (c *Clusterer) createEvent(news []*NewsItem, keywords []string) *HotEvent {
 }
 
 // generateEventTitle 生成事件标题
+//
+// 取簇内前两个关键词拼接。排序必须保持 extractKeywords 的稳定性
+// （高频优先、同频按原文出现位置）：此前同频词的先后取决于 map 遍历
+// 顺序，同一话题每次刷新都会得到不同标题，事件 ID 随之漂移。
 func (c *Clusterer) generateEventTitle(news []*NewsItem, keywords []string) string {
 	// 使用出现频率最高的关键词组合作为标题
 	if len(keywords) >= 2 {
@@ -547,25 +630,82 @@ func (c *Clusterer) calculateHotIndex(news []*NewsItem, keywords []string, sourc
 }
 
 // deduplicateEvents 去重事件
+//
+// 同一标题只保留一条：同名事件大多来自相邻时间桶对同一话题的重复发现，
+// 保留热度更高的那个即可，避免 TOP10 里出现三条「ai openai」。
+// 去重键是归一化标题而非全部关键词——关键词集合差一个尾词也不该算新事件。
 func (c *Clusterer) deduplicateEvents(events []*HotEvent) []*HotEvent {
-	seen := make(map[string]bool)
-	var unique []*HotEvent
+	byTitle := make(map[string]*HotEvent, len(events))
+	order := make([]string, 0, len(events))
 
 	for _, event := range events {
-		signature := c.eventSignature(event.Keywords, event.Title)
-		if !seen[signature] {
-			seen[signature] = true
-			unique = append(unique, event)
+		key := eventTitleKey(event.Title)
+		if existing, ok := byTitle[key]; ok {
+			if event.HotIndex > existing.HotIndex {
+				*existing = *event
+			}
+			continue
 		}
+		byTitle[key] = event
+		order = append(order, key)
 	}
 
+	unique := make([]*HotEvent, 0, len(order))
+	for _, key := range order {
+		unique = append(unique, byTitle[key])
+	}
 	return unique
 }
 
-// eventSignature 生成事件签名（关键词 + 标题，用于去重，也用作事件 ID）
-func (c *Clusterer) eventSignature(keywords []string, title string) string {
-	sig := strings.Join(keywords, "-") + "-" + title
+// mergeOlder 把旧事件中的信息合并进新事件：补充新窗口里没扫到的新闻、
+// 累计平台计数、并集相关股票，热度取两者较高值。
+func (e *HotEvent) mergeOlder(older *HotEvent) {
+	if older == nil {
+		return
+	}
+
+	seen := make(map[string]bool, len(e.NewsItemIDs))
+	for _, id := range e.NewsItemIDs {
+		seen[id] = true
+	}
+	for _, id := range older.NewsItemIDs {
+		if !seen[id] {
+			e.NewsItemIDs = append(e.NewsItemIDs, id)
+		}
+	}
+
+	for source, count := range older.SourceCounts {
+		e.SourceCounts[source] += count
+	}
+
+	stockSet := make(map[string]bool, len(e.RelatedStocks))
+	for _, code := range e.RelatedStocks {
+		stockSet[code] = true
+	}
+	for _, code := range older.RelatedStocks {
+		if !stockSet[code] {
+			e.RelatedStocks = append(e.RelatedStocks, code)
+		}
+	}
+
+	if older.HotIndex > e.HotIndex {
+		e.HotIndex = older.HotIndex
+	}
+}
+
+// eventSignature 生成事件签名（标题内容哈希，用作事件 ID）
+//
+// 签名只由标题决定：同一话题在不同时间桶里聚出的关键词尾集总有细微
+// 差异，若把关键词拼进签名，标题相同的事件也会得到不同 ID，
+// INSERT OR REPLACE 变成了纯 INSERT，同名事件就这样在库里越积越多。
+func (c *Clusterer) eventSignature(title string) string {
+	sig := eventTitleKey(title)
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(sig)))[:16]
+}
+
+// eventTitleKey 是事件标题的归一化键，同名事件互相覆盖。
+func eventTitleKey(title string) string {
+	return strings.ToLower(strings.TrimSpace(title))
 }
 
 // DeduplicateNews 新闻去重
