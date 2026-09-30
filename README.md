@@ -8,9 +8,9 @@ TongStock 围绕两个问题组织产品：**今天买什么，以及持仓什�
 2. 查看“今日决策”。候选会同时展示真实数据日期、方法证据、买入窗口、仓位上限和退出计划；空榜单表示当前没有方法通过门槛。
 3. 在“持仓卖出”查看 `hold/watch/reduce/exit`。旧持仓没有原始方法血缘时会明确标为 `inferred`，停牌或 T+1 时不会假装已经卖出。
 
-可信方法库位于 `/methods`。旧信号筛选、范式和实验工具仍保留在“高级工具”，用于审计而不是普通用户主流程。完整说明见 [用户指南](docs/AI_USER_GUIDE.md)，真实数据验收见 [验收报告](docs/REAL_DATA_ACCEPTANCE.md)。
+可信方法库位于 `/methods`，范式库位于 `/paradigms`，范式监控位于 `/monitoring`；信号筛选等工具仍保留在“行情工具”菜单，用于审计而不是普通用户主流程。API 契约见 `api/openapi.json`，Web 端说明见 [web/README.md](web/README.md)。
 
-CLI 和 HTTP API 共享同一个 DB-first 股票数据服务：先从 SQLite 检查数据与同步水位，再结合当前日期、交易时段和交易日历判断新鲜度；数据缺失或过期时只从 TDX 同步缺失范围，在事务中写入业务数据和水位，最后重新读取数据库返回。详细设计见 [架构说明](ai-docs/ARCHITECTURE.md)。
+CLI 和 HTTP API 共享同一个 DB-first 股票数据服务：先从 SQLite 检查数据与同步水位，再结合当前日期、交易时段和交易日历判断新鲜度；数据缺失或过期时只从 TDX 同步缺失范围，在事务中写入业务数据和水位，最后重新读取数据库返回。
 
 ## 功能特性
 
@@ -62,11 +62,11 @@ npx skills add sjzsdu/tongstock
 - 板块分类与成分股查询
 - 股票代码批量操作
 
-**提示**：首次使用需确保 TongStock 服务已启动（`./tongstock serve`），默认服务地址 `http://localhost:8106`
+**提示**：首次使用需确保 TongStock 服务已启动（`./tongstock serve`）。内置默认端口是 `8106`（见 `pkg/config/config.go` 的 `DefaultConfig`），实际端口以 `~/.tongstock/config.yaml` 的 `server.port` 为准：配置为 `6565` 时服务地址就是 `http://localhost:6565`。
 
 ## Web UI
 
-启动服务后访问 `http://localhost:8106` 即可使用 Web 界面。
+启动服务后访问 `http://localhost:<server.port>` 即可使用 Web 界面（内置默认 `8106`，以 `~/.tongstock/config.yaml` 为准）。
 
 ### 功能页面
 
@@ -83,18 +83,20 @@ npx skills add sjzsdu/tongstock
 | 指数详情 | `/index/:code` | 指数行情与 K 线 |
 | Agent | `/agent` | 股票 Agent 对话与诊断 |
 | 投资范式 | `/paradigms` | 范式分析、复盘与告警 |
+| 范式监控 | `/monitoring` | 范式前向表现监控：漂移/衰减/集中度评分、输入源诊断与预警确认 |
 | 隔夜策略 | `/strategy/overnight` | 隔夜套利策略分析 |
 | 新闻 | `/news` | 新闻流、热点事件和情绪 |
 | 设置 | `/settings` | 指标参数等本地设置 |
 
-Agent 默认支持由 TongStock 直接配置模型和注册自定义角色，不再要求单独维护 PicoClaw 配置文件。详见 [Agent 配置与扩展](docs/agents.md)。现有 PicoClaw `home/config` 配置仍可直接使用并自动进入兼容模式。
+Agent 默认支持由 TongStock 直接配置模型和注册自定义角色，不再要求单独维护 PicoClaw 配置文件：模型与场景默认角色配置在 `~/.tongstock/config.yaml` 的 `agent` 段（模板见 `pkg/config/config.go` 的 `defaultConfigTemplate`），内置角色定义见 `internal/agents/embedded/`。现有 PicoClaw `home/config` 配置仍可直接使用并自动进入兼容模式。
 
 ### 开发模式
 
 ```bash
 cd web
 pnpm install --frozen-lockfile
-pnpm dev           # 启动开发服务器，默认代理到 localhost:8106
+  pnpm dev           # 启动开发服务器，/api 代理到 web/vite.config.ts 里的目标（默认 localhost:8106）
+
 ```
 
 ## CLI 使用方法
@@ -293,7 +295,7 @@ K线、分时、分笔、除权除息、财务、指数 K 线、F10 公司信息
 ./tongstock serve
 ```
 
-服务默认只监听 `http://127.0.0.1:8106`。
+服务默认只监听 `http://127.0.0.1:8106`（`8106` 是内置默认端口，实际端口以 `~/.tongstock/config.yaml` 的 `server.port` 为准）。
 
 如需从其他设备访问，必须同时配置非本机监听地址和访问令牌：
 
@@ -531,9 +533,8 @@ tongstock/
 │   ├── storage/          # SQLite 连接和版本化迁移
 │   └── tdx/              # TDX 协议、连接池和上游适配
 ├── api/openapi.json      # API 契约源
-├── web/                  # React + TypeScript Web UI
-├── docs/adr/             # 架构决策记录
-└── ai-docs/              # 架构、存储、服务和运维文档
+├── skills/               # 随仓库发布的 Skills 定义
+└── web/                  # React + TypeScript Web UI
 ```
 
 本地和 CI 使用同一个质量入口：
