@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -40,6 +41,50 @@ func TestUnknownAPIRouteReturnsStableErrorInsteadOfSPA(t *testing.T) {
 	}
 	if envelope.Error.Code != "not_found" || envelope.Error.RequestID == "" {
 		t.Fatalf("envelope = %+v", envelope)
+	}
+}
+
+// 回归：缺失的静态资源（旧 hash chunk）必须 404 而不是回退 index.html。
+// 返回 HTML 会让浏览器把 HTML 当 JS 模块解析，旧标签页在重新部署后
+// 切换菜单时报「Failed to fetch dynamically imported module」。
+func TestMissingStaticAssetReturns404InsteadOfSPA(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(server.RequestID())
+	setupStaticRoutes(router)
+
+	for _, path := range []string{
+		"/assets/OvernightArbitrage-DaJ8vyzY.js",
+		"/assets/index-OLDHASH.css",
+		"/fonts/foo.woff2",
+	} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("GET %s: status = %d, want 404", path, response.Code)
+		}
+		if ct := response.Header().Get("Content-Type"); strings.Contains(ct, "text/html") {
+			t.Fatalf("GET %s: content-type = %s, must not be html", path, ct)
+		}
+	}
+}
+
+// SPA 路由（无扩展名）仍应回退 index.html。
+func TestSPARoutesStillFallBackToIndex(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(server.RequestID())
+	setupStaticRoutes(router)
+
+	for _, path := range []string{"/watchlist", "/stock/600519", "/news/event/abc", "/screen"} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		if response.Code != http.StatusOK {
+			t.Fatalf("GET %s: status = %d, want 200", path, response.Code)
+		}
+		if ct := response.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
+			t.Fatalf("GET %s: content-type = %s, want text/html", path, ct)
+		}
 	}
 }
 

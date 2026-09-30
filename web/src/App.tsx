@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
+import type { ComponentType } from 'react';
 import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
   DashboardOutlined,
@@ -22,23 +23,37 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
 import { titleForPath } from './lib/pageTitle';
 
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const StockDetail = lazy(() => import('./pages/stock/StockDetail'));
-const StockChoose = lazy(() => import('./pages/stock/StockChoose'));
-const Screen = lazy(() => import('./pages/Screen'));
-const Blocks = lazy(() => import('./pages/Blocks'));
-const Watchlist = lazy(() => import('./pages/Watchlist'));
-const Portfolio = lazy(() => import('./pages/Portfolio'));
-const SettingsPage = lazy(() => import('./pages/settings/SettingsPage'));
-const IndexDetail = lazy(() => import('./pages/index/IndexDetail'));
-const AgentWeb = lazy(() => import('./pages/AgentWeb'));
-const Paradigms = lazy(() => import('./pages/Paradigms'));
-const OvernightArbitrage = lazy(() => import('./pages/strategy/OvernightArbitrage'));
-const EventDetail = lazy(() => import('./pages/news/EventDetail'));
-const NewsHome = lazy(() => import('./pages/news/NewsHome'));
-const Monitoring = lazy(() => import('./pages/Monitoring'));
-const Methods = lazy(() => import('./pages/Methods'));
-const NotFound = lazy(() => import('./pages/NotFound'));
+const Dashboard = lazy(lazyWithReload(() => import('./pages/Dashboard')));
+const StockDetail = lazy(lazyWithReload(() => import('./pages/stock/StockDetail')));
+const StockChoose = lazy(lazyWithReload(() => import('./pages/stock/StockChoose')));
+const Screen = lazy(lazyWithReload(() => import('./pages/Screen')));
+const Blocks = lazy(lazyWithReload(() => import('./pages/Blocks')));
+const Watchlist = lazy(lazyWithReload(() => import('./pages/Watchlist')));
+const Portfolio = lazy(lazyWithReload(() => import('./pages/Portfolio')));
+const SettingsPage = lazy(lazyWithReload(() => import('./pages/settings/SettingsPage')));
+const IndexDetail = lazy(lazyWithReload(() => import('./pages/index/IndexDetail')));
+const AgentWeb = lazy(lazyWithReload(() => import('./pages/AgentWeb')));
+const Paradigms = lazy(lazyWithReload(() => import('./pages/Paradigms')));
+const OvernightArbitrage = lazy(lazyWithReload(() => import('./pages/strategy/OvernightArbitrage')));
+const EventDetail = lazy(lazyWithReload(() => import('./pages/news/EventDetail')));
+const NewsHome = lazy(lazyWithReload(() => import('./pages/news/NewsHome')));
+const Monitoring = lazy(lazyWithReload(() => import('./pages/Monitoring')));
+const Methods = lazy(lazyWithReload(() => import('./pages/Methods')));
+const NotFound = lazy(lazyWithReload(() => import('./pages/NotFound')));
+
+// 懒加载 chunk 失败（重新部署后旧标签页请求旧 hash 文件返回 404）时，
+// 自动整页刷新一次拿新版本。sessionStorage 标记防止刷新后仍失败时死循环。
+function lazyWithReload<T extends { default: ComponentType<any> }>(factory: () => Promise<T>) {
+  return () =>
+    factory().catch((error: unknown) => {
+      const key = 'tongstock:chunk-reloaded';
+      if (!sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, '1');
+        window.location.reload();
+      }
+      throw error;
+    });
+}
 
 const { Header, Content, Sider } = Layout;
 

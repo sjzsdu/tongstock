@@ -448,8 +448,32 @@ func setupStaticRoutes(router *gin.Engine) {
 			c.FileFromFS(path, web.DistFS())
 			return
 		}
+		// 静态资源（带内容 hash 的 js/css/字体等）缺失时必须 404，
+		// 不能回退 index.html：旧标签页在重新部署后会请求旧 hash 的
+		// chunk，返回 HTML 会让浏览器报「Failed to fetch dynamically
+		// imported module」，页面直接渲染失败。404 则由前端捕获并
+		// 自动刷新到新版本。仅无扩展名的 SPA 路由才回退 index.html。
+		if hasFileExtension(path) {
+			c.Data(http.StatusNotFound, "text/plain; charset=utf-8", []byte("static asset not found"))
+			return
+		}
 		serveIndex(c)
 	})
+}
+
+// hasFileExtension 判断请求路径是否像静态资源文件（含扩展名）。
+// SPA 路由（如 /stock/600519、/news）不含扩展名，仍走 index.html 回退。
+func hasFileExtension(path string) bool {
+	last := path
+	if idx := strings.LastIndexByte(path, '/'); idx >= 0 {
+		last = path[idx+1:]
+	}
+	if last == "" {
+		return false
+	}
+	dot := strings.LastIndexByte(last, '.')
+	// 扩展名过长说明点号大概率属于路径本身（如 /v1.2/release）。
+	return dot > 0 && dot < len(last)-1 && len(last)-dot-1 <= 8
 }
 
 func (a *App) Run(ctx context.Context) error {

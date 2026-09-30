@@ -1,6 +1,6 @@
 import { Component } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
-import { Button, Result } from 'antd';
+import { Button, Result, Space } from 'antd';
 
 interface Props {
   children: ReactNode;
@@ -29,17 +29,32 @@ export default class ErrorBoundary extends Component<Props, State> {
     this.setState({ hasError: false, error: undefined });
   };
 
+  handleReload = () => {
+    window.location.reload();
+  };
+
   render() {
     if (this.state.hasError) {
+      const isChunkError =
+        this.state.error?.message?.includes('dynamically imported module') ||
+        this.state.error?.message?.includes('Loading chunk') ||
+        this.state.error?.message?.includes('Importing a module script failed');
       return (
         <Result
           status="error"
           title="页面渲染出错"
-          subTitle={this.state.error?.message || '发生了未知错误'}
+          subTitle={
+            isChunkError
+              ? '页面资源已更新（服务重新部署过），刷新后即可恢复'
+              : this.state.error?.message || '发生了未知错误'
+          }
           extra={
-            <Button type="primary" onClick={this.handleReset}>
-              重试
-            </Button>
+            <Space>
+              <Button type="primary" onClick={this.handleReload}>
+                刷新页面
+              </Button>
+              <Button onClick={this.handleReset}>重试</Button>
+            </Space>
           }
         />
       );
