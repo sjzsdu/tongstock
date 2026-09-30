@@ -16,6 +16,8 @@ interface StockSearchInputProps {
   iconClassName?: string;
   showIcon?: boolean;
   emptyText?: string;
+  /** 选中后是否清空输入框，适合连续添加的表单场景（如自选股）。 */
+  clearOnSelect?: boolean;
   onSelect: (match: SearchStockMatch) => void;
 }
 
@@ -26,6 +28,7 @@ export default function StockSearchInput({
   autoFocus = false,
   containerClassName = '',
   emptyText,
+  clearOnSelect = false,
   onSelect,
 }: StockSearchInputProps) {
   const [query, setQuery] = useState(initialQuery);
@@ -119,7 +122,7 @@ export default function StockSearchInput({
   const handleEnter = () => {
     if (results.length === 1) {
       onSelect(results[0]);
-      setQuery(results[0].name);
+      setQuery(clearOnSelect ? '' : results[0].name);
     }
   };
 
@@ -133,7 +136,9 @@ export default function StockSearchInput({
         onSelect={(_, option) => {
           const match = (option as { match?: SearchStockMatch }).match;
           if (match) {
-            setQuery(match.name);
+            // 清空而非回填名称：连续添加时省一次手动删除，
+            // 残留的名称也会误导下一次搜索。
+            setQuery(clearOnSelect ? '' : match.name);
             onSelect(match);
           }
         }}

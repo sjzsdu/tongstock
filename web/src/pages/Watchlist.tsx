@@ -51,6 +51,7 @@ function getGroupLabel(group: string): string {
     default: '默认',
     industry: '行业',
     concept: '概念',
+    custom: '自定义',
     paradigm: '范式观察',
   };
   return labels[group] ?? group;
@@ -161,6 +162,7 @@ export default function Watchlist() {
   const [groupEditing, setGroupEditing] = useState<string | null>(null);
   const [groupDraft, setGroupDraft] = useState('');
   const [freshness, setFreshness] = useState<Record<string, SyncFreshnessResult>>({});
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadGroups = useCallback(async () => {
     try {
@@ -177,6 +179,7 @@ export default function Watchlist() {
       const groupParam = activeGroup !== '__all__' ? activeGroup : undefined;
       const saved = await api.watchlist(groupParam);
       const list = saved ?? [];
+      setLoadError(null);
       setWatchlist(list);
       await Promise.all(list.map(async (stock) => {
         try {
@@ -187,11 +190,22 @@ export default function Watchlist() {
         }
       }));
       await loadGroups();
-      // Load freshness data
+      // Load freshness data; 进入页面/刷新时自动同步过期日线，避免「行情数据延迟」长期挂起
       if (list.length > 0) {
         try {
           const codes = list.map((stock) => stock.code);
-          const result = await api.getSyncFreshness(codes);
+          let result = await api.getSyncFreshness(codes);
+          const staleCodes = result.results
+            .filter((r) => r.freshness === 'stale' || r.freshness === 'outdated')
+            .map((r) => r.code);
+          if (staleCodes.length > 0) {
+            try {
+              await api.syncDaily(staleCodes);
+              result = await api.getSyncFreshness(codes);
+            } catch {
+              // 同步失败时保留原 freshness 状态，由状态栏展示
+            }
+          }
           const map: Record<string, SyncFreshnessResult> = {};
           result.results.forEach((r) => {
             map[r.code] = r;
@@ -201,6 +215,10 @@ export default function Watchlist() {
           // ignore freshness load failure
         }
       }
+    } catch (error) {
+      // 加载失败不应静默：保留旧数据并明确提示，否则页面会呈现
+      // 「分组全部(0) + 行情全--」这类自相矛盾的状态。
+      setLoadError(error instanceof Error ? error.message : '自选股加载失败，请检查服务后重试');
     } finally {
       setLoading(false);
     }
@@ -222,10 +240,30 @@ export default function Watchlist() {
 
   const addStock = async (code: string, name?: string) => {
     const group = activeGroup !== '__all__' ? activeGroup : undefined;
+    // 重复添加提示：后端 Upsert 是幂等的，不提醒用户会以为添加出了重复记录。
+    if (watchlist.some((item) => item.code === code)) {
+      void message.info(`${name || code} 已在自选中${group ? `（${getGroupLabel(group)}）` : ''}`);
+      return;
+    }
     try {
       await api.watchlistAdd(code, name, group);
-      void message.success(`已添加 ${code} 到自选`);
-      void loadWatchlist();
+      void message.success(`已添加 ${name || code} 到自选`);
+      // 增量更新：直接插入新行并单拉这一只的行情，不整页重载。
+      // 整页 loadWatchlist 会触发骨架屏闪烁并重拉全部行情，观感很差。
+      const newStock: WatchlistStock = {
+        code,
+        name,
+        group: group ?? 'default',
+        added_at: new Date().toISOString(),
+      };
+      setWatchlist((prev) => [newStock, ...prev]);
+      try {
+        const quote = await api.quote(code);
+        setQuotes((prev) => ({ ...prev, [code]: quote }));
+      } catch {
+        // 单股行情失败不影响添加结果，列表项显示 --
+      }
+      void loadGroups();
     } catch (error) {
       void message.error(error instanceof Error ? error.message : '添加失败');
     }
@@ -304,6 +342,14 @@ export default function Watchlist() {
             管理您的自选股列表，实时查看行情变化，按分组组织关注标的。
           </Typography.Text>
           <WatchlistStatusBar freshnessMap={freshness} onRefresh={() => void loadWatchlist()} />
+          {loadError && (
+            <Space>
+              <Button size="small" danger onClick={() => void loadWatchlist()}>
+                重新加载
+              </Button>
+              <Text type="danger">{loadError}</Text>
+            </Space>
+          )}
         </Space>
       </Card>
 
@@ -316,6 +362,7 @@ export default function Watchlist() {
           <StockSearchInput
             limit={10}
             placeholder="输入股票代码、简称或拼音"
+            clearOnSelect
             onSelect={(match) => void addStock(match.code, match.name)}
           />
         </Space>
