@@ -10,6 +10,10 @@ import (
 	"github.com/sjzsdu/tongstock/internal/methodseed"
 )
 
+// minSeedUniverseCodes 与 internal/validation 的 minUniverseValidCodes 保持一致：
+// 股票池小于该规模的快照必然 fail closed，不值得作为默认验证输入。
+const minSeedUniverseCodes = 5
+
 func (s *Server) registerMethodSeedRoutes(api *gin.RouterGroup) {
 	api.POST("/methods/seed", s.handleMethodSeed)
 }
@@ -42,7 +46,11 @@ func (s *Server) handleMethodSeed(c *gin.Context) {
 			WriteError(c, http.StatusServiceUnavailable, "snapshot_store_unavailable", "数据快照存储不可用")
 			return
 		}
-		snaps, err := s.paradigmSnapshots.List(1, 0)
+		// 默认取「最新的、且股票池足以通过验证门槛」的冻结快照。个股详情页等场景
+		// 会产生单票快照，直接拿它当默认输入会让验证 fail closed，冷启动用户点
+		// 「载入内置方法」只会得到 0 登记的空结果。没有可用快照时退回旧行为，
+		// 由验证引擎给出 fail-closed 的具体原因。
+		snaps, err := s.paradigmSnapshots.List(50, 0)
 		if err != nil {
 			WriteError(c, http.StatusInternalServerError, "list_snapshots_failed", err.Error())
 			return
@@ -53,6 +61,12 @@ func (s *Server) handleMethodSeed(c *gin.Context) {
 			return
 		}
 		snapshotID = snaps[0].ID
+		for _, snap := range snaps {
+			if snap != nil && len(snap.Universe) >= minSeedUniverseCodes {
+				snapshotID = snap.ID
+				break
+			}
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Minute)

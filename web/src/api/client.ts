@@ -782,7 +782,21 @@ export const api = {
 
   selectionToday: () => fetchJSON<SelectionRun>('/api/selections/today'),
   positionDecisionToday: () => fetchJSON<PositionDecisionRun>('/api/position-decisions/today'),
-  methodCards: (status = '') => fetchJSON<{ items: MethodCard[]; total: number }>(`/api/methods${status ? `?status=${encodeURIComponent(status)}` : ''}`),
+  methodCards: (params: MethodCardQuery = {}) => {
+    const query = new URLSearchParams();
+    if (params.status) query.set('status', params.status);
+    if (params.market) query.set('market', params.market);
+    if (params.universe) query.set('universe', params.universe);
+    if (params.family_id) query.set('family_id', params.family_id);
+    if (params.holding_min_days !== undefined) query.set('holding_min_days', String(params.holding_min_days));
+    if (params.holding_max_days !== undefined) query.set('holding_max_days', String(params.holding_max_days));
+    if (params.limit) query.set('limit', String(params.limit));
+    const search = query.toString();
+    return fetchJSON<{ items: MethodCard[]; total: number }>(`/api/methods${search ? `?${search}` : ''}`);
+  },
+  methodCard: (id: string) => fetchJSON<MethodCard>(`/api/methods/${encodeURIComponent(id)}`),
+  methodAudit: (id: string) =>
+    fetchJSON<{ items: MethodAuditEvent[]; total: number }>(`/api/methods/${encodeURIComponent(id)}/audit`),
 
   dashboardToday: () => fetchJSON<DashboardToday>('/api/dashboard/today'),
   onboardingRun: (req: OnboardingRunRequest = {}) =>
@@ -801,7 +815,10 @@ export interface SelectionCandidate { rank:number;code:string;action:'buy'|'watc
 export interface SelectionRun { id:string;snapshot_id:string;feature_snapshot_id:string;snapshot_date:string;candidate_count:number;buy_count:number;candidates:SelectionCandidate[];exclusions:Array<{reason_code:string;detail:string}> }
 export interface PositionDecision { code:string;name:string;action:'hold'|'watch'|'reduce'|'exit'|'insufficient_data';priority:string;deadline:string;inferred:boolean;executable:boolean;constraint?:string;return_pct:number;price_time:string;explanation:string }
 export interface PositionDecisionRun { id:string;snapshot_id:string;snapshot_date:string;decisions:PositionDecision[] }
-export interface MethodCard { id:string;name:string;status:string;market:string;universe:string;holding_period:string;entry_summary:string;exit_summary:string;invalidations?:string[];evidence?:{confidence:string;oos_trades:number;oos_return:number;oos_max_drawdown:number};updated_at:string }
+export interface MethodEvidence { confidence:string;passable?:boolean;oos_trades:number;oos_return:number;oos_win_rate?:number;oos_max_drawdown:number;snapshot_id?:string;result_hash?:string }
+export interface MethodCard { id:string;family_id?:string;variant_id?:string;name:string;status:string;market:string;universe:string;holding_period:string;trigger_frequency?:string;entry_summary:string;exit_summary:string;invalidations?:string[];evidence?:MethodEvidence;updated_at:string }
+export interface MethodCardQuery { status?:string;market?:string;universe?:string;family_id?:string;holding_min_days?:number;holding_max_days?:number;limit?:number }
+export interface MethodAuditEvent { id:string;method_id:string;from:string;to:string;action:string;reason:string;actor:string;evidence_hash?:string;automatic:boolean;created_at:string }
 
 export interface OvernightCriteria {
 	change_pct: boolean;
