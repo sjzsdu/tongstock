@@ -38,7 +38,7 @@ import { SourceSelectorModal } from '../components/screen/SourceSelectorModal';
 import { SignalHelpModal } from '../components/screen/SignalHelpModal';
 import { SyncResultModal } from '../components/screen/SyncResultModal';
 import { BlockStocksModal } from '../components/screen/BlockStocksModal';
-import { exportCsv, stockNamesFromCodesCache, formatPercent, getMaTrend } from '../utils/screen';
+import { exportCsv, stockNamesFromCodesCache, formatPercent, getChangePct, getMaTrend } from '../utils/screen';
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -64,6 +64,9 @@ export default function Screen() {
     hasScreenLoaded,
     total,
     loading,
+    screenedAt,
+    fromCache,
+    forceRefresh,
     sortKey,
     sortAsc,
     filteredResults,
@@ -270,14 +273,11 @@ export default function Screen() {
       ['代码', '名称', '收盘', '涨跌幅', 'MA趋势', '信号'],
       sortedResults.map((result) => {
         const maTrend = getMaTrend(result);
-        const close = result.last?.Close || 0;
-        const open = result.last?.Open || close;
-        const changePct = open > 0 ? ((close - open) / open) * 100 : 0;
         return [
           result.code,
           result.name || '',
           String(result.last?.Close ?? ''),
-          formatPercent(changePct),
+          formatPercent(getChangePct(result)),
           maTrend.label,
           (result.signals || []).map((signal) => `${signal.Indicator}${signal.Type}`).join(';'),
         ];
@@ -403,6 +403,17 @@ export default function Screen() {
               />
             </Flex>
 
+            <Tooltip title="忽略本地缓存，重新拉取最新行情并筛选">
+              <Button
+                icon={<SyncOutlined />}
+                loading={loading}
+                onClick={() => void forceRefresh()}
+                disabled={!hasScreenLoaded}
+              >
+                强制刷新
+              </Button>
+            </Tooltip>
+
             <Button
               type="primary"
               icon={<SearchOutlined />}
@@ -422,12 +433,20 @@ export default function Screen() {
         {hasScreenLoaded && (
           <Card size="small" style={{ background: 'linear-gradient(135deg, rgba(22,119,255,0.08), rgba(14,165,233,0.06))' }}>
             <Flex justify="space-between" align="center" wrap="wrap" gap={16}>
-              <Space size={24}>
+              <Space size={24} wrap>
                 <Text>扫描总数: <strong>{total}</strong></Text>
                 <Text>命中结果: <strong>{filteredResults.length}</strong></Text>
                 <Text>活跃信号: <strong>{Object.keys(signalCounts).length}</strong></Text>
                 {failedCodes.length > 0 && (
                   <Text style={{ color: '#cf1322' }}>失败: <strong>{failedCodes.length}</strong></Text>
+                )}
+                {screenedAt && (
+                  <Tooltip title={fromCache ? '当前展示本地缓存，点击「强制刷新」获取最新行情' : '本次筛选的取数时间'}>
+                    <Text type={fromCache ? 'warning' : 'secondary'}>
+                      数据时间: <strong>{new Date(screenedAt).toLocaleTimeString('zh-CN', { hour12: false })}</strong>
+                      {fromCache ? '（缓存）' : ''}
+                    </Text>
+                  </Tooltip>
                 )}
               </Space>
               {results.length > 0 && (

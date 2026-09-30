@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { getChangePct } from '../utils/screen';
 import { api } from '../api/client';
 import type { ScreenResult, ScreenCodeStatus, KlineBatchSyncResult } from '../types/api';
 import type { SourceTab, BlockInfo, SortKey } from '../types/screen';
@@ -18,6 +19,12 @@ interface UseScreenReturn {
   hasScreenLoaded: boolean;
   total: number;
   loading: boolean;
+  /** 当前展示数据的时间（缓存命中时为缓存时间，否则为本次筛选时间） */
+  screenedAt: number | null;
+  /** 是否来自缓存（未重新请求） */
+  fromCache: boolean;
+  /** 忽略缓存强制重新筛选 */
+  forceRefresh: () => Promise<void>;
   sortKey: SortKey;
   sortAsc: boolean;
   filteredResults: ScreenResult[];
@@ -73,6 +80,7 @@ function loadScreenResult(ktypeVal: string, signalsVal: string[]): {
   failed: ScreenCodeStatus[];
   skipped: ScreenCodeStatus[];
   total: number;
+  timestamp: number;
 } | null {
   try {
     const stored = localStorage.getItem(SCREEN_CACHE_KEY);
@@ -86,6 +94,7 @@ function loadScreenResult(ktypeVal: string, signalsVal: string[]): {
       failed: cache.failed || [],
       skipped: cache.skipped || [],
       total: cache.total || 0,
+      timestamp: cache.timestamp || 0,
     };
   } catch {
     return null;
@@ -107,6 +116,8 @@ export function useScreen(): UseScreenReturn {
   const [hasScreenLoaded, setHasScreenLoaded] = useState(false);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [screenedAt, setScreenedAt] = useState<number | null>(null);
+  const [fromCache, setFromCache] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('code');
   const [sortAsc, setSortAsc] = useState(true);
 
@@ -194,6 +205,8 @@ export function useScreen(): UseScreenReturn {
         setTotal(cached.total);
         setFailedCodes(cached.failed);
         setSkippedCodes(cached.skipped);
+        setScreenedAt(cached.timestamp);
+        setFromCache(true);
         setHasScreenLoaded(true);
         return;
       }
@@ -208,6 +221,8 @@ export function useScreen(): UseScreenReturn {
       setFailedCodes(response.failed ?? []);
       setSkippedCodes(response.skipped ?? []);
       setCappedInfo(response.capped ? { maxCodes: response.maxCodes ?? 0, reason: response.reason ?? '' } : null);
+      setScreenedAt(Date.now());
+      setFromCache(false);
       setHasScreenLoaded(true);
 
       if (!retryCodes) {
@@ -219,6 +234,17 @@ export function useScreen(): UseScreenReturn {
       setLoading(false);
     }
   }, [ktype, selectedSignals]);
+
+  // 忽略缓存强制刷新：缓存的盘中数据可能滞后，用户需要明确拿到最新行情。
+  // forceRefresh 取上次筛选的股票池，以 retryCodes 通道跳过缓存重筛。
+  // 无缓存时无可刷新对象，交给页面层的开始筛选按钮处理。
+  const forceRefresh = useCallback(async () => {
+    const cached = loadScreenResult(ktype, selectedSignals);
+    if (cached && cached.results.length > 0) {
+      const codes = cached.results.map((item) => item.code).join(',');
+      await doScreen(codes, codes);
+    }
+  }, [doScreen, ktype, selectedSignals]);
 
   const retryFailed = useCallback(async () => {
     if (failedCodes.length === 0) return;
@@ -259,14 +285,10 @@ export function useScreen(): UseScreenReturn {
           va = a.last?.Close || 0;
           vb = b.last?.Close || 0;
           break;
-        case 'change':
-          const closeA = a.last?.Close || 0;
-          const openA = a.last?.Open || closeA;
-          va = openA > 0 ? ((closeA - openA) / openA) * 100 : 0;
-          const closeB = b.last?.Close || 0;
-          const openB = b.last?.Open || closeB;
-          vb = openB > 0 ? ((closeB - openB) / openB) * 100 : 0;
-          break;
+    case 'change':
+      va = getChangePct(a);
+      vb = getChangePct(b);
+      break;
       }
       if (typeof va === 'string' && typeof vb === 'string') {
         return va.localeCompare(vb) * dir;
@@ -307,6 +329,9 @@ export function useScreen(): UseScreenReturn {
     hasScreenLoaded,
     total,
     loading,
+    screenedAt,
+    fromCache,
+    forceRefresh,
     sortKey,
     sortAsc,
     filteredResults,

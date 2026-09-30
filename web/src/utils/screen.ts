@@ -36,9 +36,18 @@ export function formatPercent(value: number): string {
   return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
 }
 
+/**
+ * 涨跌幅：标准口径相对昨收（PrevClose），与行情软件一致。
+ * 旧缓存/旧接口没有昨收时回退到日内口径（相对今开），至少不误导方向。
+ */
 export function getChangePct(result: ScreenResult): number {
-  const close = result.last?.Close || 0;
-  const open = result.last?.Open || close;
+  const last = result.last;
+  if (!last) return 0;
+  const close = last.Close || 0;
+  if (last.PrevClose && last.PrevClose > 0) {
+    return ((close - last.PrevClose) / last.PrevClose) * 100;
+  }
+  const open = last.Open || close;
   return open > 0 ? ((close - open) / open) * 100 : 0;
 }
 

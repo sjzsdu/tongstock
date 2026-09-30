@@ -6,6 +6,8 @@ export interface KlineItem {
   Close: number;
   Volume: number;
   Amount: number;
+  /** 昨收（前一根 K 线收盘价），信号筛选接口返回，用于计算标准涨跌幅 */
+  PrevClose?: number;
 }
 
 export interface Quote {

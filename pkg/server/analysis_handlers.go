@@ -277,6 +277,12 @@ func (s *Server) handleScreen(c *gin.Context) {
 			// Calculate indicators
 			result := ta.Calculate(inputs, params)
 
+			// 昨收：最新 K 线的前一根收盘价，作为标准涨跌幅的基准。
+			var prevClose float64
+			if len(inputs) >= 2 {
+				prevClose = inputs[len(inputs)-2].Close
+			}
+
 			// Detect signals
 			allSignals := signal.Detect(code, inputs, result, signal.DefaultDetectOptions())
 
@@ -333,6 +339,9 @@ func (s *Server) handleScreen(c *gin.Context) {
 					"Low":    inputs[len(inputs)-1].Low,
 					"Close":  inputs[len(inputs)-1].Close,
 					"Volume": inputs[len(inputs)-1].Volume,
+					// 昨收用于计算标准涨跌幅：涨跌幅必须相对昨收而非今开，
+					// 跳空高开/低开时两者方向都可能相反。
+					"PrevClose": prevClose,
 				},
 			}
 			outputs[idx] = out
