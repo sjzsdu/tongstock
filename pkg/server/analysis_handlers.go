@@ -570,6 +570,9 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 		return
 	}
 	stockQuote := quotes[0]
+	// TDX quotes often carry an empty or garbled name; backfill from the
+	// market code list so the compare page can render stock names.
+	stockQuote.Name = s.resolveDisplayName(code, stockQuote.Name)
 	stockChange := (stockQuote.Price - stockQuote.LastClose) / stockQuote.LastClose * 100
 
 	// Get blocks containing this stock
@@ -667,7 +670,7 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 					change := (q.Price - q.LastClose) / q.LastClose * 100
 					quoteResults[idx] = quoteResult{
 						code:   stockCode,
-						name:   q.Name,
+						name:   s.resolveDisplayName(stockCode, q.Name),
 						price:  q.Price,
 						change: change,
 						ok:     true,

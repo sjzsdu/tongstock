@@ -7,6 +7,7 @@ export interface UseStockCompanyReturn {
   companyCats: CompanyCategory[];
   companyContent: string;
   selectedCat: string;
+  companyLoading: boolean;
   loadCompanyContent: (cat: string | CompanyCategory) => Promise<void>;
 }
 
@@ -14,13 +15,16 @@ export function useStockCompany(code: string, detailStatus: DetailStatus): UseSt
   const [companyCats, setCompanyCats] = useState<CompanyCategory[]>([]);
   const [companyContent, setCompanyContent] = useState('');
   const [selectedCat, setSelectedCat] = useState('');
+  const [companyLoading, setCompanyLoading] = useState(false);
 
   useEffect(() => {
     if (!code || detailStatus !== 'ready') return;
+    setCompanyLoading(true);
     api.company(code).then((cats) => {
       setCompanyCats(cats);
       if (cats.length > 0 && !selectedCat) void loadCompanyContent(cats[0]);
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setCompanyLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code, detailStatus]);
 
   const loadCompanyContent = async (cat: string | CompanyCategory) => {
@@ -39,6 +43,7 @@ export function useStockCompany(code: string, detailStatus: DetailStatus): UseSt
     companyCats,
     companyContent,
     selectedCat,
+    companyLoading,
     loadCompanyContent,
   };
 }

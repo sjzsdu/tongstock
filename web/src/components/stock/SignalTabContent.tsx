@@ -24,7 +24,8 @@ export function SignalTabContent({ chartLoading, analysis, sortedSignals, sorted
     {
       title: '日期',
       dataIndex: 'Date',
-      defaultSortOrder: 'ascend',
+      // 默认最新在前：11 年累积的信号列表里用户最关心近期信号
+      defaultSortOrder: 'descend',
       sorter: (a: Signal, b: Signal) => String(b.Date ?? '').localeCompare(String(a.Date ?? '')),
       render: (value: string | undefined) => formatTdxDate(value),
     },

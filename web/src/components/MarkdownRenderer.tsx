@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
+import DOMPurify from 'dompurify';
 
 const marked = new Marked(
   {
@@ -31,7 +32,18 @@ interface MarkdownRendererProps {
 export default function MarkdownRenderer({ content, className }: MarkdownRendererProps) {
   const html = useMemo(() => {
     if (!content) return '';
-    return marked.parse(content) as string;
+    // AI 文本属不可信上游：marked 渲染后必须 sanitize，
+    // 清除脚本/事件属性，链接仅保留 http(s)/mailto 等安全协议
+    return DOMPurify.sanitize(marked.parse(content) as string, {
+      ALLOWED_ATTR: ['href', 'title', 'src', 'alt', 'class', 'target', 'rel'],
+      ALLOWED_TAGS: [
+        'a', 'abbr', 'b', 'blockquote', 'br', 'code', 'dd', 'del', 'details', 'div', 'dl', 'dt',
+        'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'ins', 'kbd', 'li', 'mark',
+        'ol', 'p', 'pre', 'q', 's', 'span', 'strong', 'sub', 'summary', 'sup', 'table', 'tbody',
+        'td', 'th', 'thead', 'tr', 'u', 'ul',
+      ],
+      FORBID_ATTR: ['style', 'onerror', 'onload', 'onclick'],
+    });
   }, [content]);
 
   // 颜色、字号、行高等统一走 index.css 的 .markdown-body 规则，

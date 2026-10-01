@@ -52,7 +52,11 @@ export function IntradayTabContent({
   const totalVol = innerVol + outerVol;
   const innerPct = totalVol > 0 ? (innerVol / totalVol) * 100 : 50;
   const outerPct = totalVol > 0 ? (outerVol / totalVol) * 100 : 50;
-  const turnover = finance && finance.LiuTongGuBen > 0 ? (quote.Volume / finance.LiuTongGuBen) * 100 : 0;
+  // 换手率 = 成交量(手)×100股 / 流通股本(万股)×10000股 × 100%
+  // TDX 口径：手/万股恰好等于百分比，但显式写出换算避免单位歧义
+  const turnover = finance && finance.LiuTongGuBen > 0
+    ? ((quote.Volume * 100) / (finance.LiuTongGuBen * 10000)) * 100
+    : 0;
 
   const minuteColumns: ColumnsType<MinuteItem> = [
     { title: '时间', dataIndex: 'Time', width: 90, render: (value: string) => formatTime(value) },

@@ -17,6 +17,7 @@ import {
   Typography,
 } from 'antd';
 import type { SignalWithInterpretation } from '../types/api';
+import { formatDate } from '../lib/datetime';
 
 interface SignalInterpretationCardProps {
   interpretations: SignalWithInterpretation[];
@@ -127,7 +128,7 @@ export default function SignalInterpretationCard({
                 </Tag>
                 <Typography.Text>{item.signal.indicator}</Typography.Text>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {item.signal.date}
+                  {formatDate(item.signal.date)}
                 </Typography.Text>
                 {getRiskIcon(item.interpretation.risk_level)}
               </Space>
