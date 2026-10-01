@@ -124,9 +124,9 @@ async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     const payload = await res.json().catch(() => null) as ErrorEnvelope | { error?: string } | null;
     if (payload && typeof payload.error === 'object') {
-      throw new TongStockAPIError(payload.error.code, payload.error.message, payload.error.request_id, res.status);
+      throw new TongStockAPIError(payload.error.code, payload.error.message, payload.error.request_id, res.status, payload);
     }
-    throw new TongStockAPIError('http_error', typeof payload?.error === 'string' ? payload.error : '请求失败', undefined, res.status);
+    throw new TongStockAPIError('http_error', typeof payload?.error === 'string' ? payload.error : '请求失败', undefined, res.status, payload);
   }
   const data = await res.json();
   // 检查响应是否包含错误字段
@@ -140,18 +140,22 @@ export class TongStockAPIError extends Error {
   readonly code: string;
   readonly requestId?: string;
   readonly status?: number;
+  /** 原始响应体：422 等状态码的响应体可能携带可用数据（如范式部分结果） */
+  readonly payload?: unknown;
 
   constructor(
     code: string,
     message: string,
     requestId?: string,
     status?: number,
+    payload?: unknown,
   ) {
     super(message);
     this.name = 'TongStockAPIError';
     this.code = code;
     this.requestId = requestId;
     this.status = status;
+    this.payload = payload;
   }
 }
 
@@ -480,10 +484,11 @@ export const api = {
     }),
 
   // Paradigm APIs
-  paradigmAnalyze: (stockCode: string, stockName?: string, days?: number, forceRefresh = false) =>
+  paradigmAnalyze: (stockCode: string, stockName?: string, days?: number, forceRefresh = false, signal?: AbortSignal) =>
     fetchJSON<ParadigmAnalyzeResponse>('/api/paradigm/analyze', {
       method: 'POST',
       body: JSON.stringify({ stock_code: stockCode, stock_name: stockName, days, force_refresh: forceRefresh }),
+      signal,
     }),
 
   paradigmListByStock: (code: string) =>

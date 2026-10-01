@@ -25,7 +25,14 @@ func (s *Server) handleQuote(c *gin.Context) {
 		Mode: consistencyMode(c), ForceRefresh: forceRefreshRequested(c),
 	})
 	if err != nil {
-		writeStockDataError(c, err)
+		// A well-formed code that is absent from the market code list means the
+		// stock does not exist — report 404 instead of masking it as an upstream
+		// outage. If the code list itself is unavailable, keep the real error.
+		if s.stockCodeKnown(code) {
+			writeStockDataError(c, err)
+			return
+		}
+		WriteError(c, http.StatusNotFound, "not_found", "未找到该股票")
 		return
 	}
 	if result.Quote == nil {
@@ -35,6 +42,22 @@ func (s *Server) handleQuote(c *gin.Context) {
 	result.Quote.Name = s.resolveDisplayName(code, result.Quote.Name)
 	setFreshnessHeaders(c, result.Metadata)
 	c.JSON(http.StatusOK, result.Quote)
+}
+
+// stockCodeKnown reports whether the code exists in the market-wide code list.
+// When the index cannot be built the result is optimistic (true) so callers
+// fall back to reporting the original data error instead of a false 404.
+func (s *Server) stockCodeKnown(code string) bool {
+	items, err := s.getStockSearchIndex()
+	if err != nil {
+		return true
+	}
+	for _, item := range items {
+		if item.Code == code {
+			return true
+		}
+	}
+	return false
 }
 
 // handleQuotes handles batch quote requests

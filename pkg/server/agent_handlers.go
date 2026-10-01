@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -252,6 +253,11 @@ func (s *Server) handleChatSave(c *gin.Context) {
 		CreatedAt: time.Now(),
 	}
 	if err := s.agentState.chatStore.Save(sess); err != nil {
+		// Log the root cause: the error-envelope middleware rewrites the 500
+		// body to a generic message, so without this line the real failure
+		// (e.g. missing table / locked db) is invisible in server logs.
+		log.Printf("chat session save failed: id=%s stock=%s messages=%d err=%v",
+			sess.ID, sess.StockCode, len(sess.Messages), err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

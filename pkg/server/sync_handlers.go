@@ -70,19 +70,12 @@ func (s *Server) handleSyncState(c *gin.Context) {
 			if status == "" {
 				status = "unknown"
 			}
-			freshness := "stale"
-			if !coverage.Exists {
-				freshness = "empty"
-			} else if decision.Fresh {
-				freshness = "fresh"
-			} else if !coverage.LastSyncAt.IsZero() && time.Since(coverage.LastSyncAt) > 24*time.Hour {
-				freshness = "outdated"
-			}
+			freshness, staleReason := classifyCoverageFreshness(coverage, decision)
 			payload := gin.H{
 				"code": code, "ktype": ktype, "status": status,
 				"first_date": formatSyncDate(coverage.Start), "last_date": formatSyncDate(coverage.End),
 				"row_count": len(coverage.Points),
-				"freshness": freshness, "stale_reason": decision.Reason,
+				"freshness": freshness, "stale_reason": staleReason,
 			}
 			if !coverage.LastSyncAt.IsZero() {
 				payload["last_sync_at"] = formatSyncTime(coverage.LastSyncAt)
@@ -120,6 +113,29 @@ func formatSyncTime(value time.Time) string {
 	return value.Format(time.RFC3339)
 }
 
+// classifyCoverageFreshness 把 InspectFreshness 的 coverage/decision 归一成
+// 对外的 freshness 结论。/api/sync/state 与 /api/sync/freshness 共用同一实现，
+// 保证同一时刻两个接口不会给出相反结论（review pass 2 阻塞项 2）。
+// 判定层次：无数据 → policy 决策 → 数据已覆盖今天（自然日兜底）→ 同步 TTL。
+// policy.go 的策略逻辑不动，这里只做 handler 层的口径归一。
+func classifyCoverageFreshness(coverage stockdata.Coverage, decision stockdata.FreshnessDecision) (freshness, staleReason string) {
+	switch {
+	case !coverage.Exists:
+		return "empty", ""
+	case decision.Fresh:
+		return "fresh", ""
+	case !coverage.End.IsZero() && formatSyncDate(coverage.End) >= time.Now().Format("20060102"):
+		// 数据已覆盖今天即视为 fresh（覆盖了 policy“最近已收盘交易日 +
+		// TTL”与自然日口径之间的盘前/非交易日偏差）。置 fresh 时清掉
+		// stale_reason，避免 fresh 与 kline_recent_overlap_expired 并存。
+		return "fresh", ""
+	case !coverage.LastSyncAt.IsZero() && time.Since(coverage.LastSyncAt) > 24*time.Hour:
+		return "outdated", decision.Reason
+	default:
+		return "stale", decision.Reason
+	}
+}
+
 // handleSyncFreshness handles requests to get sync freshness for multiple codes
 func (s *Server) handleSyncFreshness(c *gin.Context) {
 	codesStr := strings.TrimSpace(c.Query("codes"))
@@ -147,6 +163,33 @@ func (s *Server) handleSyncFreshness(c *gin.Context) {
 		code = strings.TrimSpace(code)
 		if code == "" {
 			continue
+		}
+
+		// 优先复用 InspectFreshness：与 /api/sync/state 共用同一数据源和
+		// classifyCoverageFreshness 分类器，保证同时刻结论一致。
+		if s.stockData != nil {
+			coverage, decision, err := s.stockData.InspectFreshness(c.Request.Context(), stockdata.DataSpec{
+				Type: stockdata.DataKline, Market: marketForCode(code), Code: code,
+				Granularity: "day", KType: ktype,
+			})
+			if err == nil {
+				freshness, staleReason := classifyCoverageFreshness(coverage, decision)
+				status := coverage.Status
+				if status == "" {
+					status = "unknown"
+				}
+				lastSyncAt := formatSyncTime(coverage.LastSyncAt)
+				results = append(results, FreshnessResult{
+					Code:        code,
+					Status:      status,
+					LastDate:    formatSyncDate(coverage.End),
+					LastSyncAt:  lastSyncAt,
+					RowCount:    len(coverage.Points),
+					Freshness:   freshness,
+					StaleReason: staleReason,
+				})
+				continue
+			}
 		}
 
 		state, err := s.svc.GetSyncState(code, ktype)

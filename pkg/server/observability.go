@@ -171,11 +171,24 @@ func ErrorEnvelopeMiddleware() gin.HandlerFunc {
 				if json.Unmarshal(body, &legacy) == nil {
 					if _, already := legacy["error"].(map[string]any); !already {
 						code, message := statusError(status)
-						body, _ = json.Marshal(ErrorEnvelope{Error: APIError{
-							Code:      code,
-							Message:   message,
-							RequestID: RequestIDFromContext(c),
-						}})
+						// 合并而非整体替换：legacy 响应里 error 可能是字符串
+						// （如范式 422 分支），其顶层还携带可用数据
+						// （paradigm / agent_text / experiment_id…）。
+						// 这些字段必须保留，否则前端拿不到部分结果。
+						envelope := map[string]any{
+							"error": APIError{
+								Code:      code,
+								Message:   message,
+								RequestID: RequestIDFromContext(c),
+							},
+						}
+						for key, value := range legacy {
+							if key == "error" {
+								continue
+							}
+							envelope[key] = value
+						}
+						body, _ = json.Marshal(envelope)
 					}
 				}
 			}

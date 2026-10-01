@@ -1,5 +1,5 @@
 import 'react';
-import { Button, Card, Col, Empty, List, Row, Space } from 'antd';
+import { Button, Card, Col, Empty, List, Row, Space, Spin } from 'antd';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import type { CompanyCategory } from '../../types/api';
 import TabContent from '../TabContent';
@@ -10,26 +10,32 @@ interface CompanyTabContentProps {
   companyCats: CompanyCategory[];
   companyContent: string;
   selectedCat: string;
+  companyLoading?: boolean;
   loadCompanyContent: (cat: string | CompanyCategory) => Promise<void>;
 }
 
-export function CompanyTabContent({ companyCats, companyContent, selectedCat, loadCompanyContent }: CompanyTabContentProps) {
+export function CompanyTabContent({ companyCats, companyContent, selectedCat, companyLoading, loadCompanyContent }: CompanyTabContentProps) {
   return (
     <TabContent>
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={6}>
           <Card title="F10目录">
-            <List
-              size="small"
-              dataSource={companyCats}
-              renderItem={(cat) => (
-                <List.Item>
-                  <Button type={selectedCat === cat.Name ? 'primary' : 'text'} block onClick={() => void loadCompanyContent(cat)}>
-                    {cat.Name}
-                  </Button>
-                </List.Item>
-              )}
-            />
+            {companyLoading && companyCats.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 24 }}><Spin /></div>
+            ) : (
+              <List
+                size="small"
+                dataSource={companyCats}
+                locale={{ emptyText: '暂无F10目录' }}
+                renderItem={(cat) => (
+                  <List.Item>
+                    <Button type={selectedCat === cat.Name ? 'primary' : 'text'} block onClick={() => void loadCompanyContent(cat)}>
+                      {cat.Name}
+                    </Button>
+                  </List.Item>
+                )}
+              />
+            )}
           </Card>
         </Col>
         <Col xs={24} lg={18}>

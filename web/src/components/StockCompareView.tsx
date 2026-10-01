@@ -83,6 +83,7 @@ export default function StockCompareView({
       title: '名称',
       dataIndex: 'name',
       width: 120,
+      render: (name: string) => name || '-',
     },
     {
       title: '现价',
@@ -112,7 +113,7 @@ export default function StockCompareView({
           <Col xs={24} sm={8}>
             <Statistic
               title="股票"
-              value={stockName}
+              value={stockName || code}
               suffix={<Typography.Text type="secondary">{code}</Typography.Text>}
             />
           </Col>

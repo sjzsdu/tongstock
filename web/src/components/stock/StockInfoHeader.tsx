@@ -1,5 +1,5 @@
 import { Button, Card, Flex, Space, Tag, Tooltip, Typography } from 'antd';
-import { CompressOutlined, ExpandOutlined, RobotOutlined, SyncOutlined } from '@ant-design/icons';
+import { CompressOutlined, ExpandOutlined, RobotOutlined } from '@ant-design/icons';
 import type { KlineSyncState, Quote } from '../../types/api';
 import { formatDate } from '../../lib/datetime';
 import { formatSigned, getSyncStatusPresentation } from '../../lib/stock-detail';
@@ -16,8 +16,9 @@ interface StockInfoHeaderProps {
   onFullscreenChange: (fullscreen: boolean) => void;
   onAgentClick: () => void;
   onParadigmClick: () => void;
-  onParadigmRefresh: () => void;
-  /** 该股票是否已有挖掘缓存;仅缓存过才显示"重新挖掘"按钮 */
+  /** @deprecated 重新挖掘入口已移入范式抽屉，参数保留以兼容既有调用 */
+  onParadigmRefresh?: () => void;
+  /** @deprecated 重新挖掘入口已移入范式抽屉 */
   hasParadigmCache?: boolean;
 }
 
@@ -33,8 +34,6 @@ export function StockInfoHeader({
   onFullscreenChange,
   onAgentClick,
   onParadigmClick,
-  onParadigmRefresh,
-  hasParadigmCache = false,
 }: StockInfoHeaderProps) {
   const syncStatus = getSyncStatusPresentation(syncState?.status || 'unknown');
   return (
@@ -87,20 +86,14 @@ export function StockInfoHeader({
         >
           AI 分析
         </Button>
+        {/* 单一入口：无缓存时直接挖掘；有缓存时打开抽屉展示缓存结果，
+            重新挖掘入口在抽屉内（避免两个同义按钮并排） */}
         <Button
           icon={<RobotOutlined />}
           onClick={onParadigmClick}
         >
           范式挖掘
         </Button>
-        {hasParadigmCache && (
-          <Button
-            icon={<SyncOutlined />}
-            onClick={onParadigmRefresh}
-          >
-            重新挖掘
-          </Button>
-        )}
       </Flex>
     </Card>
   );

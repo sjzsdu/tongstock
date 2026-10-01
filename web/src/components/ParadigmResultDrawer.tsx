@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Typography, Tag, Descriptions, Spin, Empty, Space, Alert, Tooltip, Tabs, Table, Button, Input, InputNumber, Select, message, theme } from 'antd';
-import { CheckCircleFilled, CloseCircleFilled, QuestionCircleFilled, QuestionCircleOutlined } from '@ant-design/icons';
+import { CheckCircleFilled, CloseCircleFilled, QuestionCircleFilled, QuestionCircleOutlined, SyncOutlined } from '@ant-design/icons';
 import MarkdownRenderer from './MarkdownRenderer';
 import ResizableDrawer from './ResizableDrawer';
 import { api } from '../api/client';
@@ -16,6 +16,8 @@ interface ParadigmResultDrawerProps {
   agentText: string;
   stockCode: string;
   stockName?: string;
+  /** 绕过缓存重新挖掘（原先在页头的“重新挖掘”按钮移入此处） */
+  onRefresh?: () => void;
 }
 
 const marketCapColors: Record<string, string> = {
@@ -185,6 +187,20 @@ const typeColor: Record<string, string> = {
 
 function ConditionTable({ conditions }: { conditions: EvaluatedCondition[] }) {
   if (!conditions || conditions.length === 0) return null;
+  // 条件类型决定状态语义色：止损条件“已满足”意味着止损被触发（负面，红），
+  // “未满足”才是安全（绿）；止盈与买入条件则相反。避免止损触发被渲染成绿色对勾。
+  const semantic = (type: string, status: string): { icon: React.ReactNode; color: string; label: string } => {
+    const negative = type === 'stop_loss';
+    const met = status === 'met';
+    const unknown = status === 'unknown';
+    if (unknown) return { icon: condStatusIcon.unknown, color: '#888', label: condStatusLabel.unknown };
+    const good = negative ? !met : met;
+    return {
+      icon: good ? condStatusIcon.met : condStatusIcon.not_met,
+      color: good ? '#22c55e' : '#ef4444',
+      label: negative ? (met ? '已触发' : '未触发') : condStatusLabel[status],
+    };
+  };
   return (
     <Table
       size="small"
@@ -197,14 +213,15 @@ function ConditionTable({ conditions }: { conditions: EvaluatedCondition[] }) {
         { title: '当前值', dataIndex: 'value', render: (v: string) => <Typography.Text code style={{ fontSize: 12 }}>{v || '-'}</Typography.Text> },
         {
           title: '状态', dataIndex: 'status', width: 110,
-          render: (v: string) => (
-            <Space size={4}>
-              {condStatusIcon[v]}
-              <span style={{ color: v === 'met' ? '#22c55e' : v === 'not_met' ? '#ef4444' : '#888', fontSize: 12 }}>
-                {condStatusLabel[v]}
-              </span>
-            </Space>
-          ),
+          render: (v: string, row) => {
+            const s = semantic(row.type, v);
+            return (
+              <Space size={4}>
+                {s.icon}
+                <span style={{ color: s.color, fontSize: 12 }}>{s.label}</span>
+              </Space>
+            );
+          },
         },
       ]}
     />
@@ -432,7 +449,7 @@ function SideContent({ paradigm, evaluatedConfirm, evaluatedInvalid, agentText, 
 }
 
 export default function ParadigmResultDrawer({
-  open, onClose, loading, paradigm, evaluatedConfirm, evaluatedInvalid, agentText, stockCode, stockName,
+  open, onClose, loading, paradigm, evaluatedConfirm, evaluatedInvalid, agentText, stockCode, stockName, onRefresh,
 }: ParadigmResultDrawerProps) {
   const [allParadigms, setAllParadigms] = useState<ParadigmItem[]>([]);
 
@@ -489,6 +506,14 @@ export default function ParadigmResultDrawer({
       {loading && (
         <div style={{ textAlign: 'center', padding: 40 }}>
           <Spin size="large" tip="正在分析 K 线数据并挖掘范式..." />
+        </div>
+      )}
+
+      {!loading && onRefresh && (
+        <div style={{ textAlign: 'right', marginBottom: 12 }}>
+          <Button size="small" icon={<SyncOutlined />} onClick={onRefresh}>
+            重新挖掘（绕过缓存）
+          </Button>
         </div>
       )}
 

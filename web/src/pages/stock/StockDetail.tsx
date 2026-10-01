@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AreaChartOutlined, BankOutlined, BarChartOutlined, ClockCircleOutlined, DollarOutlined, FileExcelOutlined, GiftOutlined, InfoCircleOutlined, ThunderboltOutlined, WarningOutlined } from '@ant-design/icons';
-import { Button, Card, Empty, Flex, Space, Spin, Tabs, Tag, Tooltip, Typography } from 'antd';
+import { Button, Card, Collapse, Empty, Flex, Space, Spin, Tabs, Tag, Tooltip, Typography } from 'antd';
 import { api } from '../../api/client';
 import type { XdXrItem } from '../../types/api';
 import CandlestickChart from '../../components/charts/CandlestickChart';
@@ -49,15 +49,14 @@ export default function StockDetail() {
   const [dividends, setDividends] = useState<XdXrItem[]>([]);
   const [fullscreen, setFullscreen] = useState(false);
   const [agentPanelOpen, setAgentPanelOpen] = useState(false);
-  const [paradigmCachedFromServer, setParadigmCachedFromServer] = useState(false);
 
   const { code, quote, loading, detailStatus, detailError, syncState, refreshSyncState, ktype, setKtype } = useStockDetail();
   const { klines, indicator, chartLoading, analysis, sortedSignals, sortedSignalOutcomes, latestClose, mainOverlay, setMainOverlay, subPanel, setSubPanel } = useStockChart(code, ktype, detailStatus, refreshSyncState);
   const { finance, financeTrends, financeMetrics, financeTrendMode, setFinanceTrendMode, financeCompareMode, setFinanceCompareMode, financeViewMode, setFinanceViewMode, selectedFinanceMetrics, setSelectedFinanceMetrics, financeTrendLoading, availableFinanceMetrics, financeChartGroups, financeDisplayRecords, activeFinanceMetrics, latestFinanceRecord, formatFinanceMetricValue, financeItems } = useStockFinance(code, detailStatus);
-  const { companyCats, companyContent, selectedCat, loadCompanyContent } = useStockCompany(code, detailStatus);
+  const { companyCats, companyContent, selectedCat, companyLoading, loadCompanyContent } = useStockCompany(code, detailStatus);
   const { minuteData, minuteDate, minuteLoading, minuteError, highlightedIdx, setHighlightedIdx } = useStockMinute(code, detailStatus);
   const { compareData, compareLoading } = useStockCompare(code, detailStatus);
-  const { paradigmResult, paradigmLoading, paradigmCached: paradigmCachedByAnalysis, paradigmAgentText, paradigmEvalConfirm, paradigmEvalInvalid, paradigmDrawerOpen, setParadigmDrawerOpen, analyzeParadigm } = useParadigmAnalysis();
+  const { paradigmResult, paradigmLoading, paradigmAgentText, paradigmEvalConfirm, paradigmEvalInvalid, paradigmDrawerOpen, setParadigmDrawerOpen, analyzeParadigm } = useParadigmAnalysis();
   const { news: newsResult, loading: newsLoading } = useStockNews(code, tab === 'news' && detailStatus === 'ready');
 
   // 标签页标题：行情返回后用「名称(代码)」覆盖路由级占位标题
@@ -77,21 +76,7 @@ export default function StockDetail() {
     if (tab === 'intraday') api.finance(code).then(() => {}).catch(() => {});
   }, [code, tab, detailStatus]);
 
-  // 查询该股票是否已有范式挖掘缓存:缓存过才显示"重新挖掘"按钮
-  useEffect(() => {
-    if (!code || detailStatus !== 'ready') return;
-    let cancelled = false;
-    api.paradigmListByStock(code)
-      .then((r) => {
-        if (!cancelled) setParadigmCachedFromServer((r.total ?? r.paradigms?.length ?? 0) > 0);
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [code, detailStatus]);
-
-  // 挖掘成功后该股票即视为已有缓存。用派生值而不是 effect 里 setState：
-  // 后者会触发级联渲染，也违反 react-hooks/set-state-in-effect。
-  const paradigmCached = paradigmCachedFromServer || paradigmCachedByAnalysis;
+  // 重新挖掘入口已移入范式抽屉，不再需要预查询缓存状态
 
   const switchTab = (nextTab: Tab) => {
     setTab(nextTab);
@@ -129,11 +114,6 @@ export default function StockDetail() {
               setParadigmDrawerOpen(true);
               void analyzeParadigm(code, quote.Name);
             }}
-            onParadigmRefresh={() => {
-              setParadigmDrawerOpen(true);
-              void analyzeParadigm(code, quote.Name, true);
-            }}
-            hasParadigmCache={paradigmCached}
           />
         )}
 
@@ -141,70 +121,87 @@ export default function StockDetail() {
           <StockStatistics quote={quote} latestClose={latestClose} valueColor={valueColor} />
         )}
 
-        {/* Data quality diagnostics panel */}
+        {/* Data quality diagnostics panel — 默认折叠，避免与头部 Tag 重复占屏 */}
         {showTabs && syncState && (
-          <Card size="small" title={<Space><InfoCircleOutlined />数据质量诊断</Space>}>
-            <Space direction="vertical" size={12} style={{ width: '100%' }}>
-              <Flex justify="space-between" align="center" wrap="wrap" gap={12}>
-                <Space size={16}>
-                  <Tag color={syncStatus.color}>
-                    同步状态: {syncStatus.label}
-                  </Tag>
-                  {syncState.error && (
-                    <Tooltip title={syncState.error}>
-                      <Tag color="red" icon={<WarningOutlined />}>同步错误</Tag>
-                    </Tooltip>
-                  )}
-                </Space>
-              </Flex>
-              <Flex justify="space-between" align="center" wrap="wrap" gap={12}>
-                <Space size={16}>
-                  <Typography.Text type="secondary">
-                    数据范围: {syncState.first_date || '-'} ~ {syncState.last_date || '-'}
-                  </Typography.Text>
-                  <Typography.Text type="secondary">
-                    数据条数: {syncState.row_count || 0} 条
-                  </Typography.Text>
-                  {syncState.last_sync_at && (
-                    <Typography.Text type="secondary">
-                      最后同步: {new Date(syncState.last_sync_at).toLocaleString()}
-                    </Typography.Text>
-                  )}
-                </Space>
-                {(syncState.status !== 'ok' || !syncState.last_date) && (
-                  <Button size="small" icon={<ClockCircleOutlined />} onClick={() => void api.syncDaily([code], 'full')}>
-                    重新同步数据
-                  </Button>
-                )}
-              </Flex>
-              {/* Freshness status */}
-              {syncState.last_date && (
-                <Flex align="center" gap={8}>
-                  {(() => {
-                    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-                    const lastDate = syncState.last_date;
-                    if (syncState.freshness === 'fresh' || (!syncState.freshness && lastDate >= today)) {
-                      return (
-                        <Tag color="green" icon={<InfoCircleOutlined />}>数据新鲜 - 已更新至最新交易日</Tag>
-                      );
-                    }
-                    const daysAgo = getSyncAgeDays(syncState.last_sync_at);
-                    if (daysAgo !== null && daysAgo > 1) {
-                      return (
-                        <Tag color="red" icon={<WarningOutlined />}>
-                          数据过期 - 已超过{daysAgo}天未同步，数据截止至{lastDate}
+          <Card size="small" styles={{ body: { padding: 0 } }}>
+            <Collapse
+              ghost
+              items={[{
+                key: 'diagnostics',
+                label: <Space><InfoCircleOutlined />数据质量诊断</Space>,
+                children: (
+                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    <Flex justify="space-between" align="center" wrap="wrap" gap={12}>
+                      <Space size={16}>
+                        <Tag color={syncStatus.color}>
+                          同步状态: {syncStatus.label}
                         </Tag>
-                      );
-                    }
-                    return (
-                      <Tag color="orange" icon={<ClockCircleOutlined />}>
-                        数据滞后 - 数据截止至{lastDate}，{daysAgo === null ? '同步时间未知' : '建议同步更新'}
-                      </Tag>
-                    );
-                  })()}
-                </Flex>
-              )}
-            </Space>
+                        {syncState.error && (
+                          <Tooltip title={syncState.error}>
+                            <Tag color="red" icon={<WarningOutlined />}>同步错误</Tag>
+                          </Tooltip>
+                        )}
+                      </Space>
+                      {/* 即使同步正常也保留入口，提示“建议同步更新”时要有处可点 */}
+                      <Button size="small" icon={<ClockCircleOutlined />} onClick={() => void api.syncDaily([code], 'full')}>
+                        重新同步数据
+                      </Button>
+                    </Flex>
+                    <Flex justify="space-between" align="center" wrap="wrap" gap={12}>
+                      <Space size={16}>
+                        <Typography.Text type="secondary">
+                          数据范围: {syncState.first_date || '-'} ~ {syncState.last_date || '-'}
+                        </Typography.Text>
+                        <Typography.Text type="secondary">
+                          数据条数: {syncState.row_count || 0} 条
+                        </Typography.Text>
+                        {syncState.last_sync_at && (
+                          <Typography.Text type="secondary">
+                            最后同步: {new Date(syncState.last_sync_at).toLocaleString()}
+                          </Typography.Text>
+                        )}
+                      </Space>
+                    </Flex>
+                    {/* Freshness status */}
+                    {syncState.last_date && (
+                      <Flex align="center" gap={8}>
+                        {(() => {
+                          // 本地日期（toISOString 受 UTC 影响，跨时区会差一天）
+                          const now = new Date();
+                          const todayStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+                          const lastDate = (syncState.last_date || '').replace(/-/g, '');
+                          // 以数据实际覆盖日期为准：截止今天即视为新鲜，
+                          // 不因 /api/sync/state 的 overlap 过期标记而误报“数据滞后”
+                          if (syncState.freshness === 'fresh' || lastDate >= todayStr) {
+                            return (
+                              <Tag color="green" icon={<InfoCircleOutlined />}>数据新鲜 - 已更新至最新交易日</Tag>
+                            );
+                          }
+                          if (syncState.freshness === 'empty') {
+                            return (
+                              <Tag icon={<InfoCircleOutlined />}>暂无本地K线数据</Tag>
+                            );
+                          }
+                          const daysAgo = getSyncAgeDays(syncState.last_sync_at);
+                          if (daysAgo !== null && daysAgo > 1) {
+                            return (
+                              <Tag color="red" icon={<WarningOutlined />}>
+                                数据过期 - 已超过{daysAgo}天未同步，数据截止至{syncState.last_date}
+                              </Tag>
+                            );
+                          }
+                          return (
+                            <Tag color="orange" icon={<ClockCircleOutlined />}>
+                              数据滞后 - 数据截止至{syncState.last_date}，{daysAgo === null ? '同步时间未知' : '建议同步更新'}
+                            </Tag>
+                          );
+                        })()}
+                      </Flex>
+                    )}
+                  </Space>
+                ),
+              }]}
+            />
           </Card>
         )}
 
@@ -224,7 +221,12 @@ export default function StockDetail() {
                   <Typography.Text type="secondary">{detailError || '请重新搜索并选择一个有效的股票。'}</Typography.Text>
                 </Space>
               }
-            />
+            >
+              <Space>
+                <Button type="primary" onClick={() => navigate('/stock/choose')}>重新搜索</Button>
+                <Button onClick={() => navigate('/')}>返回首页</Button>
+              </Space>
+            </Empty>
           </Card>
         )}
 
@@ -303,6 +305,7 @@ export default function StockDetail() {
             companyCats={companyCats}
             companyContent={companyContent}
             selectedCat={selectedCat}
+            companyLoading={companyLoading}
             loadCompanyContent={loadCompanyContent}
           />
         )}
@@ -344,6 +347,7 @@ export default function StockDetail() {
           evaluatedConfirm={paradigmEvalConfirm}
           evaluatedInvalid={paradigmEvalInvalid}
           agentText={paradigmAgentText}
+          onRefresh={() => void analyzeParadigm(code, quote?.Name, true)}
         />
       </Space>
     </div>
