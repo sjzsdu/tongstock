@@ -646,10 +646,81 @@ func (s *Server) handleStockSearchIndex(c *gin.Context) {
 
 // handleHistoryList handles history list requests
 
+// /api/stock/compare 单次要拉 ≈500 次行情（17 板块 × ≤31 股），裸跑 7~10s。
+// 行情是分钟级时效，45s 结果缓存完全够用；命中时直接返回。
+const (
+	stockCompareTTL = 45 * time.Second
+	// 板块成分文件按日更新，成分缓存 10 分钟。
+	blockItemsTTL = 10 * time.Minute
+	// 概念(gn)/指数(zs) 每类最多参与对比的板块数；行业(fg) 全量参与。
+	compareMaxBlocksPerType = 5
+)
+
+type stockCompareCacheEntry struct {
+	expiresAt time.Time
+	payload   gin.H
+}
+
+type blockItemsCacheEntry struct {
+	expiresAt time.Time
+	items     []*protocol.BlockItem
+}
+
+func (s *Server) getCachedStockCompare(code string) (gin.H, bool) {
+	s.compareMu.Lock()
+	defer s.compareMu.Unlock()
+	entry, ok := s.compareCache[code]
+	if !ok || time.Now().After(entry.expiresAt) {
+		return nil, false
+	}
+	return entry.payload, true
+}
+
+func (s *Server) putCachedStockCompare(code string, payload gin.H) {
+	s.compareMu.Lock()
+	defer s.compareMu.Unlock()
+	if s.compareCache == nil {
+		s.compareCache = make(map[string]stockCompareCacheEntry)
+	}
+	// 顺带清理过期项，避免长期运行后缓存无界增长。
+	now := time.Now()
+	for k, v := range s.compareCache {
+		if now.After(v.expiresAt) {
+			delete(s.compareCache, k)
+		}
+	}
+	s.compareCache[code] = stockCompareCacheEntry{expiresAt: now.Add(stockCompareTTL), payload: payload}
+}
+
+// fetchBlockCached 返回板块成分并做 10 分钟缓存，成分文件按日更新。
+// FetchBlock 失败时不缓存，下一次请求会重试。
+func (s *Server) fetchBlockCached(f string) []*protocol.BlockItem {
+	s.blockItemsMu.Lock()
+	defer s.blockItemsMu.Unlock()
+	if entry, ok := s.blockItemsCache[f]; ok && time.Now().Before(entry.expiresAt) {
+		return entry.items
+	}
+	items, err := s.svc.FetchBlock(f)
+	if err != nil {
+		return nil
+	}
+	if s.blockItemsCache == nil {
+		s.blockItemsCache = make(map[string]blockItemsCacheEntry)
+	}
+	s.blockItemsCache[f] = blockItemsCacheEntry{expiresAt: time.Now().Add(blockItemsTTL), items: items}
+	return items
+}
+
 func (s *Server) handleStockCompare(c *gin.Context) {
 	code := c.Query("code")
 	if code == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "code is required"})
+		return
+	}
+
+	// 结果缓存命中：7~10s 的板块对比不必每次重算。
+	if payload, ok := s.getCachedStockCompare(code); ok {
+		c.JSON(http.StatusOK, payload)
 		return
 	}
 
@@ -677,16 +748,14 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 	files := []string{"block_zs.dat", "block_fg.dat", "block_gn.dat"}
 	blockComparisons := make([]gin.H, 0)
 
-	// Limit total blocks to compare to avoid excessive requests
-	const maxBlocks = 5
-	blocksCompared := 0
+	// 按文件类型分别限额：行业(fg) 全量参与，概念(gn)/指数(zs) 各取前 N 个命中板块。
+	// 此前统一的 maxBlocks=5 判断放在 file 循环顶部，第一份 block_zs.dat 攒满 5 个
+	// 板块后整个循环直接 break，行业/概念板块永远进不了对比结果。
+	blocksPerFile := make(map[string]int)
 
 	for _, f := range files {
-		if blocksCompared >= maxBlocks {
-			break
-		}
-		items, err := s.svc.FetchBlock(f)
-		if err != nil {
+		items := s.fetchBlockCached(f)
+		if len(items) == 0 {
 			continue
 		}
 
@@ -709,6 +778,11 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 				}
 			}
 			if !found {
+				continue
+			}
+
+			// 行业(fg) 全量，概念/指数按类型限额
+			if f != "block_fg.dat" && blocksPerFile[f] >= compareMaxBlocksPerType {
 				continue
 			}
 
@@ -846,7 +920,7 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 				"top_stocks":    blockQuotes[:min(5, len(blockQuotes))],
 				"bottom_stocks": blockQuotes[max(0, len(blockQuotes)-5):],
 			})
-			blocksCompared++
+			blocksPerFile[f]++
 		}
 
 		// Check timeout
@@ -860,12 +934,15 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 		return blockComparisons[i]["stock_rank"].(int) < blockComparisons[j]["stock_rank"].(int)
 	})
 
-	c.JSON(http.StatusOK, gin.H{
+	response := gin.H{
 		"code":         code,
 		"stock_name":   stockQuote.Name,
 		"stock_change": stockChange,
 		"comparisons":  blockComparisons,
-	})
+	}
+	s.putCachedStockCompare(code, response)
+
+	c.JSON(http.StatusOK, response)
 }
 
 // fetchFinanceAnalysisContent returns the 财务分析 block of a stock's F10 data.

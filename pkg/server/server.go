@@ -75,6 +75,10 @@ type Server struct {
 	paradigmAlertMu       sync.RWMutex
 	paradigmAlertCache    []paradigmAlert
 	paradigmAlertLastScan time.Time
+	compareMu             sync.Mutex
+	compareCache          map[string]stockCompareCacheEntry
+	blockItemsMu          sync.Mutex
+	blockItemsCache       map[string]blockItemsCacheEntry
 	backgroundWG          sync.WaitGroup
 	newsfeedHandler       *NewsfeedHandler
 	diagnostics           DiagnosticsProvider
