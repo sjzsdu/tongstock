@@ -40,9 +40,8 @@ export function useStockChart(
     if (!code || detailStatus !== 'ready') return;
     let cancelled = false;
     setChartLoading(true);
-    setIndicator(null);
-    setKlines([]);
-    setAnalysis(null);
+    // stale-while-revalidate：换股时保留旧 klines/indicator/analysis 继续渲染，
+    // 新数据到齐后一次性替换，避免整页 Spin（详见 useStockDetail 同口径注释）。
 
     const loadChart = async () => {
       const [indicatorResult, analysisResult] = await Promise.allSettled([

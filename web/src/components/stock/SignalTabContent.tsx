@@ -43,7 +43,7 @@ export function SignalTabContent({ chartLoading, analysis, sortedSignals, sorted
     { title: '详情', dataIndex: 'Details', render: (value: string | undefined) => <Tag>{value || '触发'}</Tag> },
   ];
 
-  if (chartLoading) {
+  if (chartLoading && sortedSignals.length === 0 && !analysis) {
     return <Card><Flex justify="center" align="center" style={{ minHeight: 240 }}><Spin size="large" /></Flex></Card>;
   }
 

@@ -29,7 +29,7 @@ export interface UseStockMinuteReturn {
   setHighlightedIdx: (idx: number) => void;
 }
 
-export function useStockMinute(code: string, detailStatus: DetailStatus): UseStockMinuteReturn {
+export function useStockMinute(code: string, detailStatus: DetailStatus, enabled: boolean): UseStockMinuteReturn {
   const [minuteData, setMinuteData] = useState<MinuteItem[]>([]);
   const [minuteDate, setMinuteDate] = useState<string>('');
   const [minuteLoading, setMinuteLoading] = useState(false);
@@ -77,12 +77,13 @@ export function useStockMinute(code: string, detailStatus: DetailStatus): UseSto
     setMinuteLoading(false);
   }, [code]);
 
+  // 仅在分时 tab 激活时拉取并轮询，避免换股时后台压多只股票的分时请求。
   useEffect(() => {
-    if (!code || detailStatus !== 'ready') return;
+    if (!enabled || !code || detailStatus !== 'ready') return;
     void fetchMinute();
     const timer = setInterval(fetchMinute, 30000);
     return () => clearInterval(timer);
-  }, [code, detailStatus, fetchMinute]);
+  }, [code, detailStatus, enabled, fetchMinute]);
 
   return {
     minuteData,

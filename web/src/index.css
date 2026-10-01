@@ -144,6 +144,28 @@ body {
   color: #94a3b8;
 }
 
+/* stale-while-revalidate：换股时保留旧内容，顶部细进度条提示新数据加载中 */
+.revalidate-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 2000;
+  background: linear-gradient(90deg, #1677ff 0%, #4c9aff 50%, #1677ff 100%);
+  background-size: 50% 100%;
+  animation: revalidate-slide 1.2s linear infinite;
+}
+
+@keyframes revalidate-slide {
+  0% {
+    background-position: -50% 0;
+  }
+  100% {
+    background-position: 150% 0;
+  }
+}
+
 .tdx-header {
   color: #f59e0b;
   font-size: 0.95rem;

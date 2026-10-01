@@ -50,12 +50,14 @@ export default function StockDetail() {
   const [fullscreen, setFullscreen] = useState(false);
   const [agentPanelOpen, setAgentPanelOpen] = useState(false);
 
-  const { code, quote, loading, detailStatus, detailError, syncState, refreshSyncState, ktype, setKtype } = useStockDetail();
+  const { code, quote, loading, revalidating, detailStatus, detailError, syncState, refreshSyncState, ktype, setKtype } = useStockDetail();
   const { klines, indicator, chartLoading, analysis, sortedSignals, sortedSignalOutcomes, latestClose, mainOverlay, setMainOverlay, subPanel, setSubPanel } = useStockChart(code, ktype, detailStatus, refreshSyncState);
-  const { finance, financeTrends, financeMetrics, financeTrendMode, setFinanceTrendMode, financeCompareMode, setFinanceCompareMode, financeViewMode, setFinanceViewMode, selectedFinanceMetrics, setSelectedFinanceMetrics, financeTrendLoading, availableFinanceMetrics, financeChartGroups, financeDisplayRecords, activeFinanceMetrics, latestFinanceRecord, formatFinanceMetricValue, financeItems } = useStockFinance(code, detailStatus);
+  // compare/finance/minute 较重，改为对应 tab 激活时才拉取（资讯已是 enabled 模式）。
+  // 财务接口同时供「分时」tab 的换手计算使用，故 finance|intraday 任一激活即拉取。
+  const { finance, financeTrends, financeMetrics, financeTrendMode, setFinanceTrendMode, financeCompareMode, setFinanceCompareMode, financeViewMode, setFinanceViewMode, selectedFinanceMetrics, setSelectedFinanceMetrics, financeTrendLoading, availableFinanceMetrics, financeChartGroups, financeDisplayRecords, activeFinanceMetrics, latestFinanceRecord, formatFinanceMetricValue, financeItems } = useStockFinance(code, detailStatus, tab === 'finance' || tab === 'intraday');
   const { companyCats, companyContent, selectedCat, companyLoading, loadCompanyContent } = useStockCompany(code, detailStatus);
-  const { minuteData, minuteDate, minuteLoading, minuteError, highlightedIdx, setHighlightedIdx } = useStockMinute(code, detailStatus);
-  const { compareData, compareLoading } = useStockCompare(code, detailStatus);
+  const { minuteData, minuteDate, minuteLoading, minuteError, highlightedIdx, setHighlightedIdx } = useStockMinute(code, detailStatus, tab === 'intraday');
+  const { compareData, compareLoading } = useStockCompare(code, detailStatus, tab === 'compare');
   const { paradigmResult, paradigmLoading, paradigmAgentText, paradigmEvalConfirm, paradigmEvalInvalid, paradigmDrawerOpen, setParadigmDrawerOpen, analyzeParadigm } = useParadigmAnalysis();
   const { news: newsResult, loading: newsLoading } = useStockNews(code, tab === 'news' && detailStatus === 'ready');
 
@@ -73,7 +75,6 @@ export default function StockDetail() {
   useEffect(() => {
     if (!code || detailStatus !== 'ready') return;
     if (tab === 'dividend') api.xdxr(code).then((d) => setDividends([...d].reverse())).catch(() => {});
-    if (tab === 'intraday') api.finance(code).then(() => {}).catch(() => {});
   }, [code, tab, detailStatus]);
 
   // 重新挖掘入口已移入范式抽屉，不再需要预查询缓存状态
@@ -88,15 +89,26 @@ export default function StockDetail() {
     if (tab === 'dividend') api.xdxr(code).then((d) => setDividends([...d].reverse())).catch(() => {});
   }, [code, tab, detailStatus]);
 
+  // URL 中的 tab 参数变化时同步界面 tab（反向：switchTab 写 URL）。
+  // 此前只在 mount 读一次，从对比页跳到 /stock/000963 这类无 tab 的 URL 后，
+  // 界面仍停在旧 tab，URL 与实际显示不一致，刷新/分享会落在错误 tab。
+  useEffect(() => {
+    setTab((paramTab as Tab) || 'chart');
+  }, [paramTab]);
+
   const pct = quote ? ((quote.Price - quote.LastClose) / quote.LastClose) * 100 : 0;
   const up = pct >= 0;
-  const showTabs = detailStatus === 'ready';
+  // stale-while-revalidate：新行情未到齐但上一只股票内容仍在时，继续展示旧内容，
+  // 顶部细进度条提示刷新中；只有首次进入（无任何可展示数据）才整页 Spin。
+  const showTabs = detailStatus === 'ready' || (detailStatus === 'loading' && quote !== null);
   const showInitialLoading = !showTabs && (loading || chartLoading || detailStatus === 'loading');
   const valueColor = getValueColor(pct);
   const syncStatus = getSyncStatusPresentation(syncState?.status || 'unknown');
 
   return (
     <div style={fullscreen ? { position: 'fixed', inset: 0, zIndex: 1000, background: '#0b1220', padding: 24, overflow: 'auto' } : undefined}>
+      {/* stale-while-revalidate 顶部细进度条：换股时旧内容保留，此条提示新数据加载中 */}
+      {revalidating && <div className="revalidate-progress" aria-hidden="true" />}
       <Space direction="vertical" size={16} style={{ display: 'flex' }}>
         {showTabs && quote && (
           <StockInfoHeader
@@ -241,10 +253,15 @@ export default function StockDetail() {
         {showTabs && tab === 'chart' && (klines.length > 0 || chartLoading) && (
           <Space direction="vertical" size={16} style={{ display: 'flex' }}>
             <Card><ChartToolbar ktype={ktype} onKtypeChange={setKtype} mainOverlay={mainOverlay} onMainOverlayChange={setMainOverlay} subPanel={subPanel} onSubPanelChange={setSubPanel} /></Card>
-            {chartLoading ? (
+            {chartLoading && klines.length === 0 ? (
               <Card><Flex justify="center" align="center" style={{ minHeight: 470 }}><Spin size="large" /></Flex></Card>
             ) : (
-              <Card bodyStyle={{ padding: 0 }}><CandlestickChart klines={klines} indicator={indicator} mainOverlay={mainOverlay} subPanel={subPanel} /></Card>
+              <>
+                {chartLoading && (
+                  <div style={{ marginBottom: 8 }}><Typography.Text type="secondary">行情刷新中，展示的是上一份数据…</Typography.Text></div>
+                )}
+                <Card bodyStyle={{ padding: 0 }}><CandlestickChart klines={klines} indicator={indicator} mainOverlay={mainOverlay} subPanel={subPanel} /></Card>
+              </>
             )}
           </Space>
         )}

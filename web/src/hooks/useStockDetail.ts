@@ -22,6 +22,8 @@ export interface UseStockDetailReturn {
   code: string;
   quote: any;
   loading: boolean;
+  // 换股时旧行情仍在展示、新数据尚未到齐的过渡状态（stale-while-revalidate）。
+  revalidating: boolean;
   detailStatus: DetailStatus;
   detailError: string;
   syncState: KlineSyncState | null;
@@ -62,7 +64,9 @@ export function useStockDetail(): UseStockDetailReturn {
     setLoading(true);
     setDetailStatus('loading');
     setDetailError('');
-    setQuote(null);
+    // stale-while-revalidate：换股/返回时保留上一只股票的行情继续展示，
+    // 顶部细进度条提示刷新中，新数据到齐后由 setQuote 原子替换。
+    // 此前这里 setQuote(null) 会把整页打成 Spin，接口再热也要全屏重载。
 
     // Load sync state (non-blocking, best-effort)
     api.getSyncState(code, ktype).then((state) => {
@@ -102,6 +106,7 @@ export function useStockDetail(): UseStockDetailReturn {
     code,
     quote,
     loading,
+    revalidating: loading && quote !== null,
     detailStatus,
     detailError,
     syncState,
