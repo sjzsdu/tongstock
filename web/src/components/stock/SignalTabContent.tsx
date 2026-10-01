@@ -3,6 +3,7 @@ import { ThunderboltOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { Signal, SignalAnalysis, SignalOutcome } from '../../types/api';
 import { formatTdxDate } from '../../lib/datetime';
+import { signalDateAscComparator } from '../../lib/signalSort';
 import SignalInterpretationCard from '../SignalInterpretationCard';
 
 interface SignalTabContentProps {
@@ -30,9 +31,10 @@ export function SignalTabContent({ chartLoading, analysis, sortedSignals, sorted
     {
       title: '日期',
       dataIndex: 'Date',
-      // 默认最新在前：11 年累积的信号列表里用户最关心近期信号
+      // 默认最新在前：11 年累积的信号列表里用户最关心近期信号。
+      // antd 在 descend 下会反转比较器结果，比较器本身用升序（见 lib/signalSort.ts）。
       defaultSortOrder: 'descend',
-      sorter: (a: Signal, b: Signal) => String(b.Date ?? '').localeCompare(String(a.Date ?? '')),
+      sorter: signalDateAscComparator,
       render: (value: string | undefined) => formatTdxDate(value),
     },
     { title: '指标', dataIndex: 'Indicator' },
