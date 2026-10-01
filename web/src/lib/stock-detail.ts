@@ -1,7 +1,7 @@
+import { priceColor } from './palette';
+
 export function getValueColor(value: number): string {
-  if (value > 0) return '#ef4444';
-  if (value < 0) return '#22c55e';
-  return '#cbd5e1';
+  return priceColor(value);
 }
 
 export function formatSigned(value: number, suffix = ''): string {

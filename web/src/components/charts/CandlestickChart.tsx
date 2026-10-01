@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createChart, CandlestickSeries, HistogramSeries, LineSeries, type IChartApi, type Time } from 'lightweight-charts';
 import type { KlineItem, IndicatorData } from '../../types/api';
 import { formatDateTime, formatTdxDate } from '../../lib/datetime';
+import { PRICE_PALETTE } from '../../lib/palette';
 
 interface Props {
   klines: KlineItem[];
@@ -150,9 +151,9 @@ export default function CandlestickChart({ klines, indicator, mainOverlay, subPa
     const mainChart = makeChart(mainRef.current, MAIN_H);
     if (mainChart) {
       const candleSeries = mainChart.addSeries(CandlestickSeries, {
-        upColor: '#ef4444', downColor: '#22c55e',
-        borderUpColor: '#ef4444', borderDownColor: '#22c55e',
-        wickUpColor: '#ef4444', wickDownColor: '#22c55e',
+        upColor: PRICE_PALETTE.up, downColor: PRICE_PALETTE.down,
+        borderUpColor: PRICE_PALETTE.up, borderDownColor: PRICE_PALETTE.down,
+        wickUpColor: PRICE_PALETTE.up, wickDownColor: PRICE_PALETTE.down,
       });
 
       const candleData = chartKlines.map(k => ({

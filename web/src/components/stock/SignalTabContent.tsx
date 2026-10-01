@@ -4,6 +4,7 @@ import type { ColumnsType } from 'antd/es/table';
 import type { Signal, SignalAnalysis, SignalOutcome } from '../../types/api';
 import { formatTdxDate } from '../../lib/datetime';
 import { signalDateAscComparator } from '../../lib/signalSort';
+import { priceColor } from '../../lib/palette';
 import SignalInterpretationCard from '../SignalInterpretationCard';
 
 interface SignalTabContentProps {
@@ -73,7 +74,7 @@ export function SignalTabContent({ chartLoading, analysis, sortedSignals, sorted
               <Typography.Text type="secondary">上涨/下跌强度</Typography.Text>
               <Progress
                 percent={Math.min(100, Math.max(0, 50 + pct * 5))}
-                strokeColor={up ? '#ef4444' : '#22c55e'}
+                strokeColor={priceColor(up ? 1 : -1)}
                 showInfo={false}
               />
               <Typography.Text>{pct > 0 ? '+' : ''}{pct.toFixed(2)}%</Typography.Text>

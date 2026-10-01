@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
-import { createChart, LineSeries, HistogramSeries, type Time } from 'lightweight-charts';
+import { createChart, LineSeries, HistogramSeries, type ISeriesApi, type Time } from 'lightweight-charts';
 import type { MinuteItem } from '../../types/api';
+import { PRICE_PALETTE, priceColor, withAlpha } from '../../lib/palette';
+import { buildPriceSegments } from '../../lib/minuteSegments';
 
 interface Props {
   data: MinuteItem[];
@@ -49,7 +51,7 @@ export default function MinuteChart({ data, lastClose, onClickIndex }: Props) {
     const allTimestamps = generateAllTradingMinutes();
     const priceData = allTimestamps
       .filter(ts => dataMap.has(ts))
-      .map(ts => ({ time: ts as Time, value: dataMap.get(ts)!.Price }));
+      .map(ts => ({ time: ts, value: dataMap.get(ts)!.Price }));
 
     if (priceData.length === 0) return;
 
@@ -94,22 +96,35 @@ export default function MinuteChart({ data, lastClose, onClickIndex }: Props) {
       },
     });
 
-    const priceSeries = chart.addSeries(LineSeries, {
-      color: '#3b82f6',
-      lineWidth: 2,
-      priceLineVisible: false,
-      lastValueVisible: true,
-    });
-    priceSeries.setData(priceData);
+    // 分时线：相对昨收动态着色（上红下绿、穿越分段变色，A股通行语义，
+    // 与 K 线 upColor/downColor 同一套色板）。
+    // 当前价标签挂在含最后一点的段上，颜色跟随价格所在段的方向。
+    const segments = buildPriceSegments(priceData, lastClose);
+    const lastPointTime = priceData[priceData.length - 1].time;
+    let firstSeries: ISeriesApi<'Line'> | null = null;
+    for (const seg of segments) {
+      const hasLastPoint = seg.points.some(p => p.time === lastPointTime);
+      const series = chart.addSeries(LineSeries, {
+        color: priceColor(seg.dir),
+        lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: hasLastPoint,
+      });
+      series.setData(seg.points.map(p => ({ time: p.time as Time, value: p.value })));
+      if (!firstSeries) firstSeries = series;
+    }
 
-    priceSeries.createPriceLine({
-      price: lastClose,
-      color: '#f59e0b',
-      lineWidth: 1,
-      lineStyle: 3,
-      axisLabelVisible: true,
-      title: '昨收',
-    });
+    // 昨收虚线（橙）保留：priceLine 挂在任一价格序列上，位置为昨收价
+    if (firstSeries) {
+      firstSeries.createPriceLine({
+        price: lastClose,
+        color: PRICE_PALETTE.prevClose,
+        lineWidth: 1,
+        lineStyle: 3,
+        axisLabelVisible: true,
+        title: '昨收',
+      });
+    }
 
     let cumAmount = 0;
     let cumVolume = 0;
@@ -126,8 +141,9 @@ export default function MinuteChart({ data, lastClose, onClickIndex }: Props) {
       };
     });
 
+    // 均价线（黄）
     const vwapSeries = chart.addSeries(LineSeries, {
-      color: '#f97316',
+      color: PRICE_PALETTE.avg,
       lineWidth: 1,
       lineStyle: 2,
       priceLineVisible: false,
@@ -136,6 +152,7 @@ export default function MinuteChart({ data, lastClose, onClickIndex }: Props) {
     });
     vwapSeries.setData(vwapData);
 
+    // 量柱：相对昨收红/绿（35% 透明度）
     const volSeries = chart.addSeries(HistogramSeries, {
       priceFormat: { type: 'volume' },
       priceScaleId: '',
@@ -146,7 +163,7 @@ export default function MinuteChart({ data, lastClose, onClickIndex }: Props) {
       return {
         time: ts as Time,
         value: m ? (Math.abs(m.Number) || 0) : 0,
-        color: m && m.Price >= lastClose ? 'rgba(239,68,68,0.35)' : 'rgba(34,197,94,0.35)',
+        color: m && m.Price >= lastClose ? withAlpha(PRICE_PALETTE.up, 0.35) : withAlpha(PRICE_PALETTE.down, 0.35),
       };
     }));
 
