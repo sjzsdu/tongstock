@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { FundOutlined, StockOutlined, SearchOutlined, FilterOutlined, SaveOutlined } from '@ant-design/icons';
 import { Alert, Button, Card, Col, Empty, Input, InputNumber, List, Modal, Row, Select, Skeleton, Space, Switch, Table, Tag, Tabs, Typography, message } from 'antd';
 import { useStockPool, usePoolStocks } from '../hooks/useStockPool';
@@ -45,6 +45,14 @@ export default function Blocks() {
   } = useStockPool();
 
   const { filteredStocks, loading: loadingPoolStocks } = usePoolStocks(currentPool);
+
+  // 板块名搜索过滤（300+ 板块靠滚动找太低效）
+  const [blockSearch, setBlockSearch] = useState('');
+  const filteredBlocks = useMemo(() => {
+    const keyword = blockSearch.trim().toLowerCase();
+    if (!keyword) return blocks;
+    return blocks.filter((block) => block.name.toLowerCase().includes(keyword));
+  }, [blocks, blockSearch]);
 
   // === Modal States ===
   const [showAddModal, setShowAddModal] = useState(false);
@@ -195,13 +203,21 @@ export default function Blocks() {
 
             <Col xs={24} lg={8}>
               <Card title={<span>板块列表</span>}>
+                <Input
+                  prefix={<SearchOutlined />}
+                  allowClear
+                  value={blockSearch}
+                  onChange={(event) => setBlockSearch(event.target.value)}
+                  placeholder="搜索板块名称..."
+                  style={{ marginBottom: 12 }}
+                />
                 {loadingBlocks ? (
                   <Skeleton active paragraph={{ rows: 6 }} title={false} />
-                ) : blocks.length === 0 ? (
-                  <Empty description="暂无板块" />
+                ) : filteredBlocks.length === 0 ? (
+                  <Empty description={blockSearch.trim() ? '没有匹配的板块' : '暂无板块'} />
                 ) : (
                   <List
-                    dataSource={blocks}
+                    dataSource={filteredBlocks}
                     renderItem={(item) => (
                       <List.Item
                         onClick={() => setSelectedBlock(item.name)}

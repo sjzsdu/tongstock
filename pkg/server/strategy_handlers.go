@@ -99,7 +99,7 @@ func (s *Server) handleOvernightArbitrage(c *gin.Context) {
 			"stage4_passed":     0,
 			"final_candidates":  []*strategy.OvernightCandidate{},
 			"failed":            stage1Failed,
-			"current_time":      time.Now().Format("15:04"),
+			"current_time":      strategy.BeijingNow().Format("15:04"),
 			"is_overnight_time": strategy.IsOvernightTime(time.Now()),
 		})
 		return
@@ -167,7 +167,7 @@ func (s *Server) handleOvernightArbitrage(c *gin.Context) {
 			"stage4_passed":     0,
 			"final_candidates":  []*strategy.OvernightCandidate{},
 			"failed":            append(stage1Failed, stage2Failed...),
-			"current_time":      time.Now().Format("15:04"),
+			"current_time":      strategy.BeijingNow().Format("15:04"),
 			"is_overnight_time": strategy.IsOvernightTime(time.Now()),
 		})
 		return
@@ -284,7 +284,7 @@ func (s *Server) handleOvernightArbitrage(c *gin.Context) {
 			"stage4_passed":     0,
 			"final_candidates":  []*strategy.OvernightCandidate{},
 			"failed":            append(append(stage1Failed, stage2Failed...), stage3Failed...),
-			"current_time":      time.Now().Format("15:04"),
+			"current_time":      strategy.BeijingNow().Format("15:04"),
 			"is_overnight_time": strategy.IsOvernightTime(time.Now()),
 		})
 		return
@@ -380,7 +380,7 @@ func (s *Server) handleOvernightArbitrage(c *gin.Context) {
 		"stage4_failed":     len(stage4Failed),
 		"final_candidates":  finalCandidates,
 		"failed":            allFailed,
-		"current_time":      time.Now().Format("15:04"),
+		"current_time":      strategy.BeijingNow().Format("15:04"),
 		"is_overnight_time": strategy.IsOvernightTime(time.Now()),
 	})
 }

@@ -302,6 +302,25 @@ func IsTradingTime(t time.Time) bool {
 }
 
 // IsOvernightTime 判断是否适合隔夜套利筛选时间(14:30之后)
+// 固定按东八区（A股交易时区）判断，避免部署在 UTC 服务器上时差 8 小时。
 func IsOvernightTime(t time.Time) bool {
-	return t.Hour() >= 14 && (t.Hour() > 14 || t.Minute() >= 30)
+	bj := BeijingTime(t)
+	return bj.Hour() >= 14 && (bj.Hour() > 14 || bj.Minute() >= 30)
+}
+
+// BeijingTime 把任意时间换算到东八区。所有与 A 股交易时段相关的
+// 判断和展示都应使用它，而不是依赖服务器本地时区。
+func BeijingTime(t time.Time) time.Time {
+	return t.In(BeijingLocation())
+}
+
+// BeijingLocation 返回东八区时区。A 股没有夏令时，固定 +8 偏移即可，
+// 不依赖系统 tzdata。
+func BeijingLocation() *time.Location {
+	return time.FixedZone("CST", 8*3600)
+}
+
+// BeijingNow 返回东八区的当前时间，用于响应里返回给前端的展示时间。
+func BeijingNow() time.Time {
+	return BeijingTime(time.Now())
 }
