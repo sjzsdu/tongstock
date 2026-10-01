@@ -64,6 +64,20 @@ type BlockItem struct {
 	StockCode string
 }
 
+// ParseBlockData 解析通达信板块文件（如 block_gn.dat）的二进制内容。
+//
+// 文件为 384 字节文件头加固定 2813 字节步长的记录流。每条记录：
+//
+//	[0:2)   保留区（当前记录为某板块的最后一条时才有效，见下）
+//	[2:11)  板块名（GBK）
+//	[11:13) 成分股数量（uint16 LE，最大 400）
+//	[13:15) 板块类型（uint16 LE）
+//	[15:15+count*7) 成分股代码，每只 7 字节
+//
+// 关键细节：记录步长 2813 字节，但代码区按 count 最多可占 15+400*7=2815
+// 字节——第 400 只代码的最后 2 字节会写进下一条记录的保留区。因此读取代码
+// 时不能按记录边界截断，必须从整个文件缓冲区里按偏移切片，否则恰好满 400
+// 只的板块会丢掉第 400 只（历史上所有这类板块都显示成 399 只）。
 func ParseBlockData(bs []byte) ([]*BlockItem, error) {
 	const fileHeader = 384
 	const recordSize = 2813
@@ -73,7 +87,7 @@ func ParseBlockData(bs []byte) ([]*BlockItem, error) {
 	const typeOffset = 13
 	const codeOffset = 15
 	const codeSize = 7
-	const maxCodes = (recordSize - codeOffset) / codeSize
+	const maxCodes = 400
 
 	if len(bs) < fileHeader+recordSize {
 		return nil, ErrDataLength

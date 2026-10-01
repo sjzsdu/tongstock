@@ -36,6 +36,16 @@ type DetailStatus = 'loading' | 'ready' | 'not_found';
 
 const INDICES: Record<string, string> = INDEX_NAMES;
 
+/**
+ * 指数分时接口用显式交易所前缀路由：后端对裸 6 位代码按股票规则路由
+ * （0 开头→深市），会把上证指数 000001 当成平安银行。与后端
+ * DecodeIndexCode 同规则：399xxx→深市，其余指数代码→沪市。
+ */
+function indexMinuteCode(code: string): string {
+  const digits = code.replace(/^(sh|sz|bj)/i, '');
+  return digits.startsWith('399') ? `sz${digits}` : `sh${digits}`;
+}
+
 const TAB_ITEMS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: 'chart', label: 'K线+指标', icon: <AreaChartOutlined /> },
   { key: 'intraday', label: '分时', icon: <ClockCircleOutlined /> },
@@ -245,7 +255,7 @@ export default function IndexDetail() {
         setMinuteLoading(true);
         let loaded = false;
         try {
-          const r = await api.minute(code);
+          const r = await api.minute(indexMinuteCode(code));
           if (r.List && r.List.length > 0) {
             setMinuteData(r.List);
             const today = new Date();
@@ -260,7 +270,7 @@ export default function IndexDetail() {
           yesterday.setDate(yesterday.getDate() - (yesterday.getDay() === 0 ? 2 : yesterday.getDay() === 1 ? 3 : 1));
           const dateStr = yesterday.toISOString().slice(0, 10).replace(/-/g, '');
           try {
-            const histR = await api.minuteHistory(code, dateStr);
+            const histR = await api.minuteHistory(indexMinuteCode(code), dateStr);
             if (histR.List && histR.List.length > 0) {
               setMinuteData(histR.List);
               setMinuteDate(formatShortDate(yesterday));

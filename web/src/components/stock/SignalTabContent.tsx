@@ -19,6 +19,12 @@ function formatChange(value: number | null | undefined): React.ReactNode {
   return <span className={value >= 0 ? 'price-up' : 'price-down'}>{value > 0 ? '+' : ''}{value.toFixed(2)}%</span>;
 }
 
+// 建议颜色：含卖出/减仓字样的绿色，其余（买入参考）红色；
+// 与后端 suggestAction 的语义对齐，超买不再错标买入色。
+function actionTagColor(action: string): string {
+  return action.includes('卖出') || action.includes('减仓') ? 'green' : 'red';
+}
+
 export function SignalTabContent({ chartLoading, analysis, sortedSignals, sortedSignalOutcomes, pct, up }: SignalTabContentProps) {
   const signalColumns: ColumnsType<Signal> = [
     {
@@ -96,7 +102,7 @@ export function SignalTabContent({ chartLoading, analysis, sortedSignals, sorted
             dataSource={analysis.summary}
             columns={[
               { title: '信号', dataIndex: 'type' },
-              { title: '建议', dataIndex: 'action', render: (value: string) => <Tag color={value === '买入参考' ? 'red' : 'green'}>{value}</Tag> },
+              { title: '建议', dataIndex: 'action', render: (value: string) => <Tag color={actionTagColor(value)}>{value}</Tag> },
               { title: '触发次数', dataIndex: 'count', align: 'right' },
               { title: '次日上涨率', dataIndex: 'win1', align: 'right', render: (_: unknown, row: any) => row.valid1 > 0 ? `${row.win1.toFixed(0)}% (${row.valid1})` : '-' },
               { title: '5日上涨率', dataIndex: 'win5', align: 'right', render: (_: unknown, row: any) => row.valid5 > 0 ? `${row.win5.toFixed(0)}% (${row.valid5})` : '-' },
@@ -122,7 +128,7 @@ export function SignalTabContent({ chartLoading, analysis, sortedSignals, sorted
               { title: '日期', dataIndex: 'date', render: (value: string) => formatTdxDate(value) },
               { title: '指标', dataIndex: 'indicator' },
               { title: '信号', dataIndex: 'type' },
-              { title: '建议', dataIndex: 'action', render: (value: string) => <Tag color={value === '买入参考' ? 'red' : 'green'}>{value}</Tag> },
+              { title: '建议', dataIndex: 'action', render: (value: string) => <Tag color={actionTagColor(value)}>{value}</Tag> },
               { title: '触发价', dataIndex: 'price', align: 'right', render: (value: number) => value.toFixed(2) },
               { title: '次日涨跌', dataIndex: 'chg1', align: 'right', render: (value: number | null | undefined) => formatChange(value) },
               { title: '5日涨跌', dataIndex: 'chg5', align: 'right', render: (value: number | null | undefined) => formatChange(value) },

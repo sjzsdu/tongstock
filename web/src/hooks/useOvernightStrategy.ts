@@ -52,6 +52,25 @@ export function useOvernightStrategy(): UseOvernightStrategyReturn {
   const [sortKey, setSortKey] = useState<OvernightSortKey>('change_pct');
   const [sortAsc, setSortAsc] = useState(false);
 
+  // 与后端 strategy.IsOvernightTime 同规则（14:30 之后为最佳筛选时间）。
+  // 挂载时用本地时钟初始化并每分钟刷新，避免首次进入页面时横幅永远显示
+  // "不是最佳筛选时间"、与筛选结果区的 Tag 自相矛盾；doScreen 响应携带的
+  // 服务端时间仍会覆盖这两个值。
+  const refreshOvernightTime = useCallback(() => {
+    const now = new Date();
+    const hour = now.getHours();
+    const minute = now.getMinutes();
+    setIsOvernightTime(hour >= 14 && (hour > 14 || minute >= 30));
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    setCurrentTime(`${pad(hour)}:${pad(minute)}`);
+  }, []);
+
+  useEffect(() => {
+    refreshOvernightTime();
+    const timer = window.setInterval(refreshOvernightTime, 60_000);
+    return () => window.clearInterval(timer);
+  }, [refreshOvernightTime]);
+
   // Save custom pools to localStorage
   useEffect(() => {
     if (customPools.length > 0) {

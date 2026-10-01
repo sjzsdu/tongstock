@@ -428,9 +428,6 @@ func (s *Server) handleSignalAnalysis(c *gin.Context) {
 		trend = signal.DetectTrend(inputs, result.MA)
 	}
 
-	// Analyze cycles
-	cycles := signal.DetectAllCycles(code, inputs, result)
-
 	// Generate interpretations for each signal
 	var interpretations []gin.H
 	for _, s := range signals {
@@ -468,33 +465,125 @@ func (s *Server) handleSignalAnalysis(c *gin.Context) {
 		"outcomes":        []gin.H{},
 	}
 
-	// Build summary
-	signalCounts := make(map[string]int)
-	for _, s := range signals {
-		signalCounts[string(s.Type)]++
+	// Build summary：按信号类型汇总触发后 1/5/10/20 日的真实表现。
+	// 此前只有 type/count/action，winN/avgN/validN 全部缺失，
+	// 前端回测表整列显示 "-"。
+	type outcomeStats struct {
+		count  int
+		valid  [4]int
+		win    [4]int
+		sumChg [4]float64
 	}
-
-	for sigType, count := range signalCounts {
-		action := "买入参考"
-		if strings.Contains(sigType, "死叉") || strings.Contains(sigType, "空头") {
-			action = "卖出参考"
+	horizons := [4]int{1, 5, 10, 20}
+	stats := make(map[string]*outcomeStats)
+	statsFor := func(sigType string) *outcomeStats {
+		st, ok := stats[sigType]
+		if !ok {
+			st = &outcomeStats{}
+			stats[sigType] = st
 		}
-		analysis["summary"] = append(analysis["summary"].([]gin.H), gin.H{
-			"type":   sigType,
-			"count":  count,
-			"action": action,
-		})
+		return st
 	}
 
-	// Build outcomes from cycles
-	for _, cycle := range cycles {
-		analysis["outcomes"] = append(analysis["outcomes"].([]gin.H), gin.H{
-			"date":      cycle.BuyDate,
-			"type":      cycle.BuySignal,
-			"indicator": cycle.BuySignal,
-			"action":    "买入参考",
-			"price":     cycle.BuyPrice,
-		})
+	closeAt := func(idx int) (float64, bool) {
+		if idx < 0 || idx >= len(inputs) {
+			return 0, false
+		}
+		c := inputs[idx].Close
+		if c <= 0 {
+			return 0, false
+		}
+		return c, true
+	}
+
+	// 信号类型 -> 操作建议。超买是回调风险、死叉/空头排列是离场信号，
+	// 不能一律标「买入参考」。
+	suggestAction := func(sigType string) string {
+		switch {
+		case strings.Contains(sigType, "超买"),
+			strings.Contains(sigType, "死叉"),
+			strings.Contains(sigType, "空头排列"):
+			return "卖出/减仓参考"
+		default:
+			return "买入参考"
+		}
+	}
+
+	// 信号日期 -> K 线下标，用于从触发点向后看 N 日表现。
+	indexByDate := make(map[string]int, len(inputs))
+	for i, in := range inputs {
+		indexByDate[in.Time.Format("2006-01-02")] = i
+	}
+
+	outcomeRows := make([]gin.H, 0, len(signals))
+	for _, sig := range signals {
+		dateStr := sig.Date.Format("2006-01-02")
+		triggerIdx, ok := indexByDate[dateStr]
+		if !ok {
+			continue
+		}
+		base, ok := closeAt(triggerIdx)
+		if !ok {
+			continue
+		}
+
+		action := suggestAction(string(sig.Type))
+
+		row := gin.H{
+			"date":      dateStr,
+			"type":      string(sig.Type),
+			"indicator": sig.Indicator,
+			"details":   sig.Details,
+			"action":    action,
+			"price":     base,
+		}
+		st := statsFor(string(sig.Type))
+		st.count++
+
+		for h, horizon := range horizons {
+			futureIdx := triggerIdx + horizon
+			future, ok := closeAt(futureIdx)
+			chgKey := fmt.Sprintf("chg%d", horizon)
+			if !ok {
+				// 样本不足（近端信号还没有 N 日数据），置 null 让前端显示 -
+				row[chgKey] = nil
+				continue
+			}
+			chg := (future - base) / base * 100
+			row[chgKey] = chg
+			st.valid[h]++
+			st.sumChg[h] += chg
+			if chg > 0 {
+				st.win[h]++
+			}
+		}
+		outcomeRows = append(outcomeRows, row)
+	}
+	analysis["outcomes"] = outcomeRows
+
+	for sigType, st := range stats {
+		action := suggestAction(sigType)
+		row := gin.H{
+			"type":   sigType,
+			"count":  st.count,
+			"action": action,
+		}
+		for h, horizon := range horizons {
+			row[fmt.Sprintf("valid%d", horizon)] = st.valid[h]
+			row[fmt.Sprintf("win%d", horizon)] = func() float64 {
+				if st.valid[h] == 0 {
+					return 0
+				}
+				return float64(st.win[h]) / float64(st.valid[h]) * 100
+			}()
+			row[fmt.Sprintf("avg%d", horizon)] = func() float64 {
+				if st.valid[h] == 0 {
+					return 0
+				}
+				return st.sumChg[h] / float64(st.valid[h])
+			}()
+		}
+		analysis["summary"] = append(analysis["summary"].([]gin.H), row)
 	}
 
 	c.JSON(http.StatusOK, analysis)
