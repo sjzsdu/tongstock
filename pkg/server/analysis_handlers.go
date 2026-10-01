@@ -140,16 +140,70 @@ func (s *Server) handleIndicator(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// signalDirection 把信号类型归入买入/卖出方向，与 suggestAction 同一口径：
+// 超买/死叉/空头排列是卖出/减仓，其余（金叉/超卖/突破上轨/多头排列）是买入参考。
+func signalDirection(sigType string) string {
+	switch {
+	case strings.Contains(sigType, "超买"),
+		strings.Contains(sigType, "死叉"),
+		strings.Contains(sigType, "空头排列"):
+		return "sell"
+	default:
+		return "buy"
+	}
+}
+
+// buildSignalsResponse 序列化信号并为每条附带同日 peers 快照：
+// 当日全部信号按买入/卖出方向的计数（含自身）+ 同日其他信号列表。
+// 用于「信号触发时同时评估其他信号族当日状态」的同日共振展示。
 func buildSignalsResponse(signals []signal.Signal) []gin.H {
-	var result []gin.H
-	for _, s := range signals {
+	type dateGroup struct {
+		buy     int
+		sell    int
+		indexes []int
+	}
+	groups := make(map[string]*dateGroup)
+	for i, s := range signals {
+		date := s.Date.Format("2006-01-02")
+		g := groups[date]
+		if g == nil {
+			g = &dateGroup{}
+			groups[date] = g
+		}
+		g.indexes = append(g.indexes, i)
+		if signalDirection(string(s.Type)) == "buy" {
+			g.buy++
+		} else {
+			g.sell++
+		}
+	}
+
+	result := make([]gin.H, 0, len(signals))
+	for i, s := range signals {
+		date := s.Date.Format("2006-01-02")
+		g := groups[date]
+		others := make([]gin.H, 0, max(0, len(g.indexes)-1))
+		for _, j := range g.indexes {
+			if j == i {
+				continue
+			}
+			others = append(others, gin.H{
+				"indicator": signals[j].Indicator,
+				"type":      string(signals[j].Type),
+			})
+		}
 		result = append(result, gin.H{
 			"Code":      s.Code,
-			"Date":      s.Date.Format("2006-01-02"),
+			"Date":      date,
 			"Type":      string(s.Type),
 			"Indicator": s.Indicator,
 			"Details":   s.Details,
 			"Strength":  s.Strength,
+			"Peers": gin.H{
+				"buy_count":  g.buy,
+				"sell_count": g.sell,
+				"others":     others,
+			},
 		})
 	}
 	return result

@@ -42,6 +42,23 @@ export function SignalTabContent({ chartLoading, analysis, sortedSignals, sorted
     { title: '信号', dataIndex: 'Type' },
     { title: '强度', dataIndex: 'Strength', align: 'right', render: (value: number | undefined) => typeof value === 'number' ? value.toFixed(3) : '-' },
     { title: '详情', dataIndex: 'Details', render: (value: string | undefined) => <Tag>{value || '触发'}</Tag> },
+    {
+      // 同日共振：该日全部信号按买入/卖出方向计数（含自身），
+      // 支撑「结合其他指标综合判断」；展开行列出同日其他信号
+      title: '同日共振',
+      key: 'peers',
+      align: 'right',
+      render: (_: unknown, row: Signal) => {
+        const peers = row.Peers;
+        if (!peers) return '-';
+        return (
+          <Space size={4}>
+            <Tag color="red" style={{ marginInlineEnd: 0 }}>买 {peers.buy_count}</Tag>
+            <Tag color="green" style={{ marginInlineEnd: 0 }}>卖 {peers.sell_count}</Tag>
+          </Space>
+        );
+      },
+    },
   ];
 
   if (chartLoading && sortedSignals.length === 0 && !analysis) {
@@ -91,6 +108,26 @@ export function SignalTabContent({ chartLoading, analysis, sortedSignals, sorted
           dataSource={sortedSignals}
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无信号" /> }}
           columns={signalColumns}
+          expandable={{
+            // 展开行：同日其他信号族的状态（买入/卖出方向 Tag）
+            rowExpandable: (row: Signal) => !!row.Peers && row.Peers.others.length > 0,
+            expandedRowRender: (row: Signal) => {
+              const others = row.Peers?.others ?? [];
+              if (others.length === 0) return <Typography.Text type="secondary">当日无其他信号</Typography.Text>;
+              return (
+                <Space size={[4, 4]} wrap>
+                  {others.map((peer, idx) => (
+                    <Tag
+                      key={`${peer.indicator}-${peer.type}-${idx}`}
+                      color={peer.type.includes('超买') || peer.type.includes('死叉') || peer.type.includes('空头排列') ? 'green' : 'red'}
+                    >
+                      {peer.indicator}·{peer.type}
+                    </Tag>
+                  ))}
+                </Space>
+              );
+            },
+          }}
         />
       </Card>
 

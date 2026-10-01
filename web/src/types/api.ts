@@ -60,6 +60,17 @@ export interface IndicatorData {
   signals: Signal[];
 }
 
+export interface SignalPeerItem {
+  indicator: string;
+  type: string;
+}
+
+export interface SignalPeers {
+  buy_count: number;
+  sell_count: number;
+  others: SignalPeerItem[];
+}
+
 export interface Signal {
   Code: string;
   Date: string;
@@ -67,6 +78,9 @@ export interface Signal {
   Indicator: string;
   Details: string;
   Strength: number;
+  // 同日其他信号快照：当日买入/卖出信号计数 + 其他信号列表，
+  // 用于「信号触发时同时评估其他信号族状态」
+  Peers?: SignalPeers;
 }
 
 export interface Finance {
