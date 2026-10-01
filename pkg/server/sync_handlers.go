@@ -75,6 +75,12 @@ func (s *Server) handleSyncState(c *gin.Context) {
 				freshness = "empty"
 			} else if decision.Fresh {
 				freshness = "fresh"
+			} else if !coverage.End.IsZero() && formatSyncDate(coverage.End) >= time.Now().Format("20060102") {
+				// 与 /api/sync/freshness 的 evaluateFreshness 口径对齐：
+				// 数据已覆盖今天即视为 fresh，不因 policy 的 overlap TTL
+				// 判定而与另一接口同时刻给出相反结论（handler 层对齐，
+				// 不动 policy.go 的策略逻辑）。
+				freshness = "fresh"
 			} else if !coverage.LastSyncAt.IsZero() && time.Since(coverage.LastSyncAt) > 24*time.Hour {
 				freshness = "outdated"
 			}

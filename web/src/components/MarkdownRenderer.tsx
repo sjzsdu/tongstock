@@ -4,6 +4,14 @@ import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
 import DOMPurify from 'dompurify';
 
+// 外链一律补 rel="noopener noreferrer"，防新开页 tabnabbing；
+// hook 全局注册一次，对每次 sanitize 生效
+DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+  if (node.tagName === 'A' && node.getAttribute('href')) {
+    node.setAttribute('rel', 'noopener noreferrer');
+  }
+});
+
 const marked = new Marked(
   {
     // 聊天语境：表格/删除线等 GFM 语法要能渲染；
