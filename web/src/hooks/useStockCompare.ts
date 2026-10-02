@@ -22,7 +22,10 @@ export function useStockCompare(code: string, detailStatus: DetailStatus, enable
       setCompareData(d);
       setCompareLoading(false);
     }).catch(() => {
+      // 拉取失败：清空旧数据，避免上一只股票的对比结果（含旧 stock_name）
+      // 被渲染在新股票页；界面回落到「暂无对比数据」空态。
       if (cancelled) return;
+      setCompareData(null);
       setCompareLoading(false);
     });
     return () => {

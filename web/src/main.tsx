@@ -10,7 +10,7 @@ import { PRICE_PALETTE } from './lib/palette'
 const rootStyle = document.documentElement.style
 rootStyle.setProperty('--price-up', PRICE_PALETTE.up)
 rootStyle.setProperty('--price-down', PRICE_PALETTE.down)
-rootStyle.setProperty('--price-flat', '#94a3b8')
+rootStyle.setProperty('--price-flat', PRICE_PALETTE.flat)
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

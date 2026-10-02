@@ -117,10 +117,8 @@ export function SignalTabContent({ chartLoading, analysis, sortedSignals, sorted
               return (
                 <Space size={[4, 4]} wrap>
                   {others.map((peer, idx) => (
-                    <Tag
-                      key={`${peer.indicator}-${peer.type}-${idx}`}
-                      color={peer.type.includes('超买') || peer.type.includes('死叉') || peer.type.includes('空头排列') ? 'green' : 'red'}
-                    >
+                    // 方向用后端 Peers 携带的 direction（与 suggestAction 同口径）
+                    <Tag key={`${peer.indicator}-${peer.type}-${idx}`} color={peer.direction === 'sell' ? 'green' : 'red'}>
                       {peer.indicator}·{peer.type}
                     </Tag>
                   ))}

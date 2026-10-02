@@ -63,6 +63,8 @@ export interface IndicatorData {
 export interface SignalPeerItem {
   indicator: string;
   type: string;
+  // 后端口径的方向归类：buy / sell（前端不再内联方向规则避免漂移）
+  direction?: 'buy' | 'sell' | string;
 }
 
 export interface SignalPeers {

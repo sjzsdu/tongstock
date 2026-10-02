@@ -142,7 +142,7 @@ body {
 }
 
 .price-neutral {
-  color: var(--price-flat, #94a3b8);
+  color: var(--price-flat, #cbd5e1);
 }
 
 /* stale-while-revalidate：换股时保留旧内容，顶部细进度条提示新数据加载中 */
