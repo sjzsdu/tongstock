@@ -132,16 +132,39 @@ body {
   font-size: 13px;
 }
 
+/* 色值由 main.tsx 从 lib/palette.ts 注入，保持 TS/CSS 单一来源 */
 .price-up {
-  color: #ef4444;
+  color: var(--price-up, #ef4444);
 }
 
 .price-down {
-  color: #22c55e;
+  color: var(--price-down, #22c55e);
 }
 
 .price-neutral {
-  color: #94a3b8;
+  color: var(--price-flat, #cbd5e1);
+}
+
+/* stale-while-revalidate：换股时保留旧内容，顶部细进度条提示新数据加载中 */
+.revalidate-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 2000;
+  background: linear-gradient(90deg, #1677ff 0%, #4c9aff 50%, #1677ff 100%);
+  background-size: 50% 100%;
+  animation: revalidate-slide 1.2s linear infinite;
+}
+
+@keyframes revalidate-slide {
+  0% {
+    background-position: -50% 0;
+  }
+  100% {
+    background-position: 150% 0;
+  }
 }
 
 .tdx-header {

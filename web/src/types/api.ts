@@ -60,6 +60,19 @@ export interface IndicatorData {
   signals: Signal[];
 }
 
+export interface SignalPeerItem {
+  indicator: string;
+  type: string;
+  // 后端口径的方向归类：buy / sell（前端不再内联方向规则避免漂移）
+  direction?: 'buy' | 'sell' | string;
+}
+
+export interface SignalPeers {
+  buy_count: number;
+  sell_count: number;
+  others: SignalPeerItem[];
+}
+
 export interface Signal {
   Code: string;
   Date: string;
@@ -67,6 +80,9 @@ export interface Signal {
   Indicator: string;
   Details: string;
   Strength: number;
+  // 同日其他信号快照：当日买入/卖出信号计数 + 其他信号列表，
+  // 用于「信号触发时同时评估其他信号族状态」
+  Peers?: SignalPeers;
 }
 
 export interface Finance {

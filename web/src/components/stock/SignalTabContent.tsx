@@ -3,6 +3,8 @@ import { ThunderboltOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { Signal, SignalAnalysis, SignalOutcome } from '../../types/api';
 import { formatTdxDate } from '../../lib/datetime';
+import { signalDateAscComparator } from '../../lib/signalSort';
+import { priceColor } from '../../lib/palette';
 import SignalInterpretationCard from '../SignalInterpretationCard';
 
 interface SignalTabContentProps {
@@ -30,18 +32,36 @@ export function SignalTabContent({ chartLoading, analysis, sortedSignals, sorted
     {
       title: '日期',
       dataIndex: 'Date',
-      // 默认最新在前：11 年累积的信号列表里用户最关心近期信号
+      // 默认最新在前：11 年累积的信号列表里用户最关心近期信号。
+      // antd 在 descend 下会反转比较器结果，比较器本身用升序（见 lib/signalSort.ts）。
       defaultSortOrder: 'descend',
-      sorter: (a: Signal, b: Signal) => String(b.Date ?? '').localeCompare(String(a.Date ?? '')),
+      sorter: signalDateAscComparator,
       render: (value: string | undefined) => formatTdxDate(value),
     },
     { title: '指标', dataIndex: 'Indicator' },
     { title: '信号', dataIndex: 'Type' },
     { title: '强度', dataIndex: 'Strength', align: 'right', render: (value: number | undefined) => typeof value === 'number' ? value.toFixed(3) : '-' },
     { title: '详情', dataIndex: 'Details', render: (value: string | undefined) => <Tag>{value || '触发'}</Tag> },
+    {
+      // 同日共振：该日全部信号按买入/卖出方向计数（含自身），
+      // 支撑「结合其他指标综合判断」；展开行列出同日其他信号
+      title: '同日共振',
+      key: 'peers',
+      align: 'right',
+      render: (_: unknown, row: Signal) => {
+        const peers = row.Peers;
+        if (!peers) return '-';
+        return (
+          <Space size={4}>
+            <Tag color="red" style={{ marginInlineEnd: 0 }}>买 {peers.buy_count}</Tag>
+            <Tag color="green" style={{ marginInlineEnd: 0 }}>卖 {peers.sell_count}</Tag>
+          </Space>
+        );
+      },
+    },
   ];
 
-  if (chartLoading) {
+  if (chartLoading && sortedSignals.length === 0 && !analysis) {
     return <Card><Flex justify="center" align="center" style={{ minHeight: 240 }}><Spin size="large" /></Flex></Card>;
   }
 
@@ -71,7 +91,7 @@ export function SignalTabContent({ chartLoading, analysis, sortedSignals, sorted
               <Typography.Text type="secondary">上涨/下跌强度</Typography.Text>
               <Progress
                 percent={Math.min(100, Math.max(0, 50 + pct * 5))}
-                strokeColor={up ? '#ef4444' : '#22c55e'}
+                strokeColor={priceColor(up ? 1 : -1)}
                 showInfo={false}
               />
               <Typography.Text>{pct > 0 ? '+' : ''}{pct.toFixed(2)}%</Typography.Text>
@@ -88,6 +108,24 @@ export function SignalTabContent({ chartLoading, analysis, sortedSignals, sorted
           dataSource={sortedSignals}
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无信号" /> }}
           columns={signalColumns}
+          expandable={{
+            // 展开行：同日其他信号族的状态（买入/卖出方向 Tag）
+            rowExpandable: (row: Signal) => !!row.Peers && row.Peers.others.length > 0,
+            expandedRowRender: (row: Signal) => {
+              const others = row.Peers?.others ?? [];
+              if (others.length === 0) return <Typography.Text type="secondary">当日无其他信号</Typography.Text>;
+              return (
+                <Space size={[4, 4]} wrap>
+                  {others.map((peer, idx) => (
+                    // 方向用后端 Peers 携带的 direction（与 suggestAction 同口径）
+                    <Tag key={`${peer.indicator}-${peer.type}-${idx}`} color={peer.direction === 'sell' ? 'green' : 'red'}>
+                      {peer.indicator}·{peer.type}
+                    </Tag>
+                  ))}
+                </Space>
+              );
+            },
+          }}
         />
       </Card>
 

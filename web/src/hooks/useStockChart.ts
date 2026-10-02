@@ -40,9 +40,8 @@ export function useStockChart(
     if (!code || detailStatus !== 'ready') return;
     let cancelled = false;
     setChartLoading(true);
-    setIndicator(null);
-    setKlines([]);
-    setAnalysis(null);
+    // stale-while-revalidate：换股时保留旧 klines/indicator/analysis 继续渲染，
+    // 新数据到齐后一次性替换，避免整页 Spin（详见 useStockDetail 同口径注释）。
 
     const loadChart = async () => {
       const [indicatorResult, analysisResult] = await Promise.allSettled([
@@ -54,6 +53,12 @@ export function useStockChart(
       onDataLoaded?.();
 
       if (indicatorResult.status === 'rejected') {
+        // 拉取失败：清空旧股票数据。stale-while-revalidate 只覆盖成功路径，
+        // 若保留上一只股票的 klines/indicator，会在新股票页被当作当前数据
+        // 无限期展示（换 ktype 或重进页面才消失）。
+        setIndicator(null);
+        setKlines([]);
+        setAnalysis(null);
         setChartLoading(false);
         return;
       }
@@ -68,7 +73,8 @@ export function useStockChart(
         return;
       }
 
-      if (analysisResult.status === 'fulfilled') setAnalysis(analysisResult.value);
+      // analysis 失败时同步清空：新 K 线不能配上一只股票的信号
+      setAnalysis(analysisResult.status === 'fulfilled' ? analysisResult.value : null);
       setChartLoading(false);
     };
 

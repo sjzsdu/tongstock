@@ -9,6 +9,7 @@ import (
 	"github.com/sjzsdu/tongstock/pkg/ta"
 	"github.com/sjzsdu/tongstock/pkg/tdx"
 	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -140,16 +141,72 @@ func (s *Server) handleIndicator(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// signalDirection 把信号类型归入买入/卖出方向，与 suggestAction 同一口径：
+// 超买/死叉/空头排列是卖出/减仓，其余（金叉/超卖/突破上轨/多头排列）是买入参考。
+func signalDirection(sigType string) string {
+	switch {
+	case strings.Contains(sigType, "超买"),
+		strings.Contains(sigType, "死叉"),
+		strings.Contains(sigType, "空头排列"):
+		return "sell"
+	default:
+		return "buy"
+	}
+}
+
+// buildSignalsResponse 序列化信号并为每条附带同日 peers 快照：
+// 当日全部信号按买入/卖出方向的计数（含自身）+ 同日其他信号列表。
+// 用于「信号触发时同时评估其他信号族当日状态」的同日共振展示。
 func buildSignalsResponse(signals []signal.Signal) []gin.H {
-	var result []gin.H
-	for _, s := range signals {
+	type dateGroup struct {
+		buy     int
+		sell    int
+		indexes []int
+	}
+	groups := make(map[string]*dateGroup)
+	for i, s := range signals {
+		date := s.Date.Format("2006-01-02")
+		g := groups[date]
+		if g == nil {
+			g = &dateGroup{}
+			groups[date] = g
+		}
+		g.indexes = append(g.indexes, i)
+		if signalDirection(string(s.Type)) == "buy" {
+			g.buy++
+		} else {
+			g.sell++
+		}
+	}
+
+	result := make([]gin.H, 0, len(signals))
+	for i, s := range signals {
+		date := s.Date.Format("2006-01-02")
+		g := groups[date]
+		others := make([]gin.H, 0, max(0, len(g.indexes)-1))
+		for _, j := range g.indexes {
+			if j == i {
+				continue
+			}
+			// direction 由后端口径给出，前端不再内联方向规则避免漂移
+			others = append(others, gin.H{
+				"indicator": signals[j].Indicator,
+				"type":      string(signals[j].Type),
+				"direction": signalDirection(string(signals[j].Type)),
+			})
+		}
 		result = append(result, gin.H{
 			"Code":      s.Code,
-			"Date":      s.Date.Format("2006-01-02"),
+			"Date":      date,
 			"Type":      string(s.Type),
 			"Indicator": s.Indicator,
 			"Details":   s.Details,
 			"Strength":  s.Strength,
+			"Peers": gin.H{
+				"buy_count":  g.buy,
+				"sell_count": g.sell,
+				"others":     others,
+			},
 		})
 	}
 	return result
@@ -646,10 +703,150 @@ func (s *Server) handleStockSearchIndex(c *gin.Context) {
 
 // handleHistoryList handles history list requests
 
+// /api/stock/compare 单次要拉 ≈500 次行情（17 板块 × ≤31 股），裸跑 7~10s。
+// 行情是分钟级时效，45s 结果缓存完全够用；命中时直接返回。
+const (
+	stockCompareTTL = 45 * time.Second
+	// 板块成分文件按日更新，成分缓存 10 分钟。
+	blockItemsTTL = 10 * time.Minute
+	// 概念(gn)/指数(zs) 每类最多参与对比的板块数；行业(fg) 全量参与。
+	compareMaxBlocksPerType = 5
+)
+
+type stockCompareCacheEntry struct {
+	expiresAt time.Time
+	payload   gin.H
+}
+
+type blockItemsCacheEntry struct {
+	expiresAt time.Time
+	items     []*protocol.BlockItem
+}
+
+func (s *Server) getCachedStockCompare(code string) (gin.H, bool) {
+	s.compareMu.Lock()
+	defer s.compareMu.Unlock()
+	entry, ok := s.compareCache[code]
+	if !ok || time.Now().After(entry.expiresAt) {
+		return nil, false
+	}
+	return entry.payload, true
+}
+
+func (s *Server) putCachedStockCompare(code string, payload gin.H) {
+	s.compareMu.Lock()
+	defer s.compareMu.Unlock()
+	if s.compareCache == nil {
+		s.compareCache = make(map[string]stockCompareCacheEntry)
+	}
+	// 顺带清理过期项，避免长期运行后缓存无界增长。
+	now := time.Now()
+	for k, v := range s.compareCache {
+		if now.After(v.expiresAt) {
+			delete(s.compareCache, k)
+		}
+	}
+	s.compareCache[code] = stockCompareCacheEntry{expiresAt: now.Add(stockCompareTTL), payload: payload}
+}
+
+// fetchBlockCached 返回板块成分并做 10 分钟缓存，成分文件按日更新。
+// FetchBlock 失败时不缓存，下一次请求会重试。
+func (s *Server) fetchBlockCached(f string) []*protocol.BlockItem {
+	s.blockItemsMu.Lock()
+	defer s.blockItemsMu.Unlock()
+	if entry, ok := s.blockItemsCache[f]; ok && time.Now().Before(entry.expiresAt) {
+		return entry.items
+	}
+	items, err := s.svc.FetchBlock(f)
+	if err != nil {
+		return nil
+	}
+	if s.blockItemsCache == nil {
+		s.blockItemsCache = make(map[string]blockItemsCacheEntry)
+	}
+	s.blockItemsCache[f] = blockItemsCacheEntry{expiresAt: time.Now().Add(blockItemsTTL), items: items}
+	return items
+}
+
+// isFiniteFloat 报告 v 是否为有限数值（非 NaN、非 ±Inf）
+func isFiniteFloat(v float64) bool {
+	return !math.IsNaN(v) && !math.IsInf(v, 0)
+}
+
+// validQuoteForCompare 判断一条行情是否可用于涨跌幅计算。
+// LastClose<=0 会让 change 变成 NaN/±Inf；价格<=0 属于无效快照（会把该成员
+// 当作 -100% 拉偏统计）。两者都会毒化响应——gin 的 json.Marshal 失败后只写
+// c.Errors 不写 body，客户端拿到 200+空体，必须在源头按无效行情跳过。
+func validQuoteForCompare(price, lastClose float64) bool {
+	return price > 0 && lastClose > 0 && isFiniteFloat(price) && isFiniteFloat(lastClose)
+}
+
+// matchedBlocksInFileOrder 返回 code 命中的板块名，按 items 文件序去重排列。
+// 若按 map 遍历序处理，限额截取的集合每次都会随机翻页、结果不可复现。
+func matchedBlocksInFileOrder(items []*protocol.BlockItem, code string) []string {
+	var matched []string
+	seen := make(map[string]bool)
+	for _, item := range items {
+		if item.StockCode != code || seen[item.BlockName] {
+			continue
+		}
+		seen[item.BlockName] = true
+		matched = append(matched, item.BlockName)
+	}
+	return matched
+}
+
+// comparePayloadFinite 校验对比结果中所有参与 JSON 序列化的浮点均为有限值。
+// 任何一个 NaN/±Inf 都会让 json.Marshal 整体失败、客户端收到 200+空体。
+func comparePayloadFinite(response gin.H) bool {
+	checkFloats := func(m gin.H, keys ...string) bool {
+		for _, k := range keys {
+			if v, ok := m[k].(float64); ok && !isFiniteFloat(v) {
+				return false
+			}
+		}
+		return true
+	}
+	if !checkFloats(response, "stock_change") {
+		return false
+	}
+	comparisons, ok := response["comparisons"].([]gin.H)
+	if !ok {
+		return true
+	}
+	for _, cmp := range comparisons {
+		if !checkFloats(cmp, "avg_change", "stock_change") {
+			return false
+		}
+		sq, ok := cmp["stock_quote"].(gin.H)
+		if !ok || !checkFloats(sq, "price", "change", "last_close") {
+			return false
+		}
+		for _, key := range []string{"top_stocks", "bottom_stocks"} {
+			stocks, ok := cmp[key].([]gin.H)
+			if !ok {
+				continue
+			}
+			for _, st := range stocks {
+				if !checkFloats(st, "price", "change") {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
 func (s *Server) handleStockCompare(c *gin.Context) {
 	code := c.Query("code")
 	if code == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "code is required"})
+		return
+	}
+
+	// 结果缓存命中：7~10s 的板块对比不必每次重算。
+	if payload, ok := s.getCachedStockCompare(code); ok {
+		c.JSON(http.StatusOK, payload)
 		return
 	}
 
@@ -671,22 +868,31 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 	// TDX quotes often carry an empty or garbled name; backfill from the
 	// market code list so the compare page can render stock names.
 	stockQuote.Name = s.resolveDisplayName(code, stockQuote.Name)
+	// 主题行情无效（昨收<=0 等）会让 stock_change 变 NaN 并毒化整个响应，
+	// 直接返回显式错误，而不是让客户端收到 200+空体。
+	if !validQuoteForCompare(stockQuote.Price, stockQuote.LastClose) {
+		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("股票 %s 行情数据无效（昨收/现价非正），无法生成板块对比", code)})
+		return
+	}
 	stockChange := (stockQuote.Price - stockQuote.LastClose) / stockQuote.LastClose * 100
 
 	// Get blocks containing this stock
 	files := []string{"block_zs.dat", "block_fg.dat", "block_gn.dat"}
 	blockComparisons := make([]gin.H, 0)
 
-	// Limit total blocks to compare to avoid excessive requests
-	const maxBlocks = 5
-	blocksCompared := 0
+	// 按文件类型分别限额：行业(fg) 全量参与，概念(gn)/指数(zs) 各取前 N 个命中板块。
+	// 此前统一的 maxBlocks=5 判断放在 file 循环顶部，第一份 block_zs.dat 攒满 5 个
+	// 板块后整个循环直接 break，行业/概念板块永远进不了对比结果。
+	blocksPerFile := make(map[string]int)
+
+	// degraded 标记结果不完整（成分文件拉取失败 / 超时中断）：
+	// 降级响应可以返回给客户端，但绝不能进 45s 缓存。
+	degraded := false
 
 	for _, f := range files {
-		if blocksCompared >= maxBlocks {
-			break
-		}
-		items, err := s.svc.FetchBlock(f)
-		if err != nil {
+		items := s.fetchBlockCached(f)
+		if len(items) == 0 {
+			degraded = true
 			continue
 		}
 
@@ -699,16 +905,12 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 			blockTypeMap[item.BlockName] = item.BlockType
 		}
 
-		// Find blocks that contain this stock
-		for blockName, stockCodes := range blockStocksMap {
-			found := false
-			for _, sc := range stockCodes {
-				if sc == code {
-					found = true
-					break
-				}
-			}
-			if !found {
+		// Find blocks that contain this stock（按 items 文件序，保证限额集合可复现）
+		for _, blockName := range matchedBlocksInFileOrder(items, code) {
+			stockCodes := blockStocksMap[blockName]
+
+			// 行业(fg) 全量，概念/指数按类型限额
+			if f != "block_fg.dat" && blocksPerFile[f] >= compareMaxBlocksPerType {
 				continue
 			}
 
@@ -765,6 +967,12 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 						return
 					}
 					q := qs[0]
+					// 昨收<=0 或价格非有限值会产生 NaN/±Inf，毒化整个响应后
+					// json.Marshal 失败 → 200+空体；按无效行情跳过该成员。
+					if !validQuoteForCompare(q.Price, q.LastClose) {
+						quoteResults[idx] = quoteResult{code: stockCode, ok: false}
+						return
+					}
 					change := (q.Price - q.LastClose) / q.LastClose * 100
 					quoteResults[idx] = quoteResult{
 						code:   stockCode,
@@ -846,11 +1054,12 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 				"top_stocks":    blockQuotes[:min(5, len(blockQuotes))],
 				"bottom_stocks": blockQuotes[max(0, len(blockQuotes)-5):],
 			})
-			blocksCompared++
+			blocksPerFile[f]++
 		}
 
 		// Check timeout
 		if ctx.Err() != nil {
+			degraded = true
 			break
 		}
 	}
@@ -860,12 +1069,27 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 		return blockComparisons[i]["stock_rank"].(int) < blockComparisons[j]["stock_rank"].(int)
 	})
 
-	c.JSON(http.StatusOK, gin.H{
+	response := gin.H{
 		"code":         code,
 		"stock_name":   stockQuote.Name,
 		"stock_change": stockChange,
 		"comparisons":  blockComparisons,
-	})
+	}
+
+	// 提交前校验所有浮点为有限值：任何 NaN/±Inf 都会让 json.Marshal 整体失败、
+	// 客户端收到 200+空体。校验失败返回显式 500 且不进缓存。
+	if !comparePayloadFinite(response) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "板块对比结果含非有限数值，已拒绝返回"})
+		return
+	}
+
+	// 失败/降级结果（超时中断、成分文件缺失）不进 45s 缓存，避免把
+	// 缺板块的残缺结果当完整结果服务后续请求。
+	if !degraded {
+		s.putCachedStockCompare(code, response)
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 // fetchFinanceAnalysisContent returns the 财务分析 block of a stock's F10 data.

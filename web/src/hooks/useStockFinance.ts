@@ -104,7 +104,7 @@ export interface UseStockFinanceReturn {
   financeItems: Array<[string, number, string]>;
 }
 
-export function useStockFinance(code: string, detailStatus: DetailStatus): UseStockFinanceReturn {
+export function useStockFinance(code: string, detailStatus: DetailStatus, enabled: boolean): UseStockFinanceReturn {
   const [finance, setFinance] = useState<any>(null);
   const [financeTrends, setFinanceTrends] = useState<FinanceTrendsResponse | null>(null);
   const [financeMetrics, setFinanceMetrics] = useState<FinanceMetricsResponse | null>(null);
@@ -115,13 +115,13 @@ export function useStockFinance(code: string, detailStatus: DetailStatus): UseSt
   const [financeTrendLoading, setFinanceTrendLoading] = useState(false);
 
   useEffect(() => {
-    if (!code || detailStatus !== 'ready') return;
+    if (!enabled || !code || detailStatus !== 'ready') return;
     api.finance(code).then(setFinance).catch(() => {});
     api.financeMetrics(code).then(setFinanceMetrics).catch(() => setFinanceMetrics(null));
-  }, [code, detailStatus]);
+  }, [code, detailStatus, enabled]);
 
   useEffect(() => {
-    if (!code || detailStatus !== 'ready') return;
+    if (!enabled || !code || detailStatus !== 'ready') return;
     let cancelled = false;
     setFinanceTrendLoading(true);
     api.financeTrends(code, financeTrendMode)
@@ -139,7 +139,7 @@ export function useStockFinance(code: string, detailStatus: DetailStatus): UseSt
     return () => {
       cancelled = true;
     };
-  }, [code, detailStatus, financeTrendMode]);
+  }, [code, detailStatus, enabled, financeTrendMode]);
 
   const availableFinanceMetrics = useMemo(() => {
     const trendMetrics = new Set(financeTrends?.metrics ?? []);
