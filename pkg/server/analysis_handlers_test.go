@@ -1,11 +1,13 @@
 package server
 
 import (
+	"math"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sjzsdu/tongstock/pkg/signal"
+	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
 )
 
 func TestSignalDirection(t *testing.T) {
@@ -81,5 +83,51 @@ func TestBuildSignalsResponsePeers(t *testing.T) {
 	// Date 字段保持 2006-01-02 格式
 	if first["Date"] != "2024-06-18" {
 		t.Errorf("Date = %v, want 2024-06-18", first["Date"])
+	}
+}
+
+func TestMatchedBlocksInFileOrder(t *testing.T) {
+	items := []*protocol.BlockItem{
+		{BlockName: "沪深300", StockCode: "600519"},
+		{BlockName: "白酒概念", StockCode: "000001"},
+		{BlockName: "沪深300", StockCode: "000001"},
+		{BlockName: "上证50", StockCode: "600519"},
+		{BlockName: "沪股通", StockCode: "000001"},
+		{BlockName: "沪深300", StockCode: "300418"},
+	}
+
+	got := matchedBlocksInFileOrder(items, "000001")
+	want := []string{"白酒概念", "沪深300", "沪股通"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	}
+
+	if got := matchedBlocksInFileOrder(items, "999999"); got != nil {
+		t.Errorf("no match should return nil, got %v", got)
+	}
+}
+
+func TestValidQuoteForCompare(t *testing.T) {
+	cases := []struct {
+		price, lastClose float64
+		want             bool
+	}{
+		{10, 9.5, true},
+		{0, 9.5, false},           // 价格为 0（停牌等）
+		{10, 0, false},            // LastClose==0 → 除零
+		{10, -1, false},           // 负昨收
+		{math.NaN(), 9.5, false},  // NaN
+		{math.Inf(1), 9.5, false}, // +Inf
+		{10, math.Inf(-1), false},
+	}
+	for _, c := range cases {
+		if got := validQuoteForCompare(c.price, c.lastClose); got != c.want {
+			t.Errorf("validQuoteForCompare(%v, %v) = %v, want %v", c.price, c.lastClose, got, c.want)
+		}
 	}
 }
