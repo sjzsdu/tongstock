@@ -93,6 +93,8 @@ export default function AgentWeb() {
   const [inputFocused, setInputFocused] = useState(false);
   const [historyQuery, setHistoryQuery] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // 侧栏角色下拉的受控开合：主区域点击角色入口时直接把下拉展开
+  const [rolePickerOpen, setRolePickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [diagnostic, setDiagnostic] = useState<AgentDiagnosticResponse | null>(null);
   const [diagOpen, setDiagOpen] = useState(false);
@@ -321,6 +323,12 @@ export default function AgentWeb() {
   const selectedAgentInfo = agents.find(a => a.id === selectedAgent);
   const currentRoleLabel = agentName(selectedAgentInfo, selectedAgent);
 
+  // 统一的"切换角色"入口：窄屏打开抽屉，桌面端展开侧栏下拉
+  const openRolePicker = () => {
+    if (isCompact) setSidebarOpen(true);
+    else setRolePickerOpen(true);
+  };
+
   const handleAgentChange = (value: string) => {
     setSelectedAgent(value);
     // 切换角色时同步更新当前对话的 agent 部分
@@ -352,6 +360,8 @@ export default function AgentWeb() {
         value={selectedAgent || undefined}
         placeholder="选择助手角色"
         onChange={handleAgentChange}
+        open={rolePickerOpen}
+        onOpenChange={setRolePickerOpen}
         options={agentOptions}
         showSearch
         optionFilterProp="label"
@@ -499,7 +509,7 @@ export default function AgentWeb() {
           overflow: 'hidden',
         }}
       >
-        {/* 当前角色：切换后立刻可见，窄屏时这里也是侧边栏入口 */}
+        {/* 当前角色：切换后立刻可见；桌面端点击直接展开侧栏下拉，窄屏只展示（抽屉入口交给 ☰） */}
         <div
           style={{
             display: 'flex',
@@ -518,18 +528,42 @@ export default function AgentWeb() {
               aria-label="打开助手菜单"
             />
           )}
-          <Tag icon={<RobotOutlined />} color="blue" style={{ marginInlineEnd: 0 }}>
-            {currentRoleLabel}
-          </Tag>
+          {isCompact ? (
+            <Tag icon={<RobotOutlined />} color="blue" style={{ marginInlineEnd: 0 }}>
+              {currentRoleLabel}
+            </Tag>
+          ) : (
+            <Tooltip title="点击切换角色">
+              <Tag
+                icon={<RobotOutlined />}
+                color="blue"
+                onClick={openRolePicker}
+                style={{ marginInlineEnd: 0, cursor: 'pointer' }}
+              >
+                {currentRoleLabel}
+              </Tag>
+            </Tooltip>
+          )}
           {selectedAgentInfo?.description && (
             <Text type="secondary" style={{ fontSize: 12, minWidth: 0, flex: 1 }} ellipsis>
               {selectedAgentInfo.description}
             </Text>
           )}
           <div style={{ flex: '0 0 auto', display: 'flex', gap: 8 }}>
-            <Button size="small" icon={<PlusOutlined />} onClick={startNewConversation}>
-              新对话
-            </Button>
+            {isCompact ? (
+              <Tooltip title="开启新对话">
+                <Button
+                  size="small"
+                  icon={<PlusOutlined />}
+                  onClick={startNewConversation}
+                  aria-label="开启新对话"
+                />
+              </Tooltip>
+            ) : (
+              <Button size="small" icon={<PlusOutlined />} onClick={startNewConversation}>
+                新对话
+              </Button>
+            )}
           </div>
         </div>
 
@@ -573,10 +607,19 @@ export default function AgentWeb() {
                     image={Empty.PRESENTED_IMAGE_SIMPLE}
                     style={{ marginTop: 80 }}
                     description={
-                      <Space direction="vertical" size={4} align="center">
+                      <Space direction="vertical" size={8} align="center">
                         <Text type="secondary">还没有对话，选一个角色开始提问吧</Text>
+                        <Button size="small" icon={<RobotOutlined />} onClick={openRolePicker}>
+                          选择角色
+                        </Button>
                         <Text type="secondary" style={{ fontSize: 12 }}>
                           例如：帮我看看 600519 现在值不值得买
+                        </Text>
+                        <Text
+                          type="secondary"
+                          style={{ fontSize: 11, color: token.colorTextTertiary }}
+                        >
+                          以上分析仅供参考，不构成投资建议
                         </Text>
                       </Space>
                     }
@@ -651,16 +694,18 @@ export default function AgentWeb() {
         </div>
       </Content>
 
-      {/* 窄屏：侧边栏改为抽屉 */}
-      <Drawer
-        placement="left"
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        width={280}
-        styles={{ body: { padding: 16, display: 'flex', flexDirection: 'column' } }}
-      >
-        {sidebar}
-      </Drawer>
+      {/* 窄屏：侧边栏改为抽屉。只在窄屏渲染，避免隐藏实例与侧栏重复挂载 */}
+      {isCompact && (
+        <Drawer
+          placement="left"
+          open={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          width={280}
+          styles={{ body: { padding: 16, display: 'flex', flexDirection: 'column' } }}
+        >
+          {sidebar}
+        </Drawer>
+      )}
 
       {/* 诊断抽屉：仅在用户主动打开时展示工程细节 */}
       <Drawer

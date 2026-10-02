@@ -353,7 +353,7 @@ export default function OvernightArbitrage() {
                 <Statistic title="最终候选" value={results.length} suffix="只" style={{ fontSize: 13 }} />
               </Space>
               <Space size={[6, 6]} wrap>
-                <Tag color="blue">当前时间: {currentTime}</Tag>
+                <Tag color="blue" title="A 股交易时区，固定东八区（UTC+8）">当前时间(北京): {currentTime}</Tag>
                 <Tag color={isOvernightTime ? 'green' : 'orange'}>{isOvernightTime ? '✓ 最佳筛选时间' : '建议14:30后筛选'}</Tag>
               </Space>
             </Flex>

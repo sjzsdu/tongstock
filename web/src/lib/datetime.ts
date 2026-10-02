@@ -1,5 +1,23 @@
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
+const BEIJING_OFFSET_MINUTES = 8 * 60;
+
+export interface BeijingTimeParts {
+  hour: number;
+  minute: number;
+  text: string;
+}
+
+// 与后端 strategy.BeijingNow() 对齐：固定东八区（A 股交易时区，无夏令时），
+// 不随浏览器/部署环境的本地时区漂移。用于策略结果区等必须以北京时间展示的场合。
+export function beijingNowParts(date: Date = new Date()): BeijingTimeParts {
+  const shifted = new Date(date.getTime() + (date.getTimezoneOffset() + BEIJING_OFFSET_MINUTES) * 60_000);
+  const hour = shifted.getHours();
+  const minute = shifted.getMinutes();
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return { hour, minute, text: `${pad(hour)}:${pad(minute)}` };
+}
+
 function pad2(value: number): string {
   return String(value).padStart(2, '0');
 }

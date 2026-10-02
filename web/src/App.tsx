@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useState } from 'react';
 import type { ComponentType } from 'react';
 import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
+  CloseOutlined,
   DashboardOutlined,
   FileTextOutlined,
   HeartOutlined,
@@ -161,7 +162,11 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  // 极窄视口（<360px）：顶部放不下常驻搜索框，折叠成图标按需展开
+  const [isUltraNarrow, setIsUltraNarrow] = useState(false);
+  const [searchExpanded, setSearchExpanded] = useState(false);
   const [openKeys, setOpenKeys] = useState<string[]>(DEFAULT_OPEN_KEYS);
+  const navigate = useNavigate();
 
   // 浏览器标签页标题：路由级标题，详情页（个股/事件）拿到数据后会覆盖
   useDocumentTitle(titleForPath(location.pathname));
@@ -177,6 +182,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768);
+      setIsUltraNarrow(window.innerWidth < 360);
       if (window.innerWidth < 768) {
         setCollapsed(true);
       }
@@ -256,7 +262,32 @@ function AppLayout({ children }: { children: React.ReactNode }) {
             )}
             <Breadcrumb items={breadcrumbItems} style={{ flexShrink: 0 }} />
           </div>
-          <GlobalSearch />
+          {isUltraNarrow ? (
+            <Button
+              type="text"
+              icon={searchExpanded ? <CloseOutlined /> : <SearchOutlined />}
+              onClick={() => setSearchExpanded((v) => !v)}
+              style={{ color: '#fff' }}
+              aria-label={searchExpanded ? '收起搜索' : '展开搜索'}
+            />
+          ) : (
+            <GlobalSearch />
+          )}
+          {/* 极窄屏展开后的搜索框：独占第二行，选中后自动收起 */}
+          {isUltraNarrow && searchExpanded && (
+            <div style={{ flex: '1 1 100%', minWidth: 0 }}>
+              <StockSearchInput
+                placeholder="输入代码、名称或拼音..."
+                limit={8}
+                containerClassName="global-stock-search"
+                autoFocus
+                onSelect={(match) => {
+                  setSearchExpanded(false);
+                  navigate(`/stock/${match.code}`);
+                }}
+              />
+            </div>
+          )}
         </Header>
         <Content
           className={`app-content${isFullscreen ? ' app-content-fill' : ''}`}

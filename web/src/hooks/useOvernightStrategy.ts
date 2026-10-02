@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../api/client';
 import type { OvernightCandidate } from '../api/client';
 import type { CustomPool, OvernightSourceTab, OvernightSortKey } from '../types/strategy';
+import { beijingNowParts } from '../lib/datetime';
 
 interface UseOvernightStrategyReturn {
   sourceTab: OvernightSourceTab;
@@ -52,17 +53,14 @@ export function useOvernightStrategy(): UseOvernightStrategyReturn {
   const [sortKey, setSortKey] = useState<OvernightSortKey>('change_pct');
   const [sortAsc, setSortAsc] = useState(false);
 
-  // 与后端 strategy.IsOvernightTime 同规则（14:30 之后为最佳筛选时间）。
-  // 挂载时用本地时钟初始化并每分钟刷新，避免首次进入页面时横幅永远显示
-  // "不是最佳筛选时间"、与筛选结果区的 Tag 自相矛盾；doScreen 响应携带的
-  // 服务端时间仍会覆盖这两个值。
+  // 与后端 strategy.IsOvernightTime / BeijingNow 同规则：固定按北京时间
+  // （14:30 之后为最佳筛选时间），浏览器在任何时区下都与服务端口径一致。
+  // 挂载时初始化并每分钟刷新，避免首次进入页面时横幅与筛选结果区的 Tag
+  // 自相矛盾；doScreen 响应携带的服务端时间仍会覆盖这两个值。
   const refreshOvernightTime = useCallback(() => {
-    const now = new Date();
-    const hour = now.getHours();
-    const minute = now.getMinutes();
+    const { hour, minute, text } = beijingNowParts();
     setIsOvernightTime(hour >= 14 && (hour > 14 || minute >= 30));
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    setCurrentTime(`${pad(hour)}:${pad(minute)}`);
+    setCurrentTime(text);
   }, []);
 
   useEffect(() => {
