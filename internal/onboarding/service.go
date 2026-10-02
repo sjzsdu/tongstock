@@ -3,6 +3,7 @@ package onboarding
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -55,17 +56,17 @@ func NewService(deps Deps) (*Service, error) {
 func (s *Service) Run(ctx context.Context, opts RunOptions) (*Result, error) {
 	res := &Result{Status: StatusCompleted, Steps: []Step{}}
 
-	tradeDate, err := s.resolveTradeDate(opts)
-	if err != nil {
-		return nil, err
-	}
-	res.TradeDate = tradeDate
-
 	universeName := strings.TrimSpace(opts.Universe)
 	if universeName == "" {
 		universeName = "universe_usable"
 	}
 	def := resolveUniverse(universeName)
+
+	tradeDate, err := s.resolveTradeDate(opts, def)
+	if err != nil {
+		return nil, err
+	}
+	res.TradeDate = tradeDate
 
 	// 1. 行情数据就绪
 	if !s.dataStep(ctx, opts, res, tradeDate, def) {
@@ -105,7 +106,7 @@ func (s *Service) Run(ctx context.Context, opts RunOptions) (*Result, error) {
 	return s.finish(res, StatusCompleted), nil
 }
 
-func (s *Service) resolveTradeDate(opts RunOptions) (string, error) {
+func (s *Service) resolveTradeDate(opts RunOptions, def marketsnapshot.UniverseDefinition) (string, error) {
 	if d := strings.TrimSpace(opts.Date); d != "" {
 		return normalizeDate(d)
 	}
@@ -119,7 +120,52 @@ func (s *Service) resolveTradeDate(opts RunOptions) (string, error) {
 	if latest == "" {
 		return "", fmt.Errorf("数据库里还没有任何真实日线，无法确定交易日")
 	}
-	return latest, nil
+	return s.universeSupportedDate(latest, def), nil
+}
+
+// universeSupportedDate returns the latest date that at least half of the
+// universe's kline watermarks have actually reached. The raw freshness
+// watermark (MAX(date) across the kline table) can sit ahead of the universe
+// when only a handful of codes synced ahead of schedule; using it as the trade
+// date would build a snapshot with near-zero coverage and block the flow.
+// Falls back to latest when the universe cannot be inspected.
+func (s *Service) universeSupportedDate(latest string, def marketsnapshot.UniverseDefinition) string {
+	b := s.deps.Builder
+	if b == nil || b.UniverseProvider == nil || b.WatermarkProvider == nil {
+		return latest
+	}
+	members, err := b.UniverseProvider.BuildUniverse(latest, def)
+	if err != nil {
+		return latest
+	}
+	codes := make([]string, 0, len(members))
+	for _, m := range members {
+		if m.Selected {
+			codes = append(codes, m.Code)
+		}
+	}
+	if len(codes) == 0 {
+		return latest
+	}
+	watermarks, err := b.WatermarkProvider.FetchWatermarks(latest, codes)
+	if err != nil {
+		return latest
+	}
+	dates := make([]string, 0, len(codes))
+	for _, c := range codes {
+		wm, ok := watermarks[c]
+		if !ok || wm.KlineLastDate == "" {
+			continue
+		}
+		dates = append(dates, wm.KlineLastDate)
+	}
+	if len(dates) == 0 {
+		return latest
+	}
+	sort.Strings(dates)
+	half := (len(dates) + 1) / 2
+	// dates 升序：dates[len-half] 起至少一半代码已到该日期。
+	return dates[len(dates)-half]
 }
 
 // dataStep 检查行情就绪，必要时触发真实同步。返回 false 表示被阻断。
