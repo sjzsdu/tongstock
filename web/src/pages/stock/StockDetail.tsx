@@ -92,9 +92,13 @@ export default function StockDetail() {
   // URL 中的 tab 参数变化时同步界面 tab（反向：switchTab 写 URL）。
   // 此前只在 mount 读一次，从对比页跳到 /stock/000963 这类无 tab 的 URL 后，
   // 界面仍停在旧 tab，URL 与实际显示不一致，刷新/分享会落在错误 tab。
-  useEffect(() => {
+  // 用 React 文档的「渲染期调整状态」模式记录上一次 paramTab，避免在
+  // effect 内直接 setState（react-hooks/set-state-in-effect 基线上限）。
+  const [prevParamTab, setPrevParamTab] = useState(paramTab);
+  if (prevParamTab !== paramTab) {
+    setPrevParamTab(paramTab);
     setTab((paramTab as Tab) || 'chart');
-  }, [paramTab]);
+  }
 
   const pct = quote ? ((quote.Price - quote.LastClose) / quote.LastClose) * 100 : 0;
   const up = pct >= 0;
