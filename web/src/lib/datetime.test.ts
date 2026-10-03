@@ -38,8 +38,10 @@ describe('datetime', () => {
       expect(beijingNowParts(new Date(utcEpoch)).text).toBe('22:59')
     })
 
-    it('matches local clock when environment is already UTC+8', () => {
-      const d = new Date(2026, 9, 1, 14, 59, 0)
+    it('matches the clock when the instant is constructed UTC+8-explicit', () => {
+      // 北京时间 2026-10-01 14:59 的瞬时时刻：UTC 明确构造（UTC 06:59），
+      // 不依赖运行环境的本地时区（GitHub runner 是 UTC）。
+      const d = new Date(Date.UTC(2026, 9, 1, 14, 59, 0) - 8 * 60 * 60 * 1000)
       expect(beijingNowParts(d).text).toBe('14:59')
     })
 
