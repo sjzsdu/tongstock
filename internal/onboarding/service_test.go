@@ -60,9 +60,14 @@ type memRepo struct {
 	feature map[string]*marketsnapshot.FeatureSnapshot
 }
 
-func newMemRepo() *memRepo { return &memRepo{market: map[string]*marketsnapshot.MarketSnapshot{}, feature: map[string]*marketsnapshot.FeatureSnapshot{}} }
+func newMemRepo() *memRepo {
+	return &memRepo{market: map[string]*marketsnapshot.MarketSnapshot{}, feature: map[string]*marketsnapshot.FeatureSnapshot{}}
+}
 
-func (r *memRepo) SaveMarketSnapshot(s *marketsnapshot.MarketSnapshot) error { r.market[s.ID] = s; return nil }
+func (r *memRepo) SaveMarketSnapshot(s *marketsnapshot.MarketSnapshot) error {
+	r.market[s.ID] = s
+	return nil
+}
 func (r *memRepo) LoadMarketSnapshot(id string, includeCodes bool) (*marketsnapshot.MarketSnapshot, error) {
 	return r.market[id], nil
 }
@@ -78,7 +83,10 @@ func (r *memRepo) FreezeMarketSnapshot(id string) error {
 	}
 	return nil
 }
-func (r *memRepo) SaveFeatureSnapshot(s *marketsnapshot.FeatureSnapshot) error { r.feature[s.ID] = s; return nil }
+func (r *memRepo) SaveFeatureSnapshot(s *marketsnapshot.FeatureSnapshot) error {
+	r.feature[s.ID] = s
+	return nil
+}
 func (r *memRepo) LoadFeatureSnapshot(id string, includeValues bool) (*marketsnapshot.FeatureSnapshot, error) {
 	return r.feature[id], nil
 }
