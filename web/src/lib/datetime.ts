@@ -71,6 +71,28 @@ export function formatShortDate(input: string | number | Date | null | undefined
   return `${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${WEEKDAYS[date.getDay()]}`;
 }
 
+// 历史分时/逐笔回退探测用的候选日：按本地日历从 from 往前数 count 个工作日
+// （默认 12 个，覆盖国庆/春节等最长 8-10 天的连续休市）。不识别法定节假日——
+// 假期当天查不到数据属预期，调用方逐个探测直到取到数据或候选用尽。
+// 全部用本地日期分量构造，避免 toISOString 的 UTC 偏移把日期错移一天。
+export function recentWeekdayDates(count = 12, from: Date = new Date()): Date[] {
+  const result: Date[] = [];
+  const cursor = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  // 每周只有 5 个工作日，上限给 3 倍冗余即可扫够 count 个
+  for (let i = 0; i < count * 3 && result.length < count; i++) {
+    cursor.setDate(cursor.getDate() - 1);
+    const day = cursor.getDay();
+    if (day === 0 || day === 6) continue;
+    result.push(new Date(cursor));
+  }
+  return result;
+}
+
+// 后端历史接口的日期参数格式：YYYYMMDD（本地日期分量）
+export function formatAPIDate(date: Date): string {
+  return `${date.getFullYear()}${pad2(date.getMonth() + 1)}${pad2(date.getDate())}`;
+}
+
 export function formatTime(input: string | Date | null | undefined, fallback = '-'): string {
   if (!input) return fallback;
   if (typeof input === 'string' && /^\d{1,2}:\d{2}(:\d{2})?$/.test(input.trim())) {

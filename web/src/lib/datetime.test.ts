@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatDate, formatShortDate, formatTime, formatDateTime, formatTdxDate, beijingNowParts } from './datetime'
+import { formatDate, formatShortDate, formatTime, formatDateTime, formatTdxDate, beijingNowParts, recentWeekdayDates, formatAPIDate } from './datetime'
 
 describe('datetime', () => {
   describe('formatDate', () => {
@@ -83,6 +83,31 @@ describe('datetime', () => {
 
     it('returns fallback', () => {
       expect(formatTdxDate(null)).toBe('-')
+    })
+  })
+
+  describe('recentWeekdayDates', () => {
+    // 国庆假期场景（本次 bug）：2026-10-03 是周六且处长假，
+    // 候选必须从周五继续往前扫到真实交易日 9/30
+    it('walks back from holiday Saturday over holidays to previous trading days', () => {
+      const dates = recentWeekdayDates(3, new Date(2026, 9, 3))
+      expect(dates.map(d => formatDate(d))).toEqual(['2026-10-02', '2026-10-01', '2026-09-30'])
+    })
+
+    it('skips weekends when walking back from Monday', () => {
+      const dates = recentWeekdayDates(2, new Date(2026, 9, 5))
+      expect(dates.map(d => formatDate(d))).toEqual(['2026-10-02', '2026-10-01'])
+    })
+
+    it('crosses year boundary with local date components', () => {
+      const dates = recentWeekdayDates(3, new Date(2026, 0, 1))
+      expect(dates.map(d => formatDate(d))).toEqual(['2025-12-31', '2025-12-30', '2025-12-29'])
+    })
+  })
+
+  describe('formatAPIDate', () => {
+    it('formats local date as YYYYMMDD', () => {
+      expect(formatAPIDate(new Date(2026, 8, 30))).toBe('20260930')
     })
   })
 })

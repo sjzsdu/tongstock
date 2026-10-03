@@ -28,7 +28,7 @@ import type { IndexBar, MinuteItem } from '../../types/api';
 import CandlestickChart from '../../components/charts/CandlestickChart';
 import ChartToolbar from '../../components/charts/ChartToolbar';
 import MinuteChart from '../../components/charts/MinuteChart';
-import { formatShortDate } from '../../lib/datetime';
+import { formatAPIDate, formatShortDate, recentWeekdayDates } from '../../lib/datetime';
 import { INDEX_NAMES } from '../../lib/pageTitle';
 
 type Tab = 'chart' | 'intraday' | 'stats' | 'components';
@@ -266,17 +266,21 @@ export default function IndexDetail() {
         }
 
         if (!loaded) {
-          const yesterday = new Date();
-          yesterday.setDate(yesterday.getDate() - (yesterday.getDay() === 0 ? 2 : yesterday.getDay() === 1 ? 3 : 1));
-          const dateStr = yesterday.toISOString().slice(0, 10).replace(/-/g, '');
-          try {
-            const histR = await api.minuteHistory(indexMinuteCode(code), dateStr);
-            if (histR.List && histR.List.length > 0) {
-              setMinuteData(histR.List);
-              setMinuteDate(formatShortDate(yesterday));
-              loaded = true;
+          // 与 useStockMinute 同策略：只按星期回退会在长假落到休市日，
+          // 改为逐日探测最近工作日，直到取到数据
+          for (const date of recentWeekdayDates()) {
+            const dateStr = formatAPIDate(date);
+            try {
+              const histR = await api.minuteHistory(indexMinuteCode(code), dateStr);
+              if (histR.List && histR.List.length > 0) {
+                setMinuteData(histR.List);
+                setMinuteDate(formatShortDate(date));
+                loaded = true;
+                break;
+              }
+            } catch {
+              // 该日无数据，继续往前
             }
-          } catch {
           }
         }
 
