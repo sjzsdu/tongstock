@@ -814,16 +814,74 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(req),
     }),
+
+  // ===== 可信方法自动化闭环（自动研究 / 方法市场 / 选方法筛选 / 前向监控）=====
+
+  /** 触发一轮自动方法研究：发现 → 保留窗口验证 → 按机器证据晋级/拒绝 */
+  methodResearchRun: (req: MethodResearchRequest = {}) =>
+    fetchJSON<MethodResearchResult>('/api/methods/research/run', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+
+  /** 最近一轮自动研究批次结果 */
+  methodResearchLast: () => fetchJSON<MethodResearchResult>('/api/methods/research/last'),
+
+  /** 未通过证据门槛的拒绝原因分布 */
+  methodRejectStats: () =>
+    fetchJSON<{ items: MethodRejectStat[]; total: number; rejected_methods: number }>(
+      '/api/methods/reject-stats',
+    ),
+
+  /** 已选方法的前向健康度（来自前向账本的只读评估） */
+  methodForwardHealth: () =>
+    fetchJSON<{ items: MethodForwardHealth[]; total: number }>('/api/methods/forward-health'),
+
+  /** 方法好用/不好用反馈：写入审计轨迹并反哺自动研究 */
+  methodFeedback: (id: string, useful: boolean, comment?: string) =>
+    fetchJSON<{ id: string; status: string; updated_at: string }>(
+      `/api/methods/${encodeURIComponent(id)}/feedback`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ useful, comment }),
+      },
+    ),
+
+  /** 用选中的方法在冻结快照上运行一次选股 */
+  selectionRunCreate: (req: SelectionRunRequest) =>
+    fetchJSON<SelectionRun>('/api/selections/run', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+
+  /** 单次选股运行详情（与 GET /api/selections/runs/:id 同源） */
+  selectionRunDetail: (id: string) =>
+    fetchJSON<SelectionRun>(`/api/selections/runs/${encodeURIComponent(id)}`),
 };
 
-export interface SelectionCandidate { rank:number;code:string;action:'buy'|'watch'|'avoid'|'insufficient_data';score:number;data_date:string;buy_window:string;position_cap_pct:number;exit:{max_holding_days?:number;stop_loss_pct?:number;take_profit_pct?:number;complete:boolean};risks?:string[];explanation:string;triggers:Array<{method_id:string;method_name:string;score:number}> }
-export interface SelectionRun { id:string;snapshot_id:string;feature_snapshot_id:string;snapshot_date:string;candidate_count:number;buy_count:number;candidates:SelectionCandidate[];exclusions:Array<{reason_code:string;detail:string}> }
+export interface SelectionTriggerFact { path:string;rule?:string;passed:boolean;detail?:string }
+export interface SelectionTrigger { method_id:string;method_version_id?:string;method_name:string;family_id?:string;score:number;facts:SelectionTriggerFact[];evidence?:MethodEvidence }
+export interface SelectionCandidate { rank:number;code:string;action:'buy'|'watch'|'avoid'|'insufficient_data';score:number;data_date:string;buy_window:string;position_cap_pct:number;exit:{max_holding_days?:number;stop_loss_pct?:number;take_profit_pct?:number;complete:boolean};risks?:string[];explanation:string;triggers:SelectionTrigger[] }
+export interface SelectionRun { id:string;run_hash?:string;snapshot_id:string;feature_snapshot_id:string;snapshot_date:string;eligible_methods?:number;scanned_stocks?:number;candidate_count:number;buy_count:number;action_counts?:Record<string,number>;candidates:SelectionCandidate[];exclusions:Array<{method_id?:string;code?:string;reason_code:string;detail:string}>;requested_method_ids?:string[];created_at?:string }
+export interface SelectionRunRequest { market_snapshot_id?:string;feature_snapshot_id?:string;method_ids:string[] }
 export interface PositionDecision { code:string;name:string;action:'hold'|'watch'|'reduce'|'exit'|'insufficient_data';priority:string;deadline:string;inferred:boolean;executable:boolean;constraint?:string;return_pct:number;price_time:string;explanation:string }
 export interface PositionDecisionRun { id:string;snapshot_id:string;snapshot_date:string;decisions:PositionDecision[] }
-export interface MethodEvidence { confidence:string;passable?:boolean;oos_trades:number;oos_return:number;oos_win_rate?:number;oos_max_drawdown:number;snapshot_id?:string;result_hash?:string }
-export interface MethodCard { id:string;family_id?:string;variant_id?:string;name:string;status:string;market:string;universe:string;holding_period:string;trigger_frequency?:string;entry_summary:string;exit_summary:string;invalidations?:string[];evidence?:MethodEvidence;updated_at:string }
+export interface MethodHealthState { score:number;forward_samples:number;drift?:boolean;decay?:boolean;execution_deviation?:boolean;critical_alerts?:number;consecutive_severe?:number;as_of?:string }
+export interface MethodEvidence { confidence:string;confidence_reason?:string;passable?:boolean;oos_trades:number;oos_return:number;oos_win_rate?:number;oos_max_drawdown:number;sharpe_ratio?:number;sortino_ratio?:number;snapshot_id?:string;result_hash?:string }
+export interface MethodCard { id:string;family_id?:string;variant_id?:string;name:string;status:string;market:string;universe:string;holding_period:string;trigger_frequency?:string;entry_summary:string;exit_summary:string;invalidations?:string[];evidence?:MethodEvidence;health?:MethodHealthState;updated_at:string }
 export interface MethodCardQuery { status?:string;market?:string;universe?:string;family_id?:string;holding_min_days?:number;holding_max_days?:number;limit?:number }
 export interface MethodAuditEvent { id:string;method_id:string;from:string;to:string;action:string;reason:string;actor:string;evidence_hash?:string;automatic:boolean;created_at:string }
+
+/** GET /api/methods/reject-stats 单条原因分布 */
+export interface MethodRejectStat { category:string;reason:string;count:number }
+
+/** GET /api/methods/forward-health 单条方法前向健康 */
+export interface MethodForwardHealth { method_id:string;name:string;status:string;score:number;forward_samples:number;executed_count:number;rejected_count:number;hit_rate?:number;avg_return?:number;execution_deviation:boolean;decay:boolean;drift:boolean;consecutive_severe:number;degraded:boolean;retired:boolean;as_of:string }
+
+/** POST /api/methods/research/run 请求与响应 */
+export interface MethodResearchRequest { snapshot_id?:string;codes?:string[];hold_days?:number[];search_budget?:number;max_codes?:number }
+export interface MethodResearchOutcome { template_id:string;method_id?:string;method_hash?:string;status:'verified'|'rejected'|'failed'|'skipped_registered'|'skipped_feedback';stage:string;confidence?:string;reason?:string;oos_trades?:number;oos_return?:number;sharpe_ratio?:number }
+export interface MethodResearchResult { started_at:string;finished_at:string;snapshot_id:string;universe_size:number;validation_start?:string;validation_end?:string;trials_this_batch:number;trials_cumulative:number;batches:Array<{hold_days:number;research_id?:string;discovery_trials:number;candidates:number;registered:number;verified:number;rejected:number;error?:string}>;outcomes:MethodResearchOutcome[];registered:number;verified:number;rejected:number }
 
 export interface OvernightCriteria {
 	change_pct: boolean;

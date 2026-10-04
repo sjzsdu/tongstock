@@ -31,6 +31,9 @@ import (
 	"github.com/sjzsdu/tongstock/internal/app/stockdata"
 	"github.com/sjzsdu/tongstock/internal/automation"
 	"github.com/sjzsdu/tongstock/internal/dashboard"
+	"github.com/sjzsdu/tongstock/internal/discovery"
+	"github.com/sjzsdu/tongstock/internal/methodautomation"
+	"github.com/sjzsdu/tongstock/internal/methodhealth"
 	"github.com/sjzsdu/tongstock/internal/ledger"
 	"github.com/sjzsdu/tongstock/internal/marketsnapshot"
 	"github.com/sjzsdu/tongstock/internal/methodregistry"
@@ -288,6 +291,8 @@ func NewApp(cfg *config.Config, opts Options) (_ *App, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("初始化每日选股引擎失败: %w", err)
 	}
+	// 手动「用选中方法筛选」：与每日自动选股共用同一引擎，仅限定方法集。
+	app.api.SetSelectionEngine(selectionEngine, marketSnapshots)
 	automationRuns, err := automationrepo.New(app.storage)
 	if err != nil {
 		return nil, fmt.Errorf("初始化自动任务仓库失败: %w", err)
@@ -342,6 +347,39 @@ func NewApp(cfg *config.Config, opts Options) (_ *App, err error) {
 	discoverRunner := discoveryapp.NewRunner(app.storage, discoverResolver, app.data)
 	app.api.SetDiscoverRunner(discoverRunner, discoverTraces)
 	app.setModule("discovery", "ready", "")
+
+	// 可信方法自动化闭环（阶段 A）：定时把「规律发现 → 保留窗口全池验证 →
+	// 按机器证据晋级/拒绝」跑起来，让方法库持续产出 verified 方法。
+	discoveryResearcher, err := discovery.NewResearcher(discoveryrepo.New(app.storage))
+	if err != nil {
+		return nil, fmt.Errorf("初始化规律发现引擎失败: %w", err)
+	}
+	methodAutomation, err := methodautomation.New(methodautomation.Deps{
+		Registry:   methodRegistry,
+		Snapshots:  paradigm.NewDatasetSnapshotStore(app.storage),
+		Universe:   validationrepo.NewSnapshotUniverse(app.storage),
+		Bars:       validationrepo.New(app.storage),
+		Benchmark:  validationrepo.NewBenchmark(app.storage),
+		Evidence:   seedEvidence,
+		Discoverer: discoveryResearcher,
+		Traces:     discoverTraces,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("初始化自动方法研究编排失败: %w", err)
+	}
+	app.api.SetMethodAutomation(methodAutomation)
+	app.api.StartMethodResearchScheduler(app.runCtx, 30*time.Minute)
+	app.setModule("method_automation", "ready", "")
+
+	// 前向健康闭环（阶段 D）：定时把前向账本的真实 paper-trade 表现回写到
+	// 方法库，由 Policy.Health 触发 observing/degraded/retired 转移。
+	healthEngine, err := methodhealth.New(methodRegistry, forwardLedger, true, nil)
+	if err != nil {
+		return nil, fmt.Errorf("初始化前向健康评估失败: %w", err)
+	}
+	app.api.SetMethodHealth(healthEngine)
+	app.api.StartMethodHealthScheduler(app.runCtx, 24*time.Hour)
+	app.setModule("method_health", "ready", "")
 
 	app.configureOptionalModules()
 	router := app.buildRouter()

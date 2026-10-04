@@ -263,4 +263,10 @@ export const operations = {
   getApiDashboardToday: { method: "GET", path: "/api/dashboard/today" },
   postApiOnboardingRun: { method: "POST", path: "/api/onboarding/run" },
   postApiMethodsSeed: { method: "POST", path: "/api/methods/seed" },
+  postApiMethodsResearchRun: { method: "POST", path: "/api/methods/research/run" },
+  getApiMethodsResearchLast: { method: "GET", path: "/api/methods/research/last" },
+  getApiMethodsRejectStats: { method: "GET", path: "/api/methods/reject-stats" },
+  getApiMethodsForwardHealth: { method: "GET", path: "/api/methods/forward-health" },
+  postApiMethodsFeedback: { method: "POST", path: "/api/methods/{id}/feedback" },
+  postApiSelectionsRun: { method: "POST", path: "/api/selections/run" },
 } as const;

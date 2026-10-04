@@ -13,6 +13,8 @@ import (
 	"github.com/sjzsdu/tongstock/internal/dashboard"
 	"github.com/sjzsdu/tongstock/internal/experiment"
 	"github.com/sjzsdu/tongstock/internal/ledger"
+	"github.com/sjzsdu/tongstock/internal/methodautomation"
+	"github.com/sjzsdu/tongstock/internal/methodhealth"
 	"github.com/sjzsdu/tongstock/internal/methodregistry"
 	"github.com/sjzsdu/tongstock/internal/methodseed"
 	"github.com/sjzsdu/tongstock/internal/monitoring"
@@ -52,7 +54,14 @@ type Server struct {
 	ledger                *ledger.SignalLedger
 	paradigmStore         *paradigms.Store
 	methodRegistry        *methodregistry.Registry
+	methodAutomation      *methodautomation.Orchestrator
+	methodHealth          *methodhealth.Evaluator
 	selectionRuns         selection.Repository
+	selectionEngine       *selection.Engine
+	selectionSnapshots    readySnapshotLister
+	researchMu            sync.RWMutex
+	researchLast          *methodautomation.BatchResult
+	researchLastError     string
 	positionEngine        *positiondecision.Engine
 	positionRuns          positiondecision.Repository
 	automationEngine      *automation.Orchestrator

@@ -25,6 +25,8 @@ const (
 type Request struct {
 	MarketSnapshotID  string `json:"market_snapshot_id"`
 	FeatureSnapshotID string `json:"feature_snapshot_id,omitempty"`
+	// MethodIDs 限定本次选股只跑这些方法；nil/空 = 全部 eligible 方法（向后兼容）。
+	MethodIDs []string `json:"method_ids,omitempty"`
 }
 
 type Trigger struct {
@@ -77,21 +79,24 @@ type Exclusion struct {
 }
 
 type Run struct {
-	ID                string         `json:"id"`
-	RunHash           string         `json:"run_hash"`
-	EngineVersion     string         `json:"engine_version"`
-	SnapshotID        string         `json:"snapshot_id"`
-	FeatureSnapshotID string         `json:"feature_snapshot_id"`
-	SnapshotDate      string         `json:"snapshot_date"`
-	Status            string         `json:"status"`
-	EligibleMethods   int            `json:"eligible_methods"`
-	ScannedStocks     int            `json:"scanned_stocks"`
-	CandidateCount    int            `json:"candidate_count"`
-	BuyCount          int            `json:"buy_count"`
-	ActionCounts      map[string]int `json:"action_counts"`
-	Candidates        []Candidate    `json:"candidates"`
-	Exclusions        []Exclusion    `json:"exclusions"`
-	CreatedAt         time.Time      `json:"created_at"`
+	ID                 string         `json:"id"`
+	RunHash            string         `json:"run_hash"`
+	EngineVersion      string         `json:"engine_version"`
+	SnapshotID         string         `json:"snapshot_id"`
+	FeatureSnapshotID  string         `json:"feature_snapshot_id"`
+	SnapshotDate       string         `json:"snapshot_date"`
+	Status             string         `json:"status"`
+	EligibleMethods    int            `json:"eligible_methods"`
+	ScannedStocks      int            `json:"scanned_stocks"`
+	CandidateCount     int            `json:"candidate_count"`
+	BuyCount           int            `json:"buy_count"`
+	ActionCounts       map[string]int `json:"action_counts"`
+	Candidates         []Candidate    `json:"candidates"`
+	Exclusions         []Exclusion    `json:"exclusions"`
+	// RequestedMethodIDs 记录本次请求明确指定的方法（空 = 全量运行），
+	// 让「结果与所选方法」在持久化层面可追溯。
+	RequestedMethodIDs []string       `json:"requested_method_ids,omitempty"`
+	CreatedAt          time.Time      `json:"created_at"`
 }
 
 type SnapshotRepository interface {

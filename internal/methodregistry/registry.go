@@ -63,7 +63,7 @@ func (r *Registry) Register(ctx context.Context, in Registration) (*Method, erro
 	m.UpdatedAt = now
 	v := MethodVersion{ID: stableID(id, fmt.Sprintf("%d", nextVersion), in.Method.ContentHash), Version: nextVersion, MethodHash: in.Method.ContentHash, CompilerVersion: in.Method.CompilerVersion, SourceResearchID: in.SourceResearchID, ValidationJobID: in.ValidationJobID, Method: cloneCompiled(in.Method), CreatedAt: now}
 	if e.ResultHash != "" {
-		v.Evidence = &EvidenceSummary{ResultHash: e.ResultHash, SnapshotID: e.SnapshotID, JobHash: e.JobHash, Confidence: e.Confidence, Passable: e.Passable, OOSTrades: e.OOSTrades, OOSReturn: e.OOSReturn, OOSWinRate: e.OOSWinRate, OOSMaxDrawdown: e.OOSMaxDrawdown}
+		v.Evidence = &EvidenceSummary{ResultHash: e.ResultHash, SnapshotID: e.SnapshotID, JobHash: e.JobHash, Confidence: e.Confidence, ConfidenceReason: e.ConfidenceReason, Passable: e.Passable, OOSTrades: e.OOSTrades, OOSReturn: e.OOSReturn, OOSWinRate: e.OOSWinRate, OOSMaxDrawdown: e.OOSMaxDrawdown, SharpeRatio: e.SharpeRatio, SortinoRatio: e.SortinoRatio}
 	}
 	m.Versions = append(m.Versions, v)
 	event := AuditEvent{ID: stableID(id, now.Format(time.RFC3339Nano)), MethodID: id, From: from, To: status, Action: "register", Reason: reason, Actor: "policy-engine", EvidenceHash: e.ResultHash, Automatic: true, CreatedAt: now}

@@ -1,6 +1,8 @@
 package validation
 
 import (
+	"strings"
+
 	"github.com/sjzsdu/tongstock/internal/ai_critic"
 	"github.com/sjzsdu/tongstock/internal/backtest"
 )
@@ -118,6 +120,49 @@ type ConfidenceInput struct {
 	OosTradeCount   int
 }
 
+// ExplainConfidence 返回置信度决策分支的机器可读原因码。
+// 与 ComputeConfidence 共用同一套分支判断，保证原因与结论永不漂移。
+// 返回值形如 "hard_blocker:xxx" / "insufficient_oos_trades" / "strong_evidence"。
+func ExplainConfidence(in ConfidenceInput) string {
+	// 1. 硬门槛
+	for _, b := range in.Blockers {
+		if b.Severity == "hard" {
+			return "hard_blocker:" + b.Code
+		}
+	}
+
+	// 2. 数据不足
+	if in.OosTradeCount < 8 {
+		return "insufficient_oos_trades"
+	}
+	if in.Stats.TotalTrades == 0 {
+		return "no_trades"
+	}
+
+	// 3. 多重检验
+	if in.MultipleTesting.Trials > 1 && !in.MultipleTesting.Significant {
+		return "multiple_testing_not_significant"
+	}
+
+	// 4. 样本外表现下限
+	if in.Stats.SharpeRatio < 0.5 {
+		return "oos_sharpe_below_threshold"
+	}
+	if in.Stats.MaxDrawdown > 0.40 {
+		return "oos_max_drawdown_above_threshold"
+	}
+
+	// 5. soft blocker
+	for _, b := range in.Blockers {
+		if b.Severity == "soft" {
+			return "soft_blocker:" + b.Code
+		}
+	}
+
+	// 6. 强置信
+	return "strong_evidence"
+}
+
 // ComputeConfidence 根据硬门槛、样本外表现、多重检验和 critic 反证计算最终置信等级。
 // 决策顺序：
 //  1. 存在 hard blocker → rejected
@@ -126,41 +171,23 @@ type ConfidenceInput struct {
 //  4. 样本外夏普 < 0.5 或最大回撤 > 40% → weak
 //  5. 存在 soft blocker → moderate
 //  6. 否则 → strong
+//
+// 具体命中哪个分支由 ExplainConfidence 给出，两者共享判断避免漂移。
 func ComputeConfidence(in ConfidenceInput) (ConfidenceLevel, bool) {
-	// 1. 硬门槛
-	for _, b := range in.Blockers {
-		if b.Severity == "hard" {
-			return ConfidenceRejected, false
-		}
-	}
-
-	// 2. 数据不足
-	if in.OosTradeCount < 8 {
+	switch reason := ExplainConfidence(in); {
+	case reason == "strong_evidence":
+		return ConfidenceStrong, true
+	case reason == "insufficient_oos_trades" || reason == "no_trades":
 		return ConfidenceInsufficient, false
-	}
-	if in.Stats.TotalTrades == 0 {
-		return ConfidenceInsufficient, false
-	}
-
-	// 3. 多重检验
-	if in.MultipleTesting.Trials > 1 && !in.MultipleTesting.Significant {
+	case reason == "multiple_testing_not_significant":
 		return ConfidenceRejected, false
-	}
-
-	// 4. 样本外表现下限
-	if in.Stats.SharpeRatio < 0.5 || in.Stats.MaxDrawdown > 0.40 {
+	case reason == "oos_sharpe_below_threshold" || reason == "oos_max_drawdown_above_threshold":
 		return ConfidenceWeak, false
+	case strings.HasPrefix(reason, "hard_blocker"):
+		return ConfidenceRejected, false
+	default: // soft_blocker:*
+		return ConfidenceModerate, true
 	}
-
-	// 5. soft blocker
-	for _, b := range in.Blockers {
-		if b.Severity == "soft" {
-			return ConfidenceModerate, true
-		}
-	}
-
-	// 6. 强置信
-	return ConfidenceStrong, true
 }
 
 // HasHardBlocker 是否存在硬门槛阻断。

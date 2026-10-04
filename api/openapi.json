@@ -4947,6 +4947,252 @@
           }
         }
       }
+    },
+    "/api/methods/research/run": {
+      "post": {
+        "operationId": "postApiMethodsResearchRun",
+        "summary": "触发一轮自动方法研究：规律发现 → 保留窗口全池验证 → 按机器证据晋级/拒绝",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "snapshot_id": {
+                    "type": "string"
+                  },
+                  "codes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "hold_days": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    }
+                  },
+                  "search_budget": {
+                    "type": "integer"
+                  },
+                  "max_codes": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Batch result with per-candidate outcomes and reject reasons",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/methods/research/last": {
+      "get": {
+        "operationId": "getApiMethodsResearchLast",
+        "summary": "最近一轮自动方法研究的批次结果（409 前无记录）",
+        "responses": {
+          "200": {
+            "description": "Last batch result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/methods/reject-stats": {
+      "get": {
+        "operationId": "getApiMethodsRejectStats",
+        "summary": "未通过证据门槛方法的拒绝原因分布（交易数不足/夏普不足/多重检验/critic 硬伤等）",
+        "responses": {
+          "200": {
+            "description": "Reject reason distribution aggregated from audit trail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/methods/forward-health": {
+      "get": {
+        "operationId": "getApiMethodsForwardHealth",
+        "summary": "已选方法的前向健康度：样本数/命中率/执行偏差/衰减/连续严重亏损（只读评估）",
+        "responses": {
+          "200": {
+            "description": "Per-method forward health aggregated from the signal ledger",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/methods/{id}/feedback": {
+      "post": {
+        "operationId": "postApiMethodsFeedback",
+        "summary": "方法好用/不好用反馈：写入注释与审计轨迹，反哺自动研究",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "useful": {
+                    "type": "boolean"
+                  },
+                  "comment": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "useful"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated method annotations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/selections/run": {
+      "post": {
+        "operationId": "postApiSelectionsRun",
+        "summary": "用选中的方法（method_ids）在冻结快照上运行一次选股；market_snapshot_id 缺省时取最新冻结快照",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "market_snapshot_id": {
+                    "type": "string"
+                  },
+                  "feature_snapshot_id": {
+                    "type": "string"
+                  },
+                  "method_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "method_ids"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Selection run with candidates, triggers and exclusions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "servers": [

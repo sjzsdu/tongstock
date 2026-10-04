@@ -50,6 +50,7 @@ const ROUTE_PAGES: Array<[RegExp, string]> = [
   [/^\/screen(\/|$)/, '信号筛选'],
   [/^\/portfolio(\/|$)/, '持仓卖出'],
   [/^\/blocks(\/|$)/, '股票池'],
+  [/^\/methods\/selection\//, '选股结果'],
   [/^\/methods(\/|$)/, '可信方法'],
   [/^\/paradigms(\/|$)/, '范式库'],
   [/^\/monitoring(\/|$)/, '范式监控'],

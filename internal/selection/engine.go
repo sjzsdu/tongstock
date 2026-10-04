@@ -53,17 +53,29 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Run, error) {
 		return nil, fmt.Errorf("feature snapshot %s content hash mismatch", feature.ID)
 	}
 
-	allMethods, err := e.methods.Query(ctx, methodregistry.Query{Limit: 10000})
+	allMethods, err := e.methods.Query(ctx, methodregistry.Query{IDs: req.MethodIDs, Limit: 10000})
 	if err != nil {
 		return nil, err
 	}
 	sort.Slice(allMethods, func(i, j int) bool { return allMethods[i].ID < allMethods[j].ID })
-	runHash := computeRunHash(market, feature, allMethods)
+	requested := normalizeRequestedIDs(req.MethodIDs)
+	runHash := computeRunHash(market, feature, allMethods, requested)
 	if previous, getErr := e.runs.Get(ctx, "hash:"+runHash, ""); getErr == nil {
 		return previous, nil
 	}
 
-	run := &Run{ID: "selection-" + runHash[:16], RunHash: runHash, EngineVersion: EngineVersion, SnapshotID: market.ID, FeatureSnapshotID: feature.ID, SnapshotDate: market.SnapshotDate, Status: "completed", ScannedStocks: len(feature.Values), ActionCounts: map[string]int{ActionBuy: 0, ActionWatch: 0, ActionAvoid: 0, ActionInsufficientData: 0}, Candidates: []Candidate{}, Exclusions: []Exclusion{}, CreatedAt: e.now()}
+	run := &Run{ID: "selection-" + runHash[:16], RunHash: runHash, EngineVersion: EngineVersion, SnapshotID: market.ID, FeatureSnapshotID: feature.ID, SnapshotDate: market.SnapshotDate, Status: "completed", ScannedStocks: len(feature.Values), ActionCounts: map[string]int{ActionBuy: 0, ActionWatch: 0, ActionAvoid: 0, ActionInsufficientData: 0}, Candidates: []Candidate{}, Exclusions: []Exclusion{}, RequestedMethodIDs: requested, CreatedAt: e.now()}
+	if len(requested) > 0 {
+		found := map[string]bool{}
+		for _, m := range allMethods {
+			found[m.ID] = true
+		}
+		for _, id := range requested {
+			if !found[id] {
+				run.Exclusions = append(run.Exclusions, Exclusion{MethodID: id, ReasonCode: "method_not_found", Detail: "requested method id does not exist in the registry"})
+			}
+		}
+	}
 	eligible := make([]*methodregistry.Method, 0)
 	for _, m := range allMethods {
 		reason := eligibilityReason(m, market)
@@ -394,9 +406,12 @@ func buyWindow(m *methodregistry.Method) string {
 func explain(c Candidate) string {
 	return fmt.Sprintf("%s 在 %s 的冻结数据上触发 %d 个独立方法族；确定性评分 %.2f，结论为 %s。", c.Code, c.DataDate, len(c.Triggers), c.Score, c.Action)
 }
-func computeRunHash(m *marketsnapshot.MarketSnapshot, f *marketsnapshot.FeatureSnapshot, items []*methodregistry.Method) string {
+func computeRunHash(m *marketsnapshot.MarketSnapshot, f *marketsnapshot.FeatureSnapshot, items []*methodregistry.Method, requested []string) string {
 	h := sha256.New()
 	fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s\x00%s", EngineVersion, m.ID, m.ContentHash, f.ID, f.ContentHash)
+	for _, id := range requested {
+		fmt.Fprintf(h, "\x00requested:%s", id)
+	}
 	for _, x := range items {
 		v := currentVersion(x)
 		if v != nil {
@@ -404,6 +419,25 @@ func computeRunHash(m *marketsnapshot.MarketSnapshot, f *marketsnapshot.FeatureS
 		}
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// normalizeRequestedIDs 去空白、去重并排序用户指定的方法 ID。
+func normalizeRequestedIDs(values []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	return out
 }
 func clamp(v, lo, hi float64) float64 {
 	if v < lo {

@@ -277,13 +277,14 @@ func (f *Factory) assemble(job ValidationJob, segResults []SegmentResult, oosSta
 	}
 	issues, blockers := RunCritic(criticIn, nil)
 
-	conf, passable := ComputeConfidence(ConfidenceInput{
+	confidenceIn := ConfidenceInput{
 		Stats:           oosStats,
 		Blockers:        blockers,
 		CriticIssues:    issues,
 		MultipleTesting: mt,
 		OosTradeCount:   len(oosTrades),
-	})
+	}
+	conf, passable := ComputeConfidence(confidenceIn)
 
 	bundle := &EvidenceBundle{
 		JobHash:         job.JobHash(),
@@ -300,10 +301,11 @@ func (f *Factory) assemble(job ValidationJob, segResults []SegmentResult, oosSta
 		DiscoveryTrials: job.DiscoveryTrials,
 		BonferroniAlpha: mt.BonferroniAlpha,
 		AdjustedPValue:  mt.AdjustedPValue,
-		CriticIssues:    issues,
-		Confidence:      conf,
-		Blockers:        blockers,
-		Passable:        passable,
+		CriticIssues:     issues,
+		Confidence:       conf,
+		ConfidenceReason: ExplainConfidence(confidenceIn),
+		Blockers:         blockers,
+		Passable:         passable,
 	}
 	bundle.ResultHash = bundle.ComputeResultHash()
 	return bundle, nil

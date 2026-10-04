@@ -25,15 +25,20 @@ const (
 )
 
 type EvidenceSummary struct {
-	ResultHash     string  `json:"result_hash"`
-	SnapshotID     string  `json:"snapshot_id"`
-	JobHash        string  `json:"job_hash"`
-	Confidence     string  `json:"confidence"`
-	Passable       bool    `json:"passable"`
-	OOSTrades      int     `json:"oos_trades"`
-	OOSReturn      float64 `json:"oos_return"`
-	OOSWinRate     float64 `json:"oos_win_rate"`
-	OOSMaxDrawdown float64 `json:"oos_max_drawdown"`
+	ResultHash       string   `json:"result_hash"`
+	SnapshotID       string   `json:"snapshot_id"`
+	JobHash          string   `json:"job_hash"`
+	Confidence       string   `json:"confidence"`
+	ConfidenceReason string   `json:"confidence_reason,omitempty"`
+	Passable         bool     `json:"passable"`
+	OOSTrades        int      `json:"oos_trades"`
+	OOSReturn        float64  `json:"oos_return"`
+	OOSWinRate       float64  `json:"oos_win_rate"`
+	OOSMaxDrawdown   float64  `json:"oos_max_drawdown"`
+	// SharpeRatio / SortinoRatio 来自样本外回测的已计算指标；旧数据为 nil，
+	// 前端必须把缺失如实展示为「待验证」，不得编默认值。
+	SharpeRatio  *float64 `json:"sharpe_ratio,omitempty"`
+	SortinoRatio *float64 `json:"sortino_ratio,omitempty"`
 }
 
 type MethodVersion struct {
@@ -115,14 +120,18 @@ type Registration struct {
 type Evidence interface{ RegistryEvidence() EvidenceInput }
 type EvidenceInput struct {
 	ResultHash, ComputedHash, SnapshotID, JobHash, MethodHash, StockCode, Confidence string
+	ConfidenceReason                                                                 string
 	Passable                                                                         bool
 	HasHardBlocker                                                                   bool
 	OOSTrades                                                                        int
 	OOSReturn, OOSWinRate, OOSMaxDrawdown                                            float64
+	SharpeRatio, SortinoRatio                                                        *float64
 }
 
 type Query struct {
 	Status         []Status
+	// IDs 按方法 ID 批量过滤；nil/空 = 不过滤（保持向后兼容）。
+	IDs            []string
 	Market         string
 	Universe       string
 	HoldingMinDays *int

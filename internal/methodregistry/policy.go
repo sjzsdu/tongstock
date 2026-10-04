@@ -20,7 +20,8 @@ func (v ValidationEvidence) RegistryEvidence() EvidenceInput {
 			hard = true
 		}
 	}
-	return EvidenceInput{ResultHash: b.ResultHash, ComputedHash: b.ComputeResultHash(), SnapshotID: b.SnapshotID, JobHash: b.JobHash, MethodHash: b.MethodHash, StockCode: b.StockCode, Confidence: string(b.Confidence), Passable: b.Passable, HasHardBlocker: hard, OOSTrades: b.OosStats.TotalTrades, OOSReturn: b.OosStats.TotalReturn, OOSWinRate: b.OosStats.WinRate, OOSMaxDrawdown: b.OosStats.MaxDrawdown}
+	sharpe, sortino := b.OosStats.SharpeRatio, b.OosStats.SortinoRatio
+	return EvidenceInput{ResultHash: b.ResultHash, ComputedHash: b.ComputeResultHash(), SnapshotID: b.SnapshotID, JobHash: b.JobHash, MethodHash: b.MethodHash, StockCode: b.StockCode, Confidence: string(b.Confidence), ConfidenceReason: b.ConfidenceReason, Passable: b.Passable, HasHardBlocker: hard, OOSTrades: b.OosStats.TotalTrades, OOSReturn: b.OosStats.TotalReturn, OOSWinRate: b.OosStats.WinRate, OOSMaxDrawdown: b.OosStats.MaxDrawdown, SharpeRatio: &sharpe, SortinoRatio: &sortino}
 }
 
 type Policy struct{}
@@ -42,10 +43,18 @@ func (Policy) Initial(methodExecutable bool, universe string, e EvidenceInput) (
 		return StatusRejected, "validation stock does not match single-stock method scope"
 	}
 	if e.HasHardBlocker || !e.Passable {
-		return StatusRejected, "validation promotion gate rejected method"
+		reason := "validation promotion gate rejected method"
+		if e.ConfidenceReason != "" {
+			reason += ": " + e.ConfidenceReason
+		}
+		return StatusRejected, reason
 	}
 	if e.Confidence != "moderate" && e.Confidence != "strong" {
-		return StatusRejected, "validation confidence below moderate"
+		reason := "validation confidence below moderate"
+		if e.ConfidenceReason != "" {
+			reason += ": " + e.ConfidenceReason
+		}
+		return StatusRejected, reason
 	}
 	if !strings.HasPrefix(universe, "single:") && e.StockCode != "" {
 		return StatusCandidate, "single-stock evidence cannot verify a broader method scope"

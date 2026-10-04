@@ -40,6 +40,7 @@ const EventDetail = lazy(lazyWithReload(() => import('./pages/news/EventDetail')
 const NewsHome = lazy(lazyWithReload(() => import('./pages/news/NewsHome')));
 const Monitoring = lazy(lazyWithReload(() => import('./pages/Monitoring')));
 const Methods = lazy(lazyWithReload(() => import('./pages/Methods')));
+const SelectionResult = lazy(lazyWithReload(() => import('./pages/SelectionResult')));
 const NotFound = lazy(lazyWithReload(() => import('./pages/NotFound')));
 
 // 懒加载 chunk 失败（重新部署后旧标签页请求旧 hash 文件返回 404）时，
@@ -343,6 +344,7 @@ export default function App() {
             <Route path="/paradigms" element={<Paradigms />} />
             <Route path="/monitoring" element={<Monitoring />} />
             <Route path="/methods" element={<Methods />} />
+            <Route path="/methods/selection/:runId" element={<SelectionResult />} />
             <Route path="/strategy/overnight" element={<OvernightArbitrage />} />
             <Route path="/news" element={<NewsHome />} />
             <Route path="/news/event/:id" element={<EventDetail />} />
@@ -374,6 +376,7 @@ function buildBreadcrumbs(pathname: string) {
     paradigms: '范式库',
     monitoring: '范式监控',
     methods: '可信方法库',
+    selection: '选股结果',
     strategy: '策略',
     overnight: '隔夜套利',
     agent: 'AI 助手',

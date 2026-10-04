@@ -68,6 +68,13 @@ func (r *SQLiteRepository) Query(ctx context.Context, q methodregistry.Query) ([
 	for _, s := range q.Status {
 		allowed[s] = true
 	}
+	idFilter := map[string]bool{}
+	for _, id := range q.IDs {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			idFilter[id] = true
+		}
+	}
 	var out []*methodregistry.Method
 	for rows.Next() {
 		var raw string
@@ -79,6 +86,9 @@ func (r *SQLiteRepository) Query(ctx context.Context, q methodregistry.Query) ([
 			return nil, err
 		}
 		if len(allowed) > 0 && !allowed[m.Status] {
+			continue
+		}
+		if len(idFilter) > 0 && !idFilter[m.ID] {
 			continue
 		}
 		if q.Market != "" && !strings.EqualFold(m.Market, q.Market) {
