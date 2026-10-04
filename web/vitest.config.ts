@@ -9,8 +9,6 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     passWithNoTests: true,
-    poolOptions: {
-      threads: { singleThread: true },
-    },
+    maxWorkers: 1,
   },
 })

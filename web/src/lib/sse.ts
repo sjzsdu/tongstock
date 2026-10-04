@@ -19,7 +19,7 @@ export async function readSSE(
     const { value, done } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
-    let idx = -1;
+    let idx: number;
     while ((idx = buffer.indexOf('\n\n')) >= 0) {
       const raw = buffer.slice(0, idx);
       buffer = buffer.slice(idx + 2);
