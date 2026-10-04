@@ -15,12 +15,12 @@ jobs:
     name: Build and test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: tongstock
 
       - name: Checkout picoclaw sibling module
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: sjzsdu/picoclaw
           ref: 1f8286e5e91187a1d978d0a1869d9ddb5a1d9c9c
@@ -28,20 +28,20 @@ jobs:
 
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: tongstock/go.mod
           cache-dependency-path: tongstock/go.sum
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
-          version: 10
+          version: 12
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: '24'
           cache: pnpm
           cache-dependency-path: tongstock/web/pnpm-lock.yaml
 
@@ -91,14 +91,14 @@ jobs:
           exit 1
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tongstock-linux-amd64
           path: tongstock/tongstock-linux-amd64.tar.gz
           if-no-files-found: error
 
       - name: Upload web dist artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tongstock-web-dist
           path: tongstock/web/dist

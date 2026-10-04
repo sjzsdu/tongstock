@@ -23,42 +23,42 @@ jobs:
           - os: ubuntu-24.04-arm
             goos: linux
             goarch: arm64
-          - os: macos-13
+          - os: macos-15-intel
             goos: darwin
             goarch: amd64
-          - os: macos-14
+          - os: macos-15
             goos: darwin
             goarch: arm64
           - os: windows-latest
             goos: windows
             goarch: amd64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: tongstock
 
       - name: Checkout picoclaw sibling module
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: sjzsdu/picoclaw
           ref: 1f8286e5e91187a1d978d0a1869d9ddb5a1d9c9c
           path: picoclaw
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: tongstock/go.mod
           cache-dependency-path: tongstock/go.sum
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
-          version: 10
+          version: 12
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: '24'
           cache: pnpm
           cache-dependency-path: tongstock/web/pnpm-lock.yaml
 
@@ -110,7 +110,7 @@ jobs:
           fi
 
       - name: Upload package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tongstock-${{ steps.version.outputs.value }}-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
@@ -125,14 +125,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           pattern: tongstock-*
           merge-multiple: true
 
       - name: Create draft release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: artifacts/*
           draft: true
