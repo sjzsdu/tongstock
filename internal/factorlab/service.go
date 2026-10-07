@@ -319,8 +319,10 @@ func (s *Service) Run(ctx context.Context, opts Options) (*RunResult, error) {
 }
 
 // ToPickRun 把一轮研究结果转换成因子通道的可持久化产出。
-// topK<=0 表示全量采用 res.TopPicks；无显著因子（无 picks）时返回错误——
-// 不显著就没有名单，诚实原则不允许产出空名单占位。
+// topK<=0 表示全量采用 res.TopPicks。
+// 与 Run 的语义分工：Run 在无显著因子时返回**空结果 + 诚实文案**（无预测力
+// 是如实报告，不是故障）；本函数只在持久化层面拒绝——没有名单就没有可落库
+// 的产出，诚实原则不允许空名单占位，调用方据此跳过落库而非报错。
 func (r *RunResult) ToPickRun(topK int) (*PickRun, error) {
 	if r == nil || strings.TrimSpace(r.LastDate) == "" {
 		return nil, fmt.Errorf("factor research result has no cross-section date")

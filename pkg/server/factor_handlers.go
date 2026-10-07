@@ -105,11 +105,12 @@ func (s *Server) recordFactorResult(result *factorlab.RunResult, err error) {
 
 // saveFactorPicks 把显著因子 TopN 写成因子通道持久化产出。幂等按 run_id
 // （pick-<截面日期>）更新；last_date 属于历史截面的旧行不会干扰新截面。
+// 注意：无显著因子不是研究失败（Run 返回空结果+诚实文案），只是这一轮
+// 没有可落库的名单——如实记 info 级日志，绝不用错误措辞伪装成故障。
 func (s *Server) saveFactorPicks(result *factorlab.RunResult) {
 	pickRun, err := result.ToPickRun(0)
 	if err != nil {
-		// 无显著因子或无截面日期：如实记日志，不产出空名单。
-		log.Printf("factor research: skip pick persistence (%v)", err)
+		log.Printf("factor research: 本轮无可落库名单，跳过持久化（%v）", err)
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

@@ -394,6 +394,9 @@ func NewApp(cfg *config.Config, opts Options) (_ *App, err error) {
 		return nil, fmt.Errorf("初始化因子通道产出仓库失败: %w", err)
 	}
 	app.api.SetFactorPicks(pickStore)
+	// 因子候选通道：选股引擎读取最近落库名单，把新鲜（≤14 天）的因子 TopN
+	// 以 watch 级候选并入每日选股产出（staleness 门控 + 贡献分解透出）。
+	selectionEngine.SetFactorPicks(pickStore)
 	app.setModule("factor_lab", "ready", "")
 
 	// 前向健康闭环（阶段 D）：定时把前向账本的真实 paper-trade 表现回写到

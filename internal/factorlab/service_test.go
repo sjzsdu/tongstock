@@ -299,6 +299,47 @@ func TestRunWithoutSignificantFactorsOmitsPicksButStaysHonest(t *testing.T) {
 	}
 }
 
+// ToPickRun 的两条契约：有名单时 run_id 按截面日期幂等（同日重跑同键）；
+// 无名单时硬拒绝（持久化层面不允许空名单占位），但这是「无产出」而非研究失败。
+func TestToPickRunIdempotentKeyAndEmptyRefusal(t *testing.T) {
+	res := &RunResult{
+		SnapshotID: "snap-x", LastDate: "2024-02-09", SnapshotDateEnd: "2024-02-09",
+		StartedAt:  time.Date(2024, 2, 9, 8, 0, 0, 0, time.UTC),
+		FinishedAt: time.Date(2024, 2, 9, 8, 0, 5, 0, time.UTC),
+		TopPicks:   []TopPick{{Code: "600000", Score: 0.5, Contributions: map[string]float64{"momentum_5d": 0.5}}},
+		Note:       "note",
+	}
+	pick, err := res.ToPickRun(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pick.RunID != "pick-2024-02-09" || pick.AsOf != "2024-02-09" {
+		t.Fatalf("run_id must be pick-<as_of>, got %s/%s", pick.RunID, pick.AsOf)
+	}
+	if len(pick.Picks) != 1 || pick.Picks[0].Code != "600000" {
+		t.Fatalf("picks must carry through, got %+v", pick.Picks)
+	}
+	if len(pick.FactorsSnapshot) != 0 {
+		t.Fatalf("factors snapshot should pass through (empty here), got %d", len(pick.FactorsSnapshot))
+	}
+
+	// topK>0 截断。
+	res.TopPicks = append(res.TopPicks, TopPick{Code: "600001", Score: 0.4}, TopPick{Code: "600002", Score: 0.3})
+	pick, err = res.ToPickRun(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pick.Picks) != 2 || pick.Picks[0].Code != "600000" || pick.Picks[1].Code != "600001" {
+		t.Fatalf("topK=2 must truncate keeping order, got %+v", pick.Picks)
+	}
+
+	// 无名单：持久化硬拒绝（Run 层面同场景返回空结果，非故障）。
+	_, err = (&RunResult{LastDate: "2024-02-09"}).ToPickRun(0)
+	if err == nil || !strings.Contains(err.Error(), "no significant factors") {
+		t.Fatalf("empty picks must be refused with honest reason, got %v", err)
+	}
+}
+
 func groupByCode(bars []validation.BacktestBar) map[string][]validation.BacktestBar {
 	out := map[string][]validation.BacktestBar{}
 	for _, b := range bars {

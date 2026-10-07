@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sjzsdu/tongstock/internal/factorlab"
 	"github.com/sjzsdu/tongstock/internal/marketsnapshot"
 	"github.com/sjzsdu/tongstock/internal/methodregistry"
 	"github.com/sjzsdu/tongstock/internal/methods"
@@ -21,6 +22,9 @@ type Engine struct {
 	methods   MethodRepository
 	runs      Repository
 	now       func() time.Time
+	// factorPicks 因子通道产出源（可选）：注入后 Run 会把最近落库的因子 TopN
+	// 名单转成 watch 级候选（见 factor_channel.go）。
+	factorPicks FactorPickSource
 }
 
 func NewEngine(s SnapshotRepository, m MethodRepository, r Repository) (*Engine, error) {
@@ -53,13 +57,17 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Run, error) {
 		return nil, fmt.Errorf("feature snapshot %s content hash mismatch", feature.ID)
 	}
 
+	// 因子通道：在算 run hash 之前读最近落库名单（名单身份参与幂等哈希：
+	// 名单更新必须产出新 run，不能用旧缓存的因子候选）。
+	factorPick, factorPickErr := e.resolveFactorPick(ctx, normalizeRequestedIDs(req.MethodIDs))
+
 	allMethods, err := e.methods.Query(ctx, methodregistry.Query{IDs: req.MethodIDs, Limit: 10000})
 	if err != nil {
 		return nil, err
 	}
 	sort.Slice(allMethods, func(i, j int) bool { return allMethods[i].ID < allMethods[j].ID })
 	requested := normalizeRequestedIDs(req.MethodIDs)
-	runHash := computeRunHash(market, feature, allMethods, requested)
+	runHash := computeRunHash(market, feature, allMethods, requested, factorPick)
 	if previous, getErr := e.runs.Get(ctx, "hash:"+runHash, ""); getErr == nil {
 		return previous, nil
 	}
@@ -157,6 +165,8 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Run, error) {
 		candidate.Explanation = explain(candidate)
 		run.Candidates = append(run.Candidates, candidate)
 	}
+	// 因子通道候选：watch-only、staleness 门控、贡献分解透出（见 factor_channel.go）。
+	e.appendFactorCandidates(run, factorPick, factorPickErr)
 	sort.Slice(run.Candidates, func(i, j int) bool {
 		if run.Candidates[i].Score == run.Candidates[j].Score {
 			return run.Candidates[i].Code < run.Candidates[j].Code
@@ -406,11 +416,14 @@ func buyWindow(m *methodregistry.Method) string {
 func explain(c Candidate) string {
 	return fmt.Sprintf("%s 在 %s 的冻结数据上触发 %d 个独立方法族；确定性评分 %.2f，结论为 %s。", c.Code, c.DataDate, len(c.Triggers), c.Score, c.Action)
 }
-func computeRunHash(m *marketsnapshot.MarketSnapshot, f *marketsnapshot.FeatureSnapshot, items []*methodregistry.Method, requested []string) string {
+func computeRunHash(m *marketsnapshot.MarketSnapshot, f *marketsnapshot.FeatureSnapshot, items []*methodregistry.Method, requested []string, factorPick *factorlab.PickRun) string {
 	h := sha256.New()
 	fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s\x00%s", EngineVersion, m.ID, m.ContentHash, f.ID, f.ContentHash)
 	for _, id := range requested {
 		fmt.Fprintf(h, "\x00requested:%s", id)
+	}
+	if factorPick != nil {
+		fmt.Fprintf(h, "\x00factor-pick:%s:%d", factorPick.RunID, factorPick.UpdatedAt)
 	}
 	for _, x := range items {
 		v := currentVersion(x)

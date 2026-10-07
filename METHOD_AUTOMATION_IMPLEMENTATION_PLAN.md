@@ -432,7 +432,8 @@ factorlab 不改选股引擎，先把「预测力」作为独立研究对象建�
 * **方案决策（含一次试错）**：先尝试把因子 TopN 写进 `internal/selection` 的 selection 表——发现 selection 硬架构 FK 强制指向 market_snapshot / feature_snapshot，与 factorlab 用 paradigm dataset_snapshot 不兼容；且形态投票选股语义（触发/黑名单/风险触发器）不能承载因子名单。**已回滚**，改用独立通道表。
 * **存储（`internal/factorlab/channel.go` + 迁移 v22 `factor_pick_run_channel`）**：表 `factor_pick_run`，`run_id = "pick-<AsOf>"`（AsOf = 最后截面日期）为主键，同一截面日重跑幂等更新（INSERT ON CONFLICT DO UPDATE），`idx(as_of DESC, updated_at_ns DESC)` 支撑 GetLatestPickRun。
 * **写入路径**：`POST /factors/research/run` 带 `write_to_selection:true` 时，批次完成后调 `RunResult.ToPickRun` 转 PickRun 落库；**无显著因子（无 picks）时如实报错并仅落日志，不产出空名单占位**。整行 JSON 存档 factors_snapshot 因子评估、逐股票贡献分解，保证任何一天都能回答「那天为什么是这些股票」。
-* **读取路径**：`GET /api/factors/picks/last` 返回最近一次 PickRun（无产出返回 200 `no_pick_run`），前端「因子名单」卡片只读展示：run_id / 截面日 / 过时天数 / 落库时因子评估快照 / TopN + 贡献分解。不进方法库、不经 validation 晋级门槛、不接前向监控——观察价值先行，升级为可验证方法走 AI 挖因子里程碑（7.6-2）。
+* **读取路径**：`GET /api/factors/picks/last` 返回最近一次 PickRun（无产出返回 200 `no_pick_run`），前端「因子名单」卡片只读展示：run_id / 截面日 / 过时天数 / 落库时因子评估快照 / TopN + 贡献分解。不进方法库、不经 validation 晋级门槛——升级为可验证方法走 AI 挖因子里程碑（7.6-2）。
+* **接入每日选股（引擎内建因子候选通道，已落地）**：`selection.Engine.SetFactorPicks` 注入后，`Run` 把最近落库名单转成 **watch 级候选**并入每日选股产出（`internal/selection/factor_channel.go`）。与形态方法严格区分的语义：因子方法**不注册进 methodregistry**（方法库本体是「可编译形态规则 + OOS 交易证据」，因子组合是「截面排序 + IC 证据」，硬注册要伪造 CompiledMethod 与 Evidence 语义，踩证据诚实红线）；候选永远 watch（无个股退出计划，score 不参与 0.65 买入线）；逐因子贡献分解随 trigger facts 透出；**staleness 门控**——名单截面日距今 >14 天不进选股，只记 `factor_pick_stale` exclusion；读取失败记 `factor_pick_unavailable`，不拖垮整轮选股；名单身份（run_id+updated_at）参与 run hash，名单更新必产出新 run，幂等缓存不串。显式指定方法 ID 时不点名 `factor-combo` 则不启用。
 * **测试**：pkg/server 夹具用相位式截面数据（趋势-反转排布，与 internal/factorlab 同构）锁死「run 产出真实结果 + TopK 可控 + write_to_selection 落数 + 同截面日幂等」四条链。
 
 ### 7.6 下一里程碑（未做）
