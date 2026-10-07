@@ -839,11 +839,21 @@ export const api = {
       body: JSON.stringify(req),
     }),
 
-  /** 最近一次完成的因子研究结果；从未跑过时返回 { status:'no_completed_run' }，批次运行中带 running:true */
-  factorResearchLast: () =>
-    fetchJSON<FactorResearchResult & { running?: boolean } | { status: string; running?: boolean }>(
-      '/api/factors/research/last',
-    ),
+  /** 最近一次完成的因子研究结果；从未跑过时返回 { status:'no_completed_run' }，批次运行中带 running:true。
+   *  后端包封为 { running, last_error?, result? }，这里拆包成扁平结果并透传 running/last_error。 */
+  factorResearchLast: async () => {
+    const res = await fetchJSON<
+      | { running?: boolean; last_error?: string; result: FactorResearchResult }
+      | { running?: boolean; last_error?: string; status: string }
+    >('/api/factors/research/last');
+    if ('result' in res) {
+      return { ...res.result, running: res.running, last_error: res.last_error } as FactorResearchResult & {
+        running?: boolean;
+        last_error?: string;
+      };
+    }
+    return res as { status: string; running?: boolean; last_error?: string };
+  },
 
   /** 因子通道最近一次落库的 TopN 观察名单（write_to_selection=true 的产出）；尚无产出时返回 { status:'no_pick_run' } */
   factorPicksLast: () =>

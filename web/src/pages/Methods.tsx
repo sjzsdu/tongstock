@@ -310,6 +310,7 @@ function ResearchResultCard({ result }: { result: MethodResearchResult }) {
     }
     setResult(undefined);
     setRunning('running' in res ? Boolean(res.running) : false);
+    if (res.status === 'failed' && res.last_error) setError(res.last_error);
     return false;
   }, []);
 
@@ -471,7 +472,7 @@ function ResearchResultCard({ result }: { result: MethodResearchResult }) {
               />
             )}
             <Alert
-              type={result.factors.some((f) => f.significant) ? 'info' : 'warning'}
+              type={result.factors?.some((f) => f.significant) ? 'info' : 'warning'}
               showIcon
               message={result.note}
               description={
@@ -483,11 +484,11 @@ function ResearchResultCard({ result }: { result: MethodResearchResult }) {
                 </Space>
               }
             />
-            {result.top_picks.length > 0 && (
+            {(result.top_picks?.length ?? 0) > 0 && (
               <Table
                 size="small"
                 columns={pickColumns}
-                dataSource={result.top_picks}
+                dataSource={result.top_picks ?? []}
                 rowKey="code"
                 pagination={false}
               />
@@ -497,12 +498,12 @@ function ResearchResultCard({ result }: { result: MethodResearchResult }) {
               items={[
                 {
                   key: 'factors',
-                  label: `因子预测力明细（${result.factors.length} 个因子，按显著性与 |t| 排序）`,
+                  label: `因子预测力明细（${result.factors?.length ?? 0} 个因子，按显著性与 |t| 排序）`,
                   children: (
                     <Table
                       size="small"
                       columns={factorColumns}
-                      dataSource={result.factors}
+                      dataSource={result.factors ?? []}
                       rowKey="key"
                       pagination={false}
                     />
