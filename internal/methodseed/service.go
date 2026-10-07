@@ -184,6 +184,19 @@ func (s *Service) loadOne(ctx context.Context, seed methods.SeedCandidate, snaps
 	}
 	out.MethodHash = compiled.ContentHash
 
+	// 同 family + methodHash 已登记过就跳过：种子方法内容是确定性的，重复
+	// 载入只会原样重跑回测并再写一条 register 审计事件，污染证据链。
+	if existing, err := s.deps.Registry.Cards(ctx, methodregistry.Query{FamilyID: "seed-" + seed.Key, Limit: 50}); err == nil {
+		for _, card := range existing {
+			if card.VariantID == compiled.ContentHash {
+				out.Status = "skipped_registered"
+				out.MethodID = card.ID
+				out.Error = "同内容方法已登记过（family+hash 相同），跳过重复载入"
+				return out
+			}
+		}
+	}
+
 	job := validation.ValidationJob{
 		MethodHash:      compiled.ContentHash,
 		MethodName:      compiled.Name,
@@ -228,6 +241,7 @@ func (s *Service) loadOne(ctx context.Context, seed methods.SeedCandidate, snaps
 	m, err := s.deps.Registry.Register(ctx, methodregistry.Registration{
 		FamilyID:         "seed-" + seed.Key,
 		VariantID:        compiled.ContentHash,
+		Name:             "[内置] " + compiled.Name,
 		ValidationJobID:  bundle.JobHash,
 		Market:           "A",
 		TriggerFrequency: "daily",

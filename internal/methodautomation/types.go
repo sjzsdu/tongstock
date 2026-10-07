@@ -40,6 +40,7 @@ type CandidateOutcome struct {
 	Reason      string   `json:"reason,omitempty"`
 	OOSTrades   int      `json:"oos_trades,omitempty"`
 	OOSReturn   float64  `json:"oos_return,omitempty"`
+	OOSWinRate  float64  `json:"oos_win_rate,omitempty"`
 	SharpeRatio *float64 `json:"sharpe_ratio,omitempty"`
 }
 

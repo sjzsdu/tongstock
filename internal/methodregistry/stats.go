@@ -20,6 +20,10 @@ type RejectStat struct {
 // 机器可读原因码；这里按语义归类，未知原因统一落到 other，绝不编造。
 func ReasonCategory(reason string) string {
 	switch {
+	case strings.Contains(reason, "ss-trades"), strings.Contains(reason, "ss-sample"):
+		return "insufficient_trades"
+	case strings.Contains(reason, "bl-underperform"), strings.Contains(reason, "bl-excess"), strings.Contains(reason, "bl-sharpe"), strings.Contains(reason, "bl-return"):
+		return "below_baseline"
 	case strings.Contains(reason, "hard_blocker"):
 		return "critic_hard_blocker"
 	case strings.Contains(reason, "insufficient_oos_trades"), strings.Contains(reason, "no_trades"):
@@ -47,8 +51,31 @@ func ReasonCategory(reason string) string {
 	}
 }
 
+// normalizeCodes 是 ai_critic 原因码的语义前缀；完整原因码形如
+// "hard_blocker:ss-trades-<methodHash>"，且 policy 写审计时还会包一层
+// "validation promotion gate rejected method: " 前缀，所以必须按
+// "包含已知码" 匹配，把随机 hash 归一掉，同类别才能合并计数。
+var normalizeCodes = []string{
+	"hard_blocker:ss-trades", "hard_blocker:ss-sample",
+	"hard_blocker:bl-underperform", "hard_blocker:bl-excess", "hard_blocker:bl-sharpe", "hard_blocker:bl-return",
+	"hard_blocker:dl-embargo", "hard_blocker:dl-purge", "hard_blocker:dl-overlap",
+}
+
+// NormalizeRejectReason 把审计原因归一为无随机后缀的稳定键。
+// 同一类别（样本交易不足 / 跑输基准等）原本会被不同方法的 hash 拆成
+// N 条独立计数，统计分布失去意义。
+func NormalizeRejectReason(reason string) string {
+	for _, code := range normalizeCodes {
+		if strings.Contains(reason, code) {
+			return code
+		}
+	}
+	return reason
+}
+
 // RejectStats 聚合当前所有 rejected 方法最新一次「注册被拒」的原因分布。
-// 数据来源是既有审计轨迹（AuditEvent.Reason），不引入新的持久化状态。
+// 数据来源是既有审计轨迹（AuditEvent.Reason），不引入新的持久化状态；
+// 原因先经 NormalizeRejectReason 去随机后缀，同类别合并计数。
 func (r *Registry) RejectStats(ctx context.Context) ([]RejectStat, error) {
 	methods, err := r.repo.Query(ctx, Query{Status: []Status{StatusRejected}, Limit: 5000})
 	if err != nil {
@@ -66,6 +93,7 @@ func (r *Registry) RejectStats(ctx context.Context) ([]RejectStat, error) {
 		if reason == "" {
 			reason = "rejected without recorded reason"
 		}
+		reason = NormalizeRejectReason(reason)
 		counts[reason]++
 		reasons[reason] = ReasonCategory(reason)
 		total++

@@ -25,16 +25,16 @@ const (
 )
 
 type EvidenceSummary struct {
-	ResultHash       string   `json:"result_hash"`
-	SnapshotID       string   `json:"snapshot_id"`
-	JobHash          string   `json:"job_hash"`
-	Confidence       string   `json:"confidence"`
-	ConfidenceReason string   `json:"confidence_reason,omitempty"`
-	Passable         bool     `json:"passable"`
-	OOSTrades        int      `json:"oos_trades"`
-	OOSReturn        float64  `json:"oos_return"`
-	OOSWinRate       float64  `json:"oos_win_rate"`
-	OOSMaxDrawdown   float64  `json:"oos_max_drawdown"`
+	ResultHash       string  `json:"result_hash"`
+	SnapshotID       string  `json:"snapshot_id"`
+	JobHash          string  `json:"job_hash"`
+	Confidence       string  `json:"confidence"`
+	ConfidenceReason string  `json:"confidence_reason,omitempty"`
+	Passable         bool    `json:"passable"`
+	OOSTrades        int     `json:"oos_trades"`
+	OOSReturn        float64 `json:"oos_return"`
+	OOSWinRate       float64 `json:"oos_win_rate"`
+	OOSMaxDrawdown   float64 `json:"oos_max_drawdown"`
 	// SharpeRatio / SortinoRatio 来自样本外回测的已计算指标；旧数据为 nil，
 	// 前端必须把缺失如实展示为「待验证」，不得编默认值。
 	SharpeRatio  *float64 `json:"sharpe_ratio,omitempty"`
@@ -105,8 +105,11 @@ type AuditEvent struct {
 }
 
 type Registration struct {
-	FamilyID         string
-	VariantID        string
+	FamilyID  string
+	VariantID string
+	// Name 可选：覆盖方法显示名（如自动研究给模板名附上持有期与来源前缀）。
+	// 空 = 使用 compiled method 自带名称。
+	Name             string
 	SourceResearchID string
 	ValidationJobID  string
 	Market           string
@@ -129,7 +132,7 @@ type EvidenceInput struct {
 }
 
 type Query struct {
-	Status         []Status
+	Status []Status
 	// IDs 按方法 ID 批量过滤；nil/空 = 不过滤（保持向后兼容）。
 	IDs            []string
 	Market         string

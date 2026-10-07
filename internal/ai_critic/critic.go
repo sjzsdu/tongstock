@@ -667,16 +667,21 @@ func (c *BaselineCompareChecker) Check(input ReviewInput) []ReviewIssue {
 		})
 	}
 
-	// 如果总收益为正但基线收益更高, 需要警告
+	// 如果总收益为正但基线收益更高, 需要警告。
+	// 注意：这里只能降级为 medium 警告，绝不能是 critical 硬阻断——基准是
+	// 等权满仓全程持有，而信号型方法只在触发时进场、持仓 5–20 天，资金利用率
+	// 天然更低，单边行情下绝对收益跑不赢满仓基准是常态。真正的红线是上方的
+	// 超额收益（bl-excess）与超额夏普（bl-sharpe）：风险调整后仍跑不赢，才该拒。
+	// 曾因该判据把「胜率 70.6%、102 笔样本外交易、夏普 1.15」的稳健方法误杀成 rejected。
 	if input.Results.TotalReturn > 0 && input.Results.BaselineReturn > input.Results.TotalReturn {
 		issues = append(issues, ReviewIssue{
 			ID:             fmt.Sprintf("bl-underperform-%s", input.TargetID),
 			Dimension:      DimBaselineCompare,
-			Severity:       SevCritical,
-			Title:          "策略跑输基准",
-			Description:    fmt.Sprintf("策略收益 %.1f%% < 基准收益 %.1f%%, 绝对跑输", input.Results.TotalReturn*100, input.Results.BaselineReturn*100),
+			Severity:       SevMedium,
+			Title:          "策略绝对收益跑输满仓基准（仅供参考）",
+			Description:    fmt.Sprintf("策略收益 %.1f%% < 基准收益 %.1f%%。基准为等权满仓持有，信号型方法资金利用率低，绝对收益跑输属常态；风险调整后的超额门槛见 bl-excess/bl-sharpe", input.Results.TotalReturn*100, input.Results.BaselineReturn*100),
 			Evidence:       fmt.Sprintf("total=%.4f, baseline=%.4f", input.Results.TotalReturn, input.Results.BaselineReturn),
-			Recommendation: "策略在当前时段显著跑输基准, 需要调整或暂停",
+			Recommendation: "关注超额夏普与超额收益门槛，绝对收益对比仅作参考",
 			MetricName:     "relative_performance",
 			MetricValue:    input.Results.TotalReturn - input.Results.BaselineReturn,
 			CreatedAt:      time.Now(),

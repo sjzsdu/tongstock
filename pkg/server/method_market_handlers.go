@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -20,6 +21,7 @@ import (
 func (s *Server) registerMethodMarketRoutes(api *gin.RouterGroup) {
 	api.POST("/methods/research/run", s.handleMethodResearchRun)
 	api.GET("/methods/research/last", s.handleMethodResearchLast)
+	api.GET("/methods/research/status", s.handleMethodResearchStatus)
 	api.GET("/methods/reject-stats", s.handleMethodRejectStats)
 	api.GET("/methods/forward-health", s.handleMethodForwardHealth)
 	api.POST("/methods/:id/feedback", s.handleMethodFeedback)
@@ -29,6 +31,12 @@ func (s *Server) registerMethodMarketRoutes(api *gin.RouterGroup) {
 // ---------------------------------------------------------------------------
 // 自动方法研究（阶段 A 供给）
 // ---------------------------------------------------------------------------
+
+// methodResearchTimeout 是单轮自动研究的硬上限。
+// 真实库 1146 只股票的快照，默认一轮 = 持有期 [5,20] × 每期 24 模板扫描（股票池
+// 截到 300）+ 每候选在保留窗口上的全池样本外回测，可能远超 30 分钟。批次已在
+// 后台运行（HTTP 立即返回），该超时只作为防泄漏护栏，不是预期完成时间。
+const methodResearchTimeout = 90 * time.Minute
 
 // SetMethodAutomation 注册自动方法研究编排器。
 func (s *Server) SetMethodAutomation(orch *methodautomation.Orchestrator) {
@@ -51,32 +59,97 @@ func (s *Server) handleMethodResearchRun(c *gin.Context) {
 		WriteError(c, http.StatusBadRequest, "invalid_request", "请求体格式错误: "+err.Error())
 		return
 	}
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Minute)
-	defer cancel()
-	result, err := s.methodAutomation.Run(ctx, methodautomation.Request{
+	// 预检单飞互斥：批次已在跑直接 409（附已运行时长），避免起第二个空转 goroutine。
+	if running, since := s.methodAutomation.Running(); running {
+		msg := methodautomation.ErrBusy.Error()
+		if !since.IsZero() {
+			msg = fmt.Sprintf("%s (started %s ago)", msg, time.Since(since).Round(time.Second))
+		}
+		WriteError(c, http.StatusConflict, "method_research_busy", msg)
+		return
+	}
+	// 异步启动：一轮研究可能跑几十分钟（1146 票快照上曾把同步等待拖到 15 分钟
+	// 超时），HTTP 立即返回；前端通过 /research/status 轮询、/research/last 取结果。
+	s.startMethodResearchBatch(methodautomation.Request{
 		SnapshotID: req.SnapshotID, Codes: req.Codes, HoldDays: req.HoldDays,
 		SearchBudget: req.SearchBudget, MaxCodes: req.MaxCodes,
 	})
-	s.recordResearchResult(result, err)
-	if err != nil {
-		if errors.Is(err, methodautomation.ErrBusy) {
-			WriteError(c, http.StatusConflict, "method_research_busy", err.Error())
-			return
+	c.JSON(http.StatusOK, gin.H{
+		"started":    true,
+		"status_url": "/api/methods/research/status",
+		"result_url": "/api/methods/research/last",
+	})
+}
+
+// startMethodResearchBatch 在后台 goroutine 执行一轮研究并记录结果。
+// ctx 用 Background 而非请求上下文：handler 返回后 Request.Context 会被
+// net/http 取消，批次不能跟着被杀；methodResearchTimeout 只作为防泄漏护栏。
+func (s *Server) startMethodResearchBatch(req methodautomation.Request) {
+	s.backgroundWG.Add(1)
+	startedAt := time.Now()
+	go func() {
+		defer s.backgroundWG.Done()
+		ctx, cancel := context.WithTimeout(context.Background(), methodResearchTimeout)
+		defer cancel()
+		result, err := s.methodAutomation.Run(ctx, req)
+		s.recordResearchResult(result, err)
+		if err != nil && !errors.Is(err, methodautomation.ErrBusy) && ctx.Err() == nil {
+			log.Printf("method research: manual batch failed after %s: %v", time.Since(startedAt).Round(time.Second), err)
 		}
-		WriteError(c, http.StatusUnprocessableEntity, "method_research_failed", err.Error())
-		return
+	}()
+}
+
+// handleMethodResearchStatus 报告研究批次是否在运行（启动时调度器会立刻跑一轮，
+// 用户需要看到这个状态，否则点「启动研究」只会撞上单飞互斥的 409）。
+func (s *Server) handleMethodResearchStatus(c *gin.Context) {
+	resp := gin.H{"running": false}
+	if s.methodAutomation != nil {
+		running, since := s.methodAutomation.Running()
+		resp["running"] = running
+		if running && !since.IsZero() {
+			resp["running_since"] = since.UTC().Format(time.RFC3339)
+		}
+		if progress, ok := s.methodAutomation.RunningProgress(); ok {
+			resp["phase"] = string(progress.Phase)
+			resp["progress"] = progress
+		}
 	}
-	c.JSON(http.StatusOK, result)
+	s.researchMu.RLock()
+	if s.researchLast != nil {
+		resp["last_finished_at"] = s.researchLast.FinishedAt.UTC().Format(time.RFC3339)
+	}
+	if s.researchLastError != "" {
+		resp["last_error"] = s.researchLastError
+	}
+	s.researchMu.RUnlock()
+	c.JSON(http.StatusOK, resp)
 }
 
 func (s *Server) handleMethodResearchLast(c *gin.Context) {
 	s.researchMu.RLock()
-	defer s.researchMu.RUnlock()
-	if s.researchLast == nil {
-		WriteError(c, http.StatusNotFound, "no_research_run", "还没有自动研究记录，先触发一次研究")
+	last := s.researchLast
+	s.researchMu.RUnlock()
+	if last == nil {
+		// 从未完成过 ≠ 没在跑：批次运行中时明确告知（含开始时间），
+		// 避免前端把 404 误读成「没有任何记录」。
+		resp := gin.H{
+			"status":   "no_completed_batch",
+			"running":  false,
+			"batches":  []methodautomation.HoldBatchResult{},
+			"outcomes": []methodautomation.CandidateOutcome{},
+		}
+		if s.methodAutomation != nil {
+			if running, since := s.methodAutomation.Running(); running {
+				resp["running"] = true
+				if !since.IsZero() {
+					resp["running_since"] = since.UTC().Format(time.RFC3339)
+				}
+			}
+		}
+		c.JSON(http.StatusOK, resp)
 		return
 	}
-	c.JSON(http.StatusOK, s.researchLast)
+	c.JSON(http.StatusOK, last)
 }
 
 func (s *Server) recordResearchResult(result *methodautomation.BatchResult, err error) {
@@ -84,11 +157,15 @@ func (s *Server) recordResearchResult(result *methodautomation.BatchResult, err 
 	defer s.researchMu.Unlock()
 	if result != nil {
 		s.researchLast = result
+		s.researchLastError = "" // 新一轮成功，清掉上一次的失败痕迹
 		return
 	}
-	if err != nil && s.researchLast == nil {
-		s.researchLastError = err.Error()
+	if err == nil || errors.Is(err, methodautomation.ErrBusy) {
+		// 并发撞车（调度器与手动触发同时起跑）是预期互斥行为，不算研究失败。
+		return
 	}
+	// 失败总是覆盖旧状态：一次成功之后的失败批次也必须在 status 端点可见。
+	s.researchLastError = err.Error()
 }
 
 // StartMethodResearchScheduler 周期触发一轮自动方法研究（后台 goroutine）。
@@ -103,7 +180,7 @@ func (s *Server) StartMethodResearchScheduler(ctx context.Context, interval time
 	go func() {
 		defer s.backgroundWG.Done()
 		run := func() {
-			runCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+			runCtx, cancel := context.WithTimeout(ctx, methodResearchTimeout)
 			defer cancel()
 			result, err := s.methodAutomation.Run(runCtx, methodautomation.Request{})
 			s.recordResearchResult(result, err)

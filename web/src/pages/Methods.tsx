@@ -34,12 +34,20 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import {
   api,
+  type FactorEval,
+  type FactorPickEntry,
+  type FactorPickRun,
+  type FactorResearchResult,
+  type FactorTopPick,
   type MethodAuditEvent,
   type MethodCard,
   type MethodForwardHealth,
   type MethodRejectStat,
+  type MethodResearchOutcome,
   type MethodResearchResult,
+  type MethodResearchStatus,
   type MethodSeedResult,
+  TongStockAPIError,
 } from '../api/client';
 import { formatDateTime } from '../lib/datetime';
 
@@ -173,18 +181,72 @@ function SeedResultAlert({ result, onDismiss }: { result: MethodSeedResult; onDi
   );
 }
 
-/** 自动研究批次的机器结论：晋级/拒绝与多重检验预算如实展示。 */
+/** 把机器可读的拒绝原因码翻译成用户能懂的一句话。 */
+function researchReasonText(reason?: string): string {
+  if (!reason) return '未通过证据门槛';
+  if (reason.startsWith('hard_blocker:ss-trades') || reason === 'insufficient_oos_trades') return '样本外交易数不足，无法区分运气与规律';
+  if (reason.startsWith('hard_blocker:bl-underperform')) return '跑输「等权买入并持有整个股票池」基准';
+  if (reason === 'multiple_testing_not_significant') return '与同期随机模板相比优势不显著（多重检验校正后）';
+  if (reason === 'oos_sharpe_below_threshold') return '样本外风险调整后收益过低';
+  if (reason === 'oos_max_drawdown_above_threshold') return '样本外最大回撤过大';
+  return reason;
+}
+
+/** 候选排序键：交易数优先（有统计意义的才谈胜率），其次胜率，最后收益。 */
+function candidateEvidenceScore(o: MethodResearchOutcome): number {
+  return (o.oos_trades ?? 0) * 1_000_000 + (o.oos_win_rate ?? 0) * 1_000 + (o.oos_return ?? 0);
+}
+
+/**
+ * 自动研究结果卡：答案优先。
+ * 用户关心的是「哪些方法能筛出上涨股票」：先给本轮结论与样本外胜率最高的
+ * 候选榜单（含被拒原因的人话解释），原始明细折叠在最后供审计。
+ */
 function ResearchResultCard({ result }: { result: MethodResearchResult }) {
+  const withTrades = result.outcomes.filter((o) => (o.oos_trades ?? 0) > 0);
+  const ranked = [...withTrades].sort((a, b) => candidateEvidenceScore(b) - candidateEvidenceScore(a));
+  const noTradeRejected = result.outcomes.filter((o) => (o.oos_trades ?? 0) === 0 && o.status === 'rejected').length;
+  const passed = result.verified > 0;
+
   return (
     <Card size="small" title={`最近一轮自动研究 · ${formatDateTime(result.started_at)}`}>
       <Space direction="vertical" size={8} style={{ display: 'flex' }}>
+        <Alert
+          type={passed ? 'success' : ranked.length > 0 ? 'info' : 'warning'}
+          showIcon
+          message={
+            passed
+              ? `本轮 ${result.verified} 个候选通过全部证据门槛，已晋级为可用方法（见下方列表）`
+              : ranked.length > 0
+                ? '本轮没有候选通过全部证据门槛，但样本外表现如下，供参考'
+                : '本轮所有候选在样本外窗口几乎没有触发交易，不构成可用方法'
+          }
+          description={
+            !passed && ranked.length > 0 ? (
+              <Space direction="vertical" size={6} style={{ display: 'flex' }}>
+                {ranked.slice(0, 3).map((o, i) => (
+                  <Text key={`${o.template_id}-${i}`} style={{ fontSize: 12 }}>
+                    {i + 1}. <Text strong>{o.template_id}</Text>
+                    {' '}—— 样本外胜率 <Text strong>{pct(o.oos_win_rate ?? 0)}</Text>
+                    （{o.oos_trades} 笔交易，收益 {pct(o.oos_return ?? 0)}），被拒原因：
+                    {researchReasonText(o.reason)}
+                  </Text>
+                ))}
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  为什么胜率不低还被拒：方法必须同时跑赢「等权买入并持有整个股票池」——
+                  只挑出会涨的股票但整体市场都在涨，这样的方法没有选股价值。这是可信度红线，不会放宽。
+                </Text>
+              </Space>
+            ) : undefined
+          }
+        />
         <Space wrap size={16}>
           <Tag color="blue">股票池 {result.universe_size} 只</Tag>
-          <Tag>本批多重检验预算 {result.trials_this_batch}</Tag>
-          <Tag>累计预算 {result.trials_cumulative}</Tag>
           <Tag color="green">验证通过 {result.verified}</Tag>
           <Tag color="red">拒绝 {result.rejected}</Tag>
-          <Tag>登记 {result.registered}</Tag>
+          {noTradeRejected > 0 && <Tag>样本外无交易 {noTradeRejected}</Tag>}
+          <Tag>本批多重检验预算 {result.trials_this_batch}</Tag>
+          <Tag>累计预算 {result.trials_cumulative}</Tag>
         </Space>
         {result.validation_start && (
           <Text type="secondary" style={{ fontSize: 12 }}>
@@ -196,29 +258,26 @@ function ResearchResultCard({ result }: { result: MethodResearchResult }) {
           items={[
             {
               key: 'outcomes',
-              label: `候选明细（${result.outcomes.length} 条）`,
+              label: `候选明细（${result.outcomes.length} 条，按样本外胜率与交易数排序）`,
               children: (
                 <Space direction="vertical" size={6} style={{ display: 'flex' }}>
-                  {result.outcomes.map((o, i) => (
-                    <Space key={`${o.template_id}-${i}`} size={8} wrap>
-                      <Text strong>{o.template_id}</Text>
-                      <Tag color={o.status === 'verified' ? 'green' : o.status.startsWith('skipped') ? 'default' : 'red'}>
-                        {o.status}
-                      </Tag>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        {o.stage}
-                        {o.confidence ? ` · 置信度 ${o.confidence}` : ''}
-                        {o.oos_trades !== undefined ? ` · OOS ${o.oos_trades} 笔` : ''}
-                        {o.oos_return !== undefined ? ` · ${pct(o.oos_return)}` : ''}
-                        {o.sharpe_ratio !== undefined ? ` · 夏普 ${o.sharpe_ratio.toFixed(2)}` : ''}
-                      </Text>
-                      {o.reason && (
+                  {[...result.outcomes]
+                    .sort((a, b) => candidateEvidenceScore(b) - candidateEvidenceScore(a))
+                    .map((o, i) => (
+                      <Space key={`${o.template_id}-${i}`} size={8} wrap>
+                        <Text strong>{o.template_id}</Text>
+                        <Tag color={o.status === 'verified' ? 'green' : o.status.startsWith('skipped') ? 'default' : 'red'}>
+                          {o.status}
+                        </Tag>
                         <Text type="secondary" style={{ fontSize: 12 }}>
-                          {o.reason}
+                          {o.oos_trades !== undefined ? `OOS ${o.oos_trades} 笔` : ''}
+                          {o.oos_win_rate !== undefined ? ` · 胜率 ${pct(o.oos_win_rate)}` : ''}
+                          {o.oos_return !== undefined ? ` · ${pct(o.oos_return)}` : ''}
+                          {o.sharpe_ratio !== undefined ? ` · 夏普 ${o.sharpe_ratio.toFixed(2)}` : ''}
+                          {o.reason ? ` · ${researchReasonText(o.reason)}` : ''}
                         </Text>
-                      )}
-                    </Space>
-                  ))}
+                      </Space>
+                    ))}
                 </Space>
               ),
             },
@@ -229,13 +288,340 @@ function ResearchResultCard({ result }: { result: MethodResearchResult }) {
   );
 }
 
+/**
+ * 因子研究卡：把选股问题重述为「预测未来 N 日收益的截面排序」。
+ * 答案优先：先给结论 Note 与 Top 名单（含各因子贡献分解，保持「为何选它」可解释），
+ * 因子级 IC 证据折叠在下层供审计；不显著的因子如实标注，绝不包装成必涨名单。
+ */function FactorResearchCard() {
+  const [result, setResult] = useState<FactorResearchResult>();
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState('');
+  const [loaded, setLoaded] = useState(false);
+  // write_to_selection=true：批次完成后显著因子 TopN 额外落库为因子通道产出
+  // （factor_pick_run 表，pick-<截面日期> 幂等），经「因子名单」卡片可复核。
+  const [writeToSelection, setWriteToSelection] = useState(true);
+
+  const loadLast = useCallback(async () => {
+    const res = await api.factorResearchLast();
+    if (!('status' in res)) {
+      setResult(res);
+      setRunning(Boolean(res.running));
+      return Boolean(res.running);
+    }
+    setResult(undefined);
+    setRunning('running' in res ? Boolean(res.running) : false);
+    return false;
+  }, []);
+
+  useEffect(() => {
+    loadLast()
+      .then(() => setLoaded(true))
+      .catch(() => setLoaded(true));
+  }, [loadLast]);
+
+  // 轮询等待异步批次：run 只是启动，结果经 /last 获取。
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(() => {
+      void loadLast().catch(() => undefined);
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [running, loadLast]);
+
+  const runResearch = useCallback(async () => {
+    setRunning(true);
+    setError('');
+    try {
+      // 异步启动：立即返回 started 包封，结果经 /last 轮询（useEffect 上面已挂）。
+      await api.factorResearchRun({ write_to_selection: writeToSelection });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '因子研究启动失败');
+      setRunning(false);
+    }
+  }, [writeToSelection]);
+
+  const factorColumns: ColumnsType<FactorEval> = [
+    {
+      title: '因子',
+      dataIndex: 'name',
+      render: (_v, f) => (
+        <Tooltip title={f.description}>
+          <Text strong>{f.name}</Text>
+        </Tooltip>
+      ),
+    },
+    {
+      title: '数据方向',
+      dataIndex: 'direction',
+      width: 110,
+      render: (d: number, f) => (
+        <Tooltip
+          title={`先验假设：${f.prior > 0 ? '值大领涨' : '值小领涨'}；方向由数据决定${
+            f.prior !== 0 && d !== f.prior ? '（与先验相反，如实反向）' : '（与先验一致）'
+          }`}
+        >
+          <span>{d > 0 ? '值大 → 领涨' : d < 0 ? '值小 → 领涨' : '—'}</span>
+        </Tooltip>
+      ),
+    },
+    {
+      title: '截面（独立）',
+      dataIndex: 'sections',
+      width: 120,
+      render: (_v: number, f) => (
+        <Tooltip title={`独立截面 = 去重叠（步长=持有期）后 t 统计量的真实样本量，避免相邻前向窗口重叠导致显著性高估`}>
+          <span>
+            {f.sections}（{f.effective_sections}）
+          </span>
+        </Tooltip>
+      ),
+    },
+    { title: 'MeanIC', dataIndex: 'mean_ic', width: 90, render: (v: number) => v.toFixed(3) },
+    { title: 'ICIR', dataIndex: 'icir', width: 80, render: (v: number) => v.toFixed(2) },
+    { title: 't 统计', dataIndex: 't_stat', width: 90, render: (v: number) => v.toFixed(2) },
+    {
+      title: '预测力',
+      dataIndex: 'significant',
+      width: 100,
+      render: (sig: boolean, f) =>
+        sig ? (
+          <Tag color="green">显著</Tag>
+        ) : (
+          <Tooltip title={`参考线：|t| ≥ 2 且 |MeanIC| ≥ 0.03（t 用去重叠独立截面计算，实际 t=${f.t_stat.toFixed(2)}）`}>
+            <Tag>不显著</Tag>
+          </Tooltip>
+        ),
+    },
+  ];
+
+  const pickColumns: ColumnsType<FactorTopPick> = [
+    { title: '#', key: 'rank', width: 50, render: (_v, _r, i) => i + 1 },
+    { title: '代码', dataIndex: 'code', width: 90 },
+    { title: '组合分', dataIndex: 'score', width: 90, render: (v: number) => v.toFixed(3) },
+    {
+      title: '得分构成（各合格因子的贡献）',
+      dataIndex: 'contributions',
+      render: (c?: Record<string, number>) =>
+        c ? (
+          <Space wrap size={4}>
+            {Object.entries(c).map(([k, v]) => (
+              <Tag key={k}>
+                {k} {v >= 0 ? '+' : ''}
+                {v.toFixed(2)}
+              </Tag>
+            ))}
+          </Space>
+        ) : (
+          '—'
+        ),
+    },
+  ];
+
+  return (
+    <Card
+      size="small"
+      title="因子研究 · 截面排序预测"
+      extra={
+        <Space size={8}>
+          <Tooltip title="完成后把显著因子 TopN 名单落库为因子通道产出（按截面日期幂等，可追溯复核）">
+            <span>
+              <Switch size="small" checked={writeToSelection} onChange={setWriteToSelection} />
+              <Text type="secondary" style={{ fontSize: 12, marginLeft: 4 }}>名单入库</Text>
+            </span>
+          </Tooltip>
+          <Button icon={<ExperimentOutlined />} loading={running} onClick={() => void runResearch()} disabled={running}>
+            {running ? '研究中…' : '运行因子研究'}
+          </Button>
+        </Space>
+      }
+    >
+      <Space direction="vertical" size={8} style={{ display: 'flex' }}>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          在冻结快照的全部股票上，逐日计算动量/反转、量比换手、价格水平、波动等可解释因子的截面值，
+          用 RankIC/t 统计量度量每个因子「预测未来 5 日收益」的能力（t 用去重叠独立截面计算），
+          再把显著因子按 |IC| 加权成组合分（方向由数据决定，不写死先验），
+          输出最后截面日得分最高的 Top 30。这是研究证据，不直接生成买入指令。
+        </Text>
+        {error ? (
+          <Alert
+            type="error"
+            showIcon
+            message={error}
+            description={
+              /frozen snapshot|universe/i.test(error) ? (
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  因子研究需要一个股票池 ≥ 5 只的多股票冻结快照；让 AI 用多只股票研究一次（会自动冻结快照）后再试。
+                </Text>
+              ) : undefined
+            }
+          />
+        ) : running && !result ? (
+          <Space size={8}>
+            <Spin size="small" />
+            <Text type="secondary">因子研究批次运行中（全市场一轮可达分钟级），结果出来后自动刷新…</Text>
+          </Space>
+        ) : result ? (
+          <>
+            {result.stale_days > 14 && (
+              <Alert
+                type="warning"
+                showIcon
+                message={`快照数据止于 ${result.snapshot_date_end ?? result.last_date ?? '?'}（距今 ${result.stale_days} 天）——截面排序基于过时行情`}
+                description="请先更新行情并冻结新的多股票快照，再跑因子研究；过时快照产出的 Top 名单没有预测意义。"
+              />
+            )}
+            <Alert
+              type={result.factors.some((f) => f.significant) ? 'info' : 'warning'}
+              showIcon
+              message={result.note}
+              description={
+                <Space wrap size={4} style={{ marginTop: 4 }}>
+                  <Tag color="blue">股票池 {result.codes} 只</Tag>
+                  <Tag>有效截面 {result.sections}</Tag>
+                  <Tag>持有期 {result.horizon_days} 天</Tag>
+                  {result.last_date && <Tag>截面日 {result.last_date}</Tag>}
+                </Space>
+              }
+            />
+            {result.top_picks.length > 0 && (
+              <Table
+                size="small"
+                columns={pickColumns}
+                dataSource={result.top_picks}
+                rowKey="code"
+                pagination={false}
+              />
+            )}
+            <Collapse
+              size="small"
+              items={[
+                {
+                  key: 'factors',
+                  label: `因子预测力明细（${result.factors.length} 个因子，按显著性与 |t| 排序）`,
+                  children: (
+                    <Table
+                      size="small"
+                      columns={factorColumns}
+                      dataSource={result.factors}
+                      rowKey="key"
+                      pagination={false}
+                    />
+                  ),
+                },
+              ]}
+            />
+          </>
+        ) : (
+          <Text type="secondary">
+            {loaded ? '还没有因子研究记录。点击「运行因子研究」用冻结快照跑一轮。' : '正在读取最近一次研究…'}
+          </Text>
+        )}
+      </Space>
+    </Card>
+  );
+}
+
+/**
+ * 因子名单卡：read-only 查看 write_to_selection=true 落库的因子通道产出。
+ * 这是最小生产闭环的持久化证据：TopN 名单按截面日期幂等更新，永远可追溯
+ * 「那天为什么是这些股票」——因子评估快照与贡献分解随行存档。
+ */
+function FactorPicksCard() {
+  const [pickRun, setPickRun] = useState<FactorPickRun>();
+  const [loaded, setLoaded] = useState(false);
+
+  const load = useCallback(async () => {
+    const res = await api.factorPicksLast();
+    setPickRun('status' in res ? undefined : res);
+    setLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    void load().catch(() => setLoaded(true));
+  }, [load]);
+
+  const columns: ColumnsType<FactorPickEntry> = [
+    { title: '#', key: 'rank', width: 50, render: (_v, _r, i) => i + 1 },
+    { title: '代码', dataIndex: 'code', width: 90 },
+    { title: '组合分', dataIndex: 'score', width: 90, render: (v: number) => v.toFixed(3) },
+    {
+      title: '得分构成（各合格因子的贡献）',
+      dataIndex: 'contributions',
+      render: (c?: Record<string, number>) =>
+        c ? (
+          <Space wrap size={4}>
+            {Object.entries(c).map(([k, v]) => (
+              <Tag key={k}>
+                {k} {v >= 0 ? '+' : ''}
+                {v.toFixed(2)}
+              </Tag>
+            ))}
+          </Space>
+        ) : (
+          '—'
+        ),
+    },
+  ];
+
+  return (
+    <Card
+      size="small"
+      title="因子名单 · 落库观察名单"
+      extra={
+        <Button icon={<ReloadOutlined />} size="small" onClick={() => void load().catch(() => undefined)}>
+          刷新
+        </Button>
+      }
+    >
+      {pickRun ? (
+        <Space direction="vertical" size={8} style={{ display: 'flex' }}>
+          <Space wrap size={4}>
+            <Tag color="geekblue">run {pickRun.run_id}</Tag>
+            <Tag>截面日 {pickRun.as_of}</Tag>
+            {pickRun.snapshot_date_end && <Tag>数据止于 {pickRun.snapshot_date_end}</Tag>}
+            <Tag color={pickRun.stale_days > 14 ? 'volcano' : 'default'}>距今天数 {pickRun.stale_days}</Tag>
+            <Tag>Top {pickRun.picks.length}</Tag>
+          </Space>
+          <Text type="secondary" style={{ fontSize: 12 }}>{pickRun.note}</Text>
+          {pickRun.stale_days > 14 && (
+            <Alert
+              type="warning"
+              showIcon
+              message={`名单基于 ${pickRun.as_of} 的截面（距今 ${pickRun.stale_days} 天）——过旧，仅供追溯；动态使用前请先跑一轮新快照研究并勾选「名单入库」`}
+            />
+          )}
+          <Collapse
+            size="small"
+            items={[
+              {
+                key: 'factors',
+                label: `落库时因子评估快照（${pickRun.factors_snapshot.length} 个）`,
+                children: <Text type="secondary" style={{ fontSize: 12 }}>{pickRun.factors_snapshot.map((f) => `${f.name}${f.significant ? '✓' : '·'}(IC ${(f.mean_ic >= 0 ? '+' : '') + f.mean_ic.toFixed(3)})`).join('　')}</Text>,
+              },
+            ]}
+          />
+          <Table size="small" columns={columns} dataSource={pickRun.picks} rowKey="code" pagination={false} />
+        </Space>
+      ) : (
+        <Text type="secondary">
+          {loaded
+            ? '还没有落库名单。在上方因子研究卡勾选「名单入库」跑一轮，显著因子的 TopN 名单会按截面日存在这里。'
+            : '正在读取因子名单…'}
+        </Text>
+      )}
+    </Card>
+  );
+}
+
 export default function Methods() {
   const navigate = useNavigate();
   const [items, setItems] = useState<MethodCard[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [statuses, setStatuses] = useState<string[]>([]);
+  // 默认只展示「用户可用的方法」（已晋级/候选中）：rejected 是研究审计痕迹，
+  // 整批被拒时满屏 rejected 对选股毫无价值；想看诊断可手动勾选 rejected。
+  const [statuses, setStatuses] = useState<string[]>(['verified', 'observing', 'degraded', 'candidate']);
   const [market, setMarket] = useState<string>();
   const [universe, setUniverse] = useState<string>();
   const [holdingMin, setHoldingMin] = useState<string>();
@@ -260,6 +646,9 @@ export default function Methods() {
   const [research, setResearch] = useState<MethodResearchResult>();
   const [researchRunning, setResearchRunning] = useState(false);
   const [researchError, setResearchError] = useState('');
+  const [researchStatus, setResearchStatus] = useState<MethodResearchStatus>();
+  // 每秒跳动一次，让运行中的批次显示实时「已运行时长」而不是冻结的开始时间。
+  const [nowTick, setNowTick] = useState(() => Date.now());
   const [rejectStats, setRejectStats] = useState<MethodRejectStat[]>([]);
 
   // 详情抽屉
@@ -290,7 +679,9 @@ export default function Methods() {
         market,
         universe,
         ...holdingQuery(holdingMin, holdingMax),
-        limit: 200,
+        // 后端 GET /api/methods 校验 limit ∈ [1,100]（method_registry_handlers.go），
+        // 超过 100 会被整页 400；数量靠筛选条件缩小范围。
+        limit: 100,
       });
       if (seq !== requestSeq.current) return;
       const list = res.items || [];
@@ -337,11 +728,79 @@ export default function Methods() {
   useEffect(() => {
     void loadForwardHealth();
     void loadRejectStats();
+    // last 端点对「从未完成过」返回 200 空结构（status=no_completed_batch），
+    // 不当作结果展示；运行中信息由 status 端点负责。
     api
       .methodResearchLast()
-      .then((res) => setResearch(res))
-      .catch(() => setResearch(undefined)); // 尚未跑过自动研究时保持空态
+      .then((res) => setResearch(res.status === 'no_completed_batch' ? undefined : res))
+      .catch(() => setResearch(undefined));
+    api
+      .methodResearchStatus()
+      .then(setResearchStatus)
+      .catch(() => setResearchStatus(undefined)); // 启动调度器可能已在跑一轮，必须可见
   }, [loadForwardHealth, loadRejectStats]);
+
+  // 批次运行中每 15 秒轮询；结束后自动拉取最新结果与列表（覆盖启动调度那一轮）。
+  useEffect(() => {
+    if (!researchStatus?.running) return;
+    const timer = setInterval(() => {
+      void api
+        .methodResearchStatus()
+        .then((st) => {
+          setResearchStatus(st);
+          if (!st.running) {
+            void load();
+            void loadRejectStats();
+            api
+              .methodResearchLast()
+              .then((res) => setResearch(res.status === 'no_completed_batch' ? undefined : res))
+              .catch(() => setResearch(undefined));
+          }
+        })
+        .catch(() => undefined);
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [researchStatus?.running, load, loadRejectStats]);
+
+  // 批次运行中的实时进度：后端每 15 秒上报阶段，本地每秒补已运行时长，
+  // 让用户在几十分钟的批次里能看到「卡在哪一步、跑了多久」。
+  useEffect(() => {
+    if (!researchStatus?.running) return;
+    const timer = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [researchStatus?.running]);
+
+  const researchProgressText = useCallback((st: MethodResearchStatus): string[] => {
+    const lines: string[] = [];
+    if (st.running_since) {
+      const elapsed = Math.max(0, Math.floor((nowTick - new Date(st.running_since).getTime()) / 1000));
+      const h = Math.floor(elapsed / 3600);
+      const m = Math.floor((elapsed % 3600) / 60);
+      const s = elapsed % 60;
+      const clock = h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
+      lines.push(`已运行 ${clock}`);
+    }
+    const phase =
+      st.phase === 'discovery'
+        ? '规律发现：在冻结快照上逐只扫描模板'
+        : st.phase === 'validation'
+          ? '样本外验证：在保留窗口上回测候选'
+          : '准备中：解析快照与股票池';
+    lines.push(`阶段：${phase}`);
+    const p = st.progress;
+    if (p) {
+      const parts: string[] = [];
+      if (p.universe_size) parts.push(`股票池 ${p.universe_size} 只`);
+      if (p.hold_days) parts.push(`持有期 ${p.hold_days} 天`);
+      if (st.phase === 'discovery' && p.discovery_codes_total) {
+        parts.push(`扫描进度 ${p.discovery_codes_done ?? 0}/${p.discovery_codes_total}`);
+      }
+      if (p.total_candidates) parts.push(`待验证候选 ${p.candidates_done ?? 0}/${p.total_candidates}`);
+      parts.push(`已通过 ${p.verified} / 已拒绝 ${p.rejected}`);
+      lines.push(parts.join(' · '));
+    }
+    return lines;
+  }, [nowTick]);
 
   const runSeed = useCallback(async () => {
     setSeeding(true);
@@ -349,7 +808,10 @@ export default function Methods() {
     try {
       const res = await api.seedMethods({});
       setSeedResult(res);
+      const skipped = res.outcomes.filter((o) => o.status === 'skipped_registered').length;
       if (res.verified > 0) void message.success(`已登记 ${res.verified} 个通过证据门槛的内置方法`);
+      else if (skipped > 0 && skipped === res.outcomes.length)
+        void message.info('内置方法此前已载入过（同内容已登记），无需重复载入');
       else void message.warning('内置方法已用真实数据回测，但没有方法通过证据门槛');
       await load();
     } catch (e) {
@@ -364,15 +826,34 @@ export default function Methods() {
     setResearchError('');
     try {
       const res = await api.methodResearchRun({});
-      setResearch(res);
-      void message.success(`自动研究完成：验证通过 ${res.verified}，拒绝 ${res.rejected}`);
-      await Promise.all([load(), loadRejectStats()]);
+      // 异步启动：批次在后台跑（一轮可能数十分钟）。乐观置 running 触发既有轮询，
+      // 并立即拉一次真实状态补 running_since；结束后轮询自动展示结果/列表/拒绝统计。
+      setResearchStatus((prev) => ({ ...(prev ?? {}), running: true }));
+      void message.info(
+        res.started
+          ? '研究批次已启动，将在后台运行，完成后自动展示结果'
+          : '研究批次已在运行，完成后自动展示结果',
+      );
+      api
+        .methodResearchStatus()
+        .then(setResearchStatus)
+        .catch(() => undefined);
     } catch (e) {
+      if (e instanceof TongStockAPIError && e.code === 'method_research_busy') {
+        // 启动时调度器已在跑：转为跟踪状态，完成后自动展示结果，不当作错误。
+        void message.info('已有研究批次在运行，完成后自动展示结果');
+        try {
+          setResearchStatus(await api.methodResearchStatus());
+        } catch {
+          // 状态接口失败时保持原状，轮询会在下次打开页面时恢复
+        }
+        return;
+      }
       setResearchError(e instanceof Error ? e.message : '自动研究失败');
     } finally {
       setResearchRunning(false);
     }
-  }, [load, loadRejectStats]);
+  }, []);
 
   const openDetail = useCallback(async (m: MethodCard) => {
     setDetail(m);
@@ -618,19 +1099,79 @@ export default function Methods() {
         extra={
           <Popconfirm
             title="在冻结快照上自动发现并验证一批候选方法？"
-            description="模板扫描 → 保留窗口机器验证 → 按证据晋级/拒绝，可能耗时数分钟。"
+            description="模板扫描 → 保留窗口机器验证 → 按证据晋级/拒绝，可能耗时数十分钟，期间可离开页面。"
             okText="开始"
             cancelText="取消"
             onConfirm={() => void runResearch()}
           >
-            <Button type="primary" icon={<ThunderboltOutlined />} loading={researchRunning}>
-              {researchRunning ? '研究进行中…' : '启动一轮自动研究'}
+            <Button
+              type="primary"
+              icon={<ThunderboltOutlined />}
+              loading={researchRunning}
+              disabled={researchStatus?.running === true}
+            >
+              {researchRunning || researchStatus?.running ? '研究进行中…' : '启动一轮自动研究'}
             </Button>
           </Popconfirm>
         }
       >
+        {researchStatus?.running && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message={
+              researchProgressText(researchStatus)[0] ?? '研究批次运行中'
+            }
+            description={
+              <div>
+                {researchProgressText(researchStatus).slice(1).map((line, i) => (
+                  <div key={i} style={i === 0 ? { fontWeight: 600 } : { fontSize: 12, color: 'var(--ant-color-text-secondary, #888)' }}>
+                    {line}
+                  </div>
+                ))}
+                <div style={{ fontSize: 12, color: 'var(--ant-color-text-secondary, #888)', marginTop: 4 }}>
+                  开始于 {researchStatus.running_since ? formatDateTime(researchStatus.running_since) : '—'} · 单轮硬上限
+                  {' '}
+                  90 分钟（防止卡死批次占用后台，正常远快于此） · 页面可以离开，完成后回来会自动展示结果
+                  {researchStatus.last_error ? ` · 上次批次错误：${researchStatus.last_error}` : ''}
+                </div>
+              </div>
+            }
+          />
+        )}
+        {!researchStatus?.running && researchStatus?.last_error && (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="上一轮研究批次失败"
+            description={
+              <div>
+                <div style={{ fontSize: 12 }}>{researchStatus.last_error}</div>
+                {/frozen snapshot|universe/i.test(researchStatus.last_error) && (
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    自动研究需要一个多股票冻结快照；让 AI 用多只股票研究一次（会自动冻结快照）后再试。
+                  </Text>
+                )}
+              </div>
+            }
+          />
+        )}
         {researchError ? (
-          <Alert type="error" showIcon message={researchError} />
+          <Alert
+            type="error"
+            showIcon
+            message={researchError}
+            description={
+              /frozen snapshot|universe/i.test(researchError) ? (
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  自动研究需要一个股票池 ≥ 5 只的多股票冻结快照；个股分析产生的是单票快照，不能当研究池。
+                  让 AI 用多只股票研究一次（会自动冻结快照），或跑一次一键走通后再试。
+                </Text>
+              ) : undefined
+            }
+          />
         ) : research ? (
           <ResearchResultCard result={research} />
         ) : (
@@ -653,6 +1194,12 @@ export default function Methods() {
           </div>
         )}
       </Card>
+
+      {/* 横截面多因子研究：选股问题的另一种重述——预测未来 N 日收益的截面排序 */}
+      <FactorResearchCard />
+
+      {/* 因子通道落库名单：write_to_selection=true 产出的 TopN 可追溯观察名单 */}
+      <FactorPicksCard />
 
       {/* 阶段 D：前向健康警示 */}
       {warnHealth.length > 0 && (
@@ -787,17 +1334,29 @@ export default function Methods() {
         rowSelection={{ selectedRowKeys: selectedKeys, onChange: (keys) => setSelectedKeys(keys) }}
         locale={{
           emptyText: (
-            <Empty description={filtersActive || onlyGate ? '当前筛选条件下没有方法' : '尚无已登记方法'}>
+            <Empty description={filtersActive || onlyGate ? '当前筛选条件下没有方法' : '尚无可用方法'}>
               {filtersActive || onlyGate ? (
                 <Button onClick={clearFilters}>清空筛选</Button>
               ) : (
-                <Space>
-                  <Button type="primary" icon={<ThunderboltOutlined />} loading={researchRunning} onClick={() => void runResearch()}>
-                    启动自动研究
-                  </Button>
-                  <Button icon={<DownloadOutlined />} loading={seeding} onClick={() => void runSeed()}>
-                    载入内置方法
-                  </Button>
+                <Space direction="vertical" size={8} style={{ display: 'flex', maxWidth: 560 }}>
+                  {rejectStats.length > 0 && (
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      库里有 {rejectStats.reduce((n, s) => n + s.count, 0)} 条研究记录但全部未通过证据门槛
+                      （样本外交易不足 / 跑输基准 / 多重检验不显著），被拦下的方法不会进入选股——
+                      这是可信度红线的正常表现，不是故障。再跑几轮研究、换不同持有期组合，通过的会自动出现在这里。
+                    </Text>
+                  )}
+                  <Space>
+                    <Button type="primary" icon={<ThunderboltOutlined />} loading={researchRunning} onClick={() => void runResearch()}>
+                      启动自动研究
+                    </Button>
+                    <Button icon={<DownloadOutlined />} loading={seeding} onClick={() => void runSeed()}>
+                      载入内置方法
+                    </Button>
+                    {rejectStats.length > 0 && (
+                      <Button onClick={() => setStatuses(STATUS_OPTIONS.map((o) => o.value))}>查看被拒的诊断记录</Button>
+                    )}
+                  </Space>
                 </Space>
               )}
             </Empty>

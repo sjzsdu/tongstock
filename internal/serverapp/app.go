@@ -32,10 +32,11 @@ import (
 	"github.com/sjzsdu/tongstock/internal/automation"
 	"github.com/sjzsdu/tongstock/internal/dashboard"
 	"github.com/sjzsdu/tongstock/internal/discovery"
-	"github.com/sjzsdu/tongstock/internal/methodautomation"
-	"github.com/sjzsdu/tongstock/internal/methodhealth"
+	"github.com/sjzsdu/tongstock/internal/factorlab"
 	"github.com/sjzsdu/tongstock/internal/ledger"
 	"github.com/sjzsdu/tongstock/internal/marketsnapshot"
+	"github.com/sjzsdu/tongstock/internal/methodautomation"
+	"github.com/sjzsdu/tongstock/internal/methodhealth"
 	"github.com/sjzsdu/tongstock/internal/methodregistry"
 	"github.com/sjzsdu/tongstock/internal/methodseed"
 	"github.com/sjzsdu/tongstock/internal/onboarding"
@@ -368,8 +369,32 @@ func NewApp(cfg *config.Config, opts Options) (_ *App, err error) {
 		return nil, fmt.Errorf("初始化自动方法研究编排失败: %w", err)
 	}
 	app.api.SetMethodAutomation(methodAutomation)
-	app.api.StartMethodResearchScheduler(app.runCtx, 30*time.Minute)
+	// 研究批次完全手动触发（用户点「启动自动研究」）：自动跑一轮要几十分钟，
+	// 启动即跑 + 30 分钟一次的调度会让用户任何时候进页面都撞上「研究进行中」。
+	// StartMethodResearchScheduler 保留，未来需要定时研究时显式启用。
 	app.setModule("method_automation", "ready", "")
+
+	// 横截面因子研究（factorlab）：与方法自动化共用同一组数据依赖
+	// （冻结快照 + 股票池 + K 线），把选股问题重述为「预测未来 N 日收益的
+	// 截面排序」。只读研究入口，产出因子 IC 证据与 TopN 名单，不改动选股引擎。
+	factorLab, err := factorlab.New(methodautomation.Deps{
+		Snapshots: paradigm.NewDatasetSnapshotStore(app.storage),
+		Universe:  validationrepo.NewSnapshotUniverse(app.storage),
+		Bars:      validationrepo.New(app.storage),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("初始化横截面因子研究失败: %w", err)
+	}
+	app.api.SetFactorLab(factorLab)
+	// 因子通道持久化（最小生产闭环）：研究批次完成后，write_to_selection=true
+	// 时显著因子 TopN 观察名单按截面日期幂等落库（factor_pick_run 表），
+	// 经 GET /factors/picks/last 可复核。不进方法库 / selection 表。
+	pickStore, err := factorlab.NewSQLitePickStore(app.storage.DB())
+	if err != nil {
+		return nil, fmt.Errorf("初始化因子通道产出仓库失败: %w", err)
+	}
+	app.api.SetFactorPicks(pickStore)
+	app.setModule("factor_lab", "ready", "")
 
 	// 前向健康闭环（阶段 D）：定时把前向账本的真实 paper-trade 表现回写到
 	// 方法库，由 Policy.Health 触发 observing/degraded/retired 转移。

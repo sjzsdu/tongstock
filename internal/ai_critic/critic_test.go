@@ -1,6 +1,7 @@
 package ai_critic
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -421,6 +422,13 @@ func TestBaselineCompareChecker_Underperform(t *testing.T) {
 	issues := checker.Check(input)
 	if len(issues) == 0 {
 		t.Error("should detect underperformance")
+	}
+	// 绝对收益跑输满仓基准只允许是警告：基准是等权满仓全程持有，信号型方法
+	// 资金利用率天然更低，硬拒会把「胜率高、夏普高但仓位不满」的稳健方法误杀。
+	for _, issue := range issues {
+		if issue.ID == fmt.Sprintf("bl-underperform-%s", input.TargetID) && issue.Severity == SevCritical {
+			t.Error("underperform must not be SevCritical (hard blocker); it is a warning only")
+		}
 	}
 }
 

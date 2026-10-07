@@ -59,9 +59,12 @@ func (r *Researcher) Run(ctx context.Context, request Request) (*Result, error) 
 		GeneratorVersion: GeneratorVersion, GeneratedAt: time.Now().UTC(),
 		Question: request.Question, HoldDays: request.HoldDays, SearchBudget: request.SearchBudget,
 	}
-	for _, code := range request.StockCodes {
+	for i, code := range request.StockCodes {
 		if err := ctx.Err(); err != nil {
 			return nil, err
+		}
+		if request.OnProgress != nil {
+			request.OnProgress(i, len(request.StockCodes))
 		}
 		bars, err := r.bars.Load(ctx, request.SnapshotID, code)
 		if err != nil {

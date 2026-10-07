@@ -817,15 +817,37 @@ export const api = {
 
   // ===== 可信方法自动化闭环（自动研究 / 方法市场 / 选方法筛选 / 前向监控）=====
 
-  /** 触发一轮自动方法研究：发现 → 保留窗口验证 → 按机器证据晋级/拒绝 */
+  /** 触发一轮自动方法研究：异步启动立即返回，结果通过 methodResearchStatus 轮询 + methodResearchLast 获取 */
   methodResearchRun: (req: MethodResearchRequest = {}) =>
-    fetchJSON<MethodResearchResult>('/api/methods/research/run', {
+    fetchJSON<MethodResearchStart>('/api/methods/research/run', {
       method: 'POST',
       body: JSON.stringify(req),
     }),
 
-  /** 最近一轮自动研究批次结果 */
-  methodResearchLast: () => fetchJSON<MethodResearchResult>('/api/methods/research/last'),
+  /** 最近一轮自动研究批次结果；从未完成过时返回 200 空结构（running 标明是否有批次在跑） */
+  methodResearchLast: () =>
+    fetchJSON<MethodResearchResult & { status?: string; running?: boolean; running_since?: string }>('/api/methods/research/last'),
+
+  /** 自动研究批次运行状态（启动时调度器会立即跑一轮） */
+  methodResearchStatus: () =>
+    fetchJSON<MethodResearchStatus>('/api/methods/research/status'),
+
+  /** 异步启动一轮横截面因子研究：立即返回 started 包封，用 factorResearchLast 轮询结果 */
+  factorResearchRun: (req: FactorResearchRequest = {}) =>
+    fetchJSON<FactorResearchStart>('/api/factors/research/run', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+
+  /** 最近一次完成的因子研究结果；从未跑过时返回 { status:'no_completed_run' }，批次运行中带 running:true */
+  factorResearchLast: () =>
+    fetchJSON<FactorResearchResult & { running?: boolean } | { status: string; running?: boolean }>(
+      '/api/factors/research/last',
+    ),
+
+  /** 因子通道最近一次落库的 TopN 观察名单（write_to_selection=true 的产出）；尚无产出时返回 { status:'no_pick_run' } */
+  factorPicksLast: () =>
+    fetchJSON<FactorPickRun | { status: string }>('/api/factors/picks/last'),
 
   /** 未通过证据门槛的拒绝原因分布 */
   methodRejectStats: () =>
@@ -880,8 +902,31 @@ export interface MethodForwardHealth { method_id:string;name:string;status:strin
 
 /** POST /api/methods/research/run 请求与响应 */
 export interface MethodResearchRequest { snapshot_id?:string;codes?:string[];hold_days?:number[];search_budget?:number;max_codes?:number }
-export interface MethodResearchOutcome { template_id:string;method_id?:string;method_hash?:string;status:'verified'|'rejected'|'failed'|'skipped_registered'|'skipped_feedback';stage:string;confidence?:string;reason?:string;oos_trades?:number;oos_return?:number;sharpe_ratio?:number }
+/** POST /api/methods/research/run 响应：批次后台运行，不携带结果 */
+export interface MethodResearchStart { started:boolean;status_url?:string;result_url?:string }
+export interface MethodResearchOutcome { template_id:string;method_id?:string;method_hash?:string;status:'verified'|'rejected'|'failed'|'skipped_registered'|'skipped_feedback';stage:string;confidence?:string;reason?:string;oos_trades?:number;oos_return?:number;oos_win_rate?:number;sharpe_ratio?:number }
 export interface MethodResearchResult { started_at:string;finished_at:string;snapshot_id:string;universe_size:number;validation_start?:string;validation_end?:string;trials_this_batch:number;trials_cumulative:number;batches:Array<{hold_days:number;research_id?:string;discovery_trials:number;candidates:number;registered:number;verified:number;rejected:number;error?:string}>;outcomes:MethodResearchOutcome[];registered:number;verified:number;rejected:number }
+
+/** GET /api/methods/research/status：批次实时进度快照 */
+export interface MethodResearchProgress { phase:'preparing'|'discovery'|'validation';hold_days?:number;universe_size?:number;discovery_codes_done?:number;discovery_codes_total?:number;total_candidates?:number;candidates_done?:number;verified:number;rejected:number }
+/** GET /api/methods/research/status：批次是否在运行（含启动调度器那一轮） */
+export interface MethodResearchStatus { running:boolean;running_since?:string;last_finished_at?:string;last_error?:string;phase?:'preparing'|'discovery'|'validation';progress?:MethodResearchProgress }
+
+// ===== 横截面多因子研究（factorlab）：预测未来 N 日收益的截面排序 =====
+
+/** POST /api/factors/research/run 请求 */
+export interface FactorResearchRequest { snapshot_id?:string;horizon_days?:number;top_k?:number;max_codes?:number;write_to_selection?:boolean }
+/** POST /api/factors/research/run 响应：批次后台运行，结果经 /last 轮询获取 */
+export interface FactorResearchStart { started:boolean;status_url?:string;result_url?:string }
+/** 单因子预测力评估：RankIC 序列统计 + 显著性参考线（|t|≥2 且 |MeanIC|≥0.03，t 用去重叠独立截面计算） */
+export interface FactorEval { key:string;name:string;description:string;prior:number;sections:number;pairs:number;coverage:number;mean_ic:number;ic_std:number;icir:number;t_stat:number;effective_sections:number;significant:boolean;direction:number }
+/** 最后截面日的头部股票：得分 + 各合格因子的贡献分解（可解释） */
+export interface FactorTopPick { code:string;score:number;contributions?:Record<string,number> }
+/** 一轮因子研究的完整结果 */
+export interface FactorResearchResult { engine_version:string;snapshot_id:string;started_at:string;finished_at:string;horizon_days:number;top_k:number;codes:number;sections:number;last_date?:string;snapshot_date_end?:string;stale_days:number;factors:FactorEval[];top_picks:FactorTopPick[];note:string }
+/** 落库后的因子通道产出：run_id = pick-<截面日期>，同截面日重跑幂等更新 */
+export interface FactorPickEntry { code:string;score:number;contributions?:Record<string,number> }
+export interface FactorPickRun { run_id:string;snapshot_id:string;snapshot_date_end?:string;as_of:string;stale_days:number;factors_snapshot:FactorEval[];note:string;picks:FactorPickEntry[];created_at:number;updated_at:number }
 
 export interface OvernightCriteria {
 	change_pct: boolean;

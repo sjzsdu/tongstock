@@ -993,6 +993,24 @@ CREATE TABLE IF NOT EXISTS news_sync_state (
 );
 `,
 	},
+	{
+		version: 22,
+		name:    "factor_pick_run_channel",
+		sql: `
+CREATE TABLE IF NOT EXISTS factor_pick_run (
+	run_id TEXT PRIMARY KEY,
+	snapshot_id TEXT NOT NULL,
+	snapshot_date_end TEXT NOT NULL DEFAULT '',
+	as_of TEXT NOT NULL,
+	stale_days INTEGER NOT NULL DEFAULT 0,
+	pick_count INTEGER NOT NULL,
+	pick_json TEXT NOT NULL,
+	created_at_ns INTEGER NOT NULL,
+	updated_at_ns INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_factor_pick_run_asof ON factor_pick_run(as_of DESC, updated_at_ns DESC);
+`,
+	},
 }
 
 // Migrate upgrades the SQLite database transactionally. Store constructors

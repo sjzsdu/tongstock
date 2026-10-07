@@ -51,7 +51,7 @@ func newRegistryWithMethod(t *testing.T) (*methodregistry.Registry, string) {
 		ID: "method-health", FamilyID: "family-health", VariantID: "v1", Name: compiled.Name,
 		Status: methodregistry.StatusVerified, Market: "A", Universe: "universe_all",
 		HoldingMaxDays: 8, CurrentVersion: 1,
-		Versions: []methodregistry.MethodVersion{{ID: "method-health-v1", Version: 1, MethodHash: compiled.ContentHash, Method: compiled, CreatedAt: now}},
+		Versions:  []methodregistry.MethodVersion{{ID: "method-health-v1", Version: 1, MethodHash: compiled.ContentHash, Method: compiled, CreatedAt: now}},
 		CreatedAt: now, UpdatedAt: now,
 	}
 	if err := repo.Save(context.Background(), m, methodregistry.AuditEvent{ID: "audit-health", MethodID: m.ID, To: methodregistry.StatusVerified, Action: "policy", Automatic: true, CreatedAt: now}); err != nil {

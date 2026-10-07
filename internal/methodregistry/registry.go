@@ -49,7 +49,7 @@ func (r *Registry) Register(ctx context.Context, in Registration) (*Method, erro
 		from = m.Status
 	}
 	nextVersion := m.CurrentVersion + 1
-	m.Name = in.Method.Name
+	m.Name = first(in.Name, in.Method.Name)
 	m.Status = status
 	m.Market = first(in.Market, "A")
 	m.Universe = in.Method.Scope.Universe

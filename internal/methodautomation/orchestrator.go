@@ -63,14 +63,40 @@ type Deps struct {
 	Now func() time.Time
 }
 
+// Phase 描述批次当前所处的阶段（用于状态端点的实时进度展示）。
+type Phase string
+
+const (
+	PhasePreparing  Phase = "preparing"  // 解析冻结快照与股票池
+	PhaseDiscovery  Phase = "discovery"  // 在快照上扫描模板
+	PhaseValidation Phase = "validation" // 在保留窗口上做样本外回测
+)
+
+// Progress 是运行中批次的实时快照，由 status 端点透出给前端。
+type Progress struct {
+	Phase        Phase `json:"phase"`
+	HoldDays     int   `json:"hold_days,omitempty"`
+	UniverseSize int   `json:"universe_size,omitempty"`
+	// DiscoveryCodes:模板扫描阶段的逐码进度（300 只需要逐个加载 K 线扫描，
+	// 是批次里最长的一段，必须可见，不能让用户对着 0/0 干等）。
+	DiscoveryCodesDone  int `json:"discovery_codes_done,omitempty"`
+	DiscoveryCodesTotal int `json:"discovery_codes_total,omitempty"`
+	TotalCandidates     int `json:"total_candidates,omitempty"`
+	CandidatesDone      int `json:"candidates_done,omitempty"`
+	Verified            int `json:"verified"`
+	Rejected            int `json:"rejected"`
+}
+
 // Orchestrator 编排「发现 → 验证 → 晋级/拒绝」批次，并累计 DiscoveryTrials。
 type Orchestrator struct {
 	deps Deps
 	now  func() time.Time
 
-	mu     sync.Mutex
-	running bool
-	trials atomic.Int64 // 全局累计的发现尝试数，传入验证的多重检验校正
+	mu           sync.Mutex
+	running      bool
+	runningSince time.Time
+	progress     Progress     // 运行中批次的实时进度（随阶段更新）
+	trials       atomic.Int64 // 全局累计的发现尝试数，传入验证的多重检验校正
 }
 
 // New 构造自动研究编排器。
@@ -97,6 +123,23 @@ func New(deps Deps) (*Orchestrator, error) {
 // Trials 返回全局累计的发现尝试数。
 func (o *Orchestrator) Trials() int64 { return o.trials.Load() }
 
+// Running 报告当前是否有批次在运行、开始时间与实时进度（用于 HTTP 层展示）。
+func (o *Orchestrator) Running() (bool, time.Time) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.running, o.runningSince
+}
+
+// RunningProgress 在批次运行中返回其实时进度快照；空闲时返回 false。
+func (o *Orchestrator) RunningProgress() (Progress, bool) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if !o.running {
+		return Progress{}, false
+	}
+	return o.progress, true
+}
+
 // Run 执行一轮完整研究：每个持有期做模板扫描 → 保留窗口全池验证 →
 // 通过机器证据门槛自动晋级 verified，未过门槛如实记录 rejected 及原因。
 func (o *Orchestrator) Run(ctx context.Context, req Request) (*BatchResult, error) {
@@ -106,6 +149,8 @@ func (o *Orchestrator) Run(ctx context.Context, req Request) (*BatchResult, erro
 		return nil, ErrBusy
 	}
 	o.running = true
+	o.runningSince = o.now()
+	o.progress = Progress{Phase: PhasePreparing}
 	o.mu.Unlock()
 	defer func() {
 		o.mu.Lock()
@@ -124,12 +169,18 @@ func (o *Orchestrator) Run(ctx context.Context, req Request) (*BatchResult, erro
 		return nil, err
 	}
 	result.UniverseSize = len(codes)
+	o.mu.Lock()
+	o.progress.UniverseSize = len(codes)
+	o.mu.Unlock()
 
 	holdDays := normalizeHoldDays(req.HoldDays)
 	for _, hold := range holdDays {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+		o.mu.Lock()
+		o.progress = Progress{Phase: PhaseDiscovery, HoldDays: hold, UniverseSize: len(codes), Verified: o.progress.Verified, Rejected: o.progress.Rejected}
+		o.mu.Unlock()
 		batch, err := o.runHoldDays(ctx, result, snapshot, codes, hold, req.SearchBudget)
 		if err != nil {
 			batch.Error = err.Error()
@@ -146,12 +197,22 @@ func (o *Orchestrator) runHoldDays(ctx context.Context, result *BatchResult, sna
 	batch := &HoldBatchResult{HoldDays: hold}
 	research, err := o.deps.Discoverer.Run(ctx, discovery.Request{
 		SnapshotID: snapshot.ID, StockCodes: codes, HoldDays: hold, SearchBudget: budget,
+		// 逐码回调把扫描进度写进 progress；锁内轻量赋值，回调频率 = 股票数。
+		OnProgress: func(done, total int) {
+			o.mu.Lock()
+			o.progress.DiscoveryCodesDone = done
+			o.progress.DiscoveryCodesTotal = total
+			o.mu.Unlock()
+		},
 	})
 	if err != nil {
 		return batch, fmt.Errorf("discovery: %w", err)
 	}
 	batch.ResearchID = research.ResearchID
 	batch.DiscoveryTrials = research.DiscoveryTrials
+	o.mu.Lock()
+	o.progress.DiscoveryCodesDone = o.progress.DiscoveryCodesTotal
+	o.mu.Unlock()
 	batch.Candidates = len(research.Candidates)
 	result.TrialsThisBatch += research.DiscoveryTrials
 	o.trials.Add(int64(research.DiscoveryTrials))
@@ -168,6 +229,13 @@ func (o *Orchestrator) runHoldDays(ctx context.Context, result *BatchResult, sna
 		return batch, fmt.Errorf("discovery produced no reserved boundaries: fail closed")
 	}
 	result.ValidationStart, result.ValidationEnd = start, end
+
+	o.mu.Lock()
+	o.progress = Progress{
+		Phase: PhaseValidation, HoldDays: batch.HoldDays, UniverseSize: len(codes),
+		TotalCandidates: len(research.Candidates), Verified: o.progress.Verified, Rejected: o.progress.Rejected,
+	}
+	o.mu.Unlock()
 
 	for i := range research.Candidates {
 		if err := ctx.Err(); err != nil {
@@ -190,6 +258,11 @@ func (o *Orchestrator) runHoldDays(ctx context.Context, result *BatchResult, sna
 				result.Registered++
 			}
 		}
+		o.mu.Lock()
+		o.progress.CandidatesDone = i + 1
+		o.progress.Verified = result.Verified
+		o.progress.Rejected = result.Rejected
+		o.mu.Unlock()
 	}
 	// discovery 阶段就被拒绝的模板（样本不足 / 无正收益）同样记入分布。
 	for _, rejected := range research.Rejected {
@@ -214,10 +287,10 @@ func (o *Orchestrator) processCandidate(ctx context.Context, research *discovery
 	familyID := "auto-" + candidate.TemplateID
 	variantID := candidate.Method.ContentHash
 
-	if o.alreadyRegistered(ctx, familyID, variantID) {
+	if o.registeredWithUsableEvidence(ctx, familyID, variantID) {
 		out.Status = "skipped_registered"
 		out.Stage = "registration"
-		out.Reason = "same method hash already registered for this template"
+		out.Reason = "same method hash already registered with usable evidence for this template"
 		return out
 	}
 	if o.negativeFeedback(ctx, familyID) {
@@ -257,6 +330,7 @@ func (o *Orchestrator) processCandidate(ctx context.Context, research *discovery
 	out.Confidence = string(bundle.Confidence)
 	out.OOSTrades = bundle.OosStats.TotalTrades
 	out.OOSReturn = bundle.OosStats.TotalReturn
+	out.OOSWinRate = bundle.OosStats.WinRate
 	sharpe := bundle.OosStats.SharpeRatio
 	out.SharpeRatio = &sharpe
 	if bundle.ConfidenceReason != "" {
@@ -264,8 +338,11 @@ func (o *Orchestrator) processCandidate(ctx context.Context, research *discovery
 	}
 
 	m, err := o.deps.Registry.Register(ctx, methodregistry.Registration{
-		FamilyID:         familyID,
-		VariantID:        variantID,
+		FamilyID:  familyID,
+		VariantID: variantID,
+		// 显示名带上模板与持有期：不同 hold 的同一模板是不同方法，仅靠
+		// 模板自动生成的名字（如「RSI14 高于 65」）在列表里无法区分。
+		Name:             fmt.Sprintf("[自动] %s（持有 %d 天）", candidate.Method.Name, candidate.Method.Holding.MaxDays),
 		SourceResearchID: research.ResearchID,
 		ValidationJobID:  bundle.JobHash,
 		Market:           "A",
@@ -287,17 +364,29 @@ func (o *Orchestrator) processCandidate(ctx context.Context, research *discovery
 	return out
 }
 
-// alreadyRegistered 判断同模板是否已登记过完全相同的方法哈希，
-// 避免定时任务反复跑同一候选时在方法库里堆叠重复版本。
-func (o *Orchestrator) alreadyRegistered(ctx context.Context, familyID, methodHash string) bool {
+// registeredWithUsableEvidence 判断同模板下相同方法哈希是否已带着可用证据登记过，
+// 避免反复跑同一候选时在方法库里堆叠重复版本。
+//
+// 只在「已有版本的证据 passable」时才跳过：历史版本可能被旧门槛（如已降级的
+// bl-underperform 硬拒绝）误杀成 rejected——这类方法必须放行重新验证，
+// Registry.Register 会追加新版本并由 policy.Initial 按当前标准重算状态，
+// 误杀的方法就能在新门槛下翻回 verified。若旧版本本就 passable，
+// 重复验证只会产出等价证据，跳过以免浪费预算。
+//
+// 没有 EvidenceSummary 的历史登记（理论上不存在）同样放行，宁多验不漏放。
+func (o *Orchestrator) registeredWithUsableEvidence(ctx context.Context, familyID, methodHash string) bool {
 	cards, err := o.deps.Registry.Cards(ctx, methodregistry.Query{FamilyID: familyID, Limit: 50})
 	if err != nil {
 		return false
 	}
 	for _, card := range cards {
-		if card.VariantID == methodHash {
-			return true
+		if card.VariantID != methodHash {
+			continue
 		}
+		if card.Evidence == nil || !card.Evidence.Passable {
+			return false
+		}
+		return true
 	}
 	return false
 }
@@ -331,8 +420,11 @@ func (o *Orchestrator) negativeFeedback(ctx context.Context, familyID string) bo
 	return negative >= 2 && negative > positive
 }
 
-// resolveSnapshot 选定冻结快照：显式 ID 优先；否则取最新一个股票池
-// 足以通过验证门槛的快照（与 methodseed 的默认行为一致）。
+// resolveSnapshot 选定冻结快照：显式 ID 优先；否则按 created_at 倒序分页扫描，
+// 取最新一个股票池足以通过验证门槛且内容校验通过的快照。
+// 范式分析、单股 AI 研究会产生大量 universe=1 的单票快照，只扫最近 20 条会把
+// 更早的多股票快照挤出窗口（线上已踩过：34 个快照里只有 1 个多股票，排在第 21+ 位），
+// 所以这里分页扫到上限为止，找到即返回最新的合格者。
 func (o *Orchestrator) resolveSnapshot(snapshotID string) (*paradigm.DatasetSnapshot, error) {
 	if id := strings.TrimSpace(snapshotID); id != "" {
 		snapshot, err := o.deps.Snapshots.GetByID(id)
@@ -344,20 +436,38 @@ func (o *Orchestrator) resolveSnapshot(snapshotID string) (*paradigm.DatasetSnap
 		}
 		return snapshot, nil
 	}
-	snaps, err := o.deps.Snapshots.List(20, 0)
-	if err != nil {
-		return nil, fmt.Errorf("list frozen snapshots: %w", err)
-	}
-	for _, snap := range snaps {
-		if snap == nil || len(snap.Universe) < minUniverseCodes {
-			continue
+	const (
+		scanPage = 50
+		scanMax  = 500 // 防御上限：快照表被单票快照灌满时不至于无限扫，正常场景前几页就命中
+	)
+	scanned, tooSmall, unverifiable := 0, 0, 0
+	for offset := 0; offset < scanMax; offset += scanPage {
+		snaps, err := o.deps.Snapshots.List(scanPage, offset)
+		if err != nil {
+			return nil, fmt.Errorf("list frozen snapshots: %w", err)
 		}
-		if err := o.deps.Snapshots.VerifyContent(snap.ID); err != nil {
-			continue
+		for _, snap := range snaps {
+			if snap == nil {
+				continue
+			}
+			scanned++
+			if len(snap.Universe) < minUniverseCodes {
+				tooSmall++
+				continue
+			}
+			if err := o.deps.Snapshots.VerifyContent(snap.ID); err != nil {
+				unverifiable++
+				continue
+			}
+			return snap, nil
 		}
-		return snap, nil
+		if len(snaps) < scanPage {
+			break
+		}
 	}
-	return nil, fmt.Errorf("no frozen snapshot with universe >= %d codes: sync data and freeze a snapshot first", minUniverseCodes)
+	return nil, fmt.Errorf(
+		"no usable frozen dataset snapshot: scanned %d snapshots, %d with universe < %d codes, %d failed content verification; run a multi-stock AI research (it freezes one) or freeze any multi-code snapshot first",
+		scanned, tooSmall, minUniverseCodes, unverifiable)
 }
 
 func (o *Orchestrator) resolveCodes(ctx context.Context, snapshot *paradigm.DatasetSnapshot, req Request) ([]string, error) {

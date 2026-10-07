@@ -197,7 +197,7 @@ type EvidenceBundle struct {
 	CriticIssues []CriticIssue `json:"critic_issues,omitempty"`
 
 	// 最终判定
-	Confidence ConfidenceLevel    `json:"confidence"`
+	Confidence ConfidenceLevel `json:"confidence"`
 	// ConfidenceReason 是 ComputeConfidence/ExplainConfidence 决策分支的机器可读原因码。
 	// 属派生信息，刻意不参与 ResultHash：加入会使历史持久化制品的哈希校验全部失效。
 	ConfidenceReason string             `json:"confidence_reason,omitempty"`

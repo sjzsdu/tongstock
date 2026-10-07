@@ -21,6 +21,9 @@ type Request struct {
 	Question     string   `json:"question,omitempty"`
 	HoldDays     int      `json:"hold_days,omitempty"`
 	SearchBudget int      `json:"search_budget,omitempty"`
+	// OnProgress 可选：模板扫描每完成一只股票回调一次（codes_done, codes_total），
+	// 供编排器把长扫描阶段透出到状态端点，用户不用对着 0/0 干等。
+	OnProgress func(codesDone, codesTotal int)
 }
 
 func (r *Request) Normalize() error {

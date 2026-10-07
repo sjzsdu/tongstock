@@ -1,10 +1,14 @@
 package server
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,10 +16,13 @@ import (
 	"github.com/sjzsdu/tongstock/internal/adapter/marketsnapshotrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/methodregistryrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/selectionrepo"
+	"github.com/sjzsdu/tongstock/internal/discovery"
 	"github.com/sjzsdu/tongstock/internal/ledger"
 	"github.com/sjzsdu/tongstock/internal/marketsnapshot"
+	"github.com/sjzsdu/tongstock/internal/methodautomation"
 	"github.com/sjzsdu/tongstock/internal/methodregistry"
 	"github.com/sjzsdu/tongstock/internal/methods"
+	"github.com/sjzsdu/tongstock/internal/paradigm"
 	"github.com/sjzsdu/tongstock/internal/selection"
 	"github.com/sjzsdu/tongstock/internal/trading"
 	"github.com/sjzsdu/tongstock/internal/validation"
@@ -96,6 +103,26 @@ func registerVerifiedMethod(t *testing.T, registry *methodregistry.Registry) *me
 	}
 	if registered.Status != methodregistry.StatusCandidate {
 		t.Fatalf("registration without evidence should be candidate, got %s", registered.Status)
+	}
+	return registered
+}
+
+func registerRejectedMethodWithReason(t *testing.T, registry *methodregistry.Registry, reason string) *methodregistry.Method {
+	t.Helper()
+	compiled := compileTestMethod(t, "指定原因的拒绝方法")
+	bundle := &validation.EvidenceBundle{
+		JobHash: "job-hash-" + reason, MethodHash: compiled.ContentHash, SnapshotID: "snap-1",
+		Confidence: validation.ConfidenceWeak, Passable: false,
+		ConfidenceReason: reason,
+		OosStats:         validation.PerformanceStats{TotalTrades: 20, SharpeRatio: 0.2, MaxDrawdown: 0.1},
+	}
+	bundle.ResultHash = bundle.ComputeResultHash()
+	registered, err := registry.Register(t.Context(), methodregistry.Registration{
+		FamilyID: "family-" + reason, VariantID: "v1", Market: "A", Method: compiled,
+		Evidence: methodregistry.ValidationEvidence{Bundle: bundle},
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 	return registered
 }
@@ -204,7 +231,7 @@ func TestMethodForwardHealthEndpoint(t *testing.T) {
 			ParadigmVersionID: versionID, StockCode: "600000", Direction: "buy",
 			SignalDate: date, Price: 10,
 			DataSnapshot: ledger.DataSnapshot{DataHash: "test-data-hash", CapturedAt: date},
-			Execution: &ledger.ExecutionRecord{Status: "filled", ExecPrice: 10, ExecQty: 100, PnL: 80, ExecutedAt: date},
+			Execution:    &ledger.ExecutionRecord{Status: "filled", ExecPrice: 10, ExecQty: 100, PnL: 80, ExecutedAt: date},
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -251,5 +278,203 @@ func TestSelectionRunCreateRequiresMethodIDsAndRunsFiltered(t *testing.T) {
 	}
 	if !strings.Contains(body, `"method_not_found"`) {
 		t.Fatalf("ghost id must be excluded with method_not_found: %s", body)
+	}
+}
+
+func TestMethodResearchStatusReportsIdleWithoutOrchestrator(t *testing.T) {
+	_, router, _, _, _ := newMarketTestServer(t)
+	rec := doJSON(router, http.MethodGet, "/api/methods/research/status", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status endpoint should always be 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"running":false`) {
+		t.Fatalf("expected running:false, got %s", rec.Body.String())
+	}
+}
+
+// 从未完成过任何批次时 last 端点返回 200 空结构（而不是 404）——
+// 「没有记录」与「正在运行」是两种状态，前端需要区分。
+func TestMethodResearchLastReturnsEmptyStructureWithoutCompletedBatch(t *testing.T) {
+	_, router, _, _, _ := newMarketTestServer(t)
+	rec := doJSON(router, http.MethodGet, "/api/methods/research/last", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("last should be 200 even without completed batch, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"status":"no_completed_batch"`) {
+		t.Fatalf("last should mark no_completed_batch: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"running":false`) {
+		t.Fatalf("last should report running:false without orchestrator: %s", rec.Body.String())
+	}
+}
+
+// 拒绝原因统计必须把带随机 hash 的原因码归一为可读类别。
+func TestMethodRejectStatsNormalizesReasonsWithoutHashes(t *testing.T) {
+	_, router, registry, _, _ := newMarketTestServer(t)
+	first := registerRejectedMethodWithReason(t, registry, "hard_blocker:ss-trades-0797f2ae6b8fa808c7d66b8fb1036d66")
+	second := registerRejectedMethodWithReason(t, registry, "hard_blocker:ss-trades-c45bda4362fe70b225ae862e7e8cfdd6")
+
+	rec := doJSON(router, http.MethodGet, "/api/methods/reject-stats", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reject-stats status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "0797f2ae") || strings.Contains(body, "c45bda43") {
+		t.Fatalf("reject stats must not leak random hash suffixes: %s", body)
+	}
+	if !strings.Contains(body, `"reason":"hard_blocker:ss-trades"`) || !strings.Contains(body, `"count":2`) {
+		t.Fatalf("same-category reasons must merge into one count: %s", body)
+	}
+	_ = first
+	_ = second
+}
+
+// ---------------------------------------------------------------------------
+// 自动研究 run 端点：异步启动（一轮可能跑几十分钟，HTTP 不能同步等）
+// ---------------------------------------------------------------------------
+
+type stubResearchDiscoverer struct {
+	block   chan struct{}
+	release sync.Once
+}
+
+func (d *stubResearchDiscoverer) Release() { d.release.Do(func() { close(d.block) }) }
+
+func (d *stubResearchDiscoverer) Run(ctx context.Context, _ discovery.Request) (*discovery.Result, error) {
+	select {
+	case <-d.block:
+		return &discovery.Result{ResearchID: "res-async"}, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+type stubResearchSnapshots struct{ snap *paradigm.DatasetSnapshot }
+
+func (s *stubResearchSnapshots) List(int, int) ([]*paradigm.DatasetSnapshot, error) {
+	return []*paradigm.DatasetSnapshot{s.snap}, nil
+}
+
+func (s *stubResearchSnapshots) GetByID(id string) (*paradigm.DatasetSnapshot, error) {
+	if id == s.snap.ID {
+		return s.snap, nil
+	}
+	return nil, fmt.Errorf("snapshot %s not found", id)
+}
+
+func (s *stubResearchSnapshots) VerifyContent(string) error { return nil }
+
+type stubResearchUniverse struct{}
+
+func (stubResearchUniverse) ResolveUniverse(context.Context, string, int, int) ([]string, int, error) {
+	return []string{"600000"}, 0, nil
+}
+
+type stubResearchBars struct{}
+
+func (stubResearchBars) LoadBars(context.Context, string, string, string, string) ([]validation.BacktestBar, error) {
+	return nil, errors.New("unused in run-endpoint tests")
+}
+
+type stubResearchBenchmark struct{}
+
+func (stubResearchBenchmark) LoadDailyReturns(context.Context, string, string, string, string) (map[string]float64, error) {
+	return nil, errors.New("unused in run-endpoint tests")
+}
+
+func newResearchTestServer(t *testing.T, d methodautomation.Discoverer) (*Server, *gin.Engine) {
+	t.Helper()
+	srv, router, registry, _, _ := newMarketTestServer(t)
+	orch, err := methodautomation.New(methodautomation.Deps{
+		Registry:   registry,
+		Snapshots:  &stubResearchSnapshots{snap: &paradigm.DatasetSnapshot{ID: "auto-snap"}},
+		Universe:   stubResearchUniverse{},
+		Bars:       stubResearchBars{},
+		Benchmark:  stubResearchBenchmark{},
+		Discoverer: d,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.SetMethodAutomation(orch)
+	return srv, router
+}
+
+func TestMethodResearchRunStartsBatchInBackground(t *testing.T) {
+	d := &stubResearchDiscoverer{block: make(chan struct{})}
+	defer d.Release() // 保证测试退出前释放阻塞的 goroutine
+	srv, router := newResearchTestServer(t, d)
+
+	// run 立即返回 200 started，不等待 discovery 完成（显式 snapshot_id 走快路径）。
+	rec := doJSON(router, http.MethodPost, "/api/methods/research/run", `{"snapshot_id":"auto-snap"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("run should start asynchronously with 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"started":true`) {
+		t.Fatalf("run response missing started:true: %s", rec.Body.String())
+	}
+
+	// 批次很快进入 running 状态（轮询端点可见）。
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		rec = doJSON(router, http.MethodGet, "/api/methods/research/status", "")
+		if rec.Code == http.StatusOK && strings.Contains(rec.Body.String(), `"running":true`) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("status never reported running: %s", rec.Body.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// 运行中状态必须携带实时进度阶段（前端进度卡片的数据源）。
+	rec = doJSON(router, http.MethodGet, "/api/methods/research/status", "")
+	if !strings.Contains(rec.Body.String(), `"phase":"discovery"`) {
+		t.Fatalf("status should surface discovery phase while batch runs: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"universe_size":1`) {
+		t.Fatalf("status progress should carry universe size: %s", rec.Body.String())
+	}
+
+	// 已在运行时再次触发 → 409 busy（前端转跟踪模式的依据）。
+	rec = doJSON(router, http.MethodPost, "/api/methods/research/run", `{}`)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("second run should 409, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	d.Release()
+	srv.WaitForBackgroundTasks()
+
+	// 批次结束后：status 恢复 idle 且带 last_finished_at；last 端点返回批次结果。
+	rec = doJSON(router, http.MethodGet, "/api/methods/research/status", "")
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), `"running":true`) {
+		t.Fatalf("status should be idle after batch, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"last_finished_at"`) {
+		t.Fatalf("status missing last_finished_at: %s", rec.Body.String())
+	}
+	rec = doJSON(router, http.MethodGet, "/api/methods/research/last", "")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"snapshot_id":"auto-snap"`) {
+		t.Fatalf("last should return batch result, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestMethodResearchRunRecordsFailureInStatus(t *testing.T) {
+	srv, router := newResearchTestServer(t, &stubResearchDiscoverer{block: make(chan struct{})})
+
+	// ghost snapshot 让 Run 在 resolveSnapshot 阶段同步失败
+	// （超时取消走同一条 recordResearchResult 路径）。
+	rec := doJSON(router, http.MethodPost, "/api/methods/research/run", `{"snapshot_id":"ghost-snap"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("run should start asynchronously even when batch will fail, got %d", rec.Code)
+	}
+	srv.WaitForBackgroundTasks()
+
+	rec = doJSON(router, http.MethodGet, "/api/methods/research/status", "")
+	if !strings.Contains(rec.Body.String(), `"last_error":"load frozen snapshot ghost-snap`) {
+		t.Fatalf("status should surface last_error after failure: %s", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), `"running":true`) {
+		t.Fatalf("status should be idle after failure: %s", rec.Body.String())
 	}
 }

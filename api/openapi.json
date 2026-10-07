@@ -4951,7 +4951,7 @@
     "/api/methods/research/run": {
       "post": {
         "operationId": "postApiMethodsResearchRun",
-        "summary": "触发一轮自动方法研究：规律发现 → 保留窗口全池验证 → 按机器证据晋级/拒绝",
+        "summary": "异步启动一轮自动方法研究：规律发现 → 保留窗口全池验证 → 按机器证据晋级/拒绝（批次后台运行，结果通过 status 轮询与 last 获取）",
         "requestBody": {
           "required": false,
           "content": {
@@ -4987,7 +4987,7 @@
         },
         "responses": {
           "200": {
-            "description": "Batch result with per-candidate outcomes and reject reasons",
+            "description": "Batch started in background; poll /api/methods/research/status and fetch /api/methods/research/last for results",
             "content": {
               "application/json": {
                 "schema": {
@@ -4997,9 +4997,6 @@
             }
           },
           "409": {
-            "$ref": "#/components/responses/Error"
-          },
-          "422": {
             "$ref": "#/components/responses/Error"
           },
           "500": {
@@ -5014,10 +5011,10 @@
     "/api/methods/research/last": {
       "get": {
         "operationId": "getApiMethodsResearchLast",
-        "summary": "最近一轮自动方法研究的批次结果（409 前无记录）",
+        "summary": "最近一轮自动方法研究的批次结果（从未完成过时返回 200 空结构 status=no_completed_batch，并用 running 标明是否有批次在跑）",
         "responses": {
           "200": {
-            "description": "Last batch result",
+            "description": "Last batch result, or an empty structure with status=no_completed_batch",
             "content": {
               "application/json": {
                 "schema": {
@@ -5026,8 +5023,26 @@
               }
             }
           },
-          "404": {
+          "500": {
             "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/methods/research/status": {
+      "get": {
+        "operationId": "getApiMethodsResearchStatus",
+        "summary": "自动研究批次运行状态（启动时调度器会立即跑一轮）",
+        "responses": {
+          "200": {
+            "description": "Run status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
           },
           "500": {
             "$ref": "#/components/responses/Error"
@@ -5189,6 +5204,103 @@
             "$ref": "#/components/responses/Error"
           },
           "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/factors/research/run": {
+      "post": {
+        "operationId": "postApiFactorsResearchRun",
+        "summary": "异步启动一轮横截面多因子研究：对冻结快照逐日计算可解释因子截面值，用 RankIC/t 统计量评估因子预测力，按显著因子 IC 加权输出 TopK 名单与贡献分解；结果经 /api/factors/research/last 轮询获取，write_to_selection=true 时额外出库为因子通道 TopN 名单（pick-<截面日期> 幂等）",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "snapshot_id": {
+                    "type": "string"
+                  },
+                  "horizon_days": {
+                    "type": "integer"
+                  },
+                  "top_k": {
+                    "type": "integer"
+                  },
+                  "max_codes": {
+                    "type": "integer"
+                  },
+                  "write_to_selection": {
+                    "type": "boolean",
+                    "description": "完成后将显著因子 TopN 名单落库为因子通道持久化产出"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Run started asynchronously; poll /api/factors/research/last for the result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/factors/research/last": {
+      "get": {
+        "operationId": "getApiFactorsResearchLast",
+        "summary": "获取最近一次完成的因子研究结果；尚无完成结果时返回 status=no_completed_run",
+        "responses": {
+          "200": {
+            "description": "Last completed factor research run, or status=no_completed_run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/factors/picks/last": {
+      "get": {
+        "operationId": "getApiFactorsPicksLast",
+        "summary": "获取因子通道最近一次持久化的 TopN 观察名单产出（按截面日期幂等更新）；尚无产出时返回 status=no_pick_run",
+        "responses": {
+          "200": {
+            "description": "Latest persisted factor pick run with eval snapshot and contribution decomposition, or status=no_pick_run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "500": {
             "$ref": "#/components/responses/Error"
           }
         }

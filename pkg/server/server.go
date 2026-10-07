@@ -12,6 +12,7 @@ import (
 	"github.com/sjzsdu/tongstock/internal/automation"
 	"github.com/sjzsdu/tongstock/internal/dashboard"
 	"github.com/sjzsdu/tongstock/internal/experiment"
+	"github.com/sjzsdu/tongstock/internal/factorlab"
 	"github.com/sjzsdu/tongstock/internal/ledger"
 	"github.com/sjzsdu/tongstock/internal/methodautomation"
 	"github.com/sjzsdu/tongstock/internal/methodhealth"
@@ -62,6 +63,12 @@ type Server struct {
 	researchMu            sync.RWMutex
 	researchLast          *methodautomation.BatchResult
 	researchLastError     string
+	factorLab             *factorlab.Service
+	factorPicks           factorlab.PickStore
+	factorMu              sync.RWMutex
+	factorLast            *factorlab.RunResult
+	factorRunning         bool
+	factorLastError       string
 	positionEngine        *positiondecision.Engine
 	positionRuns          positiondecision.Repository
 	automationEngine      *automation.Orchestrator

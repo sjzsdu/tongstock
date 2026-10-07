@@ -22,6 +22,7 @@ func (s *Server) SetupRoutes(router *gin.Engine, apiMiddleware ...gin.HandlerFun
 	s.registerMethodRegistryRoutes(api)
 	s.registerMethodMarketRoutes(api)
 	s.registerMethodSeedRoutes(api)
+	s.registerFactorRoutes(api)
 	s.registerSelectionRoutes(api)
 	s.registerPositionDecisionRoutes(api)
 	s.registerAutomationRoutes(api)
