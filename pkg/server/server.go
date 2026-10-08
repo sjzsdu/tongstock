@@ -572,12 +572,16 @@ func (s *Server) setupHealthRoutes(r *gin.Engine) {
 		if result.Status == "unavailable" {
 			status = http.StatusServiceUnavailable
 			code, message := statusError(status)
-			WriteErrorWithDetails(c, status, code, message, map[string]any{
+			extra := map[string]any{
 				"status":     result.Status,
 				"service":    result.Service,
 				"modules":    result.Modules,
 				"checked_at": result.CheckedAt,
-			})
+			}
+			if result.SchemaVersion != 0 {
+				extra["schema_version"] = result.SchemaVersion
+			}
+			WriteErrorWithDetails(c, status, code, message, extra)
 			return
 		}
 		c.JSON(status, result)
