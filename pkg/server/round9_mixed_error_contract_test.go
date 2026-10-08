@@ -24,7 +24,7 @@ func storageNew(t *testing.T) (*storage.Storage, error) {
 
 // Round-9 characterization: the parked mixed-key legacy error sites. Each
 // case pins the exact status and byte-identical body that
-// ErrorEnvelopeMiddleware emits when it merges a legacy {"error": ...} body
+// ErrorEnvelopeMiddleware emitted when it merged a legacy {"error": ...} body
 // with extra top-level keys. Sites whose payloads contain wall-clock
 // timestamps (monitoring input status, paradigm evidence card) are pinned
 // through a parse-then-remarshal round trip: the response body must equal

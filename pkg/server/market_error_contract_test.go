@@ -12,7 +12,7 @@ import (
 
 // Characterization tests for the legacy error sites in market_handlers.go
 // and the resolveStockCodeOrRespond helper in server.go. Each case pins the
-// exact status and byte-identical body that ErrorEnvelopeMiddleware emits
+// exact status and byte-identical body that ErrorEnvelopeMiddleware emitted
 // today for a legacy {"error": ...} response, so the WriteError conversion
 // must not change any observable output. The helper is shared by market and
 // analysis handlers, so its conversion covers both callers.

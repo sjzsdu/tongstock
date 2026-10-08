@@ -12,7 +12,7 @@ import (
 // Characterization tests for the legacy error sites in agent_handlers.go
 // (chat session persistence), monitoring_handlers.go (alert ack/resolve)
 // and strategy_handlers.go. Each case pins the exact status and
-// byte-identical body that ErrorEnvelopeMiddleware emits today. The SSE
+// byte-identical body that ErrorEnvelopeMiddleware emitted (retired in round 11). The SSE
 // chat-stream path is exempt from the middleware and stays untouched, and
 // the empty-alert-id guards are unreachable through gin path routing.
 
@@ -43,7 +43,7 @@ func serverContractRouter(t *testing.T, server *Server) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	engine.Use(RequestID(), ErrorEnvelopeMiddleware(), Recovery())
+	engine.Use(RequestID(), Recovery())
 	server.SetupRoutes(engine)
 	return engine
 }

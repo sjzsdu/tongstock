@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -170,72 +169,6 @@ func normalizeJSONValue(value any) any {
 		return value
 	}
 	return out
-}
-
-type captureWriter struct {
-	gin.ResponseWriter
-	body bytes.Buffer
-}
-
-func (w *captureWriter) Write(data []byte) (int, error) {
-	return w.body.Write(data)
-}
-
-func (w *captureWriter) WriteString(value string) (int, error) {
-	return w.body.WriteString(value)
-}
-
-// ErrorEnvelopeMiddleware provides a compatibility bridge while individual
-// handlers migrate to domain errors. It converts legacy {"error":"..."}
-// failures into the stable envelope without exposing their internal message.
-func ErrorEnvelopeMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if strings.Contains(c.GetHeader("Accept"), "text/event-stream") ||
-			strings.HasSuffix(c.Request.URL.Path, "/stream") {
-			c.Next()
-			return
-		}
-		original := c.Writer
-		capture := &captureWriter{ResponseWriter: original}
-		c.Writer = capture
-		defer func() {
-			c.Writer = original
-			status := capture.Status()
-			body := capture.body.Bytes()
-			if len(body) == 0 {
-				return
-			}
-			if status >= 400 && strings.Contains(original.Header().Get("Content-Type"), "application/json") {
-				var legacy map[string]any
-				if json.Unmarshal(body, &legacy) == nil {
-					if _, already := legacy["error"].(map[string]any); !already {
-						code, message := statusError(status)
-						// 合并而非整体替换：legacy 响应里 error 可能是字符串
-						// （如范式 422 分支），其顶层还携带可用数据
-						// （paradigm / agent_text / experiment_id…）。
-						// 这些字段必须保留，否则前端拿不到部分结果。
-						envelope := map[string]any{
-							"error": APIError{
-								Code:      code,
-								Message:   message,
-								RequestID: RequestIDFromContext(c),
-							},
-						}
-						for key, value := range legacy {
-							if key == "error" {
-								continue
-							}
-							envelope[key] = value
-						}
-						body, _ = json.Marshal(envelope)
-					}
-				}
-			}
-			original.Header().Del("Content-Length")
-			_, _ = original.Write(body)
-		}()
-		c.Next()
-	}
 }
 
 func statusError(status int) (string, string) {

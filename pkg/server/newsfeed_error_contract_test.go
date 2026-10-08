@@ -11,7 +11,7 @@ import (
 
 // Characterization tests for the legacy error sites in newsfeed_handlers.go.
 // Each case pins the exact status and byte-identical body that
-// ErrorEnvelopeMiddleware emits today for a legacy {"error": ...} response,
+// ErrorEnvelopeMiddleware emitted for a legacy {"error": ...} response,
 // so the later WriteError conversion must not change any observable output.
 // The two dynamic-status sites (stock news / hot topics) always stay >= 400:
 // 500 on plain failures, 502 on ErrFetchUnavailable (default-mapped to

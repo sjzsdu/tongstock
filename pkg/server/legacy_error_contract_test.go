@@ -14,7 +14,7 @@ import (
 
 // Shared characterization helpers for legacy error-site migration rounds.
 // Each golden case pins the exact status and byte-identical body that
-// ErrorEnvelopeMiddleware emits today for a legacy {"error": ...} response,
+// ErrorEnvelopeMiddleware emitted for a legacy {"error": ...} response,
 // so the WriteError conversion must not change any observable output.
 
 const legacyErrorContractRequestID = "error-contract-req"
@@ -40,7 +40,7 @@ func newContractGinEngine(t *testing.T, deps Dependencies) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.Use(RequestID(), ErrorEnvelopeMiddleware(), Recovery())
+	router.Use(RequestID(), Recovery())
 	NewServer(deps).SetupRoutes(router)
 	return router
 }

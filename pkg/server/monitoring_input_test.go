@@ -89,7 +89,7 @@ func TestMonitoringRefreshRefusesToInventMissingObservations(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api := NewServer(Dependencies{})
 	router := gin.New()
-	router.Use(RequestID(), ErrorEnvelopeMiddleware(), Recovery())
+	router.Use(RequestID(), Recovery())
 	api.registerMonitoringRoutes(&router.RouterGroup)
 
 	response := httptest.NewRecorder()

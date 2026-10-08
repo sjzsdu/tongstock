@@ -16,7 +16,7 @@ import (
 
 // Characterization tests for the legacy error sites in portfolio_handlers.go.
 // Each case pins the exact status and byte-identical body that
-// ErrorEnvelopeMiddleware emits today for a legacy {"error": ...} response,
+// ErrorEnvelopeMiddleware emitted for a legacy {"error": ...} response,
 // so the later WriteError conversion must not change any observable output.
 // The "trading store not initialized" 500s are the current contract and keep
 // their 500 status (normalization is out of scope).

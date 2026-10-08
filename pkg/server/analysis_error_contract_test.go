@@ -12,7 +12,7 @@ import (
 
 // Characterization tests for the legacy error sites in analysis_handlers.go.
 // Each case pins the exact status and byte-identical body that
-// ErrorEnvelopeMiddleware emits today for a legacy {"error": ...} response,
+// ErrorEnvelopeMiddleware emitted for a legacy {"error": ...} response,
 // so the later WriteError conversion must not change any observable output.
 // None of these paths touch param's package-global config (reviewer nit 3).
 

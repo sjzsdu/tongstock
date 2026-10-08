@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
@@ -13,7 +14,7 @@ import (
 // Round-10 characterization: the typed-struct legacy error sites
 // (json:"error,omitempty" and friends) plus the Class B error-less 503
 // bodies the middleware used to wrap. Each case pins the exact status and
-// byte-identical body that ErrorEnvelopeMiddleware emits. Extras mirror the
+// byte-identical body that ErrorEnvelopeMiddleware emitted. Extras mirror the
 // old struct's omitempty serialization exactly — only the keys the legacy
 // body actually carried.
 
@@ -259,4 +260,46 @@ func TestHealthReadyUnavailableProviderGolden(t *testing.T) {
 			"modules":    map[string]ModuleHealth{"app": {Status: "unavailable", Message: "diagnostics not configured"}},
 			"checked_at": fixed,
 		})
+}
+
+// TestErrorEnvelopeInvariant is defense-in-depth after the middleware
+// retirement: representative >=400 JSON responses must still carry the
+// stable envelope (error.code + request_id) straight from the handlers, so
+// a future regression cannot silently reintroduce string-error bodies.
+func TestErrorEnvelopeInvariant(t *testing.T) {
+	router := newContractGinEngine(t, Dependencies{})
+	chatStoreRouter := chatTestDepsRouter(t, func(s *Server) { s.SetChatStore(nil) })
+
+	for _, tc := range []struct {
+		name   string
+		router *gin.Engine
+		method string
+		path   string
+		want   string
+	}{
+		{"chat store unavailable 503", router, http.MethodPost, "/api/agent/chat", "service_unavailable"},
+		{"unknown chat session 404", router, http.MethodGet, "/api/agent/chat/session/x", "not_found"},
+		{"agent state diagnostics 503", router, http.MethodGet, "/api/agent/state", "service_unavailable"},
+		{"paradigm review 500", chatStoreRouter, http.MethodPut, "/api/paradigm/p1/review", "internal_error"},
+	} {
+		response := doLegacyErrorRequest(t, tc.router, tc.method, tc.path, "{}")
+		if response.Code == http.StatusOK || response.Code < 400 {
+			t.Fatalf("%s: status = %d, want >= 400", tc.name, response.Code)
+		}
+		if ct := response.Header().Get("Content-Type"); ct != "application/json; charset=utf-8" {
+			t.Fatalf("%s: content-type = %q", tc.name, ct)
+		}
+		var envelope struct {
+			Error struct {
+				Code      string `json:"code"`
+				RequestID string `json:"request_id"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+			t.Fatalf("%s: body is not an envelope: %v; body = %s", tc.name, err, response.Body.String())
+		}
+		if envelope.Error.Code != tc.want || envelope.Error.RequestID == "" {
+			t.Fatalf("%s: envelope = %+v, want code %q + request_id", tc.name, envelope.Error, tc.want)
+		}
+	}
 }

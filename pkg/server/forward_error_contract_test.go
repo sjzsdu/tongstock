@@ -10,7 +10,7 @@ import (
 
 // Characterization tests for the legacy error sites in forward_handlers.go.
 // Each case pins the exact status and byte-identical body that
-// ErrorEnvelopeMiddleware emits today for a legacy {"error": ...} response,
+// ErrorEnvelopeMiddleware emitted for a legacy {"error": ...} response,
 // so the later WriteError conversion must not change any observable output.
 // The 16 nil-ledger guards must keep returning 404 (status normalization is
 // explicitly out of scope), and the 422 site maps through statusError's
@@ -23,7 +23,7 @@ func nilLedgerForwardRouter(t *testing.T) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.Use(RequestID(), ErrorEnvelopeMiddleware(), Recovery())
+	router.Use(RequestID(), Recovery())
 	server := &Server{}
 	server.registerForwardRunRoutes(router.Group("/api"))
 	return router

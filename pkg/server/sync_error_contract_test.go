@@ -13,7 +13,7 @@ import (
 
 // Characterization tests for the legacy error sites in sync_handlers.go.
 // Each case pins the exact status and byte-identical body that
-// ErrorEnvelopeMiddleware emits today for a legacy {"error": ...} response,
+// ErrorEnvelopeMiddleware emitted for a legacy {"error": ...} response,
 // so the later WriteError conversion must not change any observable output.
 // Shared golden/router/request helpers live in legacy_error_contract_test.go.
 

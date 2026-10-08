@@ -34,7 +34,7 @@ func TestVerticalSliceKeyHandlers(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.Use(RequestID(), ErrorEnvelopeMiddleware(), Recovery())
+	router.Use(RequestID(), Recovery())
 	NewServer(Dependencies{
 		Watchlist: watchlistStore,
 		Newsfeed:  NewNewsfeedHandler(newsStore),

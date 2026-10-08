@@ -14,7 +14,7 @@ import (
 // Characterization tests for the convertible legacy error sites in the
 // paradigm cluster (paradigm_handlers.go, paradigm_experiment_handlers.go,
 // agent_research_handlers.go). Each case pins the exact status and
-// byte-identical body that ErrorEnvelopeMiddleware emits today. The three
+// byte-identical body that ErrorEnvelopeMiddleware emitted (retired in round 11). The three
 // parked mixed-key sites (409 + promotion_blockers/evidence, and the two
 // 422 body-building sites) are intentionally NOT covered here — they stay
 // legacy until WriteErrorWithDetails exists (round 9).
@@ -76,7 +76,7 @@ func TestParadigmReviewErrorContract(t *testing.T) {
 	server.SetParadigmStore(paradigmTestStore(t, true))
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.Use(RequestID(), ErrorEnvelopeMiddleware(), Recovery())
+	router.Use(RequestID(), Recovery())
 	server.SetupRoutes(router)
 
 	t.Run("review unknown id", func(t *testing.T) {
@@ -125,7 +125,7 @@ func TestParadigmValidationErrorContract(t *testing.T) {
 	server.SetParadigmStore(paradigmTestStore(t, false))
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.Use(RequestID(), ErrorEnvelopeMiddleware(), Recovery())
+	router.Use(RequestID(), Recovery())
 	server.SetupRoutes(router)
 
 	t.Run("backtest invalid JSON", func(t *testing.T) {
