@@ -21,14 +21,16 @@ func (s *Server) handleOvernightArbitrage(c *gin.Context) {
 		MaxMarketCap float64  `json:"maxMarketCap"`
 	}
 	if err := c.BindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
 	// Normalize codes
 	codes := normalizeCodeList(req.Codes)
 	if len(codes) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "codes is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 

@@ -129,7 +129,8 @@ func (s *Server) handleMonitoringAlerts(c *gin.Context) {
 func (s *Server) handleMonitoringAlertAck(c *gin.Context) {
 	alertID := c.Param("id")
 	if alertID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "alert id is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -142,7 +143,8 @@ func (s *Server) handleMonitoringAlertAck(c *gin.Context) {
 	defer s.monitoringMu.Unlock()
 	err := s.monitoringEngine.AlertEngine.AcknowledgeAlert(alertID, user)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 
@@ -154,7 +156,8 @@ func (s *Server) handleMonitoringAlertAck(c *gin.Context) {
 func (s *Server) handleMonitoringAlertResolve(c *gin.Context) {
 	alertID := c.Param("id")
 	if alertID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "alert id is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -162,7 +165,8 @@ func (s *Server) handleMonitoringAlertResolve(c *gin.Context) {
 	defer s.monitoringMu.Unlock()
 	err := s.monitoringEngine.AlertEngine.ResolveAlert(alertID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 

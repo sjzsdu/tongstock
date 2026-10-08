@@ -233,12 +233,14 @@ type chatSaveRequest struct {
 
 func (s *Server) handleChatSave(c *gin.Context) {
 	if s.agentState == nil || s.agentState.chatStore == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "chat store not available"})
+		code, message := statusError(http.StatusServiceUnavailable)
+		WriteError(c, http.StatusServiceUnavailable, code, message)
 		return
 	}
 	var req chatSaveRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 	if req.ID == "" {
@@ -258,7 +260,8 @@ func (s *Server) handleChatSave(c *gin.Context) {
 		// (e.g. missing table / locked db) is invisible in server logs.
 		log.Printf("chat session save failed: id=%s stock=%s messages=%d err=%v",
 			sess.ID, sess.StockCode, len(sess.Messages), err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"id": sess.ID, "message": "saved"})
@@ -276,13 +279,15 @@ func (s *Server) handleChatList(c *gin.Context) {
 
 func (s *Server) handleChatGet(c *gin.Context) {
 	if s.agentState == nil || s.agentState.chatStore == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "chat store not available"})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 	id := c.Param("id")
 	sess, err := s.agentState.chatStore.Get(id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 	c.JSON(http.StatusOK, sess)
