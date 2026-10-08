@@ -83,3 +83,74 @@ func (e stubExecutor) DoContext(_ context.Context, _ func(*tdx.Client) error) er
 func (e stubExecutor) Close() error                                                 { return nil }
 func (e stubExecutor) Len() int                                                     { return 0 }
 func (e stubExecutor) Status() tdx.ExecutorStatus                                   { return tdx.ExecutorStatus{} }
+
+// testLocalNormalizeJSON replicates the middleware's value treatment: it
+// re-marshals values parsed from the legacy body, so structs come out with
+// sorted json-key order and numbers keep float64 formatting. Deliberately
+// test-local: the production normalizeJSONValue must not be called from
+// tests, or a shared bug would pass both sides.
+func testLocalNormalizeJSON(value any) any {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return value
+	}
+	var out any
+	if err := json.Unmarshal(data, &out); err != nil {
+		return value
+	}
+	return out
+}
+
+// legacyErrorMixedGoldenBody pins the exact bytes ErrorEnvelopeMiddleware
+// produces for a legacy {"error": ...} body carrying extra top-level keys:
+// the error envelope plus every extra value after the json round-trip,
+// marshaled from a map (sorted top-level keys).
+func legacyErrorMixedGoldenBody(status int, extra map[string]any) string {
+	code, message := statusError(status)
+	envelope := map[string]any{"error": APIError{
+		Code:      code,
+		Message:   message,
+		RequestID: legacyErrorContractRequestID,
+	}}
+	for key, value := range extra {
+		if key == "error" {
+			continue
+		}
+		envelope[key] = testLocalNormalizeJSON(value)
+	}
+	data, err := json.Marshal(envelope)
+	if err != nil {
+		panic(err)
+	}
+	return string(data)
+}
+
+// assertLegacyErrorMixedGolden pins status + byte-exact body for a
+// mixed-key legacy response.
+func assertLegacyErrorMixedGolden(t *testing.T, response *httptest.ResponseRecorder, status int, extra map[string]any) {
+	t.Helper()
+	if response.Code != status {
+		t.Fatalf("status = %d, want %d; body = %s", response.Code, status, response.Body.String())
+	}
+	want := legacyErrorMixedGoldenBody(status, extra)
+	if got := response.Body.String(); got != want {
+		t.Fatalf("body mismatch:\n got: %s\nwant: %s", got, want)
+	}
+}
+
+// parsedErrorExtras returns the response's non-error top-level keys, parsed
+// the same way the middleware parses the legacy body before re-marshaling.
+func parsedErrorExtras(t *testing.T, response *httptest.ResponseRecorder) map[string]any {
+	t.Helper()
+	var parsed map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &parsed); err != nil {
+		t.Fatalf("response is not a JSON object: %v; body = %s", err, response.Body.String())
+	}
+	extras := make(map[string]any, len(parsed))
+	for key, value := range parsed {
+		if key != "error" {
+			extras[key] = value
+		}
+	}
+	return extras
+}
