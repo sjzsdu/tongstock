@@ -280,13 +280,6 @@ type stockSearchResponse struct {
 	Matches  []stockSearchMatch `json:"matches"`
 }
 
-type stockSearchErrorResponse struct {
-	Error   string             `json:"error"`
-	Query   string             `json:"query"`
-	Total   int                `json:"total"`
-	Matches []stockSearchMatch `json:"matches"`
-}
-
 type stockSearchIndexItem struct {
 	Code       string
 	Name       string
@@ -337,11 +330,21 @@ func (s *Server) resolveStockCodeOrRespond(c *gin.Context, raw string) (string, 
 		return "", false
 	}
 	if len(matches) == 0 {
-		c.JSON(http.StatusNotFound, stockSearchErrorResponse{Error: "未找到匹配股票", Query: query, Total: 0, Matches: []stockSearchMatch{}})
+		code, message := statusError(http.StatusNotFound)
+		WriteErrorWithDetails(c, http.StatusNotFound, code, message, map[string]any{
+			"query":   query,
+			"total":   0,
+			"matches": []stockSearchMatch{},
+		})
 		return "", false
 	}
 	if !resolved {
-		c.JSON(http.StatusConflict, stockSearchErrorResponse{Error: "找到多个匹配股票，请先选择具体个股", Query: query, Total: len(matches), Matches: matches})
+		code, message := statusError(http.StatusConflict)
+		WriteErrorWithDetails(c, http.StatusConflict, code, message, map[string]any{
+			"query":   query,
+			"total":   len(matches),
+			"matches": matches,
+		})
 		return "", false
 	}
 	return matches[0].Code, true

@@ -107,18 +107,18 @@ func (s *Server) handleAgentResearch(c *gin.Context) {
 	}
 	result, exp, run, err := s.conductVerifiedResearch(c.Request.Context(), req)
 	if err != nil {
-		body := gin.H{
-			"error":      err.Error(),
+		code, message := statusError(http.StatusUnprocessableEntity)
+		extra := map[string]any{
 			"conclusion": "insufficient_data",
 			"answer":     "真实数据、冻结快照、实验制品或工具证据不足，拒绝给出有效性结论。",
 		}
 		if exp != nil {
-			body["experiment_id"] = exp.ID
+			extra["experiment_id"] = exp.ID
 		}
 		if run != nil {
-			body["run_id"] = run.ID
+			extra["run_id"] = run.ID
 		}
-		c.JSON(http.StatusUnprocessableEntity, body)
+		WriteErrorWithDetails(c, http.StatusUnprocessableEntity, code, message, extra)
 		return
 	}
 	c.JSON(http.StatusCreated, result)

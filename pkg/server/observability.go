@@ -133,6 +133,45 @@ func WriteError(c *gin.Context, status int, code, message string) {
 	}})
 }
 
+// WriteErrorWithDetails writes the error envelope plus preserved top-level
+// keys, mirroring exactly what ErrorEnvelopeMiddleware produces for a legacy
+// mixed-key body: each extra value is round-tripped through json so structs
+// re-marshal with sorted key order and numbers keep float64 formatting, the
+// envelope is marshaled from a map so top-level keys stay sorted, and an
+// extra "error" key is dropped in favor of the envelope (the middleware
+// never surfaces the handler's own error string). Callers pass
+// code, message := statusError(status), like every plain WriteError site.
+func WriteErrorWithDetails(c *gin.Context, status int, code, message string, extra map[string]any) {
+	envelope := map[string]any{"error": APIError{
+		Code:      code,
+		Message:   message,
+		RequestID: RequestIDFromContext(c),
+	}}
+	for key, value := range extra {
+		if key == "error" {
+			continue
+		}
+		envelope[key] = normalizeJSONValue(value)
+	}
+	c.AbortWithStatusJSON(status, envelope)
+}
+
+// normalizeJSONValue round-trips a value through json.Marshal /
+// json.Unmarshal into any. The middleware re-marshals values parsed from the
+// legacy body, so this round-trip is what keeps converted responses
+// byte-identical; a marshal failure returns the original value.
+func normalizeJSONValue(value any) any {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return value
+	}
+	var out any
+	if err := json.Unmarshal(data, &out); err != nil {
+		return value
+	}
+	return out
+}
+
 type captureWriter struct {
 	gin.ResponseWriter
 	body bytes.Buffer

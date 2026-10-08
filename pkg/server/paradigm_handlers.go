@@ -467,8 +467,8 @@ func (s *Server) handleParadigmReview(c *gin.Context) {
 			return
 		}
 		if !evidence.PromotionEligible {
-			c.JSON(http.StatusConflict, gin.H{
-				"error":              "真实证据不完整，禁止将范式标记为已验证或已晋级",
+			code, message := statusError(http.StatusConflict)
+			WriteErrorWithDetails(c, http.StatusConflict, code, message, map[string]any{
 				"promotion_blockers": evidence.PromotionBlockers,
 				"evidence":           evidence,
 			})

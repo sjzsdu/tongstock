@@ -74,15 +74,16 @@ func (s *Server) handleParadigmBacktest(c *gin.Context) {
 		c.Request.Context(), req, "api",
 	)
 	if err != nil {
-		body := gin.H{"error": err.Error()}
+		code, message := statusError(http.StatusUnprocessableEntity)
+		extra := map[string]any{}
 		if exp != nil {
-			body["experiment_id"] = exp.ID
-			body["snapshot_id"] = exp.Config.DataSnapshotID
+			extra["experiment_id"] = exp.ID
+			extra["snapshot_id"] = exp.Config.DataSnapshotID
 		}
 		if run != nil {
-			body["run_id"] = run.ID
+			extra["run_id"] = run.ID
 		}
-		c.JSON(http.StatusUnprocessableEntity, body)
+		WriteErrorWithDetails(c, http.StatusUnprocessableEntity, code, message, extra)
 		return
 	}
 	c.JSON(http.StatusCreated, paradigmBacktestResponse{
