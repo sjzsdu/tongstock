@@ -53,7 +53,8 @@ type forwardRunResponse struct {
 
 func (s *Server) handleForwardRunsList(c *gin.Context) {
 	if s.ledger == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "ledger not initialized"})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 	limit := 20
@@ -68,24 +69,28 @@ func (s *Server) handleForwardRunsList(c *gin.Context) {
 
 func (s *Server) handleForwardRunCreate(c *gin.Context) {
 	if s.ledger == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "ledger not initialized"})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 
 	var req forwardRunCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
 	if req.ParadigmVersionID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "paradigm_version_id is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
 	startDate, err := time.Parse("2006-01-02", req.StartDate)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid start_date format (expected YYYY-MM-DD)"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -120,7 +125,8 @@ func (s *Server) handleForwardRunCreate(c *gin.Context) {
 
 	run, err := s.ledger.NewForwardRun(req.ParadigmVersionID, startDate, req.InitialCash, constraints, costModel)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -129,13 +135,15 @@ func (s *Server) handleForwardRunCreate(c *gin.Context) {
 
 func (s *Server) handleForwardRunGet(c *gin.Context) {
 	if s.ledger == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "ledger not initialized"})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 	id := c.Param("id")
 	run, err := s.ledger.GetRun(id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 	c.JSON(http.StatusOK, forwardRunResponse{Run: run})
@@ -155,14 +163,16 @@ type forwardRunExecuteResponse struct {
 
 func (s *Server) handleForwardRunExecute(c *gin.Context) {
 	if s.ledger == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "ledger not initialized"})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 	runID := c.Param("id")
 
 	run, err := s.ledger.GetRun(runID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 
@@ -175,7 +185,8 @@ func (s *Server) handleForwardRunExecute(c *gin.Context) {
 
 	engine, err := ledger.NewPaperTradeEngine(s.ledger, runID, constraints, costModel, run.InitialCash)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -185,21 +196,25 @@ func (s *Server) handleForwardRunExecute(c *gin.Context) {
 	if req.SignalID != "" {
 		entry, err := s.ledger.GetSignal(req.SignalID)
 		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			code, message := statusError(http.StatusNotFound)
+			WriteError(c, http.StatusNotFound, code, message)
 			return
 		}
 		if entry.RunID != runID {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "signal does not belong to forward run"})
+			code, message := statusError(http.StatusBadRequest)
+			WriteError(c, http.StatusBadRequest, code, message)
 			return
 		}
 		market, err := s.captureForwardExecutionMarket(entry)
 		if err != nil {
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+			code, message := statusError(http.StatusUnprocessableEntity)
+			WriteError(c, http.StatusUnprocessableEntity, code, message)
 			return
 		}
 		exec, err := engine.ExecuteSignal(entry, market)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			code, message := statusError(http.StatusBadRequest)
+			WriteError(c, http.StatusBadRequest, code, message)
 			return
 		}
 		if exec.Status == "rejected" {
@@ -223,7 +238,8 @@ func (s *Server) handleForwardRunExecute(c *gin.Context) {
 		from, ferr := time.Parse("2006-01-02", req.FromDate)
 		to, terr := time.Parse("2006-01-02", req.ToDate)
 		if ferr != nil || terr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid date format"})
+			code, message := statusError(http.StatusBadRequest)
+			WriteError(c, http.StatusBadRequest, code, message)
 			return
 		}
 		executed, rejected, err = engine.ExecuteByDate(from, to, loadMarket)
@@ -232,7 +248,8 @@ func (s *Server) handleForwardRunExecute(c *gin.Context) {
 	}
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -244,7 +261,8 @@ func (s *Server) handleForwardRunExecute(c *gin.Context) {
 
 func (s *Server) handleForwardRunFinalize(c *gin.Context) {
 	if s.ledger == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "ledger not initialized"})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 	runID := c.Param("id")
@@ -258,7 +276,8 @@ func (s *Server) handleForwardRunFinalize(c *gin.Context) {
 
 	run, err := s.ledger.FinalizeRun(runID, endDate)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 	c.JSON(http.StatusOK, forwardRunResponse{Run: run})
@@ -266,7 +285,8 @@ func (s *Server) handleForwardRunFinalize(c *gin.Context) {
 
 func (s *Server) handleForwardRunSignals(c *gin.Context) {
 	if s.ledger == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "ledger not initialized"})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 	runID := c.Param("id")
@@ -280,13 +300,15 @@ func (s *Server) handleForwardRunSignals(c *gin.Context) {
 
 func (s *Server) handleForwardSignalGet(c *gin.Context) {
 	if s.ledger == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "ledger not initialized"})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 	id := c.Param("id")
 	entry, err := s.ledger.GetSignal(id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"signal": entry})
@@ -294,7 +316,8 @@ func (s *Server) handleForwardSignalGet(c *gin.Context) {
 
 func (s *Server) handleForwardSignalsList(c *gin.Context) {
 	if s.ledger == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "ledger not initialized"})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 
@@ -308,11 +331,13 @@ func (s *Server) handleForwardSignalsList(c *gin.Context) {
 		if date, err := time.Parse("2006-01-02", dateStr); err == nil {
 			entries = s.ledger.ListByDate(date)
 		} else {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid date format"})
+			code, message := statusError(http.StatusBadRequest)
+			WriteError(c, http.StatusBadRequest, code, message)
 			return
 		}
 	} else {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "one of paradigm_version_id, run_id, or date is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -325,13 +350,15 @@ func (s *Server) handleForwardSignalsList(c *gin.Context) {
 
 func (s *Server) handleForwardRunEquity(c *gin.Context) {
 	if s.ledger == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "ledger not initialized"})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 	runID := c.Param("id")
 	run, err := s.ledger.GetRun(runID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 
@@ -414,19 +441,22 @@ type forwardRunCompareRequest struct {
 
 func (s *Server) handleForwardRunCompare(c *gin.Context) {
 	if s.ledger == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "ledger not initialized"})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 	runID := c.Param("id")
 	run, err := s.ledger.GetRun(runID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 
 	var req forwardRunCompareRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
