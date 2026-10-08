@@ -56,11 +56,7 @@ func contractRouter(t *testing.T, repository stockdata.Repository) *gin.Engine {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	router.Use(RequestID(), ErrorEnvelopeMiddleware(), Recovery())
-	NewServer(Dependencies{UnifiedData: service}).SetupRoutes(router)
-	return router
+	return newContractGinEngine(t, Dependencies{UnifiedData: service})
 }
 
 func TestQuoteHandlerSuccessFollowsContract(t *testing.T) {
