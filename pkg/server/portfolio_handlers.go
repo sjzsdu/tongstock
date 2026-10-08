@@ -21,7 +21,8 @@ import (
 func (s *Server) handleHistoryList(c *gin.Context) {
 	stocks, err := s.historyDB.GetAll()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -49,12 +50,14 @@ func (s *Server) handleHistoryAdd(c *gin.Context) {
 		Name string `json:"name"`
 	}
 	if err := c.BindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
 	if req.Code == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "code is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -65,7 +68,8 @@ func (s *Server) handleHistoryAdd(c *gin.Context) {
 	}
 
 	if err := s.historyDB.Upsert(stock); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -76,12 +80,14 @@ func (s *Server) handleHistoryAdd(c *gin.Context) {
 func (s *Server) handleHistoryDelete(c *gin.Context) {
 	code := c.Param("code")
 	if code == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "code is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
 	if err := s.historyDB.Delete(code); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -102,7 +108,8 @@ func (s *Server) handleWatchlistList(c *gin.Context) {
 	}
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -135,12 +142,14 @@ func (s *Server) handleWatchlistAdd(c *gin.Context) {
 		Note  string `json:"note"`
 	}
 	if err := c.BindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
 	if req.Code == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "code is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -153,7 +162,8 @@ func (s *Server) handleWatchlistAdd(c *gin.Context) {
 	}
 
 	if err := s.watchlistDB.Upsert(stock); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -164,12 +174,14 @@ func (s *Server) handleWatchlistAdd(c *gin.Context) {
 func (s *Server) handleWatchlistDelete(c *gin.Context) {
 	code := c.Param("code")
 	if code == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "code is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
 	if err := s.watchlistDB.Delete(code); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -180,7 +192,8 @@ func (s *Server) handleWatchlistDelete(c *gin.Context) {
 func (s *Server) handleWatchlistUpdateNote(c *gin.Context) {
 	code := c.Param("code")
 	if code == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "code is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -188,12 +201,14 @@ func (s *Server) handleWatchlistUpdateNote(c *gin.Context) {
 		Note string `json:"note"`
 	}
 	if err := c.BindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
 	if err := s.watchlistDB.UpdateNote(code, req.Note); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -204,7 +219,8 @@ func (s *Server) handleWatchlistUpdateNote(c *gin.Context) {
 func (s *Server) handleWatchlistUpdateGroup(c *gin.Context) {
 	code := c.Param("code")
 	if code == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "code is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -212,12 +228,14 @@ func (s *Server) handleWatchlistUpdateGroup(c *gin.Context) {
 		Group string `json:"group"`
 	}
 	if err := c.BindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
 	if err := s.watchlistDB.UpdateGroup(code, req.Group); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -228,7 +246,8 @@ func (s *Server) handleWatchlistUpdateGroup(c *gin.Context) {
 func (s *Server) handleWatchlistGroups(c *gin.Context) {
 	groups, err := s.watchlistDB.GetGroups()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -252,7 +271,8 @@ func (s *Server) handleWatchlistGroups(c *gin.Context) {
 func (s *Server) handleStockpoolList(c *gin.Context) {
 	pools, err := s.stockpoolDB.GetAll()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 	if pools == nil {
@@ -270,16 +290,19 @@ func (s *Server) handleStockpoolUpsert(c *gin.Context) {
 		Filters     []stockpool.StockPoolFilter `json:"filters"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
 	if req.ID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 	if req.Name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -291,7 +314,8 @@ func (s *Server) handleStockpoolUpsert(c *gin.Context) {
 	}
 
 	if err := s.stockpoolDB.Upsert(pool); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -302,7 +326,8 @@ func (s *Server) handleStockpoolUpsert(c *gin.Context) {
 func (s *Server) handleStockpoolDelete(c *gin.Context) {
 	id := c.Param("id")
 	if err := s.stockpoolDB.Delete(id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true})
@@ -336,12 +361,14 @@ func (s *Server) handleTradeCreate(c *gin.Context) {
 		Reason string  `json:"reason"`
 	}
 	if err := c.BindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
 	if s.tradingDB == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "trading store not initialized"})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -362,7 +389,8 @@ func (s *Server) handleTradeCreate(c *gin.Context) {
 
 	id, err := s.tradingDB.Create(trade)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -371,7 +399,8 @@ func (s *Server) handleTradeCreate(c *gin.Context) {
 
 func (s *Server) handleTradeList(c *gin.Context) {
 	if s.tradingDB == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "trading store not initialized"})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -383,7 +412,8 @@ func (s *Server) handleTradeList(c *gin.Context) {
 		}
 		trades, err := s.tradingDB.GetLatestByCodes(codeList)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			code, message := statusError(http.StatusInternalServerError)
+			WriteError(c, http.StatusInternalServerError, code, message)
 			return
 		}
 		c.JSON(http.StatusOK, trades)
@@ -392,7 +422,8 @@ func (s *Server) handleTradeList(c *gin.Context) {
 
 	trades, err := s.tradingDB.GetAll()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"trades": trades})
@@ -400,13 +431,15 @@ func (s *Server) handleTradeList(c *gin.Context) {
 
 func (s *Server) handleTradePositions(c *gin.Context) {
 	if s.tradingDB == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "trading store not initialized"})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
 	positions, err := s.tradingDB.GetAllPositions()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"positions": positions})
@@ -416,17 +449,20 @@ func (s *Server) handleTradeDelete(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid trade id"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
 	if s.tradingDB == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "trading store not initialized"})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
 	if err := s.tradingDB.Delete(id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -1033,7 +1069,8 @@ func (s *Server) handleStockinfoList(c *gin.Context) {
 	}
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -1047,13 +1084,15 @@ func (s *Server) handleStockinfoList(c *gin.Context) {
 func (s *Server) handleStockinfoGet(c *gin.Context) {
 	code := c.Param("code")
 	if code == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "code is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
 	info, err := s.stockinfoDB.GetByCode(code)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "stock not found"})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 
@@ -1158,7 +1197,8 @@ func (s *Server) handleStockinfoSync(c *gin.Context) {
 func (s *Server) handleStockinfoCount(c *gin.Context) {
 	count, err := s.stockinfoDB.Count()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
