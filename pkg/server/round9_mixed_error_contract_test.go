@@ -40,13 +40,40 @@ func paradigmMixedRouter(t *testing.T) *gin.Engine {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
+	seedParadigmKlines(t, store)
 	server := NewServer(Dependencies{Storage: store})
 	paradigmStore := paradigmTestStore(t, false)
 	if err := paradigmStore.Save(&paradigms.Paradigm{ID: "p1", Name: "n"}); err != nil {
 		t.Fatal(err)
 	}
+	if err := paradigmStore.Save(&paradigms.Paradigm{
+		ID: "p2", Name: "runnable", StockCode: "600000", StockName: "浦发银行",
+		BuyConds: []paradigms.Condition{{Indicator: "MA20", Operator: "gt", Value: "10"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	server.SetParadigmStore(paradigmStore)
 	return serverContractRouter(t, server)
+}
+
+// seedParadigmKlines inserts a small real-kline series for 600000 so
+// resolveParadigmSnapshot can freeze a snapshot offline. The series is
+// deliberately short — under the default split's MinTrainSize — so the
+// experiment run fails after the experiment is created, driving the
+// conditional-keys 422 branch.
+func seedParadigmKlines(t *testing.T, store *storage.Storage) {
+	t.Helper()
+	dates := []string{"20260105", "20260106", "20260107", "20260108",
+		"20260109", "20260112", "20260113", "20260114", "20260115", "20260116"}
+	for i, date := range dates {
+		close := 10.0 + float64(i)*0.1
+		if _, err := store.DB().Exec(
+			`INSERT INTO kline (code, ktype, date, open, high, low, close, volume, amount)
+			 VALUES ('600000', 9, ?, ?, ?, ?, ?, 1000, ?)`,
+			date, close, close+0.1, close-0.1, close, 1000.0*close); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 func TestParadigmMixedConflictGolden(t *testing.T) {
@@ -87,14 +114,20 @@ func TestParadigmExperiment422Golden(t *testing.T) {
 		doLegacyErrorRequest(t, router, http.MethodPost, "/api/paradigm/backtest", `{"paradigm_id":"p1"}`),
 		http.StatusUnprocessableEntity)
 
-	// Conditional-keys variant: with buy conditions present the failure can
-	// carry experiment_id/snapshot_id/run_id. Whichever conditional keys are
-	// present must round-trip byte-identically through the middleware merge.
+	// Full-keys variant: with buy conditions and a seeded real-kline series
+	// the snapshot freezes and the experiment is created, then the run fails
+	// (the series is deliberately shorter than the split's MinTrainSize), so
+	// the body must carry all three conditional keys through the merge.
 	response := doLegacyErrorRequest(t, router, http.MethodPost, "/api/paradigm/backtest", `{"paradigm_id":"p2"}`)
 	if response.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 	extras := parsedErrorExtras(t, response)
+	for _, key := range []string{"experiment_id", "snapshot_id", "run_id"} {
+		if _, ok := extras[key]; !ok {
+			t.Fatalf("missing conditional key %q: %s", key, response.Body.String())
+		}
+	}
 	for key := range extras {
 		if key != "experiment_id" && key != "snapshot_id" && key != "run_id" {
 			t.Fatalf("unexpected extra key %q: %s", key, response.Body.String())
@@ -120,6 +153,33 @@ func TestAgentResearch422Golden(t *testing.T) {
 	}
 	if extras["answer"] == "" || extras["answer"] == nil {
 		t.Fatalf("missing answer: %s", response.Body.String())
+	}
+}
+
+func TestAgentResearch422ConditionalKeysGolden(t *testing.T) {
+	router := paradigmMixedRouter(t)
+
+	// With a runnable paradigm the research pipeline reaches the same
+	// failed-run 422 and must carry its conditional experiment/run keys
+	// through the merge (nit 2: same fixture as the experiment full-keys).
+	response := doLegacyErrorRequest(t, router, http.MethodPost, "/api/agent/research", `{"paradigm_id":"p2"}`)
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	extras := parsedErrorExtras(t, response)
+	for _, key := range []string{"conclusion", "answer", "experiment_id", "run_id"} {
+		if _, ok := extras[key]; !ok {
+			t.Fatalf("missing key %q: %s", key, response.Body.String())
+		}
+	}
+	for key := range extras {
+		if key != "conclusion" && key != "answer" && key != "experiment_id" && key != "run_id" {
+			t.Fatalf("unexpected extra key %q: %s", key, response.Body.String())
+		}
+	}
+	assertLegacyErrorMixedGolden(t, response, http.StatusUnprocessableEntity, extras)
+	if extras["conclusion"] != "insufficient_data" {
+		t.Fatalf("conclusion = %v, want insufficient_data", extras["conclusion"])
 	}
 }
 
