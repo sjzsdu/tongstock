@@ -441,25 +441,29 @@ type paradigmReviewRequest struct {
 
 func (s *Server) handleParadigmReview(c *gin.Context) {
 	if s.paradigmStore == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "paradigm store not initialized"})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 	id := c.Param("id")
 	p, err := s.paradigmStore.Get(id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 
 	var req paradigmReviewRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 	if req.ReviewStatus == paradigms.StateVerified || req.ReviewStatus == paradigms.StatePromoted {
 		evidence, evidenceErr := s.latestParadigmExperimentEvidence(id, "")
 		if evidenceErr != nil {
-			c.JSON(http.StatusConflict, gin.H{"error": "无法验证真实证据: " + evidenceErr.Error()})
+			code, message := statusError(http.StatusConflict)
+			WriteError(c, http.StatusConflict, code, message)
 			return
 		}
 		if !evidence.PromotionEligible {
@@ -487,7 +491,8 @@ func (s *Server) handleParadigmReview(c *gin.Context) {
 	}
 
 	if err := s.paradigmStore.Save(&pCopy); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 	c.JSON(http.StatusOK, &pCopy)
@@ -495,12 +500,14 @@ func (s *Server) handleParadigmReview(c *gin.Context) {
 
 func (s *Server) handleParadigmDelete(c *gin.Context) {
 	if s.paradigmStore == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "paradigm store not initialized"})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 	id := c.Param("id")
 	if err := s.paradigmStore.Delete(id); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})

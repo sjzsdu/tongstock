@@ -89,21 +89,20 @@ func (t *verifiedResearchEvidenceTool) Invoke(
 
 func (s *Server) handleAgentResearch(c *gin.Context) {
 	if s.researchTools == nil || s.experimentRegistry == nil || s.paradigmStore == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "真实研究工具、实验注册表或范式仓储未初始化",
-		})
+		code, message := statusError(http.StatusServiceUnavailable)
+		WriteError(c, http.StatusServiceUnavailable, code, message)
 		return
 	}
 	var req agentResearchRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 	req.ParadigmID = strings.TrimSpace(req.ParadigmID)
 	if req.ParadigmID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "paradigm_id is required；AI 不会仅凭自然语言生成已验证结论",
-		})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 	result, exp, run, err := s.conductVerifiedResearch(c.Request.Context(), req)
