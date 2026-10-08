@@ -56,6 +56,8 @@ import type {
   AlertItem,
   AlertSummary,
   NewsFacets,
+  EvidenceCard,
+  ParadigmPromotionStatusResponse,
 } from '../types/api';
 import type { ErrorEnvelope } from './generated';
 
@@ -529,6 +531,18 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(review),
     }),
+
+  paradigmPromote: (id: string, snapshotId?: string) =>
+    fetchJSON<{ started: boolean; status_url: string }>(`/api/paradigm/${id}/promote`, {
+      method: 'POST',
+      body: JSON.stringify(snapshotId ? { snapshot_id: snapshotId } : {}),
+    }),
+
+  paradigmPromotionStatus: (id: string) =>
+    fetchJSON<ParadigmPromotionStatusResponse>(`/api/paradigm/${id}/promotion/status`),
+
+  paradigmEvidence: (id: string) =>
+    fetchJSON<EvidenceCard>(`/api/paradigm/${id}/evidence`),
 
   // Chat session persistence
   chatSave: (id: string, stockCode: string, stockName: string, agent: string, messages: { role: string; content: string }[]) =>

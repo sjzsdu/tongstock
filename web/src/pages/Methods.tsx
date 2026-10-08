@@ -581,7 +581,7 @@ function FactorPicksCard() {
             <Tag>截面日 {pickRun.as_of}</Tag>
             {pickRun.snapshot_date_end && <Tag>数据止于 {pickRun.snapshot_date_end}</Tag>}
             <Tag color={pickRun.stale_days > 14 ? 'volcano' : 'default'}>距今天数 {pickRun.stale_days}</Tag>
-            <Tag>Top {pickRun.picks.length}</Tag>
+            <Tag>Top {(pickRun.picks?.length ?? 0)}</Tag>
           </Space>
           <Text type="secondary" style={{ fontSize: 12 }}>{pickRun.note}</Text>
           {pickRun.stale_days > 14 && (
@@ -596,12 +596,12 @@ function FactorPicksCard() {
             items={[
               {
                 key: 'factors',
-                label: `落库时因子评估快照（${pickRun.factors_snapshot.length} 个）`,
-                children: <Text type="secondary" style={{ fontSize: 12 }}>{pickRun.factors_snapshot.map((f) => `${f.name}${f.significant ? '✓' : '·'}(IC ${(f.mean_ic >= 0 ? '+' : '') + f.mean_ic.toFixed(3)})`).join('　')}</Text>,
+                label: `落库时因子评估快照（${pickRun.factors_snapshot?.length ?? 0} 个）`,
+                children: <Text type="secondary" style={{ fontSize: 12 }}>{(pickRun.factors_snapshot ?? []).map((f) => `${f.name}${f.significant ? '✓' : '·'}(IC ${(f.mean_ic >= 0 ? '+' : '') + f.mean_ic.toFixed(3)})`).join('　')}</Text>,
               },
             ]}
           />
-          <Table size="small" columns={columns} dataSource={pickRun.picks} rowKey="code" pagination={false} />
+          <Table size="small" columns={columns} dataSource={pickRun.picks ?? []} rowKey="code" pagination={false} />
         </Space>
       ) : (
         <Text type="secondary">
