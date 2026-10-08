@@ -64,7 +64,8 @@ func (s *Server) stockCodeKnown(code string) bool {
 func (s *Server) handleQuotes(c *gin.Context) {
 	codesStr := c.Query("codes")
 	if codesStr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "codes is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -114,7 +115,8 @@ func (s *Server) handleCodes(c *gin.Context) {
 
 	codes, err := s.svc.FetchCodes(ex)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -148,7 +150,8 @@ func (s *Server) handleCodesList(c *gin.Context) {
 
 	codes, err := s.svc.FetchCodes(ex)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -458,7 +461,8 @@ func (s *Server) handleIndex(c *gin.Context) {
 		return s.svc.GetIndexBars(code, ktype, 0, 500)
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取指数K线失败: %v", err)})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -509,7 +513,8 @@ func (s *Server) handleMinute(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"List": []interface{}{}, "message": "暂无分时数据（指数可能不支持分时查询）"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取分时数据失败: %v", err)})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -554,7 +559,8 @@ func (s *Server) handleTrade(c *gin.Context) {
 	}
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取成交数据失败: %v", err)})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -581,7 +587,8 @@ func (s *Server) handleAuction(c *gin.Context) {
 		return s.svc.GetCallAuction(code)
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取集合竞价数据失败: %v", err)})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -609,7 +616,8 @@ func (s *Server) handleXdXr(c *gin.Context) {
 		return s.svc.FetchXdXr(code)
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取除权除息数据失败: %v", err)})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -728,19 +736,22 @@ func (s *Server) handleFinanceTrends(c *gin.Context) {
 
 	mode := strings.ToLower(strings.TrimSpace(c.DefaultQuery("mode", "quarter")))
 	if mode != "quarter" && mode != "year" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "mode 仅支持 quarter 或 year"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
 	content, err := s.fetchFinanceAnalysisContent(code)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取财务趋势数据失败: %v", err)})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
 	records, metrics := parseFinanceTrendRecords(content, mode)
 	if len(records) == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "未找到可用于绘图的财务趋势数据"})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 
@@ -762,13 +773,15 @@ func (s *Server) handleFinanceMetrics(c *gin.Context) {
 
 	content, err := s.fetchFinanceAnalysisContent(code)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取主要财务指标失败: %v", err)})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
 	tables := parseMainFinanceMetricTables(content)
 	if len(tables) == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "未找到主要财务指标数据"})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 
@@ -786,7 +799,8 @@ func (s *Server) handleCompany(c *gin.Context) {
 		return s.svc.FetchCompanyCategory(code)
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取公司信息目录失败: %v", err)})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -806,7 +820,8 @@ func (s *Server) handleCompany(c *gin.Context) {
 func (s *Server) handleCompanyContent(c *gin.Context) {
 	code := c.Query("code")
 	if code == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 code 参数"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -821,7 +836,8 @@ func (s *Server) handleCompanyContent(c *gin.Context) {
 
 	filename := c.Query("filename")
 	if filename == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 block 或 filename 参数"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -850,7 +866,8 @@ func (s *Server) handleCompanyContent(c *gin.Context) {
 		return s.svc.FetchCompanyContent(code, filename, start, length)
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取公司信息内容失败: %v", err)})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -880,10 +897,12 @@ func (s *Server) respondCompanyBlock(c *gin.Context, code, block string) {
 	})
 	if err != nil {
 		if errors.Is(err, tdx.ErrCompanyBlockNotFound) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			code, message := statusError(http.StatusBadRequest)
+			WriteError(c, http.StatusBadRequest, code, message)
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取公司信息内容失败: %v", err)})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"content": content})
@@ -897,7 +916,8 @@ func (s *Server) handleBlock(c *gin.Context) {
 		return s.svc.FetchBlock(file)
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取板块数据失败: %v", err)})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -939,7 +959,8 @@ func (s *Server) handleBlockList(c *gin.Context) {
 		return s.svc.FetchBlock(file)
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取板块列表失败: %v", err)})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -998,7 +1019,8 @@ func (s *Server) handleBlockShow(c *gin.Context) {
 			return s.svc.FetchBlock(file)
 		})
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取板块详情失败: %v", err)})
+			code, message := statusError(http.StatusInternalServerError)
+			WriteError(c, http.StatusInternalServerError, code, message)
 			return
 		}
 
@@ -1014,7 +1036,8 @@ func (s *Server) handleBlockShow(c *gin.Context) {
 		}
 
 		if len(matchedStocks) == 0 {
-			c.JSON(http.StatusNotFound, gin.H{"error": "block not found"})
+			code, message := statusError(http.StatusNotFound)
+			WriteError(c, http.StatusNotFound, code, message)
 			return
 		}
 
@@ -1077,7 +1100,8 @@ func (s *Server) handleBlockShow(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusBadRequest, gin.H{"error": "name or code is required"})
+	code, message := statusError(http.StatusBadRequest)
+	WriteError(c, http.StatusBadRequest, code, message)
 }
 
 // blockStatsServer 用于按板块名称分组统计
@@ -1185,7 +1209,8 @@ func (s *Server) handleCount(c *gin.Context) {
 
 	count, err := s.svc.GetSecurityCount(ex)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 

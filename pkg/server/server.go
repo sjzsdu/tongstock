@@ -319,7 +319,8 @@ func withRetry[T any](s *Server, fn func() (T, error)) (T, error) {
 func (s *Server) resolveStockCodeOrRespond(c *gin.Context, raw string) (string, bool) {
 	query := strings.TrimSpace(raw)
 	if query == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 code 参数"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return "", false
 	}
 
@@ -331,7 +332,8 @@ func (s *Server) resolveStockCodeOrRespond(c *gin.Context, raw string) (string, 
 
 	matches, resolved, _, err := s.searchStockMatches(query, stockSearchDefaultLimit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return "", false
 	}
 	if len(matches) == 0 {
