@@ -315,9 +315,11 @@ function ResearchResultCard({ result }: { result: MethodResearchResult }) {
   }, []);
 
   useEffect(() => {
-    loadLast()
-      .then(() => setLoaded(true))
-      .catch(() => setLoaded(true));
+    queueMicrotask(() => {
+      loadLast()
+        .then(() => setLoaded(true))
+        .catch(() => setLoaded(true));
+    });
   }, [loadLast]);
 
   // 轮询等待异步批次：run 只是启动，结果经 /last 获取。
@@ -538,7 +540,9 @@ function FactorPicksCard() {
   }, []);
 
   useEffect(() => {
-    void load().catch(() => setLoaded(true));
+    queueMicrotask(() => {
+      void load().catch(() => setLoaded(true));
+    });
   }, [load]);
 
   const columns: ColumnsType<FactorPickEntry> = [
@@ -727,18 +731,20 @@ export default function Methods() {
   }, [load]);
 
   useEffect(() => {
-    void loadForwardHealth();
-    void loadRejectStats();
-    // last 端点对「从未完成过」返回 200 空结构（status=no_completed_batch），
-    // 不当作结果展示；运行中信息由 status 端点负责。
-    api
-      .methodResearchLast()
-      .then((res) => setResearch(res.status === 'no_completed_batch' ? undefined : res))
-      .catch(() => setResearch(undefined));
-    api
-      .methodResearchStatus()
-      .then(setResearchStatus)
-      .catch(() => setResearchStatus(undefined)); // 启动调度器可能已在跑一轮，必须可见
+    queueMicrotask(() => {
+      void loadForwardHealth();
+      void loadRejectStats();
+      // last 端点对「从未完成过」返回 200 空结构（status=no_completed_batch），
+      // 不当作结果展示；运行中信息由 status 端点负责。
+      api
+        .methodResearchLast()
+        .then((res) => setResearch(res.status === 'no_completed_batch' ? undefined : res))
+        .catch(() => setResearch(undefined));
+      api
+        .methodResearchStatus()
+        .then(setResearchStatus)
+        .catch(() => setResearchStatus(undefined)); // 启动调度器可能已在跑一轮，必须可见
+    });
   }, [loadForwardHealth, loadRejectStats]);
 
   // 批次运行中每 15 秒轮询；结束后自动拉取最新结果与列表（覆盖启动调度那一轮）。

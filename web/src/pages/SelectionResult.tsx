@@ -73,7 +73,7 @@ export default function SelectionResult() {
 
   useEffect(() => {
     // 结果页可直接由 state 传入（选完即看），也可按 run id 拉取（刷新/分享链接）。
-    if (!run && runId) void load();
+    if (!run && runId) queueMicrotask(() => void load());
     // eslint 风险低：仅在缺数据时拉取
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId]);

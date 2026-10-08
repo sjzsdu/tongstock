@@ -174,10 +174,12 @@ function AppLayout({ children }: { children: React.ReactNode }) {
 
   // 路由变化时自动展开选中项所属分组
   useEffect(() => {
-    const parent = getParentKey(location.pathname);
-    if (parent) {
-      setOpenKeys((prev) => (prev.includes(parent) ? prev : [...prev, parent]));
-    }
+    queueMicrotask(() => {
+      const parent = getParentKey(location.pathname);
+      if (parent) {
+        setOpenKeys((prev) => (prev.includes(parent) ? prev : [...prev, parent]));
+      }
+    });
   }, [location.pathname]);
 
   useEffect(() => {
