@@ -125,7 +125,7 @@ export function useOvernightStrategy(): UseOvernightStrategyReturn {
   // Auto load market codes when source tab changes
   useEffect(() => {
     if (sourceTab === 'market' || sourceTab === 'custom') {
-      void loadMarketCodes();
+      queueMicrotask(() => void loadMarketCodes());
     }
   }, [sourceTab, loadMarketCodes]);
 

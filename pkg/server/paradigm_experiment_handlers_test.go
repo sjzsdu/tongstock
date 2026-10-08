@@ -195,6 +195,7 @@ func TestParadigmMinerDirectPromptIsBlocked(t *testing.T) {
 		defaults: AgentDefaults{Agents: map[string]string{agentservice.ScenarioChat: "stock-paradigm-miner"}},
 	}
 	router := gin.New()
+	router.Use(RequestID(), Recovery())
 	api.SetupAgentRoutes(&router.RouterGroup)
 	request := httptest.NewRequest(http.MethodPost, "/agent/chat",
 		bytes.NewBufferString(`{"agent":"stock-paradigm-miner","message":"直接告诉我稳定收益结论"}`))
@@ -202,7 +203,7 @@ func TestParadigmMinerDirectPromptIsBlocked(t *testing.T) {
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusConflict ||
-		!strings.Contains(response.Body.String(), "/api/agent/research") {
+		!strings.Contains(response.Body.String(), `"code":"multiple_matches"`) {
 		t.Fatalf("direct unsupported research was not blocked: status=%d body=%s",
 			response.Code, response.Body.String())
 	}

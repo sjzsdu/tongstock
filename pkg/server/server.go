@@ -280,13 +280,6 @@ type stockSearchResponse struct {
 	Matches  []stockSearchMatch `json:"matches"`
 }
 
-type stockSearchErrorResponse struct {
-	Error   string             `json:"error"`
-	Query   string             `json:"query"`
-	Total   int                `json:"total"`
-	Matches []stockSearchMatch `json:"matches"`
-}
-
 type stockSearchIndexItem struct {
 	Code       string
 	Name       string
@@ -319,7 +312,8 @@ func withRetry[T any](s *Server, fn func() (T, error)) (T, error) {
 func (s *Server) resolveStockCodeOrRespond(c *gin.Context, raw string) (string, bool) {
 	query := strings.TrimSpace(raw)
 	if query == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 code 参数"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return "", false
 	}
 
@@ -331,15 +325,26 @@ func (s *Server) resolveStockCodeOrRespond(c *gin.Context, raw string) (string, 
 
 	matches, resolved, _, err := s.searchStockMatches(query, stockSearchDefaultLimit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return "", false
 	}
 	if len(matches) == 0 {
-		c.JSON(http.StatusNotFound, stockSearchErrorResponse{Error: "未找到匹配股票", Query: query, Total: 0, Matches: []stockSearchMatch{}})
+		code, message := statusError(http.StatusNotFound)
+		WriteErrorWithDetails(c, http.StatusNotFound, code, message, map[string]any{
+			"query":   query,
+			"total":   0,
+			"matches": []stockSearchMatch{},
+		})
 		return "", false
 	}
 	if !resolved {
-		c.JSON(http.StatusConflict, stockSearchErrorResponse{Error: "找到多个匹配股票，请先选择具体个股", Query: query, Total: len(matches), Matches: matches})
+		code, message := statusError(http.StatusConflict)
+		WriteErrorWithDetails(c, http.StatusConflict, code, message, map[string]any{
+			"query":   query,
+			"total":   len(matches),
+			"matches": matches,
+		})
 		return "", false
 	}
 	return matches[0].Code, true
@@ -551,10 +556,12 @@ func (s *Server) setupHealthRoutes(r *gin.Engine) {
 	r.GET("/health/live", live)
 	r.GET("/health/ready", func(c *gin.Context) {
 		if s.diagnostics == nil {
-			c.JSON(http.StatusServiceUnavailable, Diagnostics{
-				Status: "unavailable", Service: "tongstock",
-				Modules:   map[string]ModuleHealth{"app": {Status: "unavailable", Message: "diagnostics not configured"}},
-				CheckedAt: time.Now(),
+			code, message := statusError(http.StatusServiceUnavailable)
+			WriteErrorWithDetails(c, http.StatusServiceUnavailable, code, message, map[string]any{
+				"status":     "unavailable",
+				"service":    "tongstock",
+				"modules":    map[string]ModuleHealth{"app": {Status: "unavailable", Message: "diagnostics not configured"}},
+				"checked_at": time.Now(),
 			})
 			return
 		}
@@ -564,6 +571,18 @@ func (s *Server) setupHealthRoutes(r *gin.Engine) {
 		status := http.StatusOK
 		if result.Status == "unavailable" {
 			status = http.StatusServiceUnavailable
+			code, message := statusError(status)
+			extra := map[string]any{
+				"status":     result.Status,
+				"service":    result.Service,
+				"modules":    result.Modules,
+				"checked_at": result.CheckedAt,
+			}
+			if result.SchemaVersion != 0 {
+				extra["schema_version"] = result.SchemaVersion
+			}
+			WriteErrorWithDetails(c, status, code, message, extra)
+			return
 		}
 		c.JSON(status, result)
 	})

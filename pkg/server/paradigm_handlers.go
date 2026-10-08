@@ -215,17 +215,26 @@ type paradigmEvaluateResponse struct {
 
 func (s *Server) handleParadigmEvaluate(c *gin.Context) {
 	if s.paradigmStore == nil {
-		c.JSON(http.StatusInternalServerError, paradigmEvaluateResponse{Error: "paradigm store not initialized"})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteErrorWithDetails(c, http.StatusInternalServerError, code, message, map[string]any{
+			"stock_code": "", "conditions": nil,
+		})
 		return
 	}
 
 	var req paradigmEvaluateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, paradigmEvaluateResponse{Error: "invalid request: " + err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteErrorWithDetails(c, http.StatusBadRequest, code, message, map[string]any{
+			"stock_code": "", "conditions": nil,
+		})
 		return
 	}
 	if req.StockCode == "" {
-		c.JSON(http.StatusBadRequest, paradigmEvaluateResponse{Error: "stock_code is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteErrorWithDetails(c, http.StatusBadRequest, code, message, map[string]any{
+			"stock_code": "", "conditions": nil,
+		})
 		return
 	}
 
@@ -244,21 +253,33 @@ func (s *Server) handleParadigmEvaluate(c *gin.Context) {
 
 func (s *Server) handleParadigmAnalyze(c *gin.Context) {
 	if s.agentState == nil {
-		c.JSON(http.StatusInternalServerError, paradigmAnalyzeResponse{Error: "agent not initialized"})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteErrorWithDetails(c, http.StatusInternalServerError, code, message, map[string]any{
+			"stock_code": "", "agent_text": "",
+		})
 		return
 	}
 	if s.paradigmStore == nil {
-		c.JSON(http.StatusInternalServerError, paradigmAnalyzeResponse{Error: "paradigm store not initialized"})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteErrorWithDetails(c, http.StatusInternalServerError, code, message, map[string]any{
+			"stock_code": "", "agent_text": "",
+		})
 		return
 	}
 
 	var req paradigmAnalyzeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, paradigmAnalyzeResponse{Error: "invalid request: " + err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteErrorWithDetails(c, http.StatusBadRequest, code, message, map[string]any{
+			"stock_code": "", "agent_text": "",
+		})
 		return
 	}
 	if req.StockCode == "" {
-		c.JSON(http.StatusBadRequest, paradigmAnalyzeResponse{Error: "stock_code is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteErrorWithDetails(c, http.StatusBadRequest, code, message, map[string]any{
+			"stock_code": "", "agent_text": "",
+		})
 		return
 	}
 	if req.Days == 0 {
@@ -293,7 +314,10 @@ func (s *Server) handleParadigmAnalyze(c *gin.Context) {
 		Session: fmt.Sprintf("paradigm:%s:%d", req.StockCode, time.Now().UnixNano()),
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, paradigmAnalyzeResponse{Error: err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteErrorWithDetails(c, http.StatusInternalServerError, code, message, map[string]any{
+			"stock_code": "", "agent_text": "",
+		})
 		return
 	}
 
@@ -311,11 +335,15 @@ func (s *Server) handleParadigmAnalyze(c *gin.Context) {
 	}
 
 	if paradigm == nil {
-		c.JSON(http.StatusUnprocessableEntity, paradigmAnalyzeResponse{
-			StockCode: req.StockCode, StockName: req.StockName,
-			AgentText: "AI 输出未形成可执行、可证伪的结构化假设，拒绝给出有效性结论。",
-			Error:     "agent response did not contain a valid executable hypothesis",
-		})
+		code, message := statusError(http.StatusUnprocessableEntity)
+		extra := map[string]any{
+			"stock_code": req.StockCode,
+			"agent_text": "AI 输出未形成可执行、可证伪的结构化假设，拒绝给出有效性结论。",
+		}
+		if req.StockName != "" {
+			extra["stock_name"] = req.StockName
+		}
+		WriteErrorWithDetails(c, http.StatusUnprocessableEntity, code, message, extra)
 		return
 	}
 	s.respondWithVerifiedParadigmResearch(c, req, paradigm, false)
@@ -332,18 +360,24 @@ func (s *Server) respondWithVerifiedParadigmResearch(
 		Question:   "验证 AI 生成的股票范式是否具有真实样本外证据",
 	})
 	if err != nil {
-		response := paradigmAnalyzeResponse{
-			StockCode: req.StockCode, StockName: req.StockName, Paradigm: p,
-			AgentText: "真实数据、冻结快照或实验制品不足，拒绝判断该范式有效。",
-			Error:     err.Error(), Cached: cached,
+		code, message := statusError(http.StatusUnprocessableEntity)
+		extra := map[string]any{
+			"stock_code": req.StockCode, "paradigm": p,
+			"agent_text": "真实数据、冻结快照或实验制品不足，拒绝判断该范式有效。",
+		}
+		if req.StockName != "" {
+			extra["stock_name"] = req.StockName
+		}
+		if cached {
+			extra["cached"] = cached
 		}
 		if exp != nil {
-			response.ExperimentID = exp.ID
+			extra["experiment_id"] = exp.ID
 		}
 		if run != nil {
-			response.RunID = run.ID
+			extra["run_id"] = run.ID
 		}
-		c.JSON(http.StatusUnprocessableEntity, response)
+		WriteErrorWithDetails(c, http.StatusUnprocessableEntity, code, message, extra)
 		return
 	}
 	evalConfirm, evalInvalid := s.evaluateConditions(req.StockCode, p)
@@ -441,30 +475,34 @@ type paradigmReviewRequest struct {
 
 func (s *Server) handleParadigmReview(c *gin.Context) {
 	if s.paradigmStore == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "paradigm store not initialized"})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 	id := c.Param("id")
 	p, err := s.paradigmStore.Get(id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 
 	var req paradigmReviewRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 	if req.ReviewStatus == paradigms.StateVerified || req.ReviewStatus == paradigms.StatePromoted {
 		evidence, evidenceErr := s.latestParadigmExperimentEvidence(id, "")
 		if evidenceErr != nil {
-			c.JSON(http.StatusConflict, gin.H{"error": "无法验证真实证据: " + evidenceErr.Error()})
+			code, message := statusError(http.StatusConflict)
+			WriteError(c, http.StatusConflict, code, message)
 			return
 		}
 		if !evidence.PromotionEligible {
-			c.JSON(http.StatusConflict, gin.H{
-				"error":              "真实证据不完整，禁止将范式标记为已验证或已晋级",
+			code, message := statusError(http.StatusConflict)
+			WriteErrorWithDetails(c, http.StatusConflict, code, message, map[string]any{
 				"promotion_blockers": evidence.PromotionBlockers,
 				"evidence":           evidence,
 			})
@@ -487,7 +525,8 @@ func (s *Server) handleParadigmReview(c *gin.Context) {
 	}
 
 	if err := s.paradigmStore.Save(&pCopy); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 	c.JSON(http.StatusOK, &pCopy)
@@ -495,12 +534,14 @@ func (s *Server) handleParadigmReview(c *gin.Context) {
 
 func (s *Server) handleParadigmDelete(c *gin.Context) {
 	if s.paradigmStore == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "paradigm store not initialized"})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 	id := c.Param("id")
 	if err := s.paradigmStore.Delete(id); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})

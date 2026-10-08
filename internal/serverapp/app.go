@@ -482,7 +482,6 @@ func (a *App) buildRouter() *gin.Engine {
 	router.Use(server.Recovery())
 	router.Use(server.SecurityHeaders())
 	router.Use(server.MaxRequestBody())
-	router.Use(server.ErrorEnvelopeMiddleware())
 	a.api.SetupRoutes(router, server.AccessTokenAuth(a.cfg.Server.BindAddress, a.cfg.Server.AccessToken))
 	setupStaticRoutes(router)
 	return router

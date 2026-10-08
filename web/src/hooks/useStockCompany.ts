@@ -34,6 +34,8 @@ export function useStockCompany(code: string, detailStatus: DetailStatus): UseSt
   useEffect(() => {
     if (!code || detailStatus !== 'ready') return;
     let cancelled = false;
+    queueMicrotask(() => {
+    if (cancelled) return;
     setCompanyLoading(true);
     api.company(code).then((cats) => {
       if (cancelled) return;
@@ -42,8 +44,9 @@ export function useStockCompany(code: string, detailStatus: DetailStatus): UseSt
         autoLoadedFor.current = code;
         void loadCompanyContent(cats[0]);
       }
-    }).catch(() => {}).finally(() => {
-      if (!cancelled) setCompanyLoading(false);
+      }).catch(() => {}).finally(() => {
+        if (!cancelled) setCompanyLoading(false);
+      });
     });
     return () => { cancelled = true; };
   }, [code, detailStatus, loadCompanyContent]);
