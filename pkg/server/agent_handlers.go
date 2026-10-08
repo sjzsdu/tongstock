@@ -295,9 +295,12 @@ func (s *Server) handleChatGet(c *gin.Context) {
 
 func (s *Server) handleAgentState(c *gin.Context) {
 	if s.agentState == nil {
-		c.JSON(http.StatusServiceUnavailable, agentStateResponse{
-			Agents:   []agentInfo{},
-			Defaults: AgentDefaults{},
+		code, message := statusError(http.StatusServiceUnavailable)
+		WriteErrorWithDetails(c, http.StatusServiceUnavailable, code, message, map[string]any{
+			"started_at": "",
+			"workspace":  "",
+			"defaults":   AgentDefaults{},
+			"agents":     []agentInfo{},
 		})
 		return
 	}
@@ -324,20 +327,21 @@ func (s *Server) handleAgentState(c *gin.Context) {
 
 func (s *Server) handleAgentChat(c *gin.Context) {
 	if s.agentState == nil {
-		c.JSON(http.StatusServiceUnavailable, agentChatResponse{
-			Error: "Agent 未初始化。请在 ~/.tongstock/config.yaml 中配置 agent.enabled: true 并确保 picoclaw 已正确配置。",
-		})
+		code, message := statusError(http.StatusServiceUnavailable)
+		WriteError(c, http.StatusServiceUnavailable, code, message)
 		return
 	}
 
 	var req agentChatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, agentChatResponse{Error: "invalid request: " + err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 	req.Message = strings.TrimSpace(req.Message)
 	if req.Message == "" {
-		c.JSON(http.StatusBadRequest, agentChatResponse{Error: "message is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 	if req.Agent == "" {
@@ -345,7 +349,8 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	}
 	canonicalAgent, ok := s.resolveAgentID(req.Agent)
 	if !ok {
-		c.JSON(http.StatusBadRequest, agentChatResponse{Error: "unknown agent: " + req.Agent})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 	req.Agent = canonicalAgent
@@ -354,9 +359,8 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	// would make the model appear to have research tools that are not actually
 	// registered.  Keep the explicit API contract until tool bridging is added.
 	if req.Agent == "stock-paradigm-miner" {
-		c.JSON(http.StatusConflict, agentChatResponse{
-			Error: "范式研究禁止直接 Prompt 出具结论；请使用 /api/agent/research 并提供 paradigm_id，以生成真实实验和 Evidence 引用。",
-		})
+		code, message := statusError(http.StatusConflict)
+		WriteError(c, http.StatusConflict, code, message)
 		return
 	}
 	if req.Session == "" {
@@ -379,7 +383,8 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		Model:   req.Model,
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, agentChatResponse{Error: err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 	s.saveAgentChatSession(req.Session, req.Agent, req.Message, response)
@@ -1030,17 +1035,26 @@ type agentDebateResponse struct {
 
 func (s *Server) handleAgentDebate(c *gin.Context) {
 	if s.agentState == nil {
-		c.JSON(http.StatusInternalServerError, agentDebateResponse{Error: "agent not initialized"})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteErrorWithDetails(c, http.StatusInternalServerError, code, message, map[string]any{
+			"stock_code": "", "topic": "", "participants": nil,
+		})
 		return
 	}
 
 	var req agentDebateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, agentDebateResponse{Error: "invalid request: " + err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteErrorWithDetails(c, http.StatusBadRequest, code, message, map[string]any{
+			"stock_code": "", "topic": "", "participants": nil,
+		})
 		return
 	}
 	if req.StockCode == "" {
-		c.JSON(http.StatusBadRequest, agentDebateResponse{Error: "stock_code is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteErrorWithDetails(c, http.StatusBadRequest, code, message, map[string]any{
+			"stock_code": "", "topic": "", "participants": nil,
+		})
 		return
 	}
 
@@ -1053,7 +1067,10 @@ func (s *Server) handleAgentDebate(c *gin.Context) {
 	for i, agentID := range req.Agents {
 		canonicalAgent, ok := s.resolveAgentID(agentID)
 		if !ok {
-			c.JSON(http.StatusBadRequest, agentDebateResponse{Error: "unknown agent: " + agentID})
+			code, message := statusError(http.StatusBadRequest)
+			WriteErrorWithDetails(c, http.StatusBadRequest, code, message, map[string]any{
+				"stock_code": "", "topic": "", "participants": nil,
+			})
 			return
 		}
 		req.Agents[i] = canonicalAgent

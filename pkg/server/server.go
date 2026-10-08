@@ -556,10 +556,12 @@ func (s *Server) setupHealthRoutes(r *gin.Engine) {
 	r.GET("/health/live", live)
 	r.GET("/health/ready", func(c *gin.Context) {
 		if s.diagnostics == nil {
-			c.JSON(http.StatusServiceUnavailable, Diagnostics{
-				Status: "unavailable", Service: "tongstock",
-				Modules:   map[string]ModuleHealth{"app": {Status: "unavailable", Message: "diagnostics not configured"}},
-				CheckedAt: time.Now(),
+			code, message := statusError(http.StatusServiceUnavailable)
+			WriteErrorWithDetails(c, http.StatusServiceUnavailable, code, message, map[string]any{
+				"status":     "unavailable",
+				"service":    "tongstock",
+				"modules":    map[string]ModuleHealth{"app": {Status: "unavailable", Message: "diagnostics not configured"}},
+				"checked_at": time.Now(),
 			})
 			return
 		}
@@ -569,6 +571,14 @@ func (s *Server) setupHealthRoutes(r *gin.Engine) {
 		status := http.StatusOK
 		if result.Status == "unavailable" {
 			status = http.StatusServiceUnavailable
+			code, message := statusError(status)
+			WriteErrorWithDetails(c, status, code, message, map[string]any{
+				"status":     result.Status,
+				"service":    result.Service,
+				"modules":    result.Modules,
+				"checked_at": result.CheckedAt,
+			})
+			return
 		}
 		c.JSON(status, result)
 	})
