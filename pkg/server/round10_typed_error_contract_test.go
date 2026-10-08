@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sjzsdu/tongstock/internal/agentservice"
 )
 
 // Round-10 characterization: the typed-struct legacy error sites
@@ -47,6 +48,47 @@ func TestAgentStateClassBGolden(t *testing.T) {
 			"defaults":   AgentDefaults{},
 			"agents":     []agentInfo{},
 		})
+}
+
+func TestAgentChatValidationTypedErrorGolden(t *testing.T) {
+	// agentState non-nil (no svc needed): the bind/validation branches of
+	// handleAgentChat are reachable without a real agent service. Bodies are
+	// agentChatResponse error-only — plain envelope bytes.
+	router := chatTestDepsRouter(t, func(s *Server) { s.SetChatStore(nil) })
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		assertLegacyErrorGolden(t,
+			doLegacyErrorRequest(t, router, http.MethodPost, "/api/agent/chat", `{invalid`),
+			http.StatusBadRequest)
+	})
+
+	t.Run("missing message", func(t *testing.T) {
+		assertLegacyErrorGolden(t,
+			doLegacyErrorRequest(t, router, http.MethodPost, "/api/agent/chat", `{"message":""}`),
+			http.StatusBadRequest)
+	})
+
+	t.Run("unknown agent", func(t *testing.T) {
+		assertLegacyErrorGolden(t,
+			doLegacyErrorRequest(t, router, http.MethodPost, "/api/agent/chat", `{"message":"m","agent":"no-such-agent"}`),
+			http.StatusBadRequest)
+	})
+}
+
+func TestAgentChatMinerConflictGolden(t *testing.T) {
+	// The miner-blocked 409 needs resolveAgentID to succeed: the miner test
+	// fixture wires the scenario default to stock-paradigm-miner.
+	server := NewServer(Dependencies{})
+	server.SetChatStore(nil)
+	server.agentState.defaults = AgentDefaults{Agents: map[string]string{
+		agentservice.ScenarioChat: "stock-paradigm-miner",
+	}}
+	router := serverContractRouter(t, server)
+
+	assertLegacyErrorGolden(t,
+		doLegacyErrorRequest(t, router, http.MethodPost, "/api/agent/chat",
+			`{"message":"直接告诉我稳定收益结论","agent":"stock-paradigm-miner"}`),
+		http.StatusConflict)
 }
 
 func TestAgentDebateTypedErrorGolden(t *testing.T) {
@@ -170,6 +212,31 @@ func TestHealthReadyClassBGolden(t *testing.T) {
 	if !ok || modules["app"] == nil {
 		t.Fatalf("missing app module health: %s", response.Body.String())
 	}
+}
+
+func TestHealthReadyUnavailableProviderSchemaVersionGolden(t *testing.T) {
+	// Production sets a non-zero SchemaVersion when the DB ping succeeds
+	// before the TDX check fails — the payload then carries five keys and
+	// the extras must preserve schema_version (omitempty mirror).
+	fixed := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	router := newContractGinEngine(t, Dependencies{Diagnostics: DiagnosticsFunc(func(context.Context) Diagnostics {
+		return Diagnostics{
+			Status:        "unavailable",
+			Service:       "tongstock",
+			SchemaVersion: 5,
+			Modules:       map[string]ModuleHealth{"app": {Status: "unavailable", Message: "diagnostics not configured"}},
+			CheckedAt:     fixed,
+		}
+	})})
+	assertLegacyErrorMixedGolden(t,
+		doLegacyErrorRequest(t, router, http.MethodGet, "/health/ready", ""),
+		http.StatusServiceUnavailable, map[string]any{
+			"status":         "unavailable",
+			"service":        "tongstock",
+			"schema_version": 5,
+			"modules":        map[string]ModuleHealth{"app": {Status: "unavailable", Message: "diagnostics not configured"}},
+			"checked_at":     fixed,
+		})
 }
 
 func TestHealthReadyUnavailableProviderGolden(t *testing.T) {
