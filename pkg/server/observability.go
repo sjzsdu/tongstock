@@ -133,7 +133,7 @@ func WriteError(c *gin.Context, status int, code, message string) {
 }
 
 // WriteErrorWithDetails writes the error envelope plus preserved top-level
-// keys, mirroring exactly what ErrorEnvelopeMiddleware produces for a legacy
+// keys, mirroring exactly what the retired ErrorEnvelopeMiddleware produced for a legacy
 // mixed-key body: each extra value is round-tripped through json so structs
 // re-marshal with sorted key order and numbers keep float64 formatting, the
 // envelope is marshaled from a map so top-level keys stay sorted, and an
