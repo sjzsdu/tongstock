@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/sjzsdu/tongstock/pkg/param"
 	"github.com/sjzsdu/tongstock/pkg/storage"
 	"github.com/sjzsdu/tongstock/pkg/tdx"
 )
@@ -74,9 +75,14 @@ func TestSettingsHandlersErrorContract(t *testing.T) {
 		t.Setenv("HOME", uncreatableHomeDir(t))
 		response := doLegacyErrorRequest(t, router, http.MethodGet, "/api/settings/indicator", "")
 		if response.Code == http.StatusOK {
-			// param's package-global config was already warmed by an earlier
-			// test in this binary, so GetConfig can no longer fail. The 500
-			// envelope itself stays pinned by the other 500 goldens.
+			// A 200 is only acceptable when param's package-global config was
+			// already warmed by an earlier test in this binary (AutoInit then
+			// short-circuits before touching HOME, so GetConfig success proves
+			// warmth). If GetConfig still fails, the config is cold and the
+			// handler should have returned the 500 golden — fail loudly.
+			if _, err := param.GetConfig(); err != nil {
+				t.Fatalf("handler returned 200 but param config is cold: %v", err)
+			}
 			t.Skip("param.globalConfig already warmed; GetConfig cannot fail in this process")
 		}
 		assertLegacyErrorGolden(t, response, http.StatusInternalServerError)

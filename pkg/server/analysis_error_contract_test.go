@@ -39,13 +39,13 @@ func TestAnalysisHandlersErrorContract(t *testing.T) {
 			http.StatusBadRequest)
 	})
 
-	t.Run("stock search index unavailable", func(t *testing.T) {
+	t.Run("stock search unavailable", func(t *testing.T) {
 		assertLegacyErrorGolden(t,
 			doLegacyErrorRequest(t, router, http.MethodGet, "/api/stocks/search?q=600000", ""),
 			http.StatusInternalServerError)
 	})
 
-	t.Run("stock search unavailable", func(t *testing.T) {
+	t.Run("stock search index unavailable", func(t *testing.T) {
 		assertLegacyErrorGolden(t,
 			doLegacyErrorRequest(t, router, http.MethodGet, "/api/stocks/search-index", ""),
 			http.StatusInternalServerError)
