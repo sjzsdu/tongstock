@@ -106,6 +106,20 @@ export default function SelectionResult() {
     return Array.from(groups.entries()).sort((a, b) => b[1].length - a[1].length);
   }, [run]);
 
+  // 候选为空时，真正的拦截原因必须在头部说清楚，而不是把
+  // 「没有股票满足入场规则」当头条（那次规则可能根本没被执行）。
+  const blockedBy = useMemo(() => {
+    if ((run?.candidates.length ?? 0) > 0 || exclusionGroups.length === 0) return undefined;
+    const total = run!.exclusions.length;
+    return exclusionGroups.slice(0, 3).map(([reasonCode, entries]) => ({
+      reasonCode,
+      label: exclusionReasonLabel(reasonCode),
+      count: entries.length,
+      detail: entries[0]?.detail,
+      dominant: entries.length === total,
+    }));
+  }, [run, exclusionGroups]);
+
   const columns: ColumnsType<SelectionCandidate> = [
     { title: '排名', dataIndex: 'rank', width: 70 },
     {
@@ -205,6 +219,24 @@ export default function SelectionResult() {
         />
       )}
 
+      {blockedBy && (
+        <Alert
+          type="warning"
+          showIcon
+          title={
+            blockedBy.length === 1 && blockedBy[0].dominant
+              ? `本次筛选没有产生候选：${blockedBy[0].label}（${blockedBy[0].count} 条）`
+              : `本次筛选没有产生候选，主要拦截原因：${blockedBy.map((b) => `${b.label} ${b.count} 条`).join('；')}`
+          }
+          description={
+            <Space orientation="vertical" size={2}>
+              {blockedBy[0]?.detail && <Text type="secondary" style={{ fontSize: 12 }}>{blockedBy[0].detail}</Text>}
+              <Text type="secondary" style={{ fontSize: 12 }}>这种情况下入场规则从未被执行过，不是「股票不达标」；完整分组见下方未入选记录。</Text>
+            </Space>
+          }
+        />
+      )}
+
       <Card size="small">
         <Space size={32} wrap>
           <Statistic title="买入" value={stats.buy} styles={{ content: { color: '#cf1322' } }} />
@@ -229,10 +261,17 @@ export default function SelectionResult() {
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
               description={
-                <Space orientation="vertical" size={2}>
-                  <Text strong>今天没有股票满足入场规则且同时未触发失效条件</Text>
-                  <Text type="secondary">这是正常结果，不会为了凑数量放宽规则。下方可查看方法或数据被排除的原因。</Text>
-                </Space>
+                blockedBy ? (
+                  <Space orientation="vertical" size={2}>
+                    <Text strong>没有候选股票：{blockedBy.map((b) => b.label).join('；')}</Text>
+                    <Text type="secondary">原因与处理建议见页面上方的提示。</Text>
+                  </Space>
+                ) : (
+                  <Space orientation="vertical" size={2}>
+                    <Text strong>今天没有股票满足入场规则且同时未触发失效条件</Text>
+                    <Text type="secondary">这是正常结果，不会为了凑数量放宽规则。下方可查看方法或数据被排除的原因。</Text>
+                  </Space>
+                )
               }
             />
           ),

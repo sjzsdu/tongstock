@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import {
   Alert,
   Button,
+  Collapse,
   Empty,
   Input,
   Popconfirm,
@@ -32,7 +33,7 @@ export default function MyMethods() {
   const [availability, setAvailability] = useState<AvailabilityFilter>('all');
   const {
     items, loading, error, screeningId, seeding,
-    drawerOpen, setDrawerOpen, detail, audit, detailLoading, detailError,
+    drawerOpen, setDrawerOpen, detail, audit, researchTrace, detailLoading, detailError,
     load, screenMethod, loadValidation, seedMethods,
   } = useMethodCatalog();
   const {
@@ -116,6 +117,19 @@ export default function MyMethods() {
       {researchError && <Alert type="error" showIcon title="新方法挖掘启动失败" description={researchError} />}
       {error && <Alert type="error" showIcon title="方法列表读取失败" description={error} action={<Button size="small" onClick={() => void load()}>重试</Button>} />}
 
+      <Collapse
+        ghost
+        items={[{
+          key: 'how-it-works',
+          label: '这些方法是怎么被使用的？',
+          children: (
+            <Paragraph type="secondary" style={{ margin: 0 }}>
+              每个方法都走同一条链路：① 研究 —— 挖掘或内置候选规则；② 快照验证 —— 在冻结的历史数据保留窗口上做样本外回测；③ 证据门槛 —— 命中率、收益、回撤等达标后才标记「已验证」；④ 今日筛选 —— 在当日市场快照的每只股票上执行结构化入场规则；⑤ 候选 —— 达标股票按证据分排序输出买入/观察名单；⑥ 退出 —— 每个候选都带退出计划（止损/止盈/移动止盈/最长持有天数），在「筛选今日股票」结果页展开任一候选即可看到。卡片右侧的「退出规则」就是这份计划的可读摘要。
+            </Paragraph>
+          ),
+        }]}
+      />
+
       <div className="methods-page__toolbar">
         <Space wrap>
           <Input.Search
@@ -177,12 +191,13 @@ export default function MyMethods() {
         </Empty>
       )}
 
-      <Text type="secondary">方法只有在历史样本外验证和证据等级同时达标后，才能用于“筛选今日股票”。</Text>
+      <Text type="secondary">方法只有在历史样本外验证和证据等级同时达标后，才能用于“筛选今日股票”。退出规则在筛选结果的每个候选里生成退出计划（止损/止盈/最长持有），不会自动替你下单。</Text>
 
       <MethodValidationDrawer
         open={drawerOpen}
         method={detail}
         audit={audit}
+        researchTrace={researchTrace}
         loading={detailLoading}
         error={detailError}
         onClose={() => setDrawerOpen(false)}

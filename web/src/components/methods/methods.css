@@ -70,8 +70,28 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
+  align-items: flex-start;
   gap: 6px;
   border-inline-start: 1px solid var(--ant-color-border-secondary, #f0f0f0);
+  /* The exit panel is a real button that opens the validation drawer. */
+  background: none;
+  border-inline-end: 0;
+  border-top: 0;
+  border-bottom: 0;
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.method-summary__exit:hover {
+  background: var(--ant-color-fill-quaternary, #fafafa);
+}
+
+.method-summary__exit:focus-visible {
+  outline: 2px solid var(--ant-color-primary, #1677ff);
+  outline-offset: -2px;
 }
 
 .method-summary__exit .anticon {

@@ -846,6 +846,10 @@ export const api = {
   methodResearchStatus: () =>
     fetchJSON<MethodResearchStatus>('/api/methods/research/status'),
 
+  /** 按研究 ID 取持久化批次摘要（股票池规模 + 保留验证窗口），供方法验证记录展示 */
+  methodResearchTraceSummary: (researchId: string) =>
+    fetchJSON<MethodResearchTraceSummary>(`/api/methods/research/traces/${encodeURIComponent(researchId)}/summary`),
+
   /** 异步启动一轮横截面因子研究：立即返回 started 包封，用 factorResearchLast 轮询结果 */
   factorResearchRun: (req: FactorResearchRequest = {}) =>
     fetchJSON<FactorResearchStart>('/api/factors/research/run', {
@@ -913,10 +917,14 @@ export interface SelectionRunRequest { market_snapshot_id?:string;feature_snapsh
 export interface PositionDecision { code:string;name:string;action:'hold'|'watch'|'reduce'|'exit'|'insufficient_data';priority:string;deadline:string;inferred:boolean;executable:boolean;constraint?:string;return_pct:number;price_time:string;explanation:string }
 export interface PositionDecisionRun { id:string;snapshot_id:string;snapshot_date:string;decisions:PositionDecision[] }
 export interface MethodHealthState { score:number;forward_samples:number;drift?:boolean;decay?:boolean;execution_deviation?:boolean;critical_alerts?:number;consecutive_severe?:number;as_of?:string }
-export interface MethodEvidence { confidence:string;confidence_reason?:string;passable?:boolean;oos_trades:number;oos_return:number;oos_win_rate?:number;outcome_hit_rate?:number;outcome_observations?:number;oos_max_drawdown:number;sharpe_ratio?:number;sortino_ratio?:number;snapshot_id?:string;result_hash?:string }
+export interface MethodEvidence { confidence:string;confidence_reason?:string;passable?:boolean;oos_trades:number;oos_return:number;oos_win_rate?:number;outcome_hit_rate?:number;outcome_observations?:number;oos_max_drawdown:number;sharpe_ratio?:number;sortino_ratio?:number;snapshot_id?:string;result_hash?:string;universe_size?:number;validation_start?:string;validation_end?:string }
 export interface MethodScope { universe?:string;board_filter?:string[];market_cap_min?:number;market_cap_max?:number;exclude_st?:boolean;market_state?:string[];feature_deps?:string[] }
 export interface MethodOutcome { horizon_days?:number;target_return_pct?:number;price_basis?:string;success?:string }
-export interface MethodCard { id:string;family_id?:string;variant_id?:string;name:string;status:string;market:string;universe:string;scope?:MethodScope;outcome?:MethodOutcome;holding_period:string;trigger_frequency?:string;entry_summary:string;exit_summary:string;invalidations?:string[];evidence?:MethodEvidence;health?:MethodHealthState;updated_at:string }
+export interface MethodRuleExpr { type:string;indicator?:string;params?:string[];value?:number;op?:string;cross?:string;window_days?:number;window_mode?:string;rank_pct?:number;rank_side?:string;rank_by?:string;left?:MethodRuleExpr;right?:MethodRuleExpr;children?:MethodRuleExpr[];ambiguous_source?:string }
+export interface MethodHoldingRule { max_days?:number;min_days?:number;stop_loss_pct?:number;take_profit_pct?:number;trailing_stop_pct?:number }
+export interface MethodPosRule { mode?:string;pct_equity?:number;fixed_lots?:number }
+export interface MethodRules { entry_rule?:MethodRuleExpr;exit_rule?:MethodRuleExpr;invalid_rule?:MethodRuleExpr;position?:MethodPosRule;holding?:MethodHoldingRule }
+export interface MethodCard { id:string;family_id?:string;variant_id?:string;name:string;status:string;market:string;universe:string;scope?:MethodScope;outcome?:MethodOutcome;rules?:MethodRules;holding_period:string;trigger_frequency?:string;entry_summary:string;exit_summary:string;invalidations?:string[];source_research_id?:string;evidence?:MethodEvidence;health?:MethodHealthState;updated_at:string }
 export interface MethodCardQuery { status?:string;market?:string;universe?:string;family_id?:string;holding_min_days?:number;holding_max_days?:number;limit?:number }
 export interface MethodAuditEvent { id:string;method_id:string;from:string;to:string;action:string;reason:string;actor:string;evidence_hash?:string;automatic:boolean;created_at:string }
 
@@ -937,6 +945,7 @@ export interface MethodResearchResult { started_at:string;finished_at:string;sna
 export interface MethodResearchProgress { phase:'preparing'|'discovery'|'validation';hold_days?:number;universe_size?:number;discovery_codes_done?:number;discovery_codes_total?:number;total_candidates?:number;candidates_done?:number;verified:number;rejected:number }
 /** GET /api/methods/research/status：批次是否在运行（含启动调度器那一轮） */
 export interface MethodResearchStatus { running:boolean;running_since?:string;last_finished_at?:string;last_error?:string;phase?:'preparing'|'discovery'|'validation';progress?:MethodResearchProgress }
+export interface MethodResearchTraceSummary { research_id:string;snapshot_id?:string;universe_size?:number;validation_start?:string;validation_end?:string }
 
 // ===== 横截面多因子研究（factorlab）：预测未来 N 日收益的截面排序 =====
 

@@ -7,8 +7,10 @@ import {
 import { Button, Card, Space, Statistic, Tag, Tooltip, Typography } from 'antd';
 import type { MethodCard } from '../../api/client';
 import {
+  entryRuleText,
   evidenceLevel,
   evidenceTone,
+  exitRuleSummary,
   formatPercent,
   methodCanScreen,
   methodStatusLabel,
@@ -37,18 +39,22 @@ export default function MethodSummaryCard({ method, screening, onScreen, onValid
   const canScreen = methodCanScreen(method);
   const unavailableReason = methodUnavailableReason(method);
   const evidence = method.evidence;
-  const hitRate = evidence?.outcome_hit_rate ?? evidence?.oos_win_rate;
+  const hasOutcomeHit = evidence?.outcome_hit_rate !== undefined;
+  const rule = entryRuleText(method);
 
   return (
     <Card className="method-summary" styles={{ body: { padding: 0 } }}>
       <div className="method-summary__evidence" aria-label="历史验证结果">
-        <Text type="secondary">{evidence?.outcome_hit_rate === undefined ? '样本外交易胜率' : '历史命中率'}</Text>
+        <Text type="secondary">历史命中率</Text>
         <Statistic
-          value={hitRate === undefined ? '待验证' : hitRate * 100}
-          precision={hitRate === undefined ? undefined : 1}
-          suffix={hitRate === undefined ? undefined : '%'}
-          styles={{ content: { fontSize: hitRate === undefined ? 24 : 34 } }}
+          value={hasOutcomeHit ? evidence!.outcome_hit_rate! * 100 : '待验证'}
+          precision={hasOutcomeHit ? 1 : undefined}
+          suffix={hasOutcomeHit ? '%' : undefined}
+          styles={{ content: { fontSize: hasOutcomeHit ? 34 : 24 } }}
         />
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          样本外交易胜率 {formatPercent(evidence?.oos_win_rate)}（{evidence ? `${evidence.oos_trades} 笔` : '待验证'}）
+        </Text>
         <Tag color={TONE_COLOR[evidenceTone(evidence)]}>证据等级：{evidenceLevel(evidence)}</Tag>
       </div>
 
@@ -61,11 +67,16 @@ export default function MethodSummaryCard({ method, screening, onScreen, onValid
               {canScreen && <Tag icon={<CheckCircleOutlined />} color="green">可用于今日筛选</Tag>}
             </Space>
             <Title level={3} className="method-summary__rule">{method.entry_summary}</Title>
+            {rule && (
+              <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
+                执行规则：{rule}
+              </Text>
+            )}
           </div>
 
           <div className="method-summary__metrics" aria-label="历史验证指标">
-            <span><Text type="secondary">{evidence?.outcome_hit_rate === undefined ? '样本外交易' : '命中样本'}</Text><strong>{evidence?.outcome_hit_rate === undefined ? (evidence ? `${evidence.oos_trades} 笔` : '待验证') : `${evidence.outcome_observations ?? '待记录'} 个`}</strong></span>
-            <span><Text type="secondary">{evidence?.outcome_hit_rate === undefined ? '样本外收益' : '交易收益'}</Text><strong>{formatPercent(evidence?.oos_return)}</strong></span>
+            <span><Text type="secondary">{hasOutcomeHit ? '命中样本' : '样本外交易'}</Text><strong>{hasOutcomeHit ? `${evidence!.outcome_observations ?? '待记录'} 个` : (evidence ? `${evidence.oos_trades} 笔` : '待验证')}</strong></span>
+            <span><Text type="secondary">{hasOutcomeHit ? '交易收益' : '样本外收益'}</Text><strong>{formatPercent(evidence?.oos_return)}</strong></span>
             <span><Text type="secondary">最大回撤</Text><strong>{formatPercent(evidence?.oos_max_drawdown)}</strong></span>
             <span><Text type="secondary">验证口径</Text><strong>{outcomeLabel(method.outcome)}</strong></span>
             <span><Text type="secondary">股票池</Text><strong>{scopeLabel(method)}</strong></span>
@@ -93,11 +104,17 @@ export default function MethodSummaryCard({ method, screening, onScreen, onValid
         </Space>
       </div>
 
-      <div className="method-summary__exit">
+      <button
+        type="button"
+        className="method-summary__exit"
+        aria-label="查看退出规则与验证记录"
+        onClick={() => onValidation(method)}
+      >
         <Text type="secondary">退出规则</Text>
-        <Text>{method.exit_summary || '未设定'}</Text>
+        <Text>{exitRuleSummary(method)}</Text>
+        <Text type="secondary" style={{ fontSize: 12 }}>选股结果的每个候选会带上这份退出计划</Text>
         <ArrowRightOutlined aria-hidden="true" />
-      </div>
+      </button>
     </Card>
   );
 }
