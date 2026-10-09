@@ -41,6 +41,12 @@ type EvidenceSummary struct {
 	// 前端必须把缺失如实展示为「待验证」，不得编默认值。
 	SharpeRatio  *float64 `json:"sharpe_ratio,omitempty"`
 	SortinoRatio *float64 `json:"sortino_ratio,omitempty"`
+	// UniverseSize 是样本外验证实际覆盖的股票数；0 = 历史数据未记录。
+	UniverseSize int `json:"universe_size,omitempty"`
+	// ValidationStart / ValidationEnd 是样本外验证窗口（保留区间）的日期边界；
+	// 空 = 历史数据未记录，前端不得推测。
+	ValidationStart string `json:"validation_start,omitempty"`
+	ValidationEnd   string `json:"validation_end,omitempty"`
 }
 
 type MethodVersion struct {
@@ -135,6 +141,8 @@ type EvidenceInput struct {
 	OutcomeHitRate                                                                   *float64
 	OutcomeObservations                                                              int
 	SharpeRatio, SortinoRatio                                                        *float64
+	UniverseSize                                                                     int
+	ValidationStart, ValidationEnd                                                   string
 }
 
 type Query struct {
@@ -158,14 +166,28 @@ type Card struct {
 	Universe         string              `json:"universe"`
 	Scope            methods.Scope       `json:"scope,omitempty"`
 	Outcome          methods.OutcomeRule `json:"outcome,omitempty"`
+	Rules            *CardRules          `json:"rules,omitempty"`
 	TriggerFrequency string              `json:"trigger_frequency"`
 	HoldingPeriod    string              `json:"holding_period"`
 	EntrySummary     string              `json:"entry_summary"`
 	ExitSummary      string              `json:"exit_summary"`
 	Invalidations    []string            `json:"invalidations,omitempty"`
-	Evidence         *EvidenceSummary    `json:"evidence,omitempty"`
-	Health           *HealthState        `json:"health,omitempty"`
-	UpdatedAt        time.Time           `json:"updated_at"`
+	// SourceResearchID 是产生当前版本的自动研究批次；旧证据缺验证窗口/池大小时，
+	// 前端可用它去批次记录回查（数据只存在于 batch result 上）。
+	SourceResearchID string           `json:"source_research_id,omitempty"`
+	Evidence         *EvidenceSummary `json:"evidence,omitempty"`
+	Health           *HealthState     `json:"health,omitempty"`
+	UpdatedAt        time.Time        `json:"updated_at"`
+}
+
+// CardRules 把编译产物里的可执行规则原样暴露给前端，让人能读到方法
+// 真正怎么判定入场/退出/失效。nil = 该版本没有编译产物（历史数据）。
+type CardRules struct {
+	EntryRule   *methods.Expr        `json:"entry_rule,omitempty"`
+	ExitRule    *methods.Expr        `json:"exit_rule,omitempty"`
+	InvalidRule *methods.Expr        `json:"invalid_rule,omitempty"`
+	Position    *methods.PosRule     `json:"position,omitempty"`
+	Holding     *methods.HoldingRule `json:"holding,omitempty"`
 }
 
 type Repository interface {

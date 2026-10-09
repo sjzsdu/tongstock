@@ -22,6 +22,7 @@ func (s *Server) registerMethodMarketRoutes(api *gin.RouterGroup) {
 	api.POST("/methods/research/run", s.handleMethodResearchRun)
 	api.GET("/methods/research/last", s.handleMethodResearchLast)
 	api.GET("/methods/research/status", s.handleMethodResearchStatus)
+	api.GET("/methods/research/traces/:id/summary", s.handleMethodResearchTraceSummary)
 	api.GET("/methods/reject-stats", s.handleMethodRejectStats)
 	api.GET("/methods/forward-health", s.handleMethodForwardHealth)
 	api.POST("/methods/:id/feedback", s.handleMethodFeedback)
@@ -123,6 +124,29 @@ func (s *Server) handleMethodResearchStatus(c *gin.Context) {
 	}
 	s.researchMu.RUnlock()
 	c.JSON(http.StatusOK, resp)
+}
+
+// handleMethodResearchTraceSummary 从持久化的研究轨迹里取一批次的
+// 股票池规模与保留验证窗口。内存里的 researchLast 只在当次进程有效，
+// 而方法卡的验证数据展示必须重启后仍然可用，所以走轨迹存储。
+func (s *Server) handleMethodResearchTraceSummary(c *gin.Context) {
+	if s.discoverTraces == nil {
+		WriteError(c, http.StatusServiceUnavailable, "method_research_unavailable", "研究轨迹存储不可用")
+		return
+	}
+	result, err := s.discoverTraces.Get(c.Request.Context(), c.Param("id"))
+	if err != nil || result == nil {
+		WriteError(c, http.StatusNotFound, "research_trace_not_found", "研究轨迹不存在")
+		return
+	}
+	start, end := methodautomation.ValidationWindow(result.Boundaries)
+	c.JSON(http.StatusOK, gin.H{
+		"research_id":      result.ResearchID,
+		"snapshot_id":      result.SnapshotID,
+		"universe_size":    len(result.Boundaries),
+		"validation_start": start,
+		"validation_end":   end,
+	})
 }
 
 func (s *Server) handleMethodResearchLast(c *gin.Context) {

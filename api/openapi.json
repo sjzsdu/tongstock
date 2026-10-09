@@ -5422,6 +5422,41 @@
           }
         }
       }
+    },
+    "/api/methods/research/traces/{id}/summary": {
+      "get": {
+        "operationId": "getApiMethodsResearchTracesSummary",
+        "summary": "按研究 ID 取持久化研究轨迹的批次摘要：股票池规模与保留样本外验证窗口（用于方法验证记录展示，重启后仍可查）",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "研究批次 ID（research_id）"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trace summary with universe_size and validation window",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "servers": [

@@ -499,9 +499,11 @@ func (o *Orchestrator) resolveCodes(ctx context.Context, snapshot *paradigm.Data
 	return codes, nil
 }
 
-// reservedWindow 返回保留样本的全局 [start, end]：start 取各代码
-// ReservedStartDate 的最大值，保证窗口对每个代码都落在未触碰区域。
-func reservedWindow(boundaries []discovery.CodeBoundary) (string, string) {
+// ValidationWindow returns the reserved out-of-sample window for a discovery
+// trace: start is the max of per-code ReservedStartDate (so the window sits
+// inside the untouched region for every code) and end is the last data date.
+// Exported so the server can present persisted traces without re-running a batch.
+func ValidationWindow(boundaries []discovery.CodeBoundary) (string, string) {
 	start, end := "", ""
 	for _, b := range boundaries {
 		if b.ReservedStartDate > start {
@@ -512,6 +514,12 @@ func reservedWindow(boundaries []discovery.CodeBoundary) (string, string) {
 		}
 	}
 	return start, end
+}
+
+// reservedWindow 返回保留样本的全局 [start, end]：start 取各代码
+// ReservedStartDate 的最大值，保证窗口对每个代码都落在未触碰区域。
+func reservedWindow(boundaries []discovery.CodeBoundary) (string, string) {
+	return ValidationWindow(boundaries)
 }
 
 func normalizeHoldDays(values []int) []int {
@@ -549,11 +557,5 @@ func dedupeSorted(values []string) []string {
 }
 
 func exitSummary(m *methods.CompiledMethod) string {
-	if m == nil {
-		return "按退出规则离场"
-	}
-	if m.Holding.MaxDays > 0 {
-		return fmt.Sprintf("按退出规则，最长持有 %d 个交易日", m.Holding.MaxDays)
-	}
-	return "按退出规则离场"
+	return methods.ExitSummary(m)
 }

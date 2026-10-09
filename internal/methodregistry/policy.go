@@ -21,7 +21,43 @@ func (v ValidationEvidence) RegistryEvidence() EvidenceInput {
 		}
 	}
 	sharpe, sortino := b.OosStats.SharpeRatio, b.OosStats.SortinoRatio
-	return EvidenceInput{ResultHash: b.ResultHash, ComputedHash: b.ComputeResultHash(), SnapshotID: b.SnapshotID, JobHash: b.JobHash, MethodHash: b.MethodHash, StockCode: b.StockCode, Confidence: string(b.Confidence), ConfidenceReason: b.ConfidenceReason, Passable: b.Passable, HasHardBlocker: hard, OOSTrades: b.OosStats.TotalTrades, OOSReturn: b.OosStats.TotalReturn, OOSWinRate: b.OosStats.WinRate, OOSMaxDrawdown: b.OosStats.MaxDrawdown, SharpeRatio: &sharpe, SortinoRatio: &sortino}
+	return EvidenceInput{ResultHash: b.ResultHash, ComputedHash: b.ComputeResultHash(), SnapshotID: b.SnapshotID, JobHash: b.JobHash, MethodHash: b.MethodHash, StockCode: b.StockCode, Confidence: string(b.Confidence), ConfidenceReason: b.ConfidenceReason, Passable: b.Passable, HasHardBlocker: hard, OOSTrades: b.OosStats.TotalTrades, OOSReturn: b.OosStats.TotalReturn, OOSWinRate: b.OosStats.WinRate, OOSMaxDrawdown: b.OosStats.MaxDrawdown, SharpeRatio: &sharpe, SortinoRatio: &sortino, UniverseSize: b.UniverseSize, ValidationStart: reservedWindowStart(b.Segments), ValidationEnd: reservedWindowEnd(b.Segments)}
+}
+
+// reservedWindowStart/End derive the out-of-sample validation window from the
+// persisted segments (valid/test preferred, falling back to every segment).
+// They are presentation metadata only and are not part of ResultHash.
+func reservedWindowSegments(segments []validation.SegmentResult) []validation.SegmentResult {
+	var oos []validation.SegmentResult
+	for _, s := range segments {
+		if s.Segment == "valid" || s.Segment == "test" {
+			oos = append(oos, s)
+		}
+	}
+	if len(oos) == 0 {
+		return segments
+	}
+	return oos
+}
+
+func reservedWindowStart(segments []validation.SegmentResult) string {
+	start := ""
+	for _, s := range reservedWindowSegments(segments) {
+		if s.Start != "" && (start == "" || s.Start < start) {
+			start = s.Start
+		}
+	}
+	return start
+}
+
+func reservedWindowEnd(segments []validation.SegmentResult) string {
+	end := ""
+	for _, s := range reservedWindowSegments(segments) {
+		if s.End != "" && s.End > end {
+			end = s.End
+		}
+	}
+	return end
 }
 
 type Policy struct{}
