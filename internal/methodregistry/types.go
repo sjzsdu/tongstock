@@ -25,16 +25,18 @@ const (
 )
 
 type EvidenceSummary struct {
-	ResultHash       string  `json:"result_hash"`
-	SnapshotID       string  `json:"snapshot_id"`
-	JobHash          string  `json:"job_hash"`
-	Confidence       string  `json:"confidence"`
-	ConfidenceReason string  `json:"confidence_reason,omitempty"`
-	Passable         bool    `json:"passable"`
-	OOSTrades        int     `json:"oos_trades"`
-	OOSReturn        float64 `json:"oos_return"`
-	OOSWinRate       float64 `json:"oos_win_rate"`
-	OOSMaxDrawdown   float64 `json:"oos_max_drawdown"`
+	ResultHash          string   `json:"result_hash"`
+	SnapshotID          string   `json:"snapshot_id"`
+	JobHash             string   `json:"job_hash"`
+	Confidence          string   `json:"confidence"`
+	ConfidenceReason    string   `json:"confidence_reason,omitempty"`
+	Passable            bool     `json:"passable"`
+	OOSTrades           int      `json:"oos_trades"`
+	OOSReturn           float64  `json:"oos_return"`
+	OOSWinRate          float64  `json:"oos_win_rate"`
+	OutcomeHitRate      *float64 `json:"outcome_hit_rate,omitempty"`
+	OutcomeObservations int      `json:"outcome_observations,omitempty"`
+	OOSMaxDrawdown      float64  `json:"oos_max_drawdown"`
 	// SharpeRatio / SortinoRatio 来自样本外回测的已计算指标；旧数据为 nil，
 	// 前端必须把缺失如实展示为「待验证」，不得编默认值。
 	SharpeRatio  *float64 `json:"sharpe_ratio,omitempty"`
@@ -109,16 +111,18 @@ type Registration struct {
 	VariantID string
 	// Name 可选：覆盖方法显示名（如自动研究给模板名附上持有期与来源前缀）。
 	// 空 = 使用 compiled method 自带名称。
-	Name             string
-	SourceResearchID string
-	ValidationJobID  string
-	Market           string
-	TriggerFrequency string
-	EntrySummary     string
-	ExitSummary      string
-	Invalidations    []string
-	Method           *methods.CompiledMethod
-	Evidence         Evidence
+	Name                string
+	SourceResearchID    string
+	ValidationJobID     string
+	OutcomeHitRate      *float64
+	OutcomeObservations int
+	Market              string
+	TriggerFrequency    string
+	EntrySummary        string
+	ExitSummary         string
+	Invalidations       []string
+	Method              *methods.CompiledMethod
+	Evidence            Evidence
 }
 type Evidence interface{ RegistryEvidence() EvidenceInput }
 type EvidenceInput struct {
@@ -128,6 +132,8 @@ type EvidenceInput struct {
 	HasHardBlocker                                                                   bool
 	OOSTrades                                                                        int
 	OOSReturn, OOSWinRate, OOSMaxDrawdown                                            float64
+	OutcomeHitRate                                                                   *float64
+	OutcomeObservations                                                              int
 	SharpeRatio, SortinoRatio                                                        *float64
 }
 
@@ -143,21 +149,23 @@ type Query struct {
 	Limit          int
 }
 type Card struct {
-	ID               string           `json:"id"`
-	FamilyID         string           `json:"family_id"`
-	VariantID        string           `json:"variant_id"`
-	Name             string           `json:"name"`
-	Status           Status           `json:"status"`
-	Market           string           `json:"market"`
-	Universe         string           `json:"universe"`
-	TriggerFrequency string           `json:"trigger_frequency"`
-	HoldingPeriod    string           `json:"holding_period"`
-	EntrySummary     string           `json:"entry_summary"`
-	ExitSummary      string           `json:"exit_summary"`
-	Invalidations    []string         `json:"invalidations,omitempty"`
-	Evidence         *EvidenceSummary `json:"evidence,omitempty"`
-	Health           *HealthState     `json:"health,omitempty"`
-	UpdatedAt        time.Time        `json:"updated_at"`
+	ID               string              `json:"id"`
+	FamilyID         string              `json:"family_id"`
+	VariantID        string              `json:"variant_id"`
+	Name             string              `json:"name"`
+	Status           Status              `json:"status"`
+	Market           string              `json:"market"`
+	Universe         string              `json:"universe"`
+	Scope            methods.Scope       `json:"scope,omitempty"`
+	Outcome          methods.OutcomeRule `json:"outcome,omitempty"`
+	TriggerFrequency string              `json:"trigger_frequency"`
+	HoldingPeriod    string              `json:"holding_period"`
+	EntrySummary     string              `json:"entry_summary"`
+	ExitSummary      string              `json:"exit_summary"`
+	Invalidations    []string            `json:"invalidations,omitempty"`
+	Evidence         *EvidenceSummary    `json:"evidence,omitempty"`
+	Health           *HealthState        `json:"health,omitempty"`
+	UpdatedAt        time.Time           `json:"updated_at"`
 }
 
 type Repository interface {

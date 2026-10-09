@@ -272,3 +272,11 @@ func DefaultDslFeatures() []FeatureSpec {
 		{Name: "prevlow20", Category: "breakout", Window: 20, Description: "前 20 日收盘最低（不含当日）"},
 	}
 }
+
+// LatestSelectionFeatures extends the historical-safe DSL set with the
+// current market-cap input used by a latest-day scope. It must not be used for
+// historical validation: stockinfo has no point-in-time market-cap series.
+func LatestSelectionFeatures() []FeatureSpec {
+	features := DefaultDslFeatures()
+	return append([]FeatureSpec{{Name: "market_cap", Category: "scope", Window: 1, Description: "当前流通市值（亿元），仅用于最新快照筛选"}}, features...)
+}

@@ -331,6 +331,14 @@ func (o *Orchestrator) processCandidate(ctx context.Context, research *discovery
 	out.OOSTrades = bundle.OosStats.TotalTrades
 	out.OOSReturn = bundle.OosStats.TotalReturn
 	out.OOSWinRate = bundle.OosStats.WinRate
+	// Discovery's candidate-specific forward label is a separate probability
+	// from the executable trade backtest. Preserve it on the method version so
+	// the product can explain exactly what was measured.
+	var outcomeHitRate *float64
+	if candidate.Observations > 0 {
+		hitRate := candidate.WinRate
+		outcomeHitRate = &hitRate
+	}
 	sharpe := bundle.OosStats.SharpeRatio
 	out.SharpeRatio = &sharpe
 	if bundle.ConfidenceReason != "" {
@@ -342,15 +350,17 @@ func (o *Orchestrator) processCandidate(ctx context.Context, research *discovery
 		VariantID: variantID,
 		// 显示名带上模板与持有期：不同 hold 的同一模板是不同方法，仅靠
 		// 模板自动生成的名字（如「RSI14 高于 65」）在列表里无法区分。
-		Name:             fmt.Sprintf("[自动] %s（持有 %d 天）", candidate.Method.Name, candidate.Method.Holding.MaxDays),
-		SourceResearchID: research.ResearchID,
-		ValidationJobID:  bundle.JobHash,
-		Market:           "A",
-		TriggerFrequency: "daily",
-		EntrySummary:     candidate.Rationale,
-		ExitSummary:      exitSummary(candidate.Method),
-		Method:           candidate.Method,
-		Evidence:         methodregistry.ValidationEvidence{Bundle: bundle},
+		Name:                fmt.Sprintf("[自动] %s（持有 %d 天）", candidate.Method.Name, candidate.Method.Holding.MaxDays),
+		SourceResearchID:    research.ResearchID,
+		ValidationJobID:     bundle.JobHash,
+		Market:              "A",
+		TriggerFrequency:    "daily",
+		EntrySummary:        candidate.Rationale,
+		ExitSummary:         exitSummary(candidate.Method),
+		OutcomeHitRate:      outcomeHitRate,
+		OutcomeObservations: candidate.Observations,
+		Method:              candidate.Method,
+		Evidence:            methodregistry.ValidationEvidence{Bundle: bundle},
 	})
 	if err != nil {
 		out.Status = "failed"

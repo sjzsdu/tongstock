@@ -15,7 +15,8 @@ import (
 )
 
 type Researcher struct {
-	bars BarProvider
+	bars      BarProvider
+	generator CandidateGenerator
 }
 
 func NewResearcher(bars BarProvider) (*Researcher, error) {
@@ -25,16 +26,31 @@ func NewResearcher(bars BarProvider) (*Researcher, error) {
 	return &Researcher{bars: bars}, nil
 }
 
+// NewResearcherWithGenerator wires an external (for example AI-backed)
+// candidate provider.  A nil generator intentionally falls back to the
+// deterministic compatibility templates.
+func NewResearcherWithGenerator(bars BarProvider, generator CandidateGenerator) (*Researcher, error) {
+	r, err := NewResearcher(bars)
+	if err != nil {
+		return nil, err
+	}
+	r.generator = generator
+	return r, nil
+}
+
 type patternTemplate struct {
 	id        string
 	name      string
 	entry     *methods.Expr
 	rationale string
+	candidate *methods.Candidate
 }
 
 type patternStats struct {
 	returns []float64
 	base    []float64
+	hits    int
+	total   int
 }
 
 func (r *Researcher) Run(ctx context.Context, request Request) (*Result, error) {
@@ -45,7 +61,39 @@ func (r *Researcher) Run(ctx context.Context, request Request) (*Result, error) 
 	if len(request.StockCodes) == 0 {
 		return nil, fmt.Errorf("stock codes are empty after normalization")
 	}
-	templates := candidateTemplates(request.HoldDays)
+	templates := make([]patternTemplate, 0)
+	if len(request.CandidateSpecs) > 0 {
+		for i := range request.CandidateSpecs {
+			c := request.CandidateSpecs[i]
+			if err := validateCandidateSpec(c, i); err != nil {
+				return nil, err
+			}
+			if c.Name == "" {
+				c.Name = fmt.Sprintf("候选方法 %d", i+1)
+			}
+			templates = append(templates, patternTemplate{id: fmt.Sprintf("candidate_%d", i+1), name: c.Name, entry: nil, rationale: c.Description, candidate: &c})
+		}
+	} else if r.generator != nil {
+		specs, err := r.generator.Generate(ctx, request)
+		if err != nil {
+			return nil, fmt.Errorf("candidate generator: %w", err)
+		}
+		// Freeze provider output into the request identity so researchID and
+		// persisted Result hashes change when an AI proposal changes.
+		request.CandidateSpecs = append([]methods.Candidate(nil), specs...)
+		for i := range specs {
+			c := specs[i]
+			if err := validateCandidateSpec(c, i); err != nil {
+				return nil, fmt.Errorf("generated candidate %d: %w", i, err)
+			}
+			templates = append(templates, patternTemplate{id: fmt.Sprintf("generated_%d", i+1), name: c.Name, rationale: c.Description, candidate: &c})
+		}
+	} else {
+		templates = candidateTemplates(request.HoldDays)
+	}
+	if len(templates) == 0 {
+		return nil, fmt.Errorf("candidate provider returned no candidates")
+	}
 	if request.SearchBudget < len(templates) {
 		templates = templates[:request.SearchBudget]
 	}
@@ -58,6 +106,13 @@ func (r *Researcher) Run(ctx context.Context, request Request) (*Result, error) 
 		ResearchID: researchID(request), SnapshotID: request.SnapshotID,
 		GeneratorVersion: GeneratorVersion, GeneratedAt: time.Now().UTC(),
 		Question: request.Question, HoldDays: request.HoldDays, SearchBudget: request.SearchBudget,
+		CandidateSpecs: request.CandidateSpecs,
+	}
+	maxHorizon := request.HoldDays
+	for _, template := range templates {
+		if h := templateHorizon(template, request.HoldDays); h > maxHorizon {
+			maxHorizon = h
+		}
 	}
 	for i, code := range request.StockCodes {
 		if err := ctx.Err(); err != nil {
@@ -70,23 +125,27 @@ func (r *Researcher) Run(ctx context.Context, request Request) (*Result, error) 
 		if err != nil {
 			return nil, fmt.Errorf("load frozen bars for %s: %w", code, err)
 		}
-		boundary, discoveryBars, err := reserveUntouchedTail(code, bars, request.HoldDays)
+		boundary, discoveryBars, err := reserveUntouchedTail(code, bars, maxHorizon)
 		if err != nil {
 			return nil, err
 		}
 		result.Boundaries = append(result.Boundaries, boundary)
-		baseline := forwardReturns(discoveryBars, request.HoldDays)
 		for _, template := range templates {
-			method, _, err := methods.Compile(templateCandidate(template, request.HoldDays))
+			candidate := templateCandidate(template, request.HoldDays)
+			method, _, err := methods.Compile(candidate)
 			if err != nil || !method.IsExecutable() {
 				return nil, fmt.Errorf("generator template %s is not executable", template.id)
 			}
-			matched, err := matchedForwardReturns(method, discoveryBars, request.HoldDays)
+			horizon := templateHorizon(template, request.HoldDays)
+			baseline := forwardReturns(discoveryBars, horizon)
+			matched, hits, total, err := matchedForwardOutcomes(method, discoveryBars, horizon)
 			if err != nil {
 				return nil, fmt.Errorf("evaluate %s on %s: %w", template.id, code, err)
 			}
 			stats[template.id].returns = append(stats[template.id].returns, matched...)
 			stats[template.id].base = append(stats[template.id].base, baseline...)
+			stats[template.id].hits += hits
+			stats[template.id].total += total
 		}
 	}
 
@@ -97,6 +156,9 @@ func (r *Researcher) Run(ctx context.Context, request Request) (*Result, error) 
 		mean, std := meanStd(stat.returns)
 		baselineMean, _ := meanStd(stat.base)
 		winRate := positiveRate(stat.returns)
+		if stat.total > 0 {
+			winRate = float64(stat.hits) / float64(stat.total)
+		}
 		tStat := 0.0
 		if len(stat.returns) > 1 && std > 0 {
 			tStat = mean / (std / math.Sqrt(float64(len(stat.returns))))
@@ -119,12 +181,17 @@ func (r *Researcher) Run(ctx context.Context, request Request) (*Result, error) 
 		if err != nil || !method.IsExecutable() {
 			return nil, fmt.Errorf("compile accepted template %s: %w", template.id, err)
 		}
+		provider := "deterministic_fallback"
+		if template.candidate != nil {
+			provider = "candidate_provider"
+		}
 		result.Candidates = append(result.Candidates, CandidateEvidence{
 			TemplateID: template.id, Method: method, Observations: len(stat.returns),
 			MeanForwardReturn: mean, WinRate: winRate, BaselineReturn: baselineMean,
 			Lift: mean - baselineMean, TStatistic: tStat, Rationale: template.rationale,
-			Source: fmt.Sprintf("frozen_snapshot:%s; generator:%s; feature_at=t; label=t+1..t+%d",
-				request.SnapshotID, GeneratorVersion, request.HoldDays+1),
+			Source: fmt.Sprintf("frozen_snapshot:%s; provider:%s; feature_at=t; label=t+1..t+%d",
+				request.SnapshotID, provider, templateHorizon(template, request.HoldDays)),
+			Outcome: method.Outcome,
 		})
 	}
 	sort.Slice(result.Candidates, func(i, j int) bool {
@@ -174,11 +241,30 @@ func reserveUntouchedTail(code string, bars []methods.Bar, holdDays int) (CodeBo
 }
 
 func matchedForwardReturns(method *methods.CompiledMethod, bars []methods.Bar, holdDays int) ([]float64, error) {
+	returns, _, _, err := matchedForwardOutcomes(method, bars, holdDays)
+	return returns, err
+}
+
+// matchedForwardOutcomes computes the candidate-specific forward label. A
+// target is successful when the close reaches entry*(1+target) at any point
+// in the mined horizon; absent a target, the legacy positive-end-return label
+// is retained. Invalid/missing prices are excluded (fail closed).
+func matchedForwardOutcomes(method *methods.CompiledMethod, bars []methods.Bar, holdDays int) ([]float64, int, int, error) {
 	var returns []float64
+	hits, total := 0, 0
+	if method != nil && method.Outcome.HorizonDays > 0 {
+		holdDays = method.Outcome.HorizonDays
+	}
 	for i := 0; i+holdDays+1 < len(bars); i++ {
+		if !historicalScopeAvailable(method, bars[i]) {
+			// Scope facts are point-in-time inputs.  Discovery has no right to
+			// substitute the current universe or infer missing market cap/board
+			// labels, so such samples are excluded (fail-closed).
+			continue
+		}
 		matched, err := method.Entry(bars[i], bars[:i+1])
 		if err != nil {
-			return nil, err
+			return nil, 0, 0, err
 		}
 		if !matched.Matched {
 			continue
@@ -189,9 +275,77 @@ func matchedForwardReturns(method *methods.CompiledMethod, bars []methods.Bar, h
 			continue
 		}
 		returns = append(returns, (exit-entry)/entry)
+		total++
+		targetHit := false
+		if method != nil && method.Outcome.TargetReturnPct != nil {
+			target := entry * (1 + *method.Outcome.TargetReturnPct)
+			for j := i + 1; j <= i+holdDays && j < len(bars); j++ {
+				price := outcomePrice(bars[j], method.Outcome.PriceBasis)
+				if outcomeReached(price, target, method.Outcome.Success) {
+					targetHit = true
+					break
+				}
+			}
+		} else {
+			targetHit = (exit-entry)/entry > 0
+		}
+		if targetHit {
+			hits++
+		}
 		i += holdDays // 避免同一持有窗口重叠扩大样本量。
 	}
-	return returns, nil
+	return returns, hits, total, nil
+}
+
+func outcomePrice(bar methods.Bar, basis string) float64 {
+	switch basis {
+	case "open":
+		return bar.Open
+	case "high":
+		return bar.High
+	case "low":
+		return bar.Low
+	default:
+		return bar.Close
+	}
+}
+
+func outcomeReached(price, target float64, success string) bool {
+	switch success {
+	case "price_lte_target":
+		return price > 0 && price <= target
+	default:
+		// close_gte_target is the legacy spelling; provider candidates should
+		// use price_gte_target with an explicit price basis.
+		return price >= target
+	}
+}
+
+func historicalScopeAvailable(method *methods.CompiledMethod, bar methods.Bar) bool {
+	if method == nil {
+		return false
+	}
+	s := method.Scope
+	if len(s.BoardFilter) > 0 || s.ExcludeST {
+		// BarProvider currently exposes prices/indicators only; without a
+		// point-in-time board/status label these constraints cannot be proven.
+		return false
+	}
+	if s.MarketCapMin == nil && s.MarketCapMax == nil {
+		return true
+	}
+	for _, key := range []string{"market_cap", "total_market_cap", "market_cap_yi"} {
+		if value, ok := bar.Indicators[key]; ok && value > 0 {
+			if s.MarketCapMin != nil && value < *s.MarketCapMin {
+				return false
+			}
+			if s.MarketCapMax != nil && value > *s.MarketCapMax {
+				return false
+			}
+			return true
+		}
+	}
+	return false
 }
 
 func forwardReturns(bars []methods.Bar, holdDays int) []float64 {
@@ -206,12 +360,35 @@ func forwardReturns(bars []methods.Bar, holdDays int) []float64 {
 }
 
 func templateCandidate(template patternTemplate, holdDays int) *methods.Candidate {
+	if template.candidate != nil {
+		c := *template.candidate
+		if c.Outcome != nil && c.Outcome.HorizonDays > 0 {
+			return &c
+		}
+		// A provider may omit only the horizon for compatibility; use the
+		// request fallback while retaining all other mined outcome fields.
+		o := methods.OutcomeRule{}
+		if c.Outcome != nil {
+			o = *c.Outcome
+		}
+		o.HorizonDays = holdDays
+		c.Outcome = &o
+		return &c
+	}
 	position := 0.10
 	return &methods.Candidate{
-		Name: "AI发现候选: " + template.name, Description: template.rationale,
+		Name: "确定性发现候选: " + template.name, Description: template.rationale,
 		SourceKind: "deterministic_discovery", Universe: "researched_stocks",
 		Entry: template.entry, HoldingMaxDays: holdDays, PositionMode: "pct_equity", PositionPct: &position,
+		Outcome: &methods.OutcomeRule{HorizonDays: holdDays, PriceBasis: "close", Success: "close_gte_target"},
 	}
+}
+
+func templateHorizon(template patternTemplate, fallback int) int {
+	if template.candidate != nil && template.candidate.Outcome != nil && template.candidate.Outcome.HorizonDays > 0 {
+		return template.candidate.Outcome.HorizonDays
+	}
+	return fallback
 }
 
 func candidateTemplates(holdDays int) []patternTemplate {
@@ -292,13 +469,14 @@ func cross(side string, left, right *methods.Expr) *methods.Expr {
 
 func researchID(request Request) string {
 	payload := struct {
-		Snapshot string
-		Codes    []string
-		Question string
-		Hold     int
-		Budget   int
-		Version  string
-	}{request.SnapshotID, request.StockCodes, strings.TrimSpace(request.Question), request.HoldDays, request.SearchBudget, GeneratorVersion}
+		Snapshot       string
+		Codes          []string
+		Question       string
+		Hold           int
+		Budget         int
+		Version        string
+		CandidateSpecs []methods.Candidate
+	}{request.SnapshotID, request.StockCodes, strings.TrimSpace(request.Question), request.HoldDays, request.SearchBudget, GeneratorVersion, request.CandidateSpecs}
 	b, _ := json.Marshal(payload)
 	sum := sha256.Sum256(b)
 	return "research-" + hex.EncodeToString(sum[:8])

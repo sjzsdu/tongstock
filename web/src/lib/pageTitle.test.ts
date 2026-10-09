@@ -24,6 +24,9 @@ describe('pageTitle', () => {
       expect(titleForPath('/news')).toBe('财经资讯 · TongStock')
       expect(titleForPath('/news/event/abc123')).toBe('热点事件 · TongStock')
       expect(titleForPath('/settings')).toBe('配置 · TongStock')
+      expect(titleForPath('/methods')).toBe('我的选股方法 · TongStock')
+      expect(titleForPath('/methods/advanced')).toBe('高级研究与管理 · TongStock')
+      expect(titleForPath('/methods/selection/selection-123')).toBe('今日候选股票 · TongStock')
     })
 
     it('选股页优先于个股详情匹配', () => {
