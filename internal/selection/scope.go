@@ -9,11 +9,14 @@ import (
 )
 
 // ResolveScope evaluates a method's structured scope against one point-in-time
-// member. New methods use machine-readable constraints per member. Legacy
-// methods that only have a Universe label retain the old exact-match behavior
-// so a historical method cannot silently expand to a different stock pool.
-// Missing facts are rejected rather than inferred, which keeps today's
-// selection fail-closed when the snapshot cannot provide a mined constraint.
+// member. New methods use machine-readable constraints per member. The legacy
+// Universe label is informational only (it records the pool a method was
+// researched/validated on, e.g. "researched_stocks"); it is deliberately NOT
+// compared against the snapshot universe name, matching the eligibility decision
+// in engine.go. Rejecting on the label made every mined method (validated on the
+// research pool) permanently unable to screen against today's "universe_usable"
+// snapshot. The actual scope contract is enforced by the per-member constraints
+// below plus snapshot membership, which stay fail-closed.
 func ResolveScope(method *methods.CompiledMethod, market *marketsnapshot.MarketSnapshot, code string, values map[string]float64) (bool, string, string) {
 	if method == nil || market == nil {
 		return false, "scope_data_unavailable", "method or market snapshot is missing"
@@ -28,9 +31,6 @@ func ResolveScope(method *methods.CompiledMethod, market *marketsnapshot.MarketS
 	s := method.Scope
 	if member == nil {
 		return false, "scope_excluded", "stock is not present in the current market snapshot"
-	}
-	if !hasStructuredScope(s) && s.Universe != "" && s.Universe != "universe_all" && s.Universe != market.Universe.Name {
-		return false, "universe_mismatch", fmt.Sprintf("method universe %q does not match snapshot %q", s.Universe, market.Universe.Name)
 	}
 	if s.ExcludeST && (strings.EqualFold(member.Status, "st") || strings.Contains(strings.ToUpper(member.Name), "ST")) {
 		return false, "scope_excluded", "method scope excludes ST stocks"
