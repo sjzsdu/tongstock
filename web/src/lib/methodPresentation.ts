@@ -165,14 +165,17 @@ function trimPct(v: number): string {
   return String(Math.round(v * 10000) / 100);
 }
 
-/** 选股引擎只持有当日冻结特征快照，cross/in_window 会被整方法排除。 */
+/**
+ * 选股引擎只持有当日冻结特征快照；与后端 hasTemporal 保持同一口径，
+ * 只看入场规则——入场规则含 cross/in_window 时引擎会整方法排除。
+ */
 export function ruleNeedsHistory(method: MethodCard): boolean {
   const needs = (expr?: MethodRuleExpr): boolean => {
     if (!expr) return false;
     if (expr.type === 'cross' || expr.type === 'in_window') return true;
     return needs(expr.left) || needs(expr.right) || (expr.children ?? []).some(needs);
   };
-  return needs(method.rules?.entry_rule) || needs(method.rules?.exit_rule) || needs(method.rules?.invalid_rule);
+  return needs(method.rules?.entry_rule);
 }
 
 export function scopeLabel(method: MethodCard): string {

@@ -9,14 +9,19 @@ import (
 )
 
 // ResolveScope evaluates a method's structured scope against one point-in-time
-// member. New methods use machine-readable constraints per member. The legacy
-// Universe label is informational only (it records the pool a method was
-// researched/validated on, e.g. "researched_stocks"); it is deliberately NOT
-// compared against the snapshot universe name, matching the eligibility decision
-// in engine.go. Rejecting on the label made every mined method (validated on the
-// research pool) permanently unable to screen against today's "universe_usable"
-// snapshot. The actual scope contract is enforced by the per-member constraints
-// below plus snapshot membership, which stay fail-closed.
+// member. New methods use machine-readable constraints per member; those
+// constraints and snapshot membership stay fail-closed (missing facts reject
+// the member, they are never inferred).
+//
+// The legacy Universe label is informational only: it records the pool a
+// method was researched/validated on (e.g. "researched_stocks") and is
+// deliberately NOT compared against the snapshot universe name, matching the
+// eligibility decision in engine.go. Comparing labels made every mined method
+// permanently unable to screen against today's "universe_usable" snapshot.
+// The trade-off, by design: a legacy method with NO structured scope is
+// fail-open — it expands to the full snapshot membership instead of staying
+// confined to its research pool. Regression test:
+// TestResolveScopeLegacyUniverseLabelIsInformational.
 func ResolveScope(method *methods.CompiledMethod, market *marketsnapshot.MarketSnapshot, code string, values map[string]float64) (bool, string, string) {
 	if method == nil || market == nil {
 		return false, "scope_data_unavailable", "method or market snapshot is missing"
@@ -60,10 +65,6 @@ func ResolveScope(method *methods.CompiledMethod, market *marketsnapshot.MarketS
 		}
 	}
 	return true, "", ""
-}
-
-func hasStructuredScope(s methods.Scope) bool {
-	return len(s.BoardFilter) > 0 || s.MarketCapMin != nil || s.MarketCapMax != nil || s.ExcludeST
 }
 
 func marketCapValue(values map[string]float64) (float64, bool) {

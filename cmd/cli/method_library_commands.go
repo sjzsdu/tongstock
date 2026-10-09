@@ -10,6 +10,7 @@ import (
 	"github.com/sjzsdu/tongstock/internal/adapter/validationrepo"
 	"github.com/sjzsdu/tongstock/internal/discovery"
 	"github.com/sjzsdu/tongstock/internal/methodregistry"
+	"github.com/sjzsdu/tongstock/internal/methods"
 	"github.com/sjzsdu/tongstock/internal/validation"
 	"github.com/spf13/cobra"
 )
@@ -89,7 +90,7 @@ func registerDiscoveryMethod(cmd *cobra.Command, registry *methodregistry.Regist
 	if bundle != nil {
 		evidence = methodregistry.ValidationEvidence{Bundle: bundle}
 	}
-	return registry.Register(cmd.Context(), methodregistry.Registration{FamilyID: "discovery-family-" + candidate.TemplateID, VariantID: candidate.Method.ContentHash, SourceResearchID: trace.ResearchID, ValidationJobID: validationJobID(candidate, bundle), Market: "A", TriggerFrequency: "daily", EntrySummary: candidate.Rationale, ExitSummary: fmt.Sprintf("按退出规则，最长持有%d个交易日", candidate.Method.Holding.MaxDays), Method: candidate.Method, Evidence: evidence})
+	return registry.Register(cmd.Context(), methodregistry.Registration{FamilyID: "discovery-family-" + candidate.TemplateID, VariantID: candidate.Method.ContentHash, SourceResearchID: trace.ResearchID, ValidationJobID: validationJobID(candidate, bundle), Market: "A", TriggerFrequency: "daily", EntrySummary: candidate.Rationale, ExitSummary: methods.ExitSummary(candidate.Method), Method: candidate.Method, Evidence: evidence})
 }
 func validationJobID(candidate discovery.CandidateEvidence, bundle *validation.EvidenceBundle) string {
 	if bundle != nil {
