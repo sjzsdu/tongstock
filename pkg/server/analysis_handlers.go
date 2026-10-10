@@ -38,7 +38,8 @@ func (s *Server) handleIndicator(c *gin.Context) {
 		return s.svc.FetchKlineAll(code, ktype)
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取K线数据失败: %v", err)})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -216,7 +217,8 @@ func buildSignalsResponse(signals []signal.Signal) []gin.H {
 func (s *Server) handleScreen(c *gin.Context) {
 	codesStr := c.Query("codes")
 	if codesStr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "codes is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -442,7 +444,8 @@ func (s *Server) handleScreen(c *gin.Context) {
 func (s *Server) handleSignalAnalysis(c *gin.Context) {
 	code := c.Query("code")
 	if code == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "code is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -452,7 +455,8 @@ func (s *Server) handleSignalAnalysis(c *gin.Context) {
 	// Get klines
 	klines, err := s.svc.FetchKlineAll(code, ktype)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -653,7 +657,8 @@ func (s *Server) handleStockSearch(c *gin.Context) {
 		query = strings.TrimSpace(c.Query("q"))
 	}
 	if query == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 query 参数"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -669,7 +674,8 @@ func (s *Server) handleStockSearch(c *gin.Context) {
 
 	matches, resolved, exact, err := s.searchStockMatches(query, limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -680,7 +686,8 @@ func (s *Server) handleStockSearch(c *gin.Context) {
 func (s *Server) handleStockSearchIndex(c *gin.Context) {
 	items, err := s.getStockSearchIndex()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -840,7 +847,8 @@ func comparePayloadFinite(response gin.H) bool {
 func (s *Server) handleStockCompare(c *gin.Context) {
 	code := c.Query("code")
 	if code == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "code is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -857,11 +865,13 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 	// Get stock quote
 	quotes, err := s.svc.GetQuote(code)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 	if len(quotes) == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "quote not found"})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 	stockQuote := quotes[0]
@@ -871,7 +881,8 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 	// 主题行情无效（昨收<=0 等）会让 stock_change 变 NaN 并毒化整个响应，
 	// 直接返回显式错误，而不是让客户端收到 200+空体。
 	if !validQuoteForCompare(stockQuote.Price, stockQuote.LastClose) {
-		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("股票 %s 行情数据无效（昨收/现价非正），无法生成板块对比", code)})
+		code, message := statusError(http.StatusBadGateway)
+		WriteError(c, http.StatusBadGateway, code, message)
 		return
 	}
 	stockChange := (stockQuote.Price - stockQuote.LastClose) / stockQuote.LastClose * 100
@@ -1079,7 +1090,8 @@ func (s *Server) handleStockCompare(c *gin.Context) {
 	// 提交前校验所有浮点为有限值：任何 NaN/±Inf 都会让 json.Marshal 整体失败、
 	// 客户端收到 200+空体。校验失败返回显式 500 且不进缓存。
 	if !comparePayloadFinite(response) {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "板块对比结果含非有限数值，已拒绝返回"})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 

@@ -540,7 +540,9 @@ function FactorPicksCard() {
   }, []);
 
   useEffect(() => {
-    queueMicrotask(() => void load().catch(() => setLoaded(true)));
+    queueMicrotask(() => {
+      void load().catch(() => setLoaded(true));
+    });
   }, [load]);
 
   const columns: ColumnsType<FactorPickEntry> = [

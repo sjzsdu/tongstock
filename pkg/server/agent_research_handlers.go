@@ -89,37 +89,36 @@ func (t *verifiedResearchEvidenceTool) Invoke(
 
 func (s *Server) handleAgentResearch(c *gin.Context) {
 	if s.researchTools == nil || s.experimentRegistry == nil || s.paradigmStore == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "真实研究工具、实验注册表或范式仓储未初始化",
-		})
+		code, message := statusError(http.StatusServiceUnavailable)
+		WriteError(c, http.StatusServiceUnavailable, code, message)
 		return
 	}
 	var req agentResearchRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 	req.ParadigmID = strings.TrimSpace(req.ParadigmID)
 	if req.ParadigmID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "paradigm_id is required；AI 不会仅凭自然语言生成已验证结论",
-		})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 	result, exp, run, err := s.conductVerifiedResearch(c.Request.Context(), req)
 	if err != nil {
-		body := gin.H{
-			"error":      err.Error(),
+		code, message := statusError(http.StatusUnprocessableEntity)
+		extra := map[string]any{
 			"conclusion": "insufficient_data",
 			"answer":     "真实数据、冻结快照、实验制品或工具证据不足，拒绝给出有效性结论。",
 		}
 		if exp != nil {
-			body["experiment_id"] = exp.ID
+			extra["experiment_id"] = exp.ID
 		}
 		if run != nil {
-			body["run_id"] = run.ID
+			extra["run_id"] = run.ID
 		}
-		c.JSON(http.StatusUnprocessableEntity, body)
+		WriteErrorWithDetails(c, http.StatusUnprocessableEntity, code, message, extra)
 		return
 	}
 	c.JSON(http.StatusCreated, result)

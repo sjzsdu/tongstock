@@ -11,30 +11,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestErrorEnvelopeConvertsLegacyFailure(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	router.Use(RequestID(), ErrorEnvelopeMiddleware())
-	router.GET("/api/fail", func(c *gin.Context) {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "dial tcp 10.0.0.1: password=secret"})
-	})
-
-	request := httptest.NewRequest(http.MethodGet, "/api/fail", nil)
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, request)
-
-	if response.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d", response.Code)
-	}
-	body := response.Body.String()
-	if !strings.Contains(body, `"code":"internal_error"`) || !strings.Contains(body, `"request_id":`) {
-		t.Fatalf("body = %s", body)
-	}
-	if strings.Contains(body, "10.0.0.1") || strings.Contains(body, "secret") {
-		t.Fatalf("internal error leaked: %s", body)
-	}
-}
-
 func TestReadinessReflectsUnavailableAndDegradedModules(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, test := range []struct {
@@ -77,7 +53,7 @@ func TestReadinessReflectsUnavailableAndDegradedModules(t *testing.T) {
 func TestRecoveryReturnsCorrelatedSafeEnvelope(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.Use(RequestID(), Recovery(), ErrorEnvelopeMiddleware())
+	router.Use(RequestID(), Recovery())
 	router.GET("/panic", func(*gin.Context) { panic("password=secret") })
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/panic", nil))

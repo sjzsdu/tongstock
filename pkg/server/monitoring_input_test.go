@@ -89,6 +89,7 @@ func TestMonitoringRefreshRefusesToInventMissingObservations(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api := NewServer(Dependencies{})
 	router := gin.New()
+	router.Use(RequestID(), Recovery())
 	api.registerMonitoringRoutes(&router.RouterGroup)
 
 	response := httptest.NewRecorder()
@@ -100,7 +101,7 @@ func TestMonitoringRefreshRefusesToInventMissingObservations(t *testing.T) {
 
 	var body struct {
 		Available bool                  `json:"available"`
-		Error     string                `json:"error"`
+		Error     APIError              `json:"error"`
 		Input     MonitoringInputStatus `json:"input"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
@@ -109,8 +110,8 @@ func TestMonitoringRefreshRefusesToInventMissingObservations(t *testing.T) {
 	if body.Available {
 		t.Fatalf("empty inputs must not report available: %s", response.Body.String())
 	}
-	if !strings.Contains(body.Error, "真实观测") {
-		t.Fatalf("error=%q, want real-observation wording", body.Error)
+	if body.Error.Code != "not_found" {
+		t.Fatalf("error code=%q, want not_found (fail-closed envelope)", body.Error.Code)
 	}
 	if body.Input.Source != "none" || len(body.Input.Notes) == 0 {
 		t.Fatalf("diagnostics must be returned to the UI: %+v", body.Input)

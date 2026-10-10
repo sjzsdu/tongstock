@@ -54,32 +54,36 @@ type paradigmBacktestResponse struct {
 
 func (s *Server) handleParadigmBacktest(c *gin.Context) {
 	if s.paradigmStore == nil || s.paradigmSnapshots == nil || s.experimentRegistry == nil || s.storage == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "paradigm experiment storage is not initialized"})
+		code, message := statusError(http.StatusServiceUnavailable)
+		WriteError(c, http.StatusServiceUnavailable, code, message)
 		return
 	}
 	var req paradigmBacktestRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid backtest request: " + err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 	req.ParadigmID = strings.TrimSpace(req.ParadigmID)
 	if req.ParadigmID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "paradigm_id is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 	p, exp, run, snapshotID, err := s.executeParadigmExperiment(
 		c.Request.Context(), req, "api",
 	)
 	if err != nil {
-		body := gin.H{"error": err.Error()}
+		code, message := statusError(http.StatusUnprocessableEntity)
+		extra := map[string]any{}
 		if exp != nil {
-			body["experiment_id"] = exp.ID
-			body["snapshot_id"] = exp.Config.DataSnapshotID
+			extra["experiment_id"] = exp.ID
+			extra["snapshot_id"] = exp.Config.DataSnapshotID
 		}
 		if run != nil {
-			body["run_id"] = run.ID
+			extra["run_id"] = run.ID
 		}
-		c.JSON(http.StatusUnprocessableEntity, body)
+		WriteErrorWithDetails(c, http.StatusUnprocessableEntity, code, message, extra)
 		return
 	}
 	c.JSON(http.StatusCreated, paradigmBacktestResponse{

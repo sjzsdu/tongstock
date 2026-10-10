@@ -164,7 +164,8 @@ func (h *NewsfeedHandler) handleNewsFeed(c *gin.Context) {
 
 	result, err := h.store.FilterNews(c.Request.Context(), filter)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -189,7 +190,8 @@ func (h *NewsfeedHandler) handleNewsSources(c *gin.Context) {
 func (h *NewsfeedHandler) handleNewsFeedFacets(c *gin.Context) {
 	facets, err := h.store.NewsFacets(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 	c.JSON(http.StatusOK, facets)
@@ -201,9 +203,11 @@ func (h *NewsfeedHandler) handleNewsItem(c *gin.Context) {
 	item, err := h.store.GetNewsByID(c.Request.Context(), id)
 	if err != nil {
 		if err == newsfeed.ErrNewsNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "新闻不存在"})
+			code, message := statusError(http.StatusNotFound)
+			WriteError(c, http.StatusNotFound, code, message)
 		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			code, message := statusError(http.StatusInternalServerError)
+			WriteError(c, http.StatusInternalServerError, code, message)
 		}
 		return
 	}
@@ -246,7 +250,8 @@ func (h *NewsfeedHandler) handleHotEvents(c *gin.Context) {
 
 	result, err := h.store.GetHotEvents(c.Request.Context(), filter)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -259,9 +264,11 @@ func (h *NewsfeedHandler) handleHotEventDetail(c *gin.Context) {
 	event, err := h.store.GetHotEventDetail(c.Request.Context(), id)
 	if err != nil {
 		if err == newsfeed.ErrEventNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "事件不存在"})
+			code, message := statusError(http.StatusNotFound)
+			WriteError(c, http.StatusNotFound, code, message)
 		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			code, message := statusError(http.StatusInternalServerError)
+			WriteError(c, http.StatusInternalServerError, code, message)
 		}
 		return
 	}
@@ -285,7 +292,8 @@ func (h *NewsfeedHandler) handleRefreshHotEvents(c *gin.Context) {
 	// 与后台同步共用同一条刷新路径，保证口径一致。
 	count, err := h.clusterer.RefreshEvents(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -301,7 +309,8 @@ func (h *NewsfeedHandler) handleRefreshHotEvents(c *gin.Context) {
 func (h *NewsfeedHandler) handleStockNews(c *gin.Context) {
 	code := strings.TrimSpace(c.Param("code"))
 	if len(code) != 6 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "code 必须为 6 位股票代码"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -316,7 +325,8 @@ func (h *NewsfeedHandler) handleStockNews(c *gin.Context) {
 		}
 		result, err := h.store.FilterNews(c.Request.Context(), filter)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			code, message := statusError(http.StatusInternalServerError)
+			WriteError(c, http.StatusInternalServerError, code, message)
 			return
 		}
 		status := "ok"
@@ -357,7 +367,8 @@ func (h *NewsfeedHandler) handleStockNews(c *gin.Context) {
 		if errors.Is(err, newsfeed.ErrFetchUnavailable) {
 			status = http.StatusBadGateway
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		code, message := statusError(status)
+		WriteError(c, status, code, message)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -369,7 +380,8 @@ func (h *NewsfeedHandler) handleStockNews(c *gin.Context) {
 // 保持同一套降级语义；服务未注入时如实报 503，而不是拿空列表凑数。
 func (h *NewsfeedHandler) handleHotTopics(c *gin.Context) {
 	if h.stockNewsSvc == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "个股资讯服务未启用，热门股票榜单不可用"})
+		code, message := statusError(http.StatusServiceUnavailable)
+		WriteError(c, http.StatusServiceUnavailable, code, message)
 		return
 	}
 
@@ -395,7 +407,8 @@ func (h *NewsfeedHandler) handleHotTopics(c *gin.Context) {
 		if errors.Is(err, newsfeed.ErrFetchUnavailable) {
 			status = http.StatusBadGateway
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		code, message := statusError(status)
+		WriteError(c, status, code, message)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -429,7 +442,8 @@ func queryFloat(c *gin.Context, key string, def float64) float64 {
 func (h *NewsfeedHandler) handleSearchNews(c *gin.Context) {
 	keyword := c.Query("keyword")
 	if keyword == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "keyword is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -442,7 +456,8 @@ func (h *NewsfeedHandler) handleSearchNews(c *gin.Context) {
 
 	result, err := h.store.FilterNews(c.Request.Context(), filter)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -468,7 +483,8 @@ func (h *NewsfeedHandler) handleFetchNews(c *gin.Context) {
 	// 从所有数据源获取新闻
 	news, err := h.aggregator.FetchAll(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -477,7 +493,8 @@ func (h *NewsfeedHandler) handleFetchNews(c *gin.Context) {
 
 	// 保存
 	if err := h.aggregator.SaveNews(ctx, news); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -500,7 +517,8 @@ func (h *NewsfeedHandler) handleFetchBrowserNews(c *gin.Context) {
 	} else {
 		feed := sources.NewBrowserSource(site)
 		if feed == nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的数据源: " + site})
+			code, message := statusError(http.StatusBadRequest)
+			WriteError(c, http.StatusBadRequest, code, message)
 			return
 		}
 		feeds = []newsfeed.Feed{feed}
@@ -528,7 +546,8 @@ func (h *NewsfeedHandler) handleFetchBrowserNews(c *gin.Context) {
 	// 保存
 	if len(allNews) > 0 {
 		if err := h.aggregator.SaveNews(ctx, allNews); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			code, message := statusError(http.StatusInternalServerError)
+			WriteError(c, http.StatusInternalServerError, code, message)
 			return
 		}
 	}
@@ -556,7 +575,8 @@ func (h *NewsfeedHandler) handleMarketSentiment(c *gin.Context) {
 
 	sentiment, err := h.sentimentSvc.AnalyzeMarketSentiment(c.Request.Context(), hours)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -581,7 +601,8 @@ func (h *NewsfeedHandler) handleSentimentTrend(c *gin.Context) {
 
 	trend, err := h.sentimentSvc.GetSentimentTrend(c.Request.Context(), hours, intervals)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -606,7 +627,8 @@ func (h *NewsfeedHandler) handleSentimentHeatmap(c *gin.Context) {
 
 	heatmap, err := h.sentimentSvc.GetSentimentHeatmap(c.Request.Context(), hours, topN)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -626,7 +648,8 @@ func (h *NewsfeedHandler) handleStockSentiment(c *gin.Context) {
 
 	sentiment, err := h.sentimentSvc.GetStockSentiment(c.Request.Context(), code, hours)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -651,7 +674,8 @@ func (h *NewsfeedHandler) handleGetAlerts(c *gin.Context) {
 
 	alerts, err := h.alertSvc.GetAlertRecords(c.Request.Context(), limit, read)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -669,7 +693,8 @@ func (h *NewsfeedHandler) handleGetUnreadAlerts(c *gin.Context) {
 
 	alerts, err := h.alertSvc.GetAlertRecords(c.Request.Context(), limit, false)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -680,7 +705,8 @@ func (h *NewsfeedHandler) handleGetUnreadAlerts(c *gin.Context) {
 func (h *NewsfeedHandler) handleGetUnreadCount(c *gin.Context) {
 	count, err := h.alertSvc.GetUnreadCount(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -691,7 +717,8 @@ func (h *NewsfeedHandler) handleGetUnreadCount(c *gin.Context) {
 func (h *NewsfeedHandler) handleMarkAlertRead(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.alertSvc.MarkAlertAsRead(c.Request.Context(), id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -701,7 +728,8 @@ func (h *NewsfeedHandler) handleMarkAlertRead(c *gin.Context) {
 // handleMarkAllAlertsRead 标记所有预警为已读
 func (h *NewsfeedHandler) handleMarkAllAlertsRead(c *gin.Context) {
 	if err := h.alertSvc.MarkAllAlertsAsRead(c.Request.Context()); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -712,7 +740,8 @@ func (h *NewsfeedHandler) handleMarkAllAlertsRead(c *gin.Context) {
 func (h *NewsfeedHandler) handleAddAlertRule(c *gin.Context) {
 	var rule newsfeed.AlertRule
 	if err := c.ShouldBindJSON(&rule); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -731,12 +760,14 @@ func (h *NewsfeedHandler) handleUpdateAlertRule(c *gin.Context) {
 	id := c.Param("id")
 	var updates newsfeed.AlertRule
 	if err := c.ShouldBindJSON(&updates); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
 	if ok := h.alertSvc.UpdateRule(id, &updates); !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "规则不存在"})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 
@@ -756,7 +787,8 @@ func (h *NewsfeedHandler) handleSetWatchlist(c *gin.Context) {
 		StockCodes []string `json:"stockCodes"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 

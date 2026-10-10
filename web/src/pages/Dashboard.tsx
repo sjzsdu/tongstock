@@ -140,7 +140,7 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    void load();
+    queueMicrotask(() => void load());
   }, [load]);
 
   const dismissGuide = useCallback(() => {

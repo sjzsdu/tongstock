@@ -22,14 +22,16 @@ func (s *Server) handleSyncDaily(c *gin.Context) {
 		Concurrency int      `json:"concurrency"`
 	}
 	if err := c.BindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
 	// Normalize code list
 	codes := normalizeCodeList(req.Codes)
 	if len(codes) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "codes is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -41,7 +43,8 @@ func (s *Server) handleSyncDaily(c *gin.Context) {
 	// Check service availability first
 	if s.svc == nil {
 		log.Printf("[sync] 服务不可用: s.svc is nil")
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "服务不可用: s.svc is nil"})
+		code, message := statusError(http.StatusServiceUnavailable)
+		WriteError(c, http.StatusServiceUnavailable, code, message)
 		return
 	}
 
@@ -53,7 +56,8 @@ func (s *Server) handleSyncDaily(c *gin.Context) {
 func (s *Server) handleSyncState(c *gin.Context) {
 	code := strings.TrimSpace(c.Query("code"))
 	if code == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "code is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -140,7 +144,8 @@ func classifyCoverageFreshness(coverage stockdata.Coverage, decision stockdata.F
 func (s *Server) handleSyncFreshness(c *gin.Context) {
 	codesStr := strings.TrimSpace(c.Query("codes"))
 	if codesStr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "codes is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -250,7 +255,8 @@ func evaluateFreshness(state *tdx.KlineSyncState) (string, string) {
 func (s *Server) handleCleanKlines(c *gin.Context) {
 	code := strings.TrimSpace(c.Query("code"))
 	if code == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "code is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -260,7 +266,8 @@ func (s *Server) handleCleanKlines(c *gin.Context) {
 	// Clean corrupted data and re-fetch
 	klines, err := s.svc.CleanAndRefetchKlines(code, ktype)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 
@@ -275,7 +282,8 @@ func (s *Server) handleCleanKlines(c *gin.Context) {
 func (s *Server) handleIndicatorSettings(c *gin.Context) {
 	config, err := param.GetConfig()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 	c.JSON(http.StatusOK, indicatorConfigToPayload(config))
@@ -285,21 +293,25 @@ func (s *Server) handleIndicatorSettings(c *gin.Context) {
 func (s *Server) handleSaveIndicatorSettings(c *gin.Context) {
 	var payload indicatorParamPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 	normalizeIndicatorPayload(&payload)
 	if err := validateIndicatorPayload(payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 	if err := param.SaveConfig(payloadToIndicatorConfig(payload)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 	cfg, err := param.GetConfig()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusInternalServerError)
+		WriteError(c, http.StatusInternalServerError, code, message)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "ok", "config": indicatorConfigToPayload(cfg)})

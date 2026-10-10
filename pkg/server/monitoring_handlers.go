@@ -19,12 +19,11 @@ type monitoringReportResponse struct {
 	Input  MonitoringInputStatus    `json:"input"`
 }
 
-// monitoringReportUnavailable 构造“没有真实观测”的失败响应。
+// monitoringReportUnavailable 构造“没有真实观测”的失败响应的附加字段。
 // 响应体带上 input 诊断, 让前端说清楚缺什么, 而不是静默无反应。
-func monitoringReportUnavailable(status MonitoringInputStatus) (int, gin.H) {
-	return http.StatusNotFound, gin.H{
+func monitoringReportUnavailable(status MonitoringInputStatus) (int, map[string]any) {
+	return http.StatusNotFound, map[string]any{
 		"available": false,
-		"error":     "尚无基于真实观测输入的监控报告",
 		"input":     status,
 	}
 }
@@ -91,8 +90,9 @@ func (s *Server) cachedMonitoringReport() (*monitoring.MonitorReport, Monitoring
 func (s *Server) handleMonitoringReport(c *gin.Context) {
 	report, status, ok := s.ensureMonitoringReport(c, false)
 	if !ok {
-		code, body := monitoringReportUnavailable(status)
-		c.JSON(code, body)
+		code, extra := monitoringReportUnavailable(status)
+		errCode, message := statusError(code)
+		WriteErrorWithDetails(c, code, errCode, message, extra)
 		return
 	}
 	c.JSON(http.StatusOK, monitoringReportResponse{Report: *report, Input: status})
@@ -103,8 +103,9 @@ func (s *Server) handleMonitoringReport(c *gin.Context) {
 func (s *Server) handleMonitoringReportRefresh(c *gin.Context) {
 	report, status, ok := s.ensureMonitoringReport(c, true)
 	if !ok {
-		code, body := monitoringReportUnavailable(status)
-		c.JSON(code, body)
+		code, extra := monitoringReportUnavailable(status)
+		errCode, message := statusError(code)
+		WriteErrorWithDetails(c, code, errCode, message, extra)
 		return
 	}
 	c.JSON(http.StatusOK, monitoringReportResponse{Report: *report, Input: status})
@@ -129,7 +130,8 @@ func (s *Server) handleMonitoringAlerts(c *gin.Context) {
 func (s *Server) handleMonitoringAlertAck(c *gin.Context) {
 	alertID := c.Param("id")
 	if alertID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "alert id is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -142,7 +144,8 @@ func (s *Server) handleMonitoringAlertAck(c *gin.Context) {
 	defer s.monitoringMu.Unlock()
 	err := s.monitoringEngine.AlertEngine.AcknowledgeAlert(alertID, user)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 
@@ -154,7 +157,8 @@ func (s *Server) handleMonitoringAlertAck(c *gin.Context) {
 func (s *Server) handleMonitoringAlertResolve(c *gin.Context) {
 	alertID := c.Param("id")
 	if alertID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "alert id is required"})
+		code, message := statusError(http.StatusBadRequest)
+		WriteError(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -162,7 +166,8 @@ func (s *Server) handleMonitoringAlertResolve(c *gin.Context) {
 	defer s.monitoringMu.Unlock()
 	err := s.monitoringEngine.AlertEngine.ResolveAlert(alertID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		code, message := statusError(http.StatusNotFound)
+		WriteError(c, http.StatusNotFound, code, message)
 		return
 	}
 
