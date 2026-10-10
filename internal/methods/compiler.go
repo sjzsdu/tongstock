@@ -341,10 +341,8 @@ func collectIndicators(exprs ...*Expr) []string {
 		if e == nil {
 			return
 		}
-		if e.Type == NodeIndicator && e.Indicator != "" {
-			if !isBuiltinIndicator(e.Indicator) {
-				seen[e.Indicator] = true
-			}
+		if e.Type == NodeIndicator && e.Indicator != "" && !isBuiltinIndicator(e.Indicator) {
+			seen[e.Indicator] = true
 		}
 		for _, ch := range e.Children {
 			walk(ch)
@@ -352,6 +350,35 @@ func collectIndicators(exprs ...*Expr) []string {
 		walk(e.Left)
 		walk(e.Right)
 	}
+	return finishIndicatorWalk(exprs, seen, walk)
+}
+
+// ReferencedIndicators returns EVERY indicator name referenced in the AST,
+// including builtin ones. It backs the execution-time fail-closed feature
+// check: a daily selection engine holds only a frozen single-day feature
+// snapshot, so if any referenced indicator (e.g. gap_pct) is not materialized
+// there, the rules could never match and the stock must be reported as
+// insufficient_data instead of silently never matching.
+func ReferencedIndicators(exprs ...*Expr) []string {
+	seen := map[string]bool{}
+	var walk func(*Expr)
+	walk = func(e *Expr) {
+		if e == nil {
+			return
+		}
+		if e.Type == NodeIndicator && e.Indicator != "" {
+			seen[e.Indicator] = true
+		}
+		for _, ch := range e.Children {
+			walk(ch)
+		}
+		walk(e.Left)
+		walk(e.Right)
+	}
+	return finishIndicatorWalk(exprs, seen, walk)
+}
+
+func finishIndicatorWalk(exprs []*Expr, seen map[string]bool, walk func(*Expr)) []string {
 	for _, e := range exprs {
 		walk(e)
 	}

@@ -252,6 +252,12 @@ func DefaultDslFeatures() []FeatureSpec {
 		{Name: "low", Category: "price", Window: 1},
 		{Name: "volume", Category: "price", Window: 1},
 		{Name: "amount", Category: "price", Window: 1},
+		// 单日执行引擎只持有冻结特征快照、无法回看历史 bar，所以像
+		// gap_pct/return1 这类需要前收盘的内建指标必须在这里物化；
+		// 否则引用它们的入场规则会静默地永不命中（missingFeatures 的
+		// fail-closed 守卫也覆盖不到 builtin 指标）。
+		{Name: "gap_pct", Category: "price", Window: 2, Description: "当日开盘相对前收盘的跳空幅度"},
+		{Name: "return1", Category: "price", Window: 2, Description: "当日收盘相对前收盘的单日收益"},
 		{Name: "ma5", Category: "ma", Window: 5},
 		{Name: "ma10", Category: "ma", Window: 10},
 		{Name: "ma20", Category: "ma", Window: 20},

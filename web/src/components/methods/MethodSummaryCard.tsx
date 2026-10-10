@@ -7,6 +7,7 @@ import {
 import { Button, Card, Space, Statistic, Tag, Tooltip, Typography } from 'antd';
 import type { MethodCard } from '../../api/client';
 import {
+  PENDING_VALUE,
   entryRuleText,
   evidenceLevel,
   evidenceTone,
@@ -40,21 +41,49 @@ export default function MethodSummaryCard({ method, screening, onScreen, onValid
   const unavailableReason = methodUnavailableReason(method);
   const evidence = method.evidence;
   const hasOutcomeHit = evidence?.outcome_hit_rate !== undefined;
+  // 旧证据只带样本外交易统计（oos_*），没有 outcome 口径与命中率。
+  // 此时大数字直接展示样本外交易胜率，绝不渲染「待验证」——
+  // 那会在「已验证」标签旁边自相矛盾。
+  const hasOosRate = evidence?.oos_win_rate !== undefined;
+  const hasAnyRate = hasOutcomeHit || hasOosRate;
   const rule = entryRuleText(method);
 
   return (
     <Card className="method-summary" styles={{ body: { padding: 0 } }}>
       <div className="method-summary__evidence" aria-label="历史验证结果">
-        <Text type="secondary">历史命中率</Text>
-        <Statistic
-          value={hasOutcomeHit ? evidence!.outcome_hit_rate! * 100 : '待验证'}
-          precision={hasOutcomeHit ? 1 : undefined}
-          suffix={hasOutcomeHit ? '%' : undefined}
-          styles={{ content: { fontSize: hasOutcomeHit ? 34 : 24 } }}
-        />
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          样本外交易胜率 {formatPercent(evidence?.oos_win_rate)}（{evidence ? `${evidence.oos_trades} 笔` : '待验证'}）
-        </Text>
+        {hasOutcomeHit ? (
+          <>
+            <Text type="secondary">历史命中率</Text>
+            <Statistic
+              value={evidence!.outcome_hit_rate! * 100}
+              precision={1}
+              suffix="%"
+              styles={{ content: { fontSize: 34 } }}
+            />
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              样本外交易胜率 {formatPercent(evidence?.oos_win_rate)}（{evidence?.oos_trades ?? '待记录'} 笔）
+            </Text>
+          </>
+        ) : hasOosRate ? (
+          <>
+            <Text type="secondary">样本外交易胜率</Text>
+            <Statistic
+              value={evidence!.oos_win_rate! * 100}
+              precision={1}
+              suffix="%"
+              styles={{ content: { fontSize: 34 } }}
+            />
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {evidence!.oos_trades} 笔样本外交易（未记录成功定义口径，无法统计命中率）
+            </Text>
+          </>
+        ) : (
+          <>
+            <Text type="secondary">历史命中率</Text>
+            <Statistic value="待验证" styles={{ content: { fontSize: 24 } }} />
+            <Text type="secondary" style={{ fontSize: 12 }}>还没有样本外验证数据</Text>
+          </>
+        )}
         <Tag color={TONE_COLOR[evidenceTone(evidence)]}>证据等级：{evidenceLevel(evidence)}</Tag>
       </div>
 
@@ -78,7 +107,7 @@ export default function MethodSummaryCard({ method, screening, onScreen, onValid
             <span><Text type="secondary">{hasOutcomeHit ? '命中样本' : '样本外交易'}</Text><strong>{hasOutcomeHit ? `${evidence!.outcome_observations ?? '待记录'} 个` : (evidence ? `${evidence.oos_trades} 笔` : '待验证')}</strong></span>
             <span><Text type="secondary">{hasOutcomeHit ? '交易收益' : '样本外收益'}</Text><strong>{formatPercent(evidence?.oos_return)}</strong></span>
             <span><Text type="secondary">最大回撤</Text><strong>{formatPercent(evidence?.oos_max_drawdown)}</strong></span>
-            <span><Text type="secondary">验证口径</Text><strong>{outcomeLabel(method.outcome)}</strong></span>
+            <span><Text type="secondary">验证口径</Text><strong>{outcomeLabel(method.outcome) !== PENDING_VALUE ? outcomeLabel(method.outcome) : hasAnyRate ? `${evidence!.oos_trades} 笔样本外回测` : PENDING_VALUE}</strong></span>
             <span><Text type="secondary">股票池</Text><strong>{scopeLabel(method)}</strong></span>
           </div>
 

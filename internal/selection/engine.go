@@ -115,7 +115,16 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Run, error) {
 				run.Exclusions = append(run.Exclusions, Exclusion{MethodID: m.ID, Code: code, ReasonCode: scopeReason, Detail: scopeDetail})
 				continue
 			}
-			missing := missingFeatures(v.Method.Scope.FeatureDeps, values)
+			// Fail closed on every indicator the rules reference, including
+			// builtin ones: the engine executes against a frozen single-day
+			// feature snapshot, so an unmaterialized indicator (e.g. gap_pct
+			// on a pre-existing snapshot) can never match and previously
+			// failed silently with zero candidates and zero exclusions.
+			deps := v.Method.Scope.FeatureDeps
+			if refs := methods.ReferencedIndicators(v.Method.EntryRule, v.Method.ExitRule, v.Method.InvalidRule); len(refs) > 0 {
+				deps = append(append([]string{}, deps...), refs...)
+			}
+			missing := missingFeatures(deps, values)
 			if len(missing) > 0 {
 				run.Exclusions = append(run.Exclusions, Exclusion{MethodID: m.ID, Code: code, ReasonCode: "insufficient_data", Detail: "missing features: " + strings.Join(missing, ",")})
 				continue
