@@ -22,11 +22,11 @@ const paradigmPromotionTimeout = 30 * time.Minute
 
 // paradigmPromotionRun 是单个范式的晋级运行状态。
 type paradigmPromotionRun struct {
-	Status     string                          `json:"status"` // running / done / failed
-	StartedAt  time.Time                       `json:"started_at"`
-	FinishedAt time.Time                       `json:"finished_at,omitempty"`
-	Error      string                          `json:"error,omitempty"`
-	Outcome    *paradigmspromote.Outcome       `json:"outcome,omitempty"`
+	Status     string                    `json:"status"` // running / done / failed
+	StartedAt  time.Time                 `json:"started_at"`
+	FinishedAt time.Time                 `json:"finished_at,omitempty"`
+	Error      string                    `json:"error,omitempty"`
+	Outcome    *paradigmspromote.Outcome `json:"outcome,omitempty"`
 }
 
 type paradigmPromoteRequest struct {

@@ -155,8 +155,8 @@ func newHarness(t *testing.T, trials func() int64) *harness {
 			ID: "snap-1", Universe: testCodes,
 			DateRange: paradigm.DateRange{Start: "2023-01-02", End: "2023-12-31"},
 		}}},
-		Universe:  fakeUniverse{},
-		Bars:      fakeBars{}, Benchmark: fakeBenchmark{},
+		Universe: fakeUniverse{},
+		Bars:     fakeBars{}, Benchmark: fakeBenchmark{},
 		Evidence: evidence, Trials: trials,
 	})
 	if err != nil {

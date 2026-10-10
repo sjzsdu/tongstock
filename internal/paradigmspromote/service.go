@@ -70,7 +70,7 @@ type Options struct {
 
 // Outcome 是一次晋级尝试的真实结局。
 type Outcome struct {
-	ParadigmID string   `json:"paradigm_id"`
+	ParadigmID string `json:"paradigm_id"`
 	// Status: promoted / rejected / blocked / failed
 	Status       string   `json:"status"`
 	MethodID     string   `json:"method_id,omitempty"`

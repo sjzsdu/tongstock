@@ -26,9 +26,9 @@ type Paradigm struct {
 	UpdatedAt time.Time         `json:"updated_at"`
 	Tags      []string          `json:"tags,omitempty"`
 	// Review fields
-	ReviewStatus string   `json:"review_status,omitempty"` // pending / reviewed / verified / promoted / degraded / suspended / rejected
-	ReviewNote   string   `json:"review_note,omitempty"`
-	ReviewRating int      `json:"review_rating,omitempty"` // 1-5
+	ReviewStatus string `json:"review_status,omitempty"` // pending / reviewed / verified / promoted / degraded / suspended / rejected
+	ReviewNote   string `json:"review_note,omitempty"`
+	ReviewRating int    `json:"review_rating,omitempty"` // 1-5
 	// MethodID 是晋级链路回写的方法库 ID（promoted/rejected 晋级尝试后非空）。
 	MethodID     string   `json:"method_id,omitempty"`
 	ActualReturn *float64 `json:"actual_return,omitempty"` // actual return after the paradigm was created

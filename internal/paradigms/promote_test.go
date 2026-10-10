@@ -21,9 +21,9 @@ func mustCompile(t *testing.T, c *methods.Candidate) *methods.CompiledMethod {
 
 func buyParadigm(conds ...Condition) *Paradigm {
 	return &Paradigm{
-		ID:   "p-test",
-		Name: "测试范式",
-		Side: "buy",
+		ID:       "p-test",
+		Name:     "测试范式",
+		Side:     "buy",
 		BuyConds: conds,
 		Expectation: Expectation{
 			HoldingPeriod: "3-5天",
