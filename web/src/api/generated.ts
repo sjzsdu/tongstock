@@ -273,4 +273,8 @@ export const operations = {
   postApiFactorsResearchRun: { method: "POST", path: "/api/factors/research/run" },
   getApiFactorsResearchLast: { method: "GET", path: "/api/factors/research/last" },
   getApiFactorsPicksLast: { method: "GET", path: "/api/factors/picks/last" },
+  postApiParadigmIdPromote: { method: "POST", path: "/api/paradigm/{id}/promote" },
+  getApiParadigmIdPromotionStatus: { method: "GET", path: "/api/paradigm/{id}/promotion/status" },
+  getApiParadigmIdEvidence: { method: "GET", path: "/api/paradigm/{id}/evidence" },
+  getApiMethodsResearchTracesSummary: { method: "GET", path: "/api/methods/research/traces/{id}/summary" },
 } as const;

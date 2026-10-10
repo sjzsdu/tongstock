@@ -267,7 +267,7 @@ func (s *Service) featureStep(ctx context.Context, res *Result, market *marketsn
 	}
 	b := *s.deps.Builder
 	b.Now = s.now()
-	feature, err := b.BuildFeatureSnapshot(market, marketsnapshot.DefaultDslFeatures(), s.deps.Features)
+	feature, err := b.BuildFeatureSnapshot(market, marketsnapshot.LatestSelectionFeatures(), s.deps.Features)
 	if err != nil {
 		res.Steps = append(res.Steps, Step{Key: "features", Label: "物化特征快照", Status: StepFailed, Detail: err.Error()})
 		return nil, "构建特征快照失败：" + err.Error()

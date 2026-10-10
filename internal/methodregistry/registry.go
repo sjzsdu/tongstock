@@ -36,6 +36,10 @@ func (r *Registry) Register(ctx context.Context, in Registration) (*Method, erro
 			return nil, fmt.Errorf("validation method hash mismatch")
 		}
 	}
+	if in.OutcomeHitRate != nil {
+		e.OutcomeHitRate = in.OutcomeHitRate
+		e.OutcomeObservations = in.OutcomeObservations
+	}
 	status, reason := r.policy.Initial(in.Method.IsExecutable(), in.Method.Scope.Universe, e)
 	id := stableID("method", in.FamilyID, in.VariantID)
 	m, err := r.repo.Get(ctx, id)
@@ -63,7 +67,7 @@ func (r *Registry) Register(ctx context.Context, in Registration) (*Method, erro
 	m.UpdatedAt = now
 	v := MethodVersion{ID: stableID(id, fmt.Sprintf("%d", nextVersion), in.Method.ContentHash), Version: nextVersion, MethodHash: in.Method.ContentHash, CompilerVersion: in.Method.CompilerVersion, SourceResearchID: in.SourceResearchID, ValidationJobID: in.ValidationJobID, Method: cloneCompiled(in.Method), CreatedAt: now}
 	if e.ResultHash != "" {
-		v.Evidence = &EvidenceSummary{ResultHash: e.ResultHash, SnapshotID: e.SnapshotID, JobHash: e.JobHash, Confidence: e.Confidence, ConfidenceReason: e.ConfidenceReason, Passable: e.Passable, OOSTrades: e.OOSTrades, OOSReturn: e.OOSReturn, OOSWinRate: e.OOSWinRate, OOSMaxDrawdown: e.OOSMaxDrawdown, SharpeRatio: e.SharpeRatio, SortinoRatio: e.SortinoRatio}
+		v.Evidence = &EvidenceSummary{ResultHash: e.ResultHash, SnapshotID: e.SnapshotID, JobHash: e.JobHash, Confidence: e.Confidence, ConfidenceReason: e.ConfidenceReason, Passable: e.Passable, OOSTrades: e.OOSTrades, OOSReturn: e.OOSReturn, OOSWinRate: e.OOSWinRate, OutcomeHitRate: e.OutcomeHitRate, OutcomeObservations: e.OutcomeObservations, OOSMaxDrawdown: e.OOSMaxDrawdown, SharpeRatio: e.SharpeRatio, SortinoRatio: e.SortinoRatio, UniverseSize: e.UniverseSize, ValidationStart: e.ValidationStart, ValidationEnd: e.ValidationEnd}
 	}
 	m.Versions = append(m.Versions, v)
 	event := AuditEvent{ID: stableID(id, now.Format(time.RFC3339Nano)), MethodID: id, From: from, To: status, Action: "register", Reason: reason, Actor: "policy-engine", EvidenceHash: e.ResultHash, Automatic: true, CreatedAt: now}
@@ -151,7 +155,14 @@ func (r *Registry) Audit(ctx context.Context, id string) ([]AuditEvent, error) {
 func toCard(m *Method) Card {
 	c := Card{ID: m.ID, FamilyID: m.FamilyID, VariantID: m.VariantID, Name: m.Name, Status: m.Status, Market: m.Market, Universe: m.Universe, TriggerFrequency: m.TriggerFrequency, HoldingPeriod: holdingText(m.HoldingMinDays, m.HoldingMaxDays), EntrySummary: m.EntrySummary, ExitSummary: m.ExitSummary, Invalidations: append([]string{}, m.Invalidations...), Health: m.Health, UpdatedAt: m.UpdatedAt}
 	if len(m.Versions) > 0 {
-		c.Evidence = m.Versions[len(m.Versions)-1].Evidence
+		v := m.Versions[len(m.Versions)-1]
+		c.Evidence = v.Evidence
+		c.SourceResearchID = v.SourceResearchID
+		if v.Method != nil {
+			c.Scope = v.Method.Scope
+			c.Outcome = v.Method.Outcome
+			c.Rules = &CardRules{EntryRule: v.Method.EntryRule, ExitRule: v.Method.ExitRule, InvalidRule: v.Method.InvalidRule, Position: &v.Method.Position, Holding: &v.Method.Holding}
+		}
 	}
 	return c
 }

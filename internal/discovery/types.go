@@ -21,9 +21,20 @@ type Request struct {
 	Question     string   `json:"question,omitempty"`
 	HoldDays     int      `json:"hold_days,omitempty"`
 	SearchBudget int      `json:"search_budget,omitempty"`
+	// CandidateSpecs is the provider-neutral contract for AI/discovery
+	// candidates. Each candidate carries its own scope and outcome definition.
+	// When empty, Researcher uses the deterministic templates as a compatibility
+	// fallback; those templates are not presented as AI-generated discoveries.
+	CandidateSpecs []methods.Candidate `json:"candidate_specs,omitempty"`
 	// OnProgress 可选：模板扫描每完成一只股票回调一次（codes_done, codes_total），
 	// 供编排器把长扫描阶段透出到状态端点，用户不用对着 0/0 干等。
 	OnProgress func(codesDone, codesTotal int)
+}
+
+// CandidateGenerator allows a real AI/provider to supply structured method
+// candidates without coupling discovery to an LLM implementation.
+type CandidateGenerator interface {
+	Generate(context.Context, Request) ([]methods.Candidate, error)
 }
 
 func (r *Request) Normalize() error {
@@ -45,7 +56,48 @@ func (r *Request) Normalize() error {
 	if r.SearchBudget < 1 || r.SearchBudget > 100 {
 		return fmt.Errorf("search_budget must be in [1,100]")
 	}
+	for i := range r.CandidateSpecs {
+		if err := validateCandidateSpec(r.CandidateSpecs[i], i); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// validateCandidateSpec keeps provider output explicit. A mined candidate may
+// choose its own horizon, target and supported price/success semantics; the
+// discovery service must not silently turn a missing target into a generic
+// positive-return label.
+func validateCandidateSpec(candidate methods.Candidate, index int) error {
+	o := candidate.Outcome
+	if o == nil {
+		return fmt.Errorf("candidate_specs[%d].outcome is required", index)
+	}
+	if o.HorizonDays < 1 || o.HorizonDays > 252 {
+		return fmt.Errorf("candidate_specs[%d].outcome.horizon_days must be in [1,252]", index)
+	}
+	if o.TargetReturnPct == nil {
+		return fmt.Errorf("candidate_specs[%d].outcome.target_return_pct is required", index)
+	}
+	if !supportedOutcomeBasis(o.PriceBasis) {
+		return fmt.Errorf("candidate_specs[%d].outcome.price_basis %q is unsupported", index, o.PriceBasis)
+	}
+	if o.Success != "close_gte_target" && o.Success != "price_gte_target" && o.Success != "price_lte_target" {
+		return fmt.Errorf("candidate_specs[%d].outcome.success %q is unsupported", index, o.Success)
+	}
+	if o.Success == "close_gte_target" && o.PriceBasis != "close" {
+		return fmt.Errorf("candidate_specs[%d] uses close_gte_target with price_basis %q", index, o.PriceBasis)
+	}
+	return nil
+}
+
+func supportedOutcomeBasis(value string) bool {
+	switch value {
+	case "close", "open", "high", "low":
+		return true
+	default:
+		return false
+	}
 }
 
 type BarProvider interface {
@@ -64,6 +116,7 @@ type CandidateEvidence struct {
 	TStatistic         float64                 `json:"t_statistic"`
 	Rationale          string                  `json:"rationale"`
 	Source             string                  `json:"source"`
+	Outcome            methods.OutcomeRule     `json:"outcome,omitempty"`
 	ValidationJobs     []ValidationHandoff     `json:"validation_jobs"`
 	ValidationEvidence []ValidationEvidenceRef `json:"validation_evidence,omitempty"`
 }
@@ -111,6 +164,7 @@ type Result struct {
 	Question         string              `json:"question,omitempty"`
 	HoldDays         int                 `json:"hold_days"`
 	SearchBudget     int                 `json:"search_budget"`
+	CandidateSpecs   []methods.Candidate `json:"candidate_specs,omitempty"`
 	DiscoveryTrials  int                 `json:"discovery_trials"`
 	Boundaries       []CodeBoundary      `json:"boundaries"`
 	Candidates       []CandidateEvidence `json:"candidates,omitempty"`
@@ -134,6 +188,7 @@ func (r *Result) ComputeHash() string {
 		Source             string
 		ValidationJobs     []ValidationHandoff
 		ValidationEvidence []ValidationEvidenceRef
+		Outcome            methods.OutcomeRule
 	}
 	candidates := make([]candidateDigest, len(r.Candidates))
 	for i, candidate := range r.Candidates {
@@ -147,6 +202,7 @@ func (r *Result) ComputeHash() string {
 			WinRate: candidate.WinRate, BaselineReturn: candidate.BaselineReturn,
 			Lift: candidate.Lift, TStatistic: candidate.TStatistic,
 			Rationale: candidate.Rationale, Source: candidate.Source,
+			Outcome:            candidate.Outcome,
 			ValidationJobs:     candidate.ValidationJobs,
 			ValidationEvidence: candidate.ValidationEvidence,
 		}
@@ -156,10 +212,13 @@ func (r *Result) ComputeHash() string {
 		HoldDays, SearchBudget, Trials            int
 		Boundaries                                []CodeBoundary
 		Candidates                                []candidateDigest
+		CandidateSpecs                            []methods.Candidate
 		Rejected                                  []RejectedCandidate
 		Conclusion                                string
-	}{r.ResearchID, r.SnapshotID, r.GeneratorVersion, r.Question, r.HoldDays, r.SearchBudget,
-		r.DiscoveryTrials, r.Boundaries, candidates, r.Rejected, r.Conclusion}
+	}{ResearchID: r.ResearchID, SnapshotID: r.SnapshotID, Version: r.GeneratorVersion, Question: r.Question,
+		HoldDays: r.HoldDays, SearchBudget: r.SearchBudget, Trials: r.DiscoveryTrials,
+		Boundaries: r.Boundaries, Candidates: candidates, CandidateSpecs: r.CandidateSpecs,
+		Rejected: r.Rejected, Conclusion: r.Conclusion}
 	b, _ := json.Marshal(payload)
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])

@@ -22,6 +22,7 @@ import (
 	"github.com/sjzsdu/tongstock/internal/onboarding"
 	"github.com/sjzsdu/tongstock/internal/paradigm"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
+	"github.com/sjzsdu/tongstock/internal/paradigmspromote"
 	"github.com/sjzsdu/tongstock/internal/positiondecision"
 	"github.com/sjzsdu/tongstock/internal/selection"
 	"github.com/sjzsdu/tongstock/pkg/history"
@@ -54,6 +55,7 @@ type Server struct {
 	agentInitError        string
 	ledger                *ledger.SignalLedger
 	paradigmStore         *paradigms.Store
+	paradigmPromote       *paradigmspromote.Service
 	methodRegistry        *methodregistry.Registry
 	methodAutomation      *methodautomation.Orchestrator
 	methodHealth          *methodhealth.Evaluator
@@ -91,6 +93,8 @@ type Server struct {
 	paradigmAlertMu       sync.RWMutex
 	paradigmAlertCache    []paradigmAlert
 	paradigmAlertLastScan time.Time
+	promotionMu           sync.RWMutex
+	promotionRuns         map[string]*paradigmPromotionRun
 	compareMu             sync.Mutex
 	compareCache          map[string]stockCompareCacheEntry
 	blockItemsMu          sync.Mutex
@@ -175,6 +179,7 @@ func NewServer(deps Dependencies) *Server {
 		diagnostics:           deps.Diagnostics,
 		storage:               deps.Storage,
 		monitoringEngine:      monitoring.NewMonitorEngine(monitoring.NewDefaultMonitorConfig()),
+		promotionRuns:         make(map[string]*paradigmPromotionRun),
 	}
 	if deps.Storage != nil {
 		s.paradigmSnapshots = paradigm.NewDatasetSnapshotStore(deps.Storage)
@@ -199,6 +204,9 @@ func (s *Server) SetChatStore(store *ChatStore) {
 func (s *Server) SetParadigmStore(store *paradigms.Store) {
 	s.paradigmStore = store
 }
+
+// SetParadigmPromote 注册范式→方法晋级服务。
+func (s *Server) SetParadigmPromote(svc *paradigmspromote.Service) { s.paradigmPromote = svc }
 
 func (s *Server) SetMethodRegistry(registry *methodregistry.Registry) { s.methodRegistry = registry }
 func (s *Server) SetSelectionRuns(runs selection.Repository)          { s.selectionRuns = runs }

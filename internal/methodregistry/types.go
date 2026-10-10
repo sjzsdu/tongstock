@@ -25,20 +25,28 @@ const (
 )
 
 type EvidenceSummary struct {
-	ResultHash       string  `json:"result_hash"`
-	SnapshotID       string  `json:"snapshot_id"`
-	JobHash          string  `json:"job_hash"`
-	Confidence       string  `json:"confidence"`
-	ConfidenceReason string  `json:"confidence_reason,omitempty"`
-	Passable         bool    `json:"passable"`
-	OOSTrades        int     `json:"oos_trades"`
-	OOSReturn        float64 `json:"oos_return"`
-	OOSWinRate       float64 `json:"oos_win_rate"`
-	OOSMaxDrawdown   float64 `json:"oos_max_drawdown"`
+	ResultHash          string   `json:"result_hash"`
+	SnapshotID          string   `json:"snapshot_id"`
+	JobHash             string   `json:"job_hash"`
+	Confidence          string   `json:"confidence"`
+	ConfidenceReason    string   `json:"confidence_reason,omitempty"`
+	Passable            bool     `json:"passable"`
+	OOSTrades           int      `json:"oos_trades"`
+	OOSReturn           float64  `json:"oos_return"`
+	OOSWinRate          float64  `json:"oos_win_rate"`
+	OutcomeHitRate      *float64 `json:"outcome_hit_rate,omitempty"`
+	OutcomeObservations int      `json:"outcome_observations,omitempty"`
+	OOSMaxDrawdown      float64  `json:"oos_max_drawdown"`
 	// SharpeRatio / SortinoRatio 来自样本外回测的已计算指标；旧数据为 nil，
 	// 前端必须把缺失如实展示为「待验证」，不得编默认值。
 	SharpeRatio  *float64 `json:"sharpe_ratio,omitempty"`
 	SortinoRatio *float64 `json:"sortino_ratio,omitempty"`
+	// UniverseSize 是样本外验证实际覆盖的股票数；0 = 历史数据未记录。
+	UniverseSize int `json:"universe_size,omitempty"`
+	// ValidationStart / ValidationEnd 是样本外验证窗口（保留区间）的日期边界；
+	// 空 = 历史数据未记录，前端不得推测。
+	ValidationStart string `json:"validation_start,omitempty"`
+	ValidationEnd   string `json:"validation_end,omitempty"`
 }
 
 type MethodVersion struct {
@@ -109,16 +117,18 @@ type Registration struct {
 	VariantID string
 	// Name 可选：覆盖方法显示名（如自动研究给模板名附上持有期与来源前缀）。
 	// 空 = 使用 compiled method 自带名称。
-	Name             string
-	SourceResearchID string
-	ValidationJobID  string
-	Market           string
-	TriggerFrequency string
-	EntrySummary     string
-	ExitSummary      string
-	Invalidations    []string
-	Method           *methods.CompiledMethod
-	Evidence         Evidence
+	Name                string
+	SourceResearchID    string
+	ValidationJobID     string
+	OutcomeHitRate      *float64
+	OutcomeObservations int
+	Market              string
+	TriggerFrequency    string
+	EntrySummary        string
+	ExitSummary         string
+	Invalidations       []string
+	Method              *methods.CompiledMethod
+	Evidence            Evidence
 }
 type Evidence interface{ RegistryEvidence() EvidenceInput }
 type EvidenceInput struct {
@@ -128,7 +138,11 @@ type EvidenceInput struct {
 	HasHardBlocker                                                                   bool
 	OOSTrades                                                                        int
 	OOSReturn, OOSWinRate, OOSMaxDrawdown                                            float64
+	OutcomeHitRate                                                                   *float64
+	OutcomeObservations                                                              int
 	SharpeRatio, SortinoRatio                                                        *float64
+	UniverseSize                                                                     int
+	ValidationStart, ValidationEnd                                                   string
 }
 
 type Query struct {
@@ -143,21 +157,37 @@ type Query struct {
 	Limit          int
 }
 type Card struct {
-	ID               string           `json:"id"`
-	FamilyID         string           `json:"family_id"`
-	VariantID        string           `json:"variant_id"`
-	Name             string           `json:"name"`
-	Status           Status           `json:"status"`
-	Market           string           `json:"market"`
-	Universe         string           `json:"universe"`
-	TriggerFrequency string           `json:"trigger_frequency"`
-	HoldingPeriod    string           `json:"holding_period"`
-	EntrySummary     string           `json:"entry_summary"`
-	ExitSummary      string           `json:"exit_summary"`
-	Invalidations    []string         `json:"invalidations,omitempty"`
+	ID               string              `json:"id"`
+	FamilyID         string              `json:"family_id"`
+	VariantID        string              `json:"variant_id"`
+	Name             string              `json:"name"`
+	Status           Status              `json:"status"`
+	Market           string              `json:"market"`
+	Universe         string              `json:"universe"`
+	Scope            methods.Scope       `json:"scope,omitempty"`
+	Outcome          methods.OutcomeRule `json:"outcome,omitempty"`
+	Rules            *CardRules          `json:"rules,omitempty"`
+	TriggerFrequency string              `json:"trigger_frequency"`
+	HoldingPeriod    string              `json:"holding_period"`
+	EntrySummary     string              `json:"entry_summary"`
+	ExitSummary      string              `json:"exit_summary"`
+	Invalidations    []string            `json:"invalidations,omitempty"`
+	// SourceResearchID 是产生当前版本的自动研究批次；旧证据缺验证窗口/池大小时，
+	// 前端可用它去批次记录回查（数据只存在于 batch result 上）。
+	SourceResearchID string           `json:"source_research_id,omitempty"`
 	Evidence         *EvidenceSummary `json:"evidence,omitempty"`
 	Health           *HealthState     `json:"health,omitempty"`
 	UpdatedAt        time.Time        `json:"updated_at"`
+}
+
+// CardRules 把编译产物里的可执行规则原样暴露给前端，让人能读到方法
+// 真正怎么判定入场/退出/失效。nil = 该版本没有编译产物（历史数据）。
+type CardRules struct {
+	EntryRule   *methods.Expr        `json:"entry_rule,omitempty"`
+	ExitRule    *methods.Expr        `json:"exit_rule,omitempty"`
+	InvalidRule *methods.Expr        `json:"invalid_rule,omitempty"`
+	Position    *methods.PosRule     `json:"position,omitempty"`
+	Holding     *methods.HoldingRule `json:"holding,omitempty"`
 }
 
 type Repository interface {

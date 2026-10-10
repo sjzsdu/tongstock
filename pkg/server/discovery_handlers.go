@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sjzsdu/tongstock/internal/app/discoveryapp"
+	"github.com/sjzsdu/tongstock/internal/methods"
 )
 
 func (s *Server) registerDiscoveryRoutes(api *gin.RouterGroup) {
@@ -19,11 +20,12 @@ func (s *Server) handleDiscoverRun(c *gin.Context) {
 		return
 	}
 	var req struct {
-		PoolID       string   `json:"pool_id"`
-		Codes        []string `json:"codes"`
-		Question     string   `json:"question"`
-		HoldDays     int      `json:"hold_days"`
-		SearchBudget int      `json:"search_budget"`
+		PoolID         string              `json:"pool_id"`
+		Codes          []string            `json:"codes"`
+		Question       string              `json:"question"`
+		HoldDays       int                 `json:"hold_days"`
+		SearchBudget   int                 `json:"search_budget"`
+		CandidateSpecs []methods.Candidate `json:"candidate_specs"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		WriteError(c, 400, "invalid_request", "请求体格式错误")
@@ -35,7 +37,7 @@ func (s *Server) handleDiscoverRun(c *gin.Context) {
 	}
 	result, err := s.discoverRunner.Run(c.Request.Context(), discoveryapp.RunRequest{
 		PoolID: req.PoolID, Codes: req.Codes, Question: req.Question,
-		HoldDays: req.HoldDays, SearchBudget: req.SearchBudget,
+		HoldDays: req.HoldDays, SearchBudget: req.SearchBudget, CandidateSpecs: req.CandidateSpecs,
 	})
 	if err != nil {
 		WriteError(c, 422, "discover_failed", err.Error())

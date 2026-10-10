@@ -20,6 +20,9 @@ type Candidate struct {
 	SourceText      string   `json:"source_text,omitempty"`
 	Universe        string   `json:"universe,omitempty"`
 	BoardFilter     []string `json:"board_filter,omitempty"`
+	MarketCapMin    *float64 `json:"market_cap_min,omitempty"`
+	MarketCapMax    *float64 `json:"market_cap_max,omitempty"`
+	ExcludeST       bool     `json:"exclude_st,omitempty"`
 	MarketState     []string `json:"market_state,omitempty"`
 	FeatureDeps     []string `json:"feature_deps,omitempty"`
 	MaxPositions    int      `json:"max_positions,omitempty"`
@@ -34,6 +37,9 @@ type Candidate struct {
 	StopLossPct     *float64 `json:"stop_loss_pct,omitempty"`
 	TakeProfitPct   *float64 `json:"take_profit_pct,omitempty"`
 	TrailingStopPct *float64 `json:"trailing_stop_pct,omitempty"`
+	// Outcome is proposed by discovery/AI.  It is optional for old callers;
+	// when absent Compile derives a compatibility label from Holding fields.
+	Outcome *OutcomeRule `json:"outcome,omitempty"`
 }
 
 // Compile 将候选编译为稳定的 CompiledMethod。返回的方法即使失败也会携带
@@ -57,6 +63,9 @@ func Compile(c *Candidate) (*CompiledMethod, []Diagnostic, error) {
 		Scope: Scope{
 			Universe:     firstNonEmpty(c.Universe, "universe_all"),
 			BoardFilter:  append([]string{}, c.BoardFilter...),
+			MarketCapMin: c.MarketCapMin,
+			MarketCapMax: c.MarketCapMax,
+			ExcludeST:    c.ExcludeST,
 			MarketState:  append([]string{}, c.MarketState...),
 			FeatureDeps:  append([]string{}, c.FeatureDeps...),
 			MaxPositions: c.MaxPositions,
@@ -70,6 +79,15 @@ func Compile(c *Candidate) (*CompiledMethod, []Diagnostic, error) {
 			TrailingStop: c.TrailingStopPct,
 		},
 		CompiledAt: time.Now(),
+	}
+	if c.Outcome != nil {
+		m.Outcome = *c.Outcome
+		m.Holding.Outcome = *c.Outcome
+	} else {
+		// Legacy candidates used HoldingMaxDays/TakeProfitPct. Keep them
+		// executable and make the derived definition visible in JSON/hash.
+		m.Outcome = OutcomeRule{HorizonDays: c.HoldingMaxDays, TargetReturnPct: c.TakeProfitPct, PriceBasis: "close", Success: "close_gte_target"}
+		m.Holding.Outcome = m.Outcome
 	}
 	if m.Name == "" {
 		return m, append(m.Diagnostics, Diagnostic{
@@ -127,6 +145,8 @@ func Compile(c *Candidate) (*CompiledMethod, []Diagnostic, error) {
 	// 持仓/仓位合理性校验
 	hd := validateHolding(&m.Holding)
 	diags = append(diags, hd...)
+	od := validateOutcome(m.Outcome)
+	diags = append(diags, od...)
 	pd := validatePosition(&m.Position)
 	diags = append(diags, pd...)
 
@@ -321,10 +341,8 @@ func collectIndicators(exprs ...*Expr) []string {
 		if e == nil {
 			return
 		}
-		if e.Type == NodeIndicator && e.Indicator != "" {
-			if !isBuiltinIndicator(e.Indicator) {
-				seen[e.Indicator] = true
-			}
+		if e.Type == NodeIndicator && e.Indicator != "" && !isBuiltinIndicator(e.Indicator) {
+			seen[e.Indicator] = true
 		}
 		for _, ch := range e.Children {
 			walk(ch)
@@ -332,6 +350,35 @@ func collectIndicators(exprs ...*Expr) []string {
 		walk(e.Left)
 		walk(e.Right)
 	}
+	return finishIndicatorWalk(exprs, seen, walk)
+}
+
+// ReferencedIndicators returns EVERY indicator name referenced in the AST,
+// including builtin ones. It backs the execution-time fail-closed feature
+// check: a daily selection engine holds only a frozen single-day feature
+// snapshot, so if any referenced indicator (e.g. gap_pct) is not materialized
+// there, the rules could never match and the stock must be reported as
+// insufficient_data instead of silently never matching.
+func ReferencedIndicators(exprs ...*Expr) []string {
+	seen := map[string]bool{}
+	var walk func(*Expr)
+	walk = func(e *Expr) {
+		if e == nil {
+			return
+		}
+		if e.Type == NodeIndicator && e.Indicator != "" {
+			seen[e.Indicator] = true
+		}
+		for _, ch := range e.Children {
+			walk(ch)
+		}
+		walk(e.Left)
+		walk(e.Right)
+	}
+	return finishIndicatorWalk(exprs, seen, walk)
+}
+
+func finishIndicatorWalk(exprs []*Expr, seen map[string]bool, walk func(*Expr)) []string {
 	for _, e := range exprs {
 		walk(e)
 	}
@@ -434,6 +481,35 @@ func validateHolding(h *HoldingRule) []Diagnostic {
 		out = append(out, Diagnostic{Level: "warn", Code: "STOPLOSS_SIGN", Detail: "stop_loss_pct should usually be negative (e.g. -0.05 = -5%)"})
 	}
 	return out
+}
+
+func validateOutcome(o OutcomeRule) []Diagnostic {
+	var out []Diagnostic
+	if o.HorizonDays < 0 {
+		out = append(out, Diagnostic{Level: "error", Code: "OUTCOME_HORIZON_NEGATIVE", Detail: "outcome horizon_days cannot be negative"})
+	}
+	if o.TargetReturnPct != nil && (math.IsNaN(*o.TargetReturnPct) || math.IsInf(*o.TargetReturnPct, 0)) {
+		out = append(out, Diagnostic{Level: "error", Code: "OUTCOME_TARGET_NAN", Detail: "outcome target_return_pct is NaN/Inf"})
+	}
+	if o.PriceBasis != "" && !supportedOutcomeBasis(o.PriceBasis) {
+		out = append(out, Diagnostic{Level: "ambiguous", Code: "OUTCOME_PRICE_BASIS", Detail: fmt.Sprintf("unsupported outcome price_basis %q", o.PriceBasis)})
+	}
+	if o.Success != "" && o.Success != "close_gte_target" && o.Success != "price_gte_target" && o.Success != "price_lte_target" {
+		out = append(out, Diagnostic{Level: "ambiguous", Code: "OUTCOME_SUCCESS", Detail: fmt.Sprintf("unsupported outcome success %q", o.Success)})
+	}
+	if o.Success == "close_gte_target" && o.PriceBasis != "" && o.PriceBasis != "close" {
+		out = append(out, Diagnostic{Level: "ambiguous", Code: "OUTCOME_SUCCESS_BASIS", Detail: "close_gte_target requires price_basis=close"})
+	}
+	return out
+}
+
+func supportedOutcomeBasis(value string) bool {
+	switch value {
+	case "close", "open", "high", "low":
+		return true
+	default:
+		return false
+	}
 }
 
 func validatePosition(p *PosRule) []Diagnostic {

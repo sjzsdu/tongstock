@@ -628,9 +628,46 @@ export interface ParadigmItem {
   review_status?: string;
   review_note?: string;
   review_rating?: number;
+  method_id?: string;
+  evidence?: {
+    eligible: boolean;
+    level?: string;
+    score?: number;
+    reasons?: string[];
+    must_fix?: string[];
+    warnings?: string[];
+    suggestions?: string[];
+  };
   actual_return?: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface ParadigmPromotionOutcome {
+  paradigm_id: string;
+  status: 'promoted' | 'rejected' | 'blocked' | 'failed';
+  method_id?: string;
+  method_status?: string;
+  blockers?: string[];
+  confidence?: string;
+  reason?: string;
+  oos_trades?: number;
+  oos_return?: number;
+  oos_win_rate?: number;
+  result_hash?: string;
+  snapshot_id?: string;
+}
+
+export interface ParadigmPromotionStatusResponse {
+  paradigm_id: string;
+  status?: 'idle' | 'running' | 'done' | 'failed';
+  run?: {
+    status: 'running' | 'done' | 'failed';
+    started_at?: string;
+    finished_at?: string;
+    error?: string;
+    outcome?: ParadigmPromotionOutcome;
+  };
 }
 
 export interface EvaluatedItem {

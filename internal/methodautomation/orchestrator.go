@@ -331,6 +331,14 @@ func (o *Orchestrator) processCandidate(ctx context.Context, research *discovery
 	out.OOSTrades = bundle.OosStats.TotalTrades
 	out.OOSReturn = bundle.OosStats.TotalReturn
 	out.OOSWinRate = bundle.OosStats.WinRate
+	// Discovery's candidate-specific forward label is a separate probability
+	// from the executable trade backtest. Preserve it on the method version so
+	// the product can explain exactly what was measured.
+	var outcomeHitRate *float64
+	if candidate.Observations > 0 {
+		hitRate := candidate.WinRate
+		outcomeHitRate = &hitRate
+	}
 	sharpe := bundle.OosStats.SharpeRatio
 	out.SharpeRatio = &sharpe
 	if bundle.ConfidenceReason != "" {
@@ -342,15 +350,17 @@ func (o *Orchestrator) processCandidate(ctx context.Context, research *discovery
 		VariantID: variantID,
 		// 显示名带上模板与持有期：不同 hold 的同一模板是不同方法，仅靠
 		// 模板自动生成的名字（如「RSI14 高于 65」）在列表里无法区分。
-		Name:             fmt.Sprintf("[自动] %s（持有 %d 天）", candidate.Method.Name, candidate.Method.Holding.MaxDays),
-		SourceResearchID: research.ResearchID,
-		ValidationJobID:  bundle.JobHash,
-		Market:           "A",
-		TriggerFrequency: "daily",
-		EntrySummary:     candidate.Rationale,
-		ExitSummary:      exitSummary(candidate.Method),
-		Method:           candidate.Method,
-		Evidence:         methodregistry.ValidationEvidence{Bundle: bundle},
+		Name:                fmt.Sprintf("[自动] %s（持有 %d 天）", candidate.Method.Name, candidate.Method.Holding.MaxDays),
+		SourceResearchID:    research.ResearchID,
+		ValidationJobID:     bundle.JobHash,
+		Market:              "A",
+		TriggerFrequency:    "daily",
+		EntrySummary:        candidate.Rationale,
+		ExitSummary:         exitSummary(candidate.Method),
+		OutcomeHitRate:      outcomeHitRate,
+		OutcomeObservations: candidate.Observations,
+		Method:              candidate.Method,
+		Evidence:            methodregistry.ValidationEvidence{Bundle: bundle},
 	})
 	if err != nil {
 		out.Status = "failed"
@@ -489,9 +499,11 @@ func (o *Orchestrator) resolveCodes(ctx context.Context, snapshot *paradigm.Data
 	return codes, nil
 }
 
-// reservedWindow 返回保留样本的全局 [start, end]：start 取各代码
-// ReservedStartDate 的最大值，保证窗口对每个代码都落在未触碰区域。
-func reservedWindow(boundaries []discovery.CodeBoundary) (string, string) {
+// ValidationWindow returns the reserved out-of-sample window for a discovery
+// trace: start is the max of per-code ReservedStartDate (so the window sits
+// inside the untouched region for every code) and end is the last data date.
+// Exported so the server can present persisted traces without re-running a batch.
+func ValidationWindow(boundaries []discovery.CodeBoundary) (string, string) {
 	start, end := "", ""
 	for _, b := range boundaries {
 		if b.ReservedStartDate > start {
@@ -502,6 +514,12 @@ func reservedWindow(boundaries []discovery.CodeBoundary) (string, string) {
 		}
 	}
 	return start, end
+}
+
+// reservedWindow 返回保留样本的全局 [start, end]：start 取各代码
+// ReservedStartDate 的最大值，保证窗口对每个代码都落在未触碰区域。
+func reservedWindow(boundaries []discovery.CodeBoundary) (string, string) {
+	return ValidationWindow(boundaries)
 }
 
 func normalizeHoldDays(values []int) []int {
@@ -539,11 +557,5 @@ func dedupeSorted(values []string) []string {
 }
 
 func exitSummary(m *methods.CompiledMethod) string {
-	if m == nil {
-		return "按退出规则离场"
-	}
-	if m.Holding.MaxDays > 0 {
-		return fmt.Sprintf("按退出规则，最长持有 %d 个交易日", m.Holding.MaxDays)
-	}
-	return "按退出规则离场"
+	return methods.ExitSummary(m)
 }

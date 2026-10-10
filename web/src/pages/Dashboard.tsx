@@ -416,12 +416,11 @@ export default function Dashboard() {
               />
               <QuickStartCard
                 icon={<RadarChartOutlined />}
-                title="方法研究"
-                desc="可信方法、范式体系与 AI 研究"
+                title="选股方法"
+                desc="看历史验证、筛选今日股票，或挖掘新方法"
                 links={[
-                  { to: '/methods', label: '可信方法' },
-                  { to: '/paradigms', label: '范式库' },
-                  { to: '/monitoring', label: '范式监控' },
+                  { to: '/methods', label: '我的选股方法' },
+                  { to: '/methods/advanced', label: '高级研究与管理' },
                   { to: '/agent', label: 'AI 助手' },
                 ]}
               />

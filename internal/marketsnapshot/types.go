@@ -252,6 +252,12 @@ func DefaultDslFeatures() []FeatureSpec {
 		{Name: "low", Category: "price", Window: 1},
 		{Name: "volume", Category: "price", Window: 1},
 		{Name: "amount", Category: "price", Window: 1},
+		// 单日执行引擎只持有冻结特征快照、无法回看历史 bar，所以像
+		// gap_pct/return1 这类需要前收盘的内建指标必须在这里物化；
+		// 否则引用它们的入场规则会静默地永不命中（missingFeatures 的
+		// fail-closed 守卫也覆盖不到 builtin 指标）。
+		{Name: "gap_pct", Category: "price", Window: 2, Description: "当日开盘相对前收盘的跳空幅度"},
+		{Name: "return1", Category: "price", Window: 2, Description: "当日收盘相对前收盘的单日收益"},
 		{Name: "ma5", Category: "ma", Window: 5},
 		{Name: "ma10", Category: "ma", Window: 10},
 		{Name: "ma20", Category: "ma", Window: 20},
@@ -271,4 +277,12 @@ func DefaultDslFeatures() []FeatureSpec {
 		{Name: "prevhigh20", Category: "breakout", Window: 20, Description: "前 20 日收盘最高（不含当日）"},
 		{Name: "prevlow20", Category: "breakout", Window: 20, Description: "前 20 日收盘最低（不含当日）"},
 	}
+}
+
+// LatestSelectionFeatures extends the historical-safe DSL set with the
+// current market-cap input used by a latest-day scope. It must not be used for
+// historical validation: stockinfo has no point-in-time market-cap series.
+func LatestSelectionFeatures() []FeatureSpec {
+	features := DefaultDslFeatures()
+	return append([]FeatureSpec{{Name: "market_cap", Category: "scope", Window: 1, Description: "当前流通市值（亿元），仅用于最新快照筛选"}}, features...)
 }

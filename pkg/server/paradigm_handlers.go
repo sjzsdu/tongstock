@@ -60,6 +60,7 @@ func (s *Server) SetupParadigmRoutes(api *gin.RouterGroup) {
 		p.GET("/stock/:code", s.handleParadigmByStock)
 		p.PUT("/:id/review", s.handleParadigmReview)
 		p.DELETE("/:id", s.handleParadigmDelete)
+		s.SetupParadigmPromoteRoutes(p)
 	}
 }
 

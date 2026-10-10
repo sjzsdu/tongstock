@@ -14,6 +14,7 @@ import (
 	"github.com/sjzsdu/tongstock/internal/adapter/discoveryrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/validationrepo"
 	"github.com/sjzsdu/tongstock/internal/discovery"
+	"github.com/sjzsdu/tongstock/internal/methods"
 	"github.com/sjzsdu/tongstock/internal/paradigm"
 	"github.com/sjzsdu/tongstock/internal/validation"
 	"github.com/sjzsdu/tongstock/pkg/storage"
@@ -54,6 +55,9 @@ type RunRequest struct {
 	Question     string
 	HoldDays     int
 	SearchBudget int
+	// CandidateSpecs are explicit AI/provider proposals. Empty means the
+	// deterministic compatibility fallback is used.
+	CandidateSpecs []methods.Candidate
 }
 
 // Run 执行完整发现流程并持久化研究轨迹。
@@ -113,7 +117,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (*discovery.Result, er
 	}
 	result, err := researcher.Run(ctx, discovery.Request{
 		SnapshotID: snapshotID, StockCodes: researchCodes, Question: req.Question,
-		HoldDays: req.HoldDays, SearchBudget: req.SearchBudget,
+		HoldDays: req.HoldDays, SearchBudget: req.SearchBudget, CandidateSpecs: req.CandidateSpecs,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("discover patterns: %w", err)

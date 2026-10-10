@@ -311,6 +311,34 @@ func NewSQLiteFeatureEngine(db *storage.Storage) *SQLiteFeatureEngine {
 func (e *SQLiteFeatureEngine) Compute(date string, codes []string, features []marketsnapshot.FeatureSpec) (map[string]map[string]float64, error) {
 	out := map[string]map[string]float64{}
 	queryDate := strings.ReplaceAll(date, "-", "")
+	needMarketCap := false
+	for _, f := range features {
+		if f.Name == "market_cap" {
+			needMarketCap = true
+			break
+		}
+	}
+	marketCaps := map[string]float64{}
+	if needMarketCap {
+		rows, err := e.db.DB().Query(`SELECT code, market_cap FROM stockinfo WHERE market_cap > 0`)
+		if err != nil {
+			return nil, fmt.Errorf("load current market caps: %w", err)
+		}
+		for rows.Next() {
+			var code string
+			var cap float64
+			if err := rows.Scan(&code, &cap); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			marketCaps[code] = cap
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
 	for _, code := range codes {
 		// 读取 250 行前复权日线；若不足就取所有
 		rows, err := e.db.DB().Query(`SELECT date, open, high, low, close, volume, amount
@@ -336,6 +364,9 @@ func (e *SQLiteFeatureEngine) Compute(date string, codes []string, features []ma
 			continue
 		}
 		perCode := map[string]float64{}
+		if cap, ok := marketCaps[code]; ok {
+			perCode["market_cap"] = cap
+		}
 		// 构造 env，用 methods 内部的 evalValue 函数计算
 		// 由于 evalValue 是 unexported，用显式 switch 覆盖内建指标：
 		for _, f := range features {

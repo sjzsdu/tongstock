@@ -15,7 +15,13 @@ import (
 var ErrNotFound = errors.New("daily selection run not found")
 
 const (
-	EngineVersion          = "selection-v1"
+	// selection-v2: the scope resolver no longer rejects methods on the legacy
+	// universe label, so cached v1 runs (full universe_mismatch exclusions)
+	// must never be re-served from the run cache.
+	// selection-v3: the missing-features gate now covers every AST-referenced
+	// indicator (including builtins like gap_pct); cached v2 runs could hold
+	// silent all-miss results with zero exclusions.
+	EngineVersion          = "selection-v3"
 	ActionBuy              = "buy"
 	ActionWatch            = "watch"
 	ActionAvoid            = "avoid"

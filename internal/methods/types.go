@@ -26,7 +26,7 @@ import (
 
 // CompilerVersion 必须随任何改变 AST 哈希/求值语义的代码变化而递增。
 // 只有编译器完全等价才允许复用同一版本号。
-const CompilerVersion = "0.2.0"
+const CompilerVersion = "0.3.0"
 
 // Side 方向: 入场 (BUY) 或 出场 (SELL)。
 type Side string
@@ -38,11 +38,30 @@ const (
 
 // Scope 描述方法的应用范围与非价格依赖。
 type Scope struct {
-	Universe     string   `json:"universe"`                // 股票池标签: "universe_all", "universe_csi800" 等
-	BoardFilter  []string `json:"board_filter,omitempty"`  // 主板/创业板/科创板, 空=无限制
+	Universe    string   `json:"universe"`               // 股票池标签: "universe_all", "universe_csi800" 等
+	BoardFilter []string `json:"board_filter,omitempty"` // 主板/创业板/科创板, 空=无限制
+	// Market-cap and listing filters are evaluated point-in-time by the
+	// selection resolver.  They are deliberately additive to Universe: a
+	// method can retain a legacy universe label while also carrying its own
+	// machine-readable scope.
+	MarketCapMin *float64 `json:"market_cap_min,omitempty"`
+	MarketCapMax *float64 `json:"market_cap_max,omitempty"`
+	ExcludeST    bool     `json:"exclude_st,omitempty"`
 	MarketState  []string `json:"market_state,omitempty"`  // "trend_up" "bear" "range" 空=无限制
 	FeatureDeps  []string `json:"feature_deps,omitempty"`  // 依赖的非内建特征名 (用于执行前 fail-fast)
 	MaxPositions int      `json:"max_positions,omitempty"` // 最大持仓数, 0=不限
+}
+
+// OutcomeRule defines the label used to validate a method.  It is part of the
+// method itself, rather than a global backtest setting: discovery may propose
+// different horizons, targets and price semantics for every candidate.
+// PriceBasis and Success are explicit so a provider can mine alternatives
+// without changing the execution contract.
+type OutcomeRule struct {
+	HorizonDays     int      `json:"horizon_days,omitempty"`
+	TargetReturnPct *float64 `json:"target_return_pct,omitempty"`
+	PriceBasis      string   `json:"price_basis,omitempty"` // close/open/high/low
+	Success         string   `json:"success,omitempty"`     // price_gte_target / price_lte_target
 }
 
 // NodeType 是 AST 的节点类型枚举, 保证 switch 穷举时不落入静默默认。
@@ -118,6 +137,9 @@ type HoldingRule struct {
 	StopLoss     *float64 `json:"stop_loss_pct,omitempty"`     // 亏损百分比止损, e.g. -0.05 = -5%
 	TakeProfit   *float64 `json:"take_profit_pct,omitempty"`   // 盈利百分比止盈
 	TrailingStop *float64 `json:"trailing_stop_pct,omitempty"` // 回撤百分比移动止盈
+	// Outcome is the discovery/validation label. Holding fields above remain
+	// executable exit rules and are retained for backward compatibility.
+	Outcome OutcomeRule `json:"outcome,omitempty"`
 }
 
 // Diagnostic 是单条编译诊断。Level ∈ {info,warn,error,ambiguous}。
@@ -143,6 +165,7 @@ type CompiledMethod struct {
 	InvalidRule     *Expr        `json:"invalid_rule,omitempty"`
 	Position        PosRule      `json:"position"`
 	Holding         HoldingRule  `json:"holding"`
+	Outcome         OutcomeRule  `json:"outcome,omitempty"`
 	Diagnostics     []Diagnostic `json:"diagnostics,omitempty"`
 	Ambiguities     []string     `json:"ambiguities,omitempty"`
 	CompiledAt      time.Time    `json:"compiled_at"`

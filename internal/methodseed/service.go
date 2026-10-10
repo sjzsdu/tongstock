@@ -307,8 +307,5 @@ func diagnosticsSummary(diags []methods.Diagnostic) string {
 }
 
 func exitSummary(m *methods.CompiledMethod) string {
-	if m.Holding.MaxDays > 0 {
-		return fmt.Sprintf("按退出规则，最长持有 %d 个交易日", m.Holding.MaxDays)
-	}
-	return "按退出规则离场"
+	return methods.ExitSummary(m)
 }

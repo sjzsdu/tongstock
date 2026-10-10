@@ -42,6 +42,7 @@ import (
 	"github.com/sjzsdu/tongstock/internal/onboarding"
 	"github.com/sjzsdu/tongstock/internal/paradigm"
 	"github.com/sjzsdu/tongstock/internal/paradigms"
+	"github.com/sjzsdu/tongstock/internal/paradigmspromote"
 	"github.com/sjzsdu/tongstock/internal/positiondecision"
 	"github.com/sjzsdu/tongstock/internal/selection"
 	"github.com/sjzsdu/tongstock/internal/serviceproc"
@@ -409,7 +410,7 @@ func NewApp(cfg *config.Config, opts Options) (_ *App, err error) {
 	app.api.StartMethodHealthScheduler(app.runCtx, 24*time.Hour)
 	app.setModule("method_health", "ready", "")
 
-	app.configureOptionalModules()
+	app.configureOptionalModules(methodRegistry, seedEvidence, methodAutomation.Trials)
 	router := app.buildRouter()
 
 	bind, _, err := server.ValidateBindSecurity(cfg.Server.BindAddress, cfg.Server.AccessToken)
@@ -433,7 +434,11 @@ func NewApp(cfg *config.Config, opts Options) (_ *App, err error) {
 	return app, nil
 }
 
-func (a *App) configureOptionalModules() {
+func (a *App) configureOptionalModules(
+	methodRegistry *methodregistry.Registry,
+	validationEvidence *validationrepo.SQLiteEvidenceRepository,
+	discoveryTrials func() int64,
+) {
 	if a.cfg.Agent.Enabled {
 		// The shared agent service owns definition loading (embedded +
 		// agent_paths), runtime construction, and home expansion; the server
@@ -471,6 +476,26 @@ func (a *App) configureOptionalModules() {
 		a.api.SetParadigmStore(paradigmStore)
 		a.api.StartParadigmAlertScanner(a.runCtx, 5*time.Minute)
 		a.setModule("paradigm", "ready", "")
+
+		// 范式→方法晋级链路（阶段 A P0）：把范式库与可信方法库接通。
+		// 依赖与 methodseed/methodautomation 同一组数据源（冻结快照 + K 线 + 基准）。
+		paradigmPromote, err := paradigmspromote.New(paradigmspromote.Deps{
+			Paradigms: paradigmStore,
+			Registry:  methodRegistry,
+			Snapshots: paradigm.NewDatasetSnapshotStore(a.storage),
+			Universe:  validationrepo.NewSnapshotUniverse(a.storage),
+			Bars:      validationrepo.New(a.storage),
+			Benchmark: validationrepo.NewBenchmark(a.storage),
+			Evidence:  validationEvidence,
+			Trials:    discoveryTrials,
+		})
+		if err != nil {
+			log.Printf("paradigm promotion initialization degraded: %v", err)
+			a.setModule("paradigm_promotion", "degraded", err.Error())
+		} else {
+			a.api.SetParadigmPromote(paradigmPromote)
+			a.setModule("paradigm_promotion", "ready", "")
+		}
 	}
 }
 

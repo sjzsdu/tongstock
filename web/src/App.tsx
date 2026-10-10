@@ -40,6 +40,7 @@ const EventDetail = lazy(lazyWithReload(() => import('./pages/news/EventDetail')
 const NewsHome = lazy(lazyWithReload(() => import('./pages/news/NewsHome')));
 const Monitoring = lazy(lazyWithReload(() => import('./pages/Monitoring')));
 const Methods = lazy(lazyWithReload(() => import('./pages/Methods')));
+const MyMethods = lazy(lazyWithReload(() => import('./pages/MyMethods')));
 const SelectionResult = lazy(lazyWithReload(() => import('./pages/SelectionResult')));
 const NotFound = lazy(lazyWithReload(() => import('./pages/NotFound')));
 
@@ -75,7 +76,7 @@ function GlobalSearch() {
 
 function RouteFallback() {
   return (
-    <Space direction="vertical" size={16} style={{ display: 'flex', width: '100%' }}>
+    <Space orientation="vertical" size={16} style={{ display: 'flex', width: '100%' }}>
       <Skeleton.Button active block style={{ width: 240, height: 40 }} />
       <Skeleton active paragraph={{ rows: 4 }} />
       <Skeleton active paragraph={{ rows: 8 }} />
@@ -89,11 +90,10 @@ const decisionMenuItems: MenuProps['items'] = [
   { key: '/portfolio', icon: <WalletOutlined />, label: <Link to="/portfolio">持仓卖出</Link> },
 ];
 
-// 方法研究组：可信方法、范式体系与 AI 研究入口
+// 选股方法是用户主入口；范式、因子与监控降级到高级研究页。
 const researchMenuItems: MenuProps['items'] = [
-  { key: '/methods', icon: <SafetyCertificateOutlined />, label: <Link to="/methods">可信方法</Link> },
-  { key: '/paradigms', icon: <RadarChartOutlined />, label: <Link to="/paradigms">范式库</Link> },
-  { key: '/monitoring', icon: <SafetyCertificateOutlined />, label: <Link to="/monitoring">范式监控</Link> },
+  { key: '/methods', icon: <SafetyCertificateOutlined />, label: <Link to="/methods">我的选股方法</Link> },
+  { key: '/methods/advanced', icon: <RadarChartOutlined />, label: <Link to="/methods/advanced">高级研究与管理</Link> },
   { key: '/agent', icon: <RobotOutlined />, label: <Link to="/agent">AI 助手</Link> },
 ];
 
@@ -114,7 +114,7 @@ const systemMenuItems: MenuProps['items'] = [
 
 const menuItems: MenuProps['items'] = [
   ...decisionMenuItems,
-  { key: 'research-submenu', icon: <RadarChartOutlined />, label: '方法研究', children: researchMenuItems },
+  { key: 'research-submenu', icon: <RadarChartOutlined />, label: '选股方法', children: researchMenuItems },
   { key: 'market-submenu', icon: <StockOutlined />, label: '行情工具', children: marketMenuItems },
   { key: 'system-submenu', icon: <SettingOutlined />, label: '系统', children: systemMenuItems },
 ];
@@ -122,6 +122,7 @@ const menuItems: MenuProps['items'] = [
 // 子菜单 key -> 组内成员路由，用于路由变化时自动展开所属分组
 const SUBMENU_BY_KEY: Record<string, string> = {
   '/methods': 'research-submenu',
+  '/methods/advanced': 'research-submenu',
   '/paradigms': 'research-submenu',
   '/monitoring': 'research-submenu',
   '/agent': 'research-submenu',
@@ -147,6 +148,7 @@ function getSelectedKey(pathname: string): string {
   if (pathname.startsWith('/index')) return '/stock/choose';
   if (pathname.startsWith('/screen')) return '/screen';
   if (pathname.startsWith('/portfolio')) return '/portfolio';
+  if (pathname.startsWith('/methods/advanced')) return '/methods/advanced';
   if (pathname.startsWith('/methods')) return '/methods';
   if (pathname.startsWith('/blocks')) return '/blocks';
   if (pathname.startsWith('/watchlist')) return '/watchlist';
@@ -308,9 +310,9 @@ function AppLayout({ children }: { children: React.ReactNode }) {
         placement="left"
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        width={240}
+        size={240}
         style={{ background: '#0b1220' }}
-        headerStyle={{ background: '#1f2937', color: '#fff' }}
+        styles={{ header: { background: '#1f2937', color: '#fff' } }}
       >
         <Menu
           mode="inline"
@@ -345,7 +347,8 @@ export default function App() {
             <Route path="/agent" element={<AgentWeb />} />
             <Route path="/paradigms" element={<Paradigms />} />
             <Route path="/monitoring" element={<Monitoring />} />
-            <Route path="/methods" element={<Methods />} />
+            <Route path="/methods" element={<MyMethods />} />
+            <Route path="/methods/advanced" element={<Methods />} />
             <Route path="/methods/selection/:runId" element={<SelectionResult />} />
             <Route path="/strategy/overnight" element={<OvernightArbitrage />} />
             <Route path="/news" element={<NewsHome />} />
@@ -367,6 +370,12 @@ function buildBreadcrumbs(pathname: string) {
     return items;
   }
 
+  if (parts[0] === 'methods' && parts[1] === 'selection') {
+    items.push({ title: <Link to="/methods">我的选股方法</Link> });
+    items.push({ title: '今日候选股票' });
+    return items;
+  }
+
   const labels: Record<string, string> = {
     stock: '个股分析',
     choose: '选择股票',
@@ -377,7 +386,8 @@ function buildBreadcrumbs(pathname: string) {
     settings: '配置',
     paradigms: '范式库',
     monitoring: '范式监控',
-    methods: '可信方法库',
+    methods: '我的选股方法',
+    advanced: '高级研究与管理',
     selection: '选股结果',
     strategy: '策略',
     overnight: '隔夜套利',

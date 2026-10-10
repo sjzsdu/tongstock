@@ -110,7 +110,21 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Run, error) {
 		}
 		for _, code := range codes {
 			values := feature.Values[code]
-			missing := missingFeatures(v.Method.Scope.FeatureDeps, values)
+			inScope, scopeReason, scopeDetail := ResolveScope(v.Method, market, code, values)
+			if !inScope {
+				run.Exclusions = append(run.Exclusions, Exclusion{MethodID: m.ID, Code: code, ReasonCode: scopeReason, Detail: scopeDetail})
+				continue
+			}
+			// Fail closed on every indicator the rules reference, including
+			// builtin ones: the engine executes against a frozen single-day
+			// feature snapshot, so an unmaterialized indicator (e.g. gap_pct
+			// on a pre-existing snapshot) can never match and previously
+			// failed silently with zero candidates and zero exclusions.
+			deps := v.Method.Scope.FeatureDeps
+			if refs := methods.ReferencedIndicators(v.Method.EntryRule, v.Method.ExitRule, v.Method.InvalidRule); len(refs) > 0 {
+				deps = append(append([]string{}, deps...), refs...)
+			}
+			missing := missingFeatures(deps, values)
 			if len(missing) > 0 {
 				run.Exclusions = append(run.Exclusions, Exclusion{MethodID: m.ID, Code: code, ReasonCode: "insufficient_data", Detail: "missing features: " + strings.Join(missing, ",")})
 				continue
@@ -235,9 +249,9 @@ func eligibilityReason(m *methodregistry.Method, market *marketsnapshot.MarketSn
 	if v.Evidence == nil || !v.Evidence.Passable || (v.Evidence.Confidence != "moderate" && v.Evidence.Confidence != "strong") {
 		return "evidence_insufficient"
 	}
-	if m.Universe != "" && m.Universe != market.Universe.Name {
-		return "universe_mismatch"
-	}
+	// Universe is a legacy label. Structured scope is resolved per member below;
+	// do not reject a method merely because the current snapshot has a different
+	// name (for example, a generated 30--100bn market-cap scope).
 	if len(v.Method.Scope.MarketState) > 0 {
 		return "market_state_unavailable"
 	}

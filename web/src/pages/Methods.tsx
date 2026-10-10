@@ -585,7 +585,7 @@ function FactorPicksCard() {
             <Tag>截面日 {pickRun.as_of}</Tag>
             {pickRun.snapshot_date_end && <Tag>数据止于 {pickRun.snapshot_date_end}</Tag>}
             <Tag color={pickRun.stale_days > 14 ? 'volcano' : 'default'}>距今天数 {pickRun.stale_days}</Tag>
-            <Tag>Top {pickRun.picks.length}</Tag>
+            <Tag>Top {(pickRun.picks?.length ?? 0)}</Tag>
           </Space>
           <Text type="secondary" style={{ fontSize: 12 }}>{pickRun.note}</Text>
           {pickRun.stale_days > 14 && (
@@ -600,12 +600,12 @@ function FactorPicksCard() {
             items={[
               {
                 key: 'factors',
-                label: `落库时因子评估快照（${pickRun.factors_snapshot.length} 个）`,
-                children: <Text type="secondary" style={{ fontSize: 12 }}>{pickRun.factors_snapshot.map((f) => `${f.name}${f.significant ? '✓' : '·'}(IC ${(f.mean_ic >= 0 ? '+' : '') + f.mean_ic.toFixed(3)})`).join('　')}</Text>,
+                label: `落库时因子评估快照（${pickRun.factors_snapshot?.length ?? 0} 个）`,
+                children: <Text type="secondary" style={{ fontSize: 12 }}>{(pickRun.factors_snapshot ?? []).map((f) => `${f.name}${f.significant ? '✓' : '·'}(IC ${(f.mean_ic >= 0 ? '+' : '') + f.mean_ic.toFixed(3)})`).join('　')}</Text>,
               },
             ]}
           />
-          <Table size="small" columns={columns} dataSource={pickRun.picks} rowKey="code" pagination={false} />
+          <Table size="small" columns={columns} dataSource={pickRun.picks ?? []} rowKey="code" pagination={false} />
         </Space>
       ) : (
         <Text type="secondary">
@@ -1089,7 +1089,12 @@ export default function Methods() {
   return (
     <Space direction="vertical" size={16} style={{ display: 'flex' }}>
       <div>
-        <Title level={3}>方法市场</Title>
+        <Space align="center" wrap>
+          <Title level={3} style={{ margin: 0 }}>高级研究与管理</Title>
+          <Button size="small" href="/methods">返回我的选股方法</Button>
+          <Button size="small" href="/paradigms">范式库</Button>
+          <Button size="small" href="/monitoring">范式监控</Button>
+        </Space>
         <Text type="secondary">
           机器证据指标（置信度 / 样本外交易 / 收益 / 胜率 / 回撤 / 夏普）+ 前向健康分，凭指标自主选择方法再用它筛选股票；
           缺失指标如实标「待验证」。当前 {items.length} 条记录中 {gatePassed.length} 条通过选股门槛。

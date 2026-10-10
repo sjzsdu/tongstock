@@ -1,0 +1,147 @@
+.methods-page {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.methods-page__intro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.methods-page__intro h2 {
+  margin: 0 0 4px;
+}
+
+.methods-page__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-block: 4px;
+}
+
+.method-summary .ant-card-body {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr) 190px;
+}
+
+.method-summary__evidence,
+.method-summary__body,
+.method-summary__exit {
+  padding: 20px;
+}
+
+.method-summary__evidence {
+  border-inline-end: 1px solid var(--ant-color-border-secondary, #f0f0f0);
+  background: var(--ant-color-fill-quaternary, #fafafa);
+}
+
+.method-summary__body {
+  min-width: 0;
+}
+
+.method-summary__rule.ant-typography {
+  margin: 6px 0 0;
+  font-size: 20px;
+  line-height: 1.45;
+}
+
+.method-summary__metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 28px;
+}
+
+.method-summary__metrics span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.method-summary__metrics strong {
+  overflow-wrap: anywhere;
+}
+
+.method-summary__exit {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 6px;
+  border-inline-start: 1px solid var(--ant-color-border-secondary, #f0f0f0);
+  /* The exit panel is a real button that opens the validation drawer. */
+  background: none;
+  border-inline-end: 0;
+  border-top: 0;
+  border-bottom: 0;
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.method-summary__exit:hover {
+  background: var(--ant-color-fill-quaternary, #fafafa);
+}
+
+.method-summary__exit:focus-visible {
+  outline: 2px solid var(--ant-color-primary, #1677ff);
+  outline-offset: -2px;
+}
+
+.method-summary__exit .anticon {
+  margin-top: 6px;
+  color: var(--ant-color-text-tertiary, #8c8c8c);
+}
+
+@media (max-width: 900px) {
+  .method-summary .ant-card-body {
+    grid-template-columns: 150px minmax(0, 1fr);
+  }
+
+  .method-summary__exit {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    border-inline-start: 0;
+    border-top: 1px solid var(--ant-color-border-secondary, #f0f0f0);
+    padding-block: 12px;
+  }
+
+  .method-summary__exit .anticon {
+    margin: 0 0 0 auto;
+  }
+}
+
+@media (max-width: 600px) {
+  .methods-page__intro,
+  .methods-page__toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .method-summary .ant-card-body {
+    display: block;
+  }
+
+  .method-summary__evidence {
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--ant-color-border-secondary, #f0f0f0);
+  }
+
+  .method-summary__evidence,
+  .method-summary__body,
+  .method-summary__exit {
+    padding: 16px;
+  }
+
+  .method-summary__rule.ant-typography {
+    font-size: 18px;
+  }
+}
