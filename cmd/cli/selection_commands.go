@@ -11,7 +11,6 @@ import (
 	"github.com/sjzsdu/tongstock/internal/adapter/selectionrepo"
 	"github.com/sjzsdu/tongstock/internal/marketsnapshot"
 	"github.com/sjzsdu/tongstock/internal/selection"
-	"github.com/sjzsdu/tongstock/pkg/config"
 	"github.com/sjzsdu/tongstock/pkg/storage"
 	"github.com/spf13/cobra"
 )
@@ -105,16 +104,8 @@ func init() {
 }
 
 func wireSelection() (*storage.Storage, *marketsnapshotrepo.SQLiteRepository, *selection.Engine, *selectionrepo.SQLiteRepository, error) {
-	cfg, err := config.Load()
+	store, err := openCLIStore()
 	if err != nil {
-		cfg = config.DefaultConfig()
-	}
-	store, err := storage.New(storage.Config{Driver: cfg.Database.Driver, DSN: cfg.Database.DSN})
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-	if err = store.Migrate(); err != nil {
-		store.Close()
 		return nil, nil, nil, nil, err
 	}
 	snapshots, err := marketsnapshotrepo.New(store)

@@ -7,7 +7,6 @@ import (
 	"github.com/sjzsdu/tongstock/internal/adapter/methodregistryrepo"
 	"github.com/sjzsdu/tongstock/internal/adapter/positiondecisionrepo"
 	"github.com/sjzsdu/tongstock/internal/positiondecision"
-	"github.com/sjzsdu/tongstock/pkg/config"
 	"github.com/sjzsdu/tongstock/pkg/storage"
 	"github.com/sjzsdu/tongstock/pkg/trading"
 	"github.com/spf13/cobra"
@@ -55,15 +54,8 @@ func init() {
 	rootCmd.AddCommand(positionCmd)
 }
 func wirePositionDecision() (*storage.Storage, *marketsnapshotrepo.SQLiteRepository, *positiondecision.Engine, *positiondecisionrepo.SQLiteRepository, error) {
-	cfg, err := config.Load()
+	s, err := openCLIStore()
 	if err != nil {
-		cfg = config.DefaultConfig()
-	}
-	s, err := storage.New(storage.Config{Driver: cfg.Database.Driver, DSN: cfg.Database.DSN})
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-	if err = s.Migrate(); err != nil {
 		return nil, nil, nil, nil, err
 	}
 	sn, _ := marketsnapshotrepo.New(s)

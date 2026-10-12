@@ -42,14 +42,11 @@ var acceptanceVerifyCmd = &cobra.Command{Use: "verify", Short: "验证正式数�
 	if err != nil {
 		cfg = config.DefaultConfig()
 	}
-	s, err := storage.New(storage.Config{Driver: cfg.Database.Driver, DSN: cfg.Database.DSN})
+	s, err := openCLIStore()
 	if err != nil {
 		return err
 	}
 	defer s.Close()
-	if err = s.Migrate(); err != nil {
-		return err
-	}
 	sn, _ := marketsnapshotrepo.New(s)
 	var acceptedSnapshotID string
 	_ = s.DB().QueryRow(`SELECT snapshot_id FROM automation_job_run WHERE status='completed' ORDER BY started_at_ns DESC LIMIT 1`).Scan(&acceptedSnapshotID)
