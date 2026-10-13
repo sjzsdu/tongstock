@@ -8,7 +8,6 @@ import (
 
 	"github.com/sjzsdu/tongstock/internal/adapter/marketsnapshotrepo"
 	"github.com/sjzsdu/tongstock/internal/marketsnapshot"
-	"github.com/sjzsdu/tongstock/pkg/config"
 	"github.com/sjzsdu/tongstock/pkg/storage"
 	"github.com/spf13/cobra"
 )
@@ -213,15 +212,8 @@ func init() {
 }
 
 func wireMarket() (*storage.Storage, marketsnapshot.Repository, *marketsnapshot.Builder, error) {
-	cfg, err := config.Load()
+	db, err := openCLIStore()
 	if err != nil {
-		cfg = config.DefaultConfig()
-	}
-	db, err := storage.New(storage.Config{Driver: cfg.Database.Driver, DSN: cfg.Database.DSN})
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	if err := db.Migrate(); err != nil {
 		return nil, nil, nil, err
 	}
 	repo, err := marketsnapshotrepo.New(db)

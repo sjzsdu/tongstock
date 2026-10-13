@@ -6,7 +6,6 @@ import (
 	"github.com/sjzsdu/tongstock/internal/adapter/marketsnapshotrepo"
 	"github.com/sjzsdu/tongstock/internal/marketsnapshot"
 	"github.com/sjzsdu/tongstock/pkg/config"
-	"github.com/sjzsdu/tongstock/pkg/storage"
 	"github.com/spf13/cobra"
 	"os"
 	"time"
@@ -38,18 +37,11 @@ type acceptanceReport struct {
 
 var acceptanceCmd = &cobra.Command{Use: "acceptance", Short: "真实数据端到端验收"}
 var acceptanceVerifyCmd = &cobra.Command{Use: "verify", Short: "验证正式数据库全链路血缘；缺失即失败", RunE: func(cmd *cobra.Command, args []string) error {
-	cfg, err := config.Load()
-	if err != nil {
-		cfg = config.DefaultConfig()
-	}
-	s, err := storage.New(storage.Config{Driver: cfg.Database.Driver, DSN: cfg.Database.DSN})
+	s, err := openCLIStore()
 	if err != nil {
 		return err
 	}
 	defer s.Close()
-	if err = s.Migrate(); err != nil {
-		return err
-	}
 	sn, _ := marketsnapshotrepo.New(s)
 	var acceptedSnapshotID string
 	_ = s.DB().QueryRow(`SELECT snapshot_id FROM automation_job_run WHERE status='completed' ORDER BY started_at_ns DESC LIMIT 1`).Scan(&acceptedSnapshotID)
@@ -78,6 +70,10 @@ var acceptanceVerifyCmd = &cobra.Command{Use: "verify", Short: "验证正式数�
 	fh, _ := marketsnapshot.ComputeFeatureContentHash(f)
 	if fh != f.ContentHash || !f.LeakChecked {
 		return fmt.Errorf("acceptance failed: feature hash/leak gate")
+	}
+	cfg, cfgErr := config.Load()
+	if cfgErr != nil {
+		cfg = config.DefaultConfig()
 	}
 	r := acceptanceReport{VerifiedAt: time.Now().UTC(), Database: cfg.Database.DSN, MarketSnapshotID: m.ID, SnapshotDate: m.SnapshotDate, SnapshotHash: m.ContentHash, FeatureSnapshotID: f.ID, FeatureHash: f.ContentHash, UniverseStocks: len(f.Values), FeatureValues: f.RowsWritten, Limitations: []string{"验收证明软件链路与血缘，不承诺未来收益", "当前持仓为空时只能验证空决策，不能伪造真实持仓场景"}}
 	db := s.DB()
