@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/sjzsdu/tongstock/pkg/config"
+	"github.com/sjzsdu/tongstock/pkg/storage"
 )
 
 func setCLIConfig(t *testing.T, cfgLoader func() (*config.Config, error), defaultConfig func() *config.Config) {
@@ -67,6 +68,33 @@ func TestOpenCLIStoreRejectsUnsupportedDriver(t *testing.T) {
 	_, err := openCLIStore()
 	if err == nil || !strings.Contains(err.Error(), "仅支持 sqlite3") {
 		t.Fatalf("openCLIStore error = %v, want unsupported-driver error", err)
+	}
+}
+
+func TestOpenCLIStoreClosesStoreWhenMigrationFails(t *testing.T) {
+	setCLIConfig(t, func() (*config.Config, error) {
+		cfg := config.DefaultConfig()
+		cfg.Database.DSN = filepath.Join(t.TempDir(), "migration-failure.db")
+		return cfg, nil
+	}, config.DefaultConfig)
+	wantErr := errors.New("migration failed")
+	var storeClosed *storage.Storage
+	previousMigrator := cliStoreMigrator
+	cliStoreMigrator = func(store *storage.Storage) error {
+		storeClosed = store
+		return wantErr
+	}
+	t.Cleanup(func() { cliStoreMigrator = previousMigrator })
+
+	_, err := openCLIStore()
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("openCLIStore error = %v, want %v", err, wantErr)
+	}
+	if storeClosed == nil {
+		t.Fatal("migration hook did not receive opened store")
+	}
+	if pingErr := storeClosed.DB().Ping(); pingErr == nil {
+		t.Fatal("store remained open after migration failure")
 	}
 }
 

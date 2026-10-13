@@ -71,6 +71,7 @@ func cliConsistencyMode() stockdata.ConsistencyMode {
 // for constructing its own repositories and engines.
 var cliConfigLoader = config.Load
 var cliDefaultConfig = config.DefaultConfig
+var cliStoreMigrator = func(store *storage.Storage) error { return store.Migrate() }
 
 func openCLIStore() (*storage.Storage, error) {
 	cfg, err := cliConfigLoader()
@@ -81,7 +82,7 @@ func openCLIStore() (*storage.Storage, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := store.Migrate(); err != nil {
+	if err := cliStoreMigrator(store); err != nil {
 		_ = store.Close()
 		return nil, err
 	}
