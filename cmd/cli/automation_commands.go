@@ -58,18 +58,11 @@ var automationUnlockCmd = &cobra.Command{
 	Short: "强制释放卡死的自动化任务锁（标记为 failed，下次 run 自动重试）",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
-		if err != nil {
-			cfg = config.DefaultConfig()
-		}
-		s, err := storage.New(storage.Config{Driver: cfg.Database.Driver, DSN: cfg.Database.DSN})
+		s, err := openCLIStore()
 		if err != nil {
 			return err
 		}
 		defer s.Close()
-		if err = s.Migrate(); err != nil {
-			return err
-		}
 		r, err := automationrepo.New(s)
 		if err != nil {
 			return err

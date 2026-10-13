@@ -69,10 +69,13 @@ func cliConsistencyMode() stockdata.ConsistencyMode {
 // openCLIStore owns the CLI persistence boundary: configuration fallback,
 // database opening, and schema migration. Command wiring remains responsible
 // for constructing its own repositories and engines.
+var cliConfigLoader = config.Load
+var cliDefaultConfig = config.DefaultConfig
+
 func openCLIStore() (*storage.Storage, error) {
-	cfg, err := config.Load()
+	cfg, err := cliConfigLoader()
 	if err != nil {
-		cfg = config.DefaultConfig()
+		cfg = cliDefaultConfig()
 	}
 	store, err := storage.New(storage.Config{Driver: cfg.Database.Driver, DSN: cfg.Database.DSN})
 	if err != nil {

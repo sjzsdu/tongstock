@@ -1,28 +1,28 @@
 package main
 
 import (
-	"os"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sjzsdu/tongstock/pkg/config"
 )
 
-func writeCLIConfig(t *testing.T, home, dsn string) {
+func setCLIConfig(t *testing.T, cfgLoader func() (*config.Config, error), defaultConfig func() *config.Config) {
 	t.Helper()
-	if err := os.MkdirAll(home, 0755); err != nil {
-		t.Fatal(err)
-	}
-	contents := "database:\n  driver: sqlite3\n  dsn: " + dsn + "\n"
-	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte(contents), 0644); err != nil {
-		t.Fatal(err)
-	}
+	previousLoader, previousDefault := cliConfigLoader, cliDefaultConfig
+	cliConfigLoader, cliDefaultConfig = cfgLoader, defaultConfig
+	t.Cleanup(func() { cliConfigLoader, cliDefaultConfig = previousLoader, previousDefault })
 }
 
 func TestOpenCLIStoreMigratesConfiguredSQLite(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	dsn := filepath.Join(home, "configured.db")
-	writeCLIConfig(t, home, dsn)
+	dsn := filepath.Join(t.TempDir(), "configured.db")
+	setCLIConfig(t, func() (*config.Config, error) {
+		cfg := config.DefaultConfig()
+		cfg.Database.DSN = dsn
+		return cfg, nil
+	}, config.DefaultConfig)
 
 	store, err := openCLIStore()
 	if err != nil {
@@ -40,31 +40,29 @@ func TestOpenCLIStoreMigratesConfiguredSQLite(t *testing.T) {
 }
 
 func TestOpenCLIStoreFallsBackToDefaultsWhenConfigUnreadable(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	if err := os.MkdirAll(filepath.Join(home, "config.yaml"), 0755); err != nil {
-		t.Fatal(err)
-	}
+	dsn := filepath.Join(t.TempDir(), "fallback.db")
+	setCLIConfig(t, func() (*config.Config, error) {
+		return nil, errors.New("unreadable config")
+	}, func() *config.Config {
+		cfg := config.DefaultConfig()
+		cfg.Database.DSN = dsn
+		return cfg
+	})
 
 	store, err := openCLIStore()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	if _, err := os.Stat(filepath.Join(home, "cache", "tongstock.db")); err != nil {
-		t.Fatalf("default database was not opened: %v", err)
-	}
 }
 
 func TestOpenCLIStoreRejectsUnsupportedDriver(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	if err := os.MkdirAll(home, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("database:\n  driver: postgres\n  dsn: invalid\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
+	setCLIConfig(t, func() (*config.Config, error) {
+		cfg := config.DefaultConfig()
+		cfg.Database.Driver = "postgres"
+		cfg.Database.DSN = "invalid"
+		return cfg, nil
+	}, config.DefaultConfig)
 
 	_, err := openCLIStore()
 	if err == nil || !strings.Contains(err.Error(), "仅支持 sqlite3") {
@@ -73,9 +71,12 @@ func TestOpenCLIStoreRejectsUnsupportedDriver(t *testing.T) {
 }
 
 func TestCLIWiringSmoke(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	writeCLIConfig(t, home, filepath.Join(home, "wiring.db"))
+	dsn := filepath.Join(t.TempDir(), "wiring.db")
+	setCLIConfig(t, func() (*config.Config, error) {
+		cfg := config.DefaultConfig()
+		cfg.Database.DSN = dsn
+		return cfg, nil
+	}, config.DefaultConfig)
 
 	selectionStore, snapshots, selectionEngine, runs, err := wireSelection()
 	if err != nil {
