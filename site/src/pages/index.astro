@@ -1,8 +1,14 @@
 ---
 import { site } from '../config/site';
+import { withBase, absoluteUrl } from '../lib/base';
 import generated from '../data/generated.json';
 
 const stats = generated.stats;
+
+// 社交卡片与 canonical 必须是绝对 URL；站内链接统一走 withBase，禁止裸拼 BASE_URL。
+const canonical = absoluteUrl('', Astro.site);
+const ogImage = absoluteUrl('og.png', Astro.site);
+const docsUrl = withBase(site.docsPath);
 ---
 
 <!doctype html>
@@ -13,18 +19,18 @@ const stats = generated.stats;
     <title>{site.name} · {site.tagline}</title>
     <meta name="description" content={site.description} />
     <meta name="theme-color" content="#0b1220" />
-    <link rel="icon" href={`${import.meta.env.BASE_URL}favicon.png`} />
-    <link rel="canonical" href={new URL(import.meta.env.BASE_URL, Astro.site ?? 'https://sjzsdu.github.io').toString()} />
+    <link rel="icon" href={withBase('favicon.png')} />
+    <link rel="canonical" href={canonical} />
 
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content={site.name} />
     <meta property="og:title" content={`${site.name} · ${site.tagline}`} />
     <meta property="og:description" content={site.description} />
-    <meta property="og:image" content={`${import.meta.env.BASE_URL}og.png`} />
+    <meta property="og:image" content={ogImage} />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={`${site.name} · ${site.tagline}`} />
     <meta name="twitter:description" content={site.description} />
-    <meta name="twitter:image" content={`${import.meta.env.BASE_URL}og.png`} />
+    <meta name="twitter:image" content={ogImage} />
 
     <script
       type="application/ld+json"
@@ -47,14 +53,14 @@ const stats = generated.stats;
 
     <header class="nav">
       <div class="wrap nav-inner">
-        <a class="brand" href={import.meta.env.BASE_URL}>
-          <img src={`${import.meta.env.BASE_URL}favicon.png`} alt="" width="22" height="22" />
+        <a class="brand" href={withBase('')}>
+          <img src={withBase('favicon.png')} alt="" width="22" height="22" />
           <span>{site.name}</span>
         </a>
         <nav class="nav-links">
           <a href="#features">特性</a>
-          <a href={site.docsPath}>文档</a>
-          <a href={`${site.docsPath}api/endpoints/`}>API</a>
+          <a href={docsUrl}>文档</a>
+          <a href={`${docsUrl}api/endpoints/`}>API</a>
           <a href={site.repoUrl} target="_blank" rel="noreferrer">GitHub</a>
         </nav>
         <a class="btn btn-primary btn-sm" href={site.appUrl}>进入控制台</a>
@@ -74,7 +80,7 @@ const stats = generated.stats;
             </p>
             <div class="cta-row">
               <a class="btn btn-primary" href={site.appUrl}>进入控制台</a>
-              <a class="btn btn-ghost" href={`${site.docsPath}getting-started/install/`}>十分钟跑起来</a>
+              <a class="btn btn-ghost" href={`${docsUrl}getting-started/install/`}>十分钟跑起来</a>
             </div>
             <p class="cta-note">{site.appUrlNote}</p>
           </div>
@@ -236,15 +242,15 @@ npx skills add sjzsdu/tongstock
           <p class="section-sub">本机实例的真实截图，不是设计稿，也没有替换任何数据。</p>
           <figure class="shot">
             <img
-              src={`${import.meta.env.BASE_URL}shots/stock-detail.jpg`}
-              alt="TongStock 个股详情页：五档行情、多周期 K 线、技术指标、财务与资讯"
+              src={withBase('shots/stock-detail.jpg')}
+              alt="TongStock 个股详情页：行情概览与 K 线、技术指标"
               width="1200"
               height="833"
               loading="lazy"
               decoding="async"
             />
             <figcaption>
-              个股详情（<code>/stock/:code</code>）：五档行情、多周期 K 线、MA/MACD/KDJ/BOLL/RSI 指标、财务与资讯。
+              个股详情（<code>/stock/:code</code>）的上半屏：个股行情概览与 K 线、技术指标区。
               截图取自本地 <code>./tongstock serve</code> 实例，数据来自通达信行情服务器。
             </figcaption>
           </figure>
@@ -293,7 +299,7 @@ npx skills add sjzsdu/tongstock
           <h2>先在本地把它跑起来，再决定要不要信它。</h2>
           <p>默认只监听回环地址，不需要账号，数据不出机器。</p>
           <div class="cta-row center">
-            <a class="btn btn-primary" href={`${site.docsPath}getting-started/install/`}>查看安装步骤</a>
+            <a class="btn btn-primary" href={`${docsUrl}getting-started/install/`}>查看安装步骤</a>
             <a class="btn btn-ghost" href={site.appUrl}>进入控制台</a>
           </div>
           <div class="copy-line">
@@ -313,12 +319,12 @@ npx skills add sjzsdu/tongstock
           <p>{site.disclaimer}</p>
         </div>
         <div class="footer-links">
-          <a href={`${site.docsPath}`}>文档</a>
-          <a href={`${site.docsPath}api/endpoints/`}>API 端点</a>
+          <a href={docsUrl}>文档</a>
+          <a href={`${docsUrl}api/endpoints/`}>API 端点</a>
           <a href={site.repoUrl} target="_blank" rel="noreferrer">GitHub</a>
           <a href={site.releasesUrl} target="_blank" rel="noreferrer">Release</a>
           <a href={site.dockerHubUrl} target="_blank" rel="noreferrer">Docker Hub</a>
-          <a href={`${site.docsPath}reference/license/`}>MIT 许可</a>
+          <a href={`${docsUrl}reference/license/`}>MIT 许可</a>
         </div>
       </div>
       <div class="wrap footer-note">

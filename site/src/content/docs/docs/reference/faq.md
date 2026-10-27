@@ -9,13 +9,21 @@ description: 端口、K 线条数、指标参数、F10 读取、财务单位—�
 
 也可以用 `TONGSTOCK_SERVER_PORT=6565 ./tongstock serve` 临时覆盖。
 
-## 为什么 K 线只返回 100 根？
+## K 线一次返回多少根？
 
-不带 `count` 时默认 100 根。要更长历史必须显式指定：
+取决于是否给窗口参数：
 
 ```bash
-curl "http://localhost:8106/api/kline?code=000001&type=day&count=500"
+# 不带 start 与 count：返回库内该代码的全部历史
+curl "http://localhost:8106/api/kline?code=000001&type=day"
+
+# 窗口模式：start 与 count 必须同时给
+curl "http://localhost:8106/api/kline?code=000001&type=day&start=0&count=500"
 ```
+
+只给 `count` 不给 `start`（或反过来）会退回全量，不会截断。实测 `000001` 日线：不带参数与只带 `count=5` 都返回约 8400 根，`start=0&count=5` 返回 5 根。
+
+CLI 侧不一样：`./tongstock kline` 的 `--count` 默认 500，`--all` 取全部历史。
 
 ## `--days` 和 `--count` 有什么区别？
 

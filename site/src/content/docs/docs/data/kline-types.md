@@ -20,14 +20,17 @@ description: 十种 K 线周期参数的对照表，以及默认返回条数与�
 
 取值定义在 `pkg/tdx/service.go` 的 `ParseKlineType`：无法识别的字符串会退回 `day`，所以**拼错类型不会报错，只会静默变成日线**——写脚本时留意这一点。
 
-## 默认返回条数
+## 返回条数：全量与窗口
 
 ```bash
-curl "http://localhost:8106/api/kline?code=000001&type=day"          # 只返回 100 根
-curl "http://localhost:8106/api/kline?code=000001&type=day&count=500" # 显式要 500 根
+# 不带 start/count：库内全部历史
+curl "http://localhost:8106/api/kline?code=000001&type=day"
+
+# 窗口模式：start 与 count 必须同时给，缺一个会退回全量
+curl "http://localhost:8106/api/kline?code=000001&type=day&start=0&count=500"
 ```
 
-不带 `count` 时默认 100 根。做长期统计（例如年均线、多年回撤）时必须显式指定，否则结论会建立在一个很短的窗口上。
+做长期统计（年均线、多年回撤）时全量更方便；只需要最近一段就显式给 `start` + `count`。注意 `start` 与 `count` 是成对的——只给 `count` 不会截断。
 
 ## 计算窗口 ≠ 返回窗口
 
