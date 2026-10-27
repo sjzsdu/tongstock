@@ -14,7 +14,9 @@ configs/
 
 # 本机构建产物（镜像内重新构建）
 web/dist/
+site/dist/
 pkg/web/dist/
+pkg/site/dist/
 tongstock
 cli
 *.test

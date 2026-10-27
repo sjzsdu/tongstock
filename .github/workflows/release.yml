@@ -60,7 +60,9 @@ jobs:
         with:
           node-version: '22'
           cache: pnpm
-          cache-dependency-path: tongstock/web/pnpm-lock.yaml
+          cache-dependency-path: |
+            tongstock/web/pnpm-lock.yaml
+            tongstock/site/pnpm-lock.yaml
 
       - name: Resolve version
         id: version
@@ -78,6 +80,8 @@ jobs:
 
       - name: Build web
         working-directory: tongstock/web
+        env:
+          VITE_BASE_PATH: /app/
         run: pnpm build
 
       - name: Prepare embedded web assets
@@ -86,6 +90,23 @@ jobs:
         run: |
           rm -rf pkg/web/dist
           cp -r web/dist pkg/web/dist
+
+      - name: Install site dependencies
+        working-directory: tongstock/site
+        run: pnpm install --frozen-lockfile
+
+      - name: Build site
+        working-directory: tongstock/site
+        env:
+          ASTRO_TELEMETRY_DISABLED: '1'
+        run: pnpm build
+
+      - name: Prepare embedded site assets
+        working-directory: tongstock
+        shell: bash
+        run: |
+          rm -rf pkg/site/dist
+          cp -r site/dist pkg/site/dist
 
       - name: Build package
         working-directory: tongstock

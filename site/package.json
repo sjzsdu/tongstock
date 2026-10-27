@@ -11,8 +11,8 @@
     "preview": "astro preview",
     "gen:api": "node scripts/gen-api-docs.mjs",
     "gen:cli": "node scripts/gen-cli-docs.mjs",
-    "gen": "node scripts/gen-api-docs.mjs && node scripts/gen-cli-docs.mjs",
-    "gen:check": "node scripts/gen-api-docs.mjs --check && node scripts/gen-cli-docs.mjs --check",
+    "gen": "node scripts/gen-api-docs.mjs && node scripts/gen-cli-docs.mjs && node scripts/gen-legacy-routes.mjs",
+    "gen:check": "node scripts/gen-api-docs.mjs --check && node scripts/gen-cli-docs.mjs --check && node scripts/gen-legacy-routes.mjs --check",
     "check:links": "node scripts/check-links.mjs",
     "check": "node scripts/gen-api-docs.mjs --check && node scripts/gen-cli-docs.mjs --check && astro build && node scripts/check-links.mjs",
     "verify": "node scripts/gen-api-docs.mjs --check && node scripts/gen-cli-docs.mjs --check && astro build && node scripts/check-links.mjs"

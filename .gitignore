@@ -9,6 +9,7 @@ tongstock-server
 tongstock-menubar
 /server
 pkg/web/dist
+pkg/site/dist
 tmp
 
 # Web dependencies

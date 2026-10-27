@@ -70,9 +70,39 @@ docker cp tongstock:/root/.tongstock/cache/tongstock.db ./tongstock-$(date +%F).
 
 把令牌、TLS 与域名一起处理的做法见[远程访问与令牌](/docs/ops/remote-access/)。
 
+## 自托管：一条命令出全部入口
+
+`./tongstock serve` 一个进程就是完整的站点 + 服务，运行时**不需要 Node**——官网（`site/dist`）与 Web UI（`web/dist`）的产物都通过 `//go:embed` 嵌进了二进制（`pkg/site`、`pkg/web`）。
+
+| 路径 | 内容 | 来源 |
+| --- | --- | --- |
+| `/` | 官网首页 | `pkg/site`（`site/dist`） |
+| `/docs/**` | 使用文档，以及官网的 `_astro` / favicon / og / 截图等静态资源 | `pkg/site` |
+| `/app`、`/app/**` | Web UI；无扩展名的路径一律回退 `app/index.html`（前端路由） | `pkg/web`（`web/dist`，`VITE_BASE_PATH=/app/`） |
+| `/api/**` | REST 接口（远程访问需 Bearer 令牌） | Go 路由 |
+| `/health`、`/health/*` | 健康检查，公开 | Go 路由 |
+
+三条容易踩的语义（都有单测守着）：
+
+1. **带扩展名的缺失资源返回 404 文本，不回退 HTML。** 旧标签页会请求旧 hash 的 chunk，回退 HTML 会让浏览器报「Failed to fetch dynamically imported module」并白屏。
+2. **旧深链 302 到 `/app/<原路径>`。** `/stock/000519`、`/news`、`/methods/advanced` 这些旧地址由路由表重定向（表来自 `web/src/App.tsx` 生成的 `internal/serverapp/legacy_routes_generated.go`，不是手写），query 一并保留。
+3. **官网与静态资源公开，`/api` 仍走令牌。** 官网落在 `access_token` 保护之外是刻意的：它是给外部访客看的介绍页；数据接口不因此放开。
+
+### 构建
+
+```bash
+make cli    # 依次：构建 site/dist → 拷进 pkg/site/dist → 构建 web/dist（base=/app/）→ 拷进 pkg/web/dist → go build
+```
+
+`site/dist` 与 `pkg/site/dist` 都不入库；`pkg/site/site.go` 的 `//go:embed all:dist` 要求先有产物，所以 `cli` 目标依赖 `site-build`（与 `web` 的顺序完全一致）。
+
+:::note[入口变更]
+根路径以前是 Web UI，现在是官网。直接访问 `/` 的脚本/监控如果期望 HTML 界面，请改到 `/app/`；旧的页面级深链会被 302 兜住。
+:::
+
 ## 官网与文档的托管（GitHub Pages）
 
-官网 + 文档 + Web UI 部署在同一个 Pages 站点上，布局是：
+纯静态托管（没有后端进程）用同一套产物：
 
 | 路径 | 内容 | 构建来源 |
 | --- | --- | --- |

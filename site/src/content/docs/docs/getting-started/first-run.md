@@ -1,9 +1,29 @@
 ---
 title: 首次运行与配置
-description: 默认端口、~/.tongstock/ 目录结构、两份配置文件各自的职责，以及环境变量覆盖规则。
+description: 启动后的访问入口（官网 / 文档 / Web UI / API）、默认端口、~/.tongstock/ 目录结构、两份配置文件各自的职责，以及环境变量覆盖规则。
 ---
 
 第一次运行任何命令（包括 `./tongstock serve`）时，程序会自动创建 `~/.tongstock/` 并写入默认配置，不需要手动初始化。
+
+## 启动后先打开哪里
+
+`./tongstock serve` 一个进程同时提供官网、文档、Web UI 与 API，运行时不需要 Node（二者产物都 `//go:embed` 进了二进制）。
+
+| 地址 | 内容 |
+| --- | --- |
+| `http://localhost:8106/` | **官网**（产品介绍、特性、文档入口） |
+| `http://localhost:8106/docs/` | 使用文档（本站） |
+| `http://localhost:8106/app/` | **Web UI**（今日决策、选股方法、持仓卖出等） |
+| `http://localhost:8106/api/…` | REST 接口 |
+| `http://localhost:8106/health` | 健康检查 |
+
+:::caution[根路径已经从 Web UI 变成官网]
+以前 `http://localhost:8106/` 打开就是 Web UI，现在根路径是官网，Web UI 在 `/app/` 下。
+旧深链（如 `/stock/000519`、`/news`）会被服务端 **302 到 `/app/<原路径>`**，书签与外链不会失效；
+但如果你在脚本里硬编码过 `http://host:8106/` + 页面路径，需要补上 `/app` 前缀。
+:::
+
+官网与静态资源保持公开；`/api` 在非本机访问时仍要求 Bearer 令牌（见[认证与安全](/docs/api/auth/)）。
 
 ## 目录结构
 

@@ -51,6 +51,7 @@ import (
 	"github.com/sjzsdu/tongstock/pkg/newsfeed/sources"
 	"github.com/sjzsdu/tongstock/pkg/param"
 	"github.com/sjzsdu/tongstock/pkg/server"
+	"github.com/sjzsdu/tongstock/pkg/site"
 	"github.com/sjzsdu/tongstock/pkg/stockinfo"
 	"github.com/sjzsdu/tongstock/pkg/stockpool"
 	"github.com/sjzsdu/tongstock/pkg/storage"
@@ -536,43 +537,174 @@ func (a *App) buildRouter() *gin.Engine {
 	return router
 }
 
+// setupStaticRoutes 挂载三类静态内容（自托管同域布局）：
+//
+//	/            官网首页（内嵌 site 产物）
+//	/docs/**     文档、以及官网的 _astro / favicon / og / shots 等静态资源（site FS）
+//	/app/**      现有 Web UI（web FS，无扩展名的路径回退 app/index.html）
+//
+// 应用搬到 /app/ 之后，历史深链（/stock/000519、/news 等）由本函数 302 到 /app/<原路径>，
+// 路由清单来自 web/src/App.tsx 生成的 legacySPARoutes，不手写。
+// /api 未命中仍返回 JSON 契约错误（见 NoRoute 第一分支）。
 func setupStaticRoutes(router *gin.Engine) {
-	serveIndex := func(c *gin.Context) {
-		file, err := web.DistFS().Open("index.html")
-		if err != nil {
-			server.WriteError(c, http.StatusInternalServerError, "static_unavailable", "页面资源不可用")
-			return
-		}
-		defer file.Close()
-		data, err := io.ReadAll(file)
-		if err != nil {
-			server.WriteError(c, http.StatusInternalServerError, "static_unavailable", "页面资源不可用")
-			return
-		}
-		c.Data(http.StatusOK, "text/html; charset=utf-8", data)
-	}
-	router.GET("/", serveIndex)
+	router.GET("/", func(c *gin.Context) { serveEmbeddedIndex(c, site.DistFS()) })
+
 	router.NoRoute(func(c *gin.Context) {
 		path := strings.TrimPrefix(c.Request.URL.Path, "/")
+
+		// API 404 保持 JSON 契约：调用方与前端都依赖 ErrorEnvelope，不能返回 HTML。
 		if path == "api" || strings.HasPrefix(path, "api/") {
 			server.WriteError(c, http.StatusNotFound, "not_found", "请求的 API 不存在")
 			return
 		}
-		if web.Exists(path) {
-			c.FileFromFS(path, web.DistFS())
+
+		// /app 与 /app/** —— 应用（web FS）。
+		if path == "app" {
+			// 应用以 /app/ 为 base，少一个尾斜杠会让相对资源解析错位，统一补一次跳转。
+			c.Redirect(http.StatusFound, "/app/")
 			return
 		}
-		// 静态资源（带内容 hash 的 js/css/字体等）缺失时必须 404，
-		// 不能回退 index.html：旧标签页在重新部署后会请求旧 hash 的
-		// chunk，返回 HTML 会让浏览器报「Failed to fetch dynamically
-		// imported module」，页面直接渲染失败。404 则由前端捕获并
-		// 自动刷新到新版本。仅无扩展名的 SPA 路由才回退 index.html。
+		if strings.HasPrefix(path, "app/") {
+			serveAppPath(c, strings.TrimPrefix(path, "app/"))
+			return
+		}
+
+		// 官网与文档：真实存在的文件/目录交给 FileServer（目录由它补尾斜杠并取 index.html）。
+		if site.Exists(path) {
+			siteFileServer.ServeHTTP(c.Writer, c.Request)
+			return
+		}
+
+		// 带扩展名的请求视为静态资源：缺失就 404 文本，不能回退 HTML。
+		// 旧标签页在重新部署后会请求旧 hash 的 chunk（含搬去 /app/ 之前的根级
+		// /assets/*），返回 HTML 会让浏览器报「Failed to fetch dynamically imported
+		// module」并白屏；404 则被前端捕获并自动刷新到新版本。
 		if hasFileExtension(path) {
 			c.Data(http.StatusNotFound, "text/plain; charset=utf-8", []byte("static asset not found"))
 			return
 		}
-		serveIndex(c)
+
+		// 旧 SPA 深链 → /app/<原路径>（保留 query，外链与书签才不会丢参数）。
+		if matchLegacySPARoute(path) {
+			target := "/app/" + path
+			if raw := c.Request.URL.RawQuery; raw != "" {
+				target += "?" + raw
+			}
+			c.Redirect(http.StatusFound, target)
+			return
+		}
+
+		serveSiteNotFound(c)
 	})
+}
+
+// siteFileServer / webFileServer 复用同一个 FileServer：它会正确处理目录尾斜杠、
+// ETag、Range 与 Content-Type，比手写分支更不容易出错。
+var (
+	siteFileServer = http.FileServer(site.DistFS())
+	webFileServer  = http.FileServer(web.DistFS())
+)
+
+// serveAppPath 处理 /app/** 下的请求（inner 已去掉 "app/" 前缀）。
+func serveAppPath(c *gin.Context, inner string) {
+	if inner == "" {
+		serveEmbeddedIndex(c, web.DistFS())
+		return
+	}
+	if web.Exists(inner) {
+		// http.FileServer 按 Request.URL.Path 找文件，而这里 FS 的根是 web/dist，
+		// URL 却带着 /app/ 前缀——必须先把路径换成应用内相对路径，否则文件找不着。
+		serveFromFSWithPath(c, webFileServer, "/"+inner)
+		return
+	}
+	// 静态资源（带内容 hash 的 js/css/字体等）缺失时必须 404，
+	// 不能回退 index.html：旧标签页在重新部署后会请求旧 hash 的
+	// chunk，返回 HTML 会让浏览器报「Failed to fetch dynamically
+	// imported module」，页面直接渲染失败。404 则由前端捕获并
+	// 自动刷新到新版本。仅无扩展名的 SPA 路由才回退 index.html。
+	if hasFileExtension(inner) {
+		c.Data(http.StatusNotFound, "text/plain; charset=utf-8", []byte("static asset not found"))
+		return
+	}
+	serveEmbeddedIndex(c, web.DistFS())
+}
+
+// serveFromFSWithPath 用指定的 FS 路径服务当前请求，结束后还原 URL.Path。
+// FileServer 的目录尾斜杠重定向也基于这个路径，所以对文件请求安全。
+func serveFromFSWithPath(c *gin.Context, handler http.Handler, fsPath string) {
+	original := c.Request.URL.Path
+	c.Request.URL.Path = fsPath
+	handler.ServeHTTP(c.Writer, c.Request)
+	c.Request.URL.Path = original
+}
+
+// serveEmbeddedIndex 直接吐出指定 FS 的 index.html。
+func serveEmbeddedIndex(c *gin.Context, fs http.FileSystem) {
+	file, err := fs.Open("index.html")
+	if err != nil {
+		server.WriteError(c, http.StatusInternalServerError, "static_unavailable", "页面资源不可用")
+		return
+	}
+	defer file.Close()
+	data, err := io.ReadAll(file)
+	if err != nil {
+		server.WriteError(c, http.StatusInternalServerError, "static_unavailable", "页面资源不可用")
+		return
+	}
+	c.Data(http.StatusOK, "text/html; charset=utf-8", data)
+}
+
+// serveSiteNotFound 返回官网自带的 404 页面（状态仍是 404，不用 200 假装修复）。
+func serveSiteNotFound(c *gin.Context) {
+	if site.Exists("404.html") {
+		if file, err := site.DistFS().Open("404.html"); err == nil {
+			defer file.Close()
+			if data, readErr := io.ReadAll(file); readErr == nil {
+				c.Data(http.StatusNotFound, "text/html; charset=utf-8", data)
+				return
+			}
+		}
+	}
+	server.WriteError(c, http.StatusNotFound, "not_found", "页面不存在")
+}
+
+// matchLegacySPARoute 判断请求路径（不带前导斜杠）是否命中旧 SPA 路由表。
+func matchLegacySPARoute(path string) bool {
+	segments := splitPathSegments(path)
+	if len(segments) == 0 {
+		return false
+	}
+	for _, route := range legacySPARoutes {
+		if matchRouteSegments(route, segments) {
+			return true
+		}
+	}
+	return false
+}
+
+func splitPathSegments(path string) []string {
+	trimmed := strings.Trim(path, "/")
+	if trimmed == "" {
+		return nil
+	}
+	return strings.Split(trimmed, "/")
+}
+
+// matchRouteSegments 逐段比较；路由里的 `:param` 匹配任意单段（与 react-router 语义一致）。
+func matchRouteSegments(route string, requested []string) bool {
+	routeSegments := splitPathSegments(route)
+	if len(routeSegments) != len(requested) {
+		return false
+	}
+	for i, segment := range routeSegments {
+		if strings.HasPrefix(segment, ":") {
+			continue
+		}
+		if segment != requested[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // hasFileExtension 判断请求路径是否像静态资源文件（含扩展名）。

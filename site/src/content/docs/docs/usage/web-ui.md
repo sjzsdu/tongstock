@@ -3,13 +3,15 @@ title: Web UI 指南
 description: 20 个页面各自解决什么问题，以及主流程与高级研究入口的分工。
 ---
 
-`./tongstock serve` 后打开 `http://127.0.0.1:8106/` 即用。页面由 React + TypeScript + Vite 构建，构建产物被嵌进 Go 二进制，所以运行时不依赖 Node。
+`./tongstock serve` 后打开 `http://127.0.0.1:8106/app/` 即用（根路径 `/` 是官网，`/docs/` 是文档）。页面由 React + TypeScript + Vite 构建，构建产物被嵌进 Go 二进制，所以运行时不依赖 Node。
 
 ![TongStock 个股详情页：行情概览与 K 线、技术指标](/shots/stock-detail.jpg)
 
 *上图取自本地实例的真实截图：个股详情页（`/stock/:code`）的上半屏，含行情概览与 K 线、技术指标区。*
 
 ## 页面清单
+
+下表是**应用内**路径；浏览器里实际地址是 `http://localhost:8106/app` + 该路径（例如 `/stock/:code` → `/app/stock/000001`）。旧地址（不带 `/app` 前缀）会被服务端 302 到新位置。
 
 | 页面 | 路径 | 解决什么 |
 | --- | --- | --- |
