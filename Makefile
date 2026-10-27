@@ -1,6 +1,6 @@
 .PHONY: all web cli server install clean run check \
 	fmt-check go-check go-arch-check go-migration-check web-check quality-check \
-	docker-build docker-push
+	docker-build docker-push site site-build site-check
 
 # Default to ~/.local/bin for installation, which is the standard user binary directory
 # Users can override with BINDIR environment variable if needed
@@ -12,8 +12,12 @@ NPM ?= npm
 
 all: cli
 
+# 自托管布局：应用挂在 /app/ 下（官网占根），VITE_BASE_PATH 必须跟着变；
+# 需要别的部署位置（如 Pages 的 /<repo>/app/）时用 VITE_BASE_PATH=... make cli 覆盖。
+VITE_BASE_PATH ?= /app/
+
 web:
-	cd web && $(NPM) run build
+	cd web && VITE_BASE_PATH=$(VITE_BASE_PATH) $(NPM) run build
 	rm -rf pkg/web/dist
 	cp -rf web/dist pkg/web/dist
 
@@ -52,7 +56,7 @@ web-check:
 web-build-check:
 	cd web && $(NPM) run build
 
-cli: web
+cli: web site-build
 	go build -o $(CLI_BIN) ./cmd/cli
 
 # quality-check: the slower end-to-end, data-aware unified quality gate
@@ -84,3 +88,33 @@ docker-build:
 docker-push: docker-build
 	docker push $(DOCKER_IMAGE):latest
 	docker push $(DOCKER_IMAGE):$(DOCKER_TAG)
+
+# 官网站点（site/）：完全隔离的一套工具链，不进入上面的 check 门禁。
+# 先构建 CLI 二进制，因为文档里的命令与参数表由 `tongstock --help` 实跑生成，
+# 端点表由 api/openapi.json 生成——两者都不允许手写。
+# 产物在 site/dist/（已 gitignore），部署位置未定，本目标只保证“本地可构建”。
+SITE_DIR := site
+SITE_BIN := $(CURDIR)/$(CLI_BIN)
+
+# site-build: 只构建静态站并拷进 pkg/site/dist（嵌入式副本），不需要 CLI 二进制。
+# `cli` 依赖它，因为 pkg/site/site.go 用 //go:embed all:dist 把官网打进二进制——
+# 与 pkg/web/dist 完全同款顺序：先有产物，再 go build。
+site-build:
+	cd $(SITE_DIR) && pnpm install --frozen-lockfile
+	cd $(SITE_DIR) && ASTRO_TELEMETRY_DISABLED=1 pnpm build
+	rm -rf pkg/site/dist
+	cp -rf $(SITE_DIR)/dist pkg/site/dist
+
+# site: 完整站点流程。先有二进制（cli 会连带 site-build），再重生成文档与 Go 侧
+# 旧 SPA 路由表，最后构建、拷贝、自检。
+site: cli
+	cd $(SITE_DIR) && TONGSTOCK_BIN=$(SITE_BIN) ASTRO_TELEMETRY_DISABLED=1 pnpm gen
+	cd $(SITE_DIR) && ASTRO_TELEMETRY_DISABLED=1 pnpm build
+	rm -rf pkg/site/dist
+	cp -rf $(SITE_DIR)/dist pkg/site/dist
+	cd $(SITE_DIR) && node scripts/check-links.mjs
+
+# 只校验不写盘：生成物（含 Go 侧旧 SPA 路由表）是否与仓库现状一致。
+site-check:
+	cd $(SITE_DIR) && TONGSTOCK_BIN=$(SITE_BIN) pnpm gen:check
+	cd $(SITE_DIR) && node scripts/check-links.mjs

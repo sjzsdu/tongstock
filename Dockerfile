@@ -12,15 +12,23 @@ ARG GOPROXY=https://goproxy.cn,direct
 ARG PICOCLAW_REPO=https://github.com/sjzsdu/picoclaw.git
 ARG PICOCLAW_PIN=1f8286e5e91187a1d978d0a1869d9ddb5a1d9c9c
 
-# ---- Stage 1: 前端构建 ----
-# web/ 使用 pnpm（pnpm-lock.yaml + pnpm-workspace.yaml），没有 package-lock.json
-FROM node:20-bookworm AS web-builder
+# ---- Stage 1: 前端与官网构建 ----
+# web/ 与 site/ 都用 pnpm（各自带 pnpm-lock.yaml），没有 package-lock.json。
+# Node 24：Astro 7 的硬下界是 22.23.4，固定大版本 24 避免再被 patch 拖累。
+FROM node:24-bookworm AS web-builder
 RUN npm install -g pnpm@10
 WORKDIR /src/web
 COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY web/ ./
-RUN pnpm run build
+# 自托管布局：应用挂在 /app/ 下（官网占根），产物里的资源前缀必须是 /app/。
+RUN VITE_BASE_PATH=/app/ pnpm run build
+
+WORKDIR /src/site
+COPY site/package.json site/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY site/ ./
+RUN ASTRO_TELEMETRY_DISABLED=1 pnpm run build
 
 # ---- Stage 2: Go 构建（mattn/go-sqlite3 需要 CGO，不能用 CGO_ENABLED=0）----
 FROM golang:1.25.13-bookworm AS go-builder
@@ -39,8 +47,9 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-# 前端产物拷进 pkg/web/dist（与 make web 的行为一致，go:embed 需要）
+# 前端产物拷进 pkg/web/dist 与 pkg/site/dist（与 make cli 的行为一致，go:embed 需要）
 COPY --from=web-builder /src/web/dist ./pkg/web/dist
+COPY --from=web-builder /src/site/dist ./pkg/site/dist
 RUN go build -o /out/tongstock ./cmd/cli
 
 # ---- Stage 3: 运行时 ----

@@ -4,11 +4,11 @@ TongStock 围绕两个问题组织产品：**今天买什么，以及持仓什�
 
 ## 三步使用
 
-1. 在首页输入股票代码、已知方法名称或自然语言研究问题，例如“研究 000063 最近上涨前的共同特征”。
+1. 打开 `http://localhost:8106/app/`（**应用首页**；`/` 是官网），输入股票代码、已知方法名称或自然语言研究问题，例如“研究 000063 最近上涨前的共同特征”。
 2. 查看“今日决策”。候选会同时展示真实数据日期、方法证据、买入窗口、仓位上限和退出计划；空榜单表示当前没有方法通过门槛。
 3. 在“持仓卖出”查看 `hold/watch/reduce/exit`。旧持仓没有原始方法血缘时会明确标为 `inferred`，停牌或 T+1 时不会假装已经卖出。
 
-“我的选股方法”位于 `/methods`，“高级研究与管理”位于 `/methods/advanced`。范式库和范式监控已归入高级研究入口，`/paradigms` 与 `/monitoring` 路由仍保留；信号筛选等工具仍保留在“行情工具”菜单，用于审计而不是普通用户主流程。API 契约见 `api/openapi.json`，Web 端说明见 [web/README.md](web/README.md)。
+“我的选股方法”位于 `/app/methods`，“高级研究与管理”位于 `/app/methods/advanced`。范式库和范式监控已归入高级研究入口，`/app/paradigms` 与 `/app/monitoring` 路由仍保留；信号筛选等工具仍保留在“行情工具”菜单，用于审计而不是普通用户主流程。API 契约见 `api/openapi.json`，Web 端说明见 [web/README.md](web/README.md)，官网与文档站见 [site/README.md](site/README.md)。
 
 方法的验证口径属于方法本身：候选可以由 AI/provider 分别提出观察窗口、目标幅度、价格基准和成功条件，验证统计的是该窗口内的目标命中率；它不再把 20 个交易日或“收盘价达到”当成全局默认。当前兼容模板会明确标记为确定性 fallback。方法股票池同样是结构化范围（如市值上下限、板块、是否排除 ST）；最新筛选使用当前市值，历史验证没有点时市值序列时会 fail-closed，不用今天的市值回填过去。
 
@@ -42,12 +42,23 @@ git clone https://github.com/sjzsdu/tongstock.git
 cd tongstock
 
 # 安装依赖并构建（需要 Go 1.25+、Node.js 22+ 和 pnpm 10）
+# make cli 会依次：构建官网（site/dist）、构建 Web UI（web/dist）、把两者嵌入二进制。
+# 两处的 pnpm 依赖会在目标里自动安装。
 cd web && pnpm install --frozen-lockfile && cd ..
 make cli
 
-# 启动 HTTP 服务
+# 启动 HTTP 服务（官网 + 文档 + Web UI + API 同一个进程）
 ./tongstock serve
 ```
+
+启动后：
+
+- `http://localhost:8106/` —— 官网
+- `http://localhost:8106/docs/` —— 使用文档
+- `http://localhost:8106/app/` —— Web UI
+- `http://localhost:8106/api/…` 与 `/health` —— 接口与健康检查
+
+运行时不需要 Node：官网与界面的产物都通过 `//go:embed` 打进二进制了。
 
 ## Skill 使用（推荐）
 
@@ -66,11 +77,26 @@ npx skills add sjzsdu/tongstock
 
 **提示**：首次使用需确保 TongStock 服务已启动（`./tongstock serve`）。内置默认端口是 `8106`（见 `pkg/config/config.go` 的 `DefaultConfig`），实际端口以 `~/.tongstock/config.yaml` 的 `server.port` 为准：配置为 `6565` 时服务地址就是 `http://localhost:6565`。
 
-## Web UI
+## 官网与 Web UI（入口已变更）
 
-启动服务后访问 `http://localhost:<server.port>` 即可使用 Web 界面（内置默认 `8106`，以 `~/.tongstock/config.yaml` 为准）。
+`./tongstock serve` 一个进程同时提供三样东西（同域、无需 Node）：
 
-### 功能页面
+| 路径 | 内容 |
+|------|------|
+| `/` | **官网**（产品介绍、特性、文档入口） |
+| `/docs/**` | 使用文档（安装、CLI、HTTP API、数据口径、部署运维） |
+| `/app/**` | Web UI（原来的界面） |
+| `/api/**` | REST 接口（远程访问需 Bearer 令牌） |
+| `/health` | 健康检查 |
+
+> **入口变了**：以前打开 `http://localhost:8106/` 直接就是 Web UI，现在是**官网**；Web UI 搬到了 `http://localhost:8106/app/`。
+> 旧深链（例如 `/stock/000519`、`/news`）会自动 302 到 `/app/stock/000519`、`/app/news`，外链与书签不会失效。
+
+端口仍是内置默认 `8106`，以 `~/.tongstock/config.yaml` 的 `server.port` 为准。官网与静态资源保持公开；`/api` 在非本机访问时仍要求令牌（见「HTTP API 使用方法」）。
+
+### Web UI 功能页面
+
+下表路径是**应用内**路径；从浏览器访问时实际地址是 `http://localhost:8106/app` + 该路径。
 
 | 页面 | 路径 | 功能 |
 |------|------|------|

@@ -1,0 +1,78 @@
+{
+  "_generated": "由 site/scripts/gen-api-docs.mjs 与 gen-cli-docs.mjs 生成，请勿手工编辑。",
+  "stats": {
+    "apiPaths": 151,
+    "httpOperations": 159,
+    "klineTypes": 10,
+    "indicatorFamilies": 6,
+    "webPages": 20,
+    "newsSources": 9,
+    "cliTopLevel": 27
+  },
+  "statRules": {
+    "apiPaths": "openapi.json 里 paths 的条目数（api/openapi.json）",
+    "httpOperations": "openapi.json 里方法×路径的组合数（同一个 path 上的 GET/POST 分别计数）",
+    "klineTypes": "pkg/tdx/service.go 的 ParseKlineType 分支数（每行首个字符串视为规范名）",
+    "indicatorFamilies": "pkg/ta/types.go 的 IndicatorType 常量数 + 量比（VolumeRatio 字段）",
+    "webPages": "web/src/App.tsx 中的 <Route path> 数，排除 \"*\" 兜底",
+    "newsSources": "pkg/newsfeed/sources/*.go 的实现文件数，排除 *_test.go、sources.go、browser_*",
+    "cliTopLevel": "tongstock --help 输出的 Available Commands 数（由 scripts/gen-cli-docs.mjs 写入）"
+  },
+  "apiGroups": [
+    {
+      "id": "health",
+      "title": "健康检查",
+      "endpoints": 5
+    },
+    {
+      "id": "market",
+      "title": "行情与基础数据",
+      "endpoints": 33
+    },
+    {
+      "id": "bars",
+      "title": "K 线、分时与分笔",
+      "endpoints": 9
+    },
+    {
+      "id": "signals",
+      "title": "指标与信号筛选",
+      "endpoints": 8
+    },
+    {
+      "id": "company",
+      "title": "财务与公司",
+      "endpoints": 5
+    },
+    {
+      "id": "methods",
+      "title": "方法与选股",
+      "endpoints": 23
+    },
+    {
+      "id": "paradigm",
+      "title": "范式、监控与前向跟踪",
+      "endpoints": 29
+    },
+    {
+      "id": "position",
+      "title": "持仓决策与设置",
+      "endpoints": 5
+    },
+    {
+      "id": "news",
+      "title": "资讯",
+      "endpoints": 26
+    },
+    {
+      "id": "agent",
+      "title": "Agent",
+      "endpoints": 11
+    },
+    {
+      "id": "other",
+      "title": "其他",
+      "endpoints": 5
+    }
+  ]
+}

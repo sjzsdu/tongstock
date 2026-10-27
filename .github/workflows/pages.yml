@@ -1,5 +1,13 @@
 name: Pages
 
+# 单站点布局（A 方案）：
+#   <base>/          官网 + 文档（site/dist）
+#   <base>/app/      现有 Web UI（web/dist，VITE_BASE_PATH=<base>app/）
+#   <base>/404.html  根 404 分流：应用深链与旧 SPA 深链都在这里转到还原入口
+#
+# 部署位置不写死：base 从仓库名推导，origin 从 owner 推导，二者都可用 repo variables 覆盖。
+# 变量表见 site/README.md 与 site/src/content/docs/docs/ops/deploy.md。
+
 on:
   push:
     branches: [main, master]
@@ -16,11 +24,20 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy web to GitHub Pages
+    name: Deploy site + web to GitHub Pages
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    env:
+      # vars.SITE_URL 未设置时回退到 <owner>.github.io；不写死任何账户名。
+      SITE_URL: ${{ vars.SITE_URL || format('https://{0}.github.io', github.repository_owner) }}
+      # vars.SITE_BASE 未设置时回退到 /<repo>/，仓库名不硬编码。
+      SITE_BASE: ${{ vars.SITE_BASE || format('/{0}/', github.event.repository.name) }}
+      # 留空时站点侧默认指向 <SITE_URL><SITE_BASE>app/；指到内网实例时在此覆盖。
+      APP_URL: ${{ vars.APP_URL }}
+      REPO_URL: ${{ vars.REPO_URL || format('{0}/{1}', github.server_url, github.repository) }}
+      ASTRO_TELEMETRY_DISABLED: '1'
     steps:
       - uses: actions/checkout@v4
 
@@ -32,22 +49,46 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          # Astro 7 要求 >=22.23.4；写裸 '22' 会解析到旧 patch（22.23.3）直接卡死。
+          # 24 是满足要求且不会再被 patch 拖累的 LTS 大版本。
+          node-version: '24'
           cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+          cache-dependency-path: |
+            web/pnpm-lock.yaml
+            site/pnpm-lock.yaml
 
-      - name: Install dependencies
+      - name: Install web dependencies
         working-directory: web
         run: pnpm install --frozen-lockfile
 
-      - name: Build static web
+      - name: Install site dependencies
+        working-directory: site
+        run: pnpm install --frozen-lockfile
+
+      - name: Build static web (base ${{ env.SITE_BASE }}app/)
         working-directory: web
         env:
-          VITE_BASE_PATH: /${{ github.event.repository.name }}/
+          VITE_BASE_PATH: ${{ format('{0}app/', env.SITE_BASE) }}
         run: pnpm build
 
-      - name: Add SPA fallback
-        run: cp web/dist/index.html web/dist/404.html
+      - name: Build site (base ${{ env.SITE_BASE }})
+        working-directory: site
+        run: pnpm build
+
+      - name: Assemble Pages artifact
+        working-directory: site
+        run: |
+          node scripts/assemble-pages.mjs \
+            --site-dist=dist \
+            --web-dist=../web/dist \
+            --out=../pages-dist \
+            --base="${SITE_BASE}" \
+            --app-path=app \
+            --routes-file=../web/src/App.tsx
+
+      - name: Verify Pages routing semantics
+        working-directory: site
+        run: node scripts/check-pages.mjs --root=../pages-dist --base="${SITE_BASE}"
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
@@ -55,7 +96,7 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: web/dist
+          path: pages-dist
 
       - name: Deploy to GitHub Pages
         id: deployment

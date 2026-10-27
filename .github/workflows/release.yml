@@ -23,7 +23,10 @@ jobs:
           - os: ubuntu-24.04-arm
             goos: linux
             goarch: arm64
-          - os: macos-13
+          # macos-13 已被 GitHub 退役（actionlint: label is unknown）。
+          # 这里跑在 macos-14（arm64）上交叉编译 darwin/amd64：CGO_ENABLED=0 且 GOARCH
+          # 显式指定，产物架构只由 GOARCH 决定，不受 runner 架构影响。
+          - os: macos-14
             goos: darwin
             goarch: amd64
           - os: macos-14
@@ -58,9 +61,13 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          # Astro 7 要求 >=22.23.4；写裸 '22' 会解析到旧 patch（22.23.3）直接卡死。
+          # 24 是满足要求且不会再被 patch 拖累的 LTS 大版本。
+          node-version: '24'
           cache: pnpm
-          cache-dependency-path: tongstock/web/pnpm-lock.yaml
+          cache-dependency-path: |
+            tongstock/web/pnpm-lock.yaml
+            tongstock/site/pnpm-lock.yaml
 
       - name: Resolve version
         id: version
@@ -78,6 +85,8 @@ jobs:
 
       - name: Build web
         working-directory: tongstock/web
+        env:
+          VITE_BASE_PATH: /app/
         run: pnpm build
 
       - name: Prepare embedded web assets
@@ -86,6 +95,23 @@ jobs:
         run: |
           rm -rf pkg/web/dist
           cp -r web/dist pkg/web/dist
+
+      - name: Install site dependencies
+        working-directory: tongstock/site
+        run: pnpm install --frozen-lockfile
+
+      - name: Build site
+        working-directory: tongstock/site
+        env:
+          ASTRO_TELEMETRY_DISABLED: '1'
+        run: pnpm build
+
+      - name: Prepare embedded site assets
+        working-directory: tongstock
+        shell: bash
+        run: |
+          rm -rf pkg/site/dist
+          cp -r site/dist pkg/site/dist
 
       - name: Build package
         working-directory: tongstock

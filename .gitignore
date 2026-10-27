@@ -9,6 +9,7 @@ tongstock-server
 tongstock-menubar
 /server
 pkg/web/dist
+pkg/site/dist
 tmp
 
 # Web dependencies
@@ -44,3 +45,6 @@ web/dist/
 
 # Local runtime state (manual exports, scratch data)
 /state/
+
+# GitHub Pages 组装产物（site/dist + web/dist 合并，由 site/scripts/assemble-pages.mjs 生成）
+/pages-dist/

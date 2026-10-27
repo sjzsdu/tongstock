@@ -1,0 +1,28 @@
+{
+  "name": "tongstock-site",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "TongStock 官网站点：落地页与使用文档。与仓库其余部分完全隔离，产物 site/dist 不入版本库。",
+  "scripts": {
+    "dev": "astro dev",
+    "start": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "gen:api": "node scripts/gen-api-docs.mjs",
+    "gen:cli": "node scripts/gen-cli-docs.mjs",
+    "gen": "node scripts/gen-api-docs.mjs && node scripts/gen-cli-docs.mjs && node scripts/gen-legacy-routes.mjs",
+    "gen:check": "node scripts/gen-api-docs.mjs --check && node scripts/gen-cli-docs.mjs --check && node scripts/gen-legacy-routes.mjs --check",
+    "check:links": "node scripts/check-links.mjs",
+    "check": "node scripts/gen-api-docs.mjs --check && node scripts/gen-cli-docs.mjs --check && astro build && node scripts/check-links.mjs",
+    "verify": "node scripts/gen-api-docs.mjs --check && node scripts/gen-cli-docs.mjs --check && astro build && node scripts/check-links.mjs"
+  },
+  "dependencies": {
+    "@astrojs/sitemap": "^3.7.4",
+    "@astrojs/starlight": "^0.42.7",
+    "astro": "^7.4.2"
+  },
+  "devDependencies": {
+    "sharp": "^0.35.5"
+  }
+}

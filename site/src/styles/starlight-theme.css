@@ -1,0 +1,35 @@
+/**
+ * Starlight 品牌色覆盖。
+ * 只调整变量，不改布局：文档站要保持「读得下去」的默认密度，
+ * 视觉冲击留给落地页。
+ */
+
+:root {
+  --sl-color-accent-low: #10233f;
+  --sl-color-accent: #2f6fed;
+  --sl-color-accent-high: #bcd4ff;
+
+  --sl-color-white: #ffffff;
+  --sl-color-gray-1: #e8edf6;
+  --sl-color-gray-2: #c2cbdb;
+  --sl-color-gray-3: #8d99ae;
+  --sl-color-gray-4: #55627a;
+  --sl-color-gray-5: #29344a;
+  --sl-color-gray-6: #161e2e;
+  --sl-color-black: #0b1220;
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent-low: #dbe7ff;
+  --sl-color-accent: #1f5fe0;
+  --sl-color-accent-high: #10306e;
+}
+
+/* 强调「代码即事实」：行内代码与表格在浅色/深色下都保持可读边界。 */
+.sl-markdown-content code:not(:where(.not-content *)) {
+  border-radius: 4px;
+}
+
+.sl-markdown-content table:not(:where(.not-content *)) {
+  font-size: var(--sl-text-sm);
+}

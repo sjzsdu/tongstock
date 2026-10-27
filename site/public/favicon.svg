@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="TongStock">
+  <rect width="64" height="64" rx="12" fill="#0b1220"/>
+  <path d="M10 44 L22 30 L31 37 L44 18" fill="none" stroke="#2f6fed" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="44" cy="18" r="4.5" fill="#16c39a"/>
+</svg>
