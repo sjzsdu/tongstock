@@ -33,6 +33,33 @@ describe('restoreAppPath', () => {
     expect(restoreAppPath(`?${APP_PATH_PARAM}=`, BASE)).toBeNull();
     expect(restoreAppPath(`?${APP_PATH_PARAM}=${encodeURIComponent('/')}`, BASE)).toBeNull();
   });
+
+  // __app_path 是外部可控输入：越界的值必须当作「没有还原目标」，
+  // 不能把 SPA 路由写到 base 之外（更不能变成跨源）。
+  it('越界的 .. 段返回 null', () => {
+    for (const evil of [
+      '../evil',
+      '../',
+      'stock/../../etc/passwd',
+      '%2e%2e/%2e%2e/etc/passwd',
+      '..%2f..%2fetc%2fpasswd',
+      'stock/%2e%2e/%2e%2e/admin',
+    ]) {
+      expect(restoreAppPath(`?${APP_PATH_PARAM}=${encodeURIComponent(evil)}`, BASE)).toBeNull();
+    }
+  });
+
+  it('仍在 base 内的 .. 段按 URL 语义归一', () => {
+    const search = `?${APP_PATH_PARAM}=${encodeURIComponent('stock/../news')}`;
+    expect(restoreAppPath(search, BASE)).toBe('/tongstock/app/news');
+  });
+
+  it('协议相对写法不会变成跨源', () => {
+    const search = `?${APP_PATH_PARAM}=${encodeURIComponent('//evil.com/x')}`;
+    const restored = restoreAppPath(search, BASE);
+    expect(restored).toBe('/tongstock/app/evil.com/x');
+    expect(restored?.startsWith('//')).toBe(false);
+  });
 });
 
 describe('applyRestoredAppPath', () => {

@@ -54,7 +54,10 @@ export function createPagesHandler({ root, base }) {
 
   return (req, res) => {
     const url = req.url || '/';
-    const [pathname] = url.split('?');
+    // 单独切 query：`url.split('?')` 在出现多个 ? 时会丢尾部，而 301 需要原样透传 search。
+    const queryIndex = url.indexOf('?');
+    const pathname = queryIndex >= 0 ? url.slice(0, queryIndex) : url;
+    const rawQuery = queryIndex >= 0 ? url.slice(queryIndex + 1) : '';
 
     if (!pathname.startsWith(normalizedBase)) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -85,9 +88,12 @@ export function createPagesHandler({ root, base }) {
 
     if (existsSync(target) && statSync(target).isFile()) return send(target);
 
-    // `/x` 且 x/ 目录存在 → 301 到 `/x/`（Pages 对目录就是这么处理的）
+    // `/x` 且 x/ 目录存在 → 301 到 `/x/`（Pages 对目录就是这么处理的）。
+    // search 原样透传：真实 Pages 的重定向会保留 query，这里对齐，避免本地测过、
+    // 线上却把筛选参数丢掉。
     if (existsSync(target) && statSync(target).isDirectory()) {
-      const location = `${pathname}/`.replace(/\/{2,}/g, '/');
+      const suffix = rawQuery ? `?${rawQuery}` : '';
+      const location = `${pathname}/`.replace(/\/{2,}/g, '/') + suffix;
       res.writeHead(301, { Location: location });
       res.end();
       return;

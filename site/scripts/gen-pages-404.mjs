@@ -54,6 +54,17 @@ function escapeHtml(text) {
     .replace(/"/g, '&quot;');
 }
 
+/**
+ * 把值序列化成**能安全放进 <script> 里**的 JS 字面量。
+ *
+ * `JSON.stringify` 不转义 `<`，所以值里一旦出现 `</script` 就会提前闭合内联脚本
+ * （其余内容变成页面上的 HTML/JS）。这里把 `<` 全部写成 `\u003c`，语义不变但
+ * 浏览器再也拼不出闭合标签。
+ */
+function jsString(value) {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
 /** 渲染 404.html：页面内容先正常显示，脚本只在需要分流时才 replace。 */
 export function render404({ base, appPath, routes }) {
   const normalizedBase = base.endsWith('/') ? base : `${base}/`;
@@ -61,7 +72,7 @@ export function render404({ base, appPath, routes }) {
   const appBase = `${normalizedBase}${normalizedAppPath}/`;
   // 正则以字符串数组注入，运行时 new RegExp：直接写 `/^\/x\/?$/` 这类字面量时，
   // 路由里的 `/` 会提前闭合字面量，产出 "Invalid regular expression flags"。
-  const legacySources = routes.map((route) => JSON.stringify(routeToRegexSource(route)));
+  const legacySources = routes.map((route) => jsString(routeToRegexSource(route)));
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -116,9 +127,9 @@ export function render404({ base, appPath, routes }) {
 
     <script>
       (function () {
-        var base = ${JSON.stringify(normalizedBase)};
-        var appBase = ${JSON.stringify(appBase)};
-        var param = ${JSON.stringify(APP_PATH_PARAM)};
+        var base = ${jsString(normalizedBase)};
+        var appBase = ${jsString(appBase)};
+        var param = ${jsString(APP_PATH_PARAM)};
         var legacySources = [${legacySources.join(', ')}];
         var legacy = legacySources.map(function (pattern) { return new RegExp(pattern); });
 

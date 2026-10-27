@@ -13,7 +13,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { startPagesServer } from './pages-serve.mjs';
-import { APP_PATH_PARAM, parseRoutes, routeToRegexSource } from './gen-pages-404.mjs';
+import { APP_PATH_PARAM, parseRoutes, render404, routeToRegexSource } from './gen-pages-404.mjs';
 
 function parseArgs(argv) {
   const args = {};
@@ -91,6 +91,7 @@ async function main() {
     // 2. 文档深链（带尾斜杠 + 不带尾斜杠两种）
     const docSlash = await get(`${normalizedBase}docs/api/endpoints/`);
     const docBare = await get(`${normalizedBase}docs/api/endpoints`);
+    const docBareWithQuery = await get(`${normalizedBase}docs/api/endpoints?x=1&y=2`);
     check('2a. /docs/api/endpoints/ 直出', () => {
       assert(docSlash.status === 200, `状态 ${docSlash.status}`);
       assert(docSlash.body.includes('端点参考'), '正文里没有「端点参考」');
@@ -103,6 +104,14 @@ async function main() {
         `Location 应为 ${normalizedBase}docs/api/endpoints/，实际 ${docBare.location}`,
       );
       return `301 → ${docBare.location}`;
+    });
+    check('2c. 目录 301 保留 search', () => {
+      assert(docBareWithQuery.status === 301, `期望 301，实际 ${docBareWithQuery.status}`);
+      assert(
+        docBareWithQuery.location === `${normalizedBase}docs/api/endpoints/?x=1&y=2`,
+        `Location 应保留 query，实际 ${docBareWithQuery.location}`,
+      );
+      return `301 → ${docBareWithQuery.location}`;
     });
 
     // 3. 应用首页
@@ -172,6 +181,19 @@ async function main() {
         );
       }
       return `${routes.length} 条旧路由全部命中`;
+    });
+    check('7c. 404 生成器转义了 </script（防闭合）', () => {
+      // base 是构建期配置，但生成器不该假设它「一定不含危险字符」：
+      // 注入 </script> 后，产物里应只剩模板自带的那个闭合标签。
+      const evil = render404({
+        base: '/x</script><script>alert(1)</script>',
+        appPath: 'app',
+        routes: ['/stock/:code'],
+      });
+      const closers = (evil.match(/<\/script>/gi) ?? []).length;
+      assert(closers === 1, `期望只有 1 个 </script> 闭合标签，实际 ${closers}`);
+      assert(!evil.includes('<script>alert(1)'), '注入的 <script> 没有被转义');
+      return `注入 </script> 后闭合标签仍只有 ${closers} 个`;
     });
   } finally {
     await new Promise((done) => server.close(done));
