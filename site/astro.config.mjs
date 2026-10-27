@@ -5,12 +5,43 @@ import sitemap from '@astrojs/sitemap';
 import baseLinks from './src/integrations/base-links.mjs';
 
 /**
- * 站点部署位置尚未定案（阶段 3 待人类拍板），所以 base 与站点域名都从环境变量取：
- *   SITE_URL=https://example.com SITE_BASE=/tongstock pnpm build
- * 默认按“站点部署在域名根”构建，本地预览与 CI 都不需要额外变量。
+ * 部署位置全部来自构建期环境变量，默认值只服务本地开发与“站点在域名根”的场景：
+ *   SITE_URL   站点 origin（默认 https://sjzsdu.github.io）
+ *   SITE_BASE  部署子路径（默认 /；GitHub Pages 上是 /<repo>/）
+ *
+ * 变量表见 site/README.md 与 docs/ops/deploy.md。这里只做规范化与防呆，不写死任何地址。
  */
-const siteUrl = process.env.SITE_URL || 'https://sjzsdu.github.io';
-const base = process.env.SITE_BASE || '/';
+const rawSiteUrl = process.env.SITE_URL?.trim() || 'https://sjzsdu.github.io';
+const rawBase = process.env.SITE_BASE?.trim() ?? '';
+
+/** 子路径规范化为 `/` 开头、`/` 结尾；空串归一成根路径。 */
+function normalizeBase(input) {
+  const trimmed = input.trim();
+  if (!trimmed || trimmed === '/') return '/';
+  const withLeading = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  return withLeading.endsWith('/') ? withLeading : `${withLeading}/`;
+}
+
+let parsedSite;
+try {
+  parsedSite = new URL(rawSiteUrl);
+} catch {
+  throw new Error(`SITE_URL 不是合法 URL：${rawSiteUrl}（示例：https://sjzsdu.github.io）`);
+}
+
+// 防呆：origin 里带路径、SITE_BASE 却没设，是最容易出的一类自相矛盾配置
+// （结果会是 base 落在 `/`，而社交卡片/canonical 指向带路径的 origin）。
+const sitePath = parsedSite.pathname.replace(/\/+$/, '');
+if (sitePath && (rawBase === '' || normalizeBase(rawBase) === '/')) {
+  throw new Error(
+    `SITE_URL 带了路径（${sitePath}）但 SITE_BASE 未设置。请二选一：` +
+      '把路径挪到 SITE_BASE（SITE_URL=https://host SITE_BASE=/repo/），' +
+      '或把 SITE_URL 改成纯 origin（https://host）。',
+  );
+}
+
+const siteUrl = parsedSite.origin;
+const base = normalizeBase(rawBase || '/');
 
 export default defineConfig({
   site: siteUrl,
@@ -34,12 +65,12 @@ export default defineConfig({
         {
           icon: 'github',
           label: 'GitHub',
-          href: 'https://github.com/sjzsdu/tongstock',
+          href: process.env.REPO_URL?.trim() || 'https://github.com/sjzsdu/tongstock',
         },
       ],
       customCss: ['./src/styles/starlight-theme.css'],
       editLink: {
-        baseUrl: 'https://github.com/sjzsdu/tongstock/edit/master/site/',
+        baseUrl: `${(process.env.REPO_URL?.trim() || 'https://github.com/sjzsdu/tongstock').replace(/\/+$/, '')}/edit/master/site/`,
       },
       sidebar: [
         {

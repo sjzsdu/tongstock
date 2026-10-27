@@ -44,13 +44,39 @@ Markdown 的相对链接按“源文件路径”解析，而 Astro 输出的是�
 
 部署到子路径时，`src/integrations/base-links.mjs` 会在构建后统一给站内绝对链接补前缀，不需要改 Markdown。
 
-## 部署（尚未接线）
+## 部署（A 方案：单 Pages 站点，官网占根）
 
-部署方案（单 Pages 站点 / 独立托管 / 子路径）留给人类拍板，本分支**不改任何 workflow**。构建时可用两个环境变量适配任意位置：
+`https://<owner>.github.io/<repo>/` = 官网 + 文档，`/<repo>/app/` = 现有 Web UI，根 `/<repo>/404.html` 负责深链分流。`.github/workflows/pages.yml` 是唯一相关的 workflow。
+
+部署位置全部来自构建期变量（`site.ts` 只提供默认值），GitHub 侧用 repo variables 覆盖，完整的变量表（名称/默认值/作用/改哪里）见文档站 `docs/ops/deploy/` 与源码 `src/config/site.ts` 的注释：
+
+| 变量 | 默认值 | 作用 |
+| --- | --- | --- |
+| `SITE_URL` | `https://<owner>.github.io` | 站点 origin（canonical / og:image / sitemap） |
+| `SITE_BASE` | `/<repo>/` | 部署子路径，同时决定 Astro `base` 与 `VITE_BASE_PATH` |
+| `APP_URL` | `<SITE_URL><SITE_BASE>app/` | 主 CTA 落点，可指向任意实例（含内网） |
+| `REPO_URL` | `https://github.com/sjzsdu/tongstock` | 仓库及衍生链接的基址 |
+| `ASTRO_TELEMETRY_DISABLED` | `1` | 关闭 Astro 遥测（CI 必需） |
+
+换位置只改变量、不改代码：
 
 ```bash
-SITE_URL=https://example.com SITE_BASE=/tongstock pnpm build
+SITE_URL=https://example.com SITE_BASE=/repo/ APP_URL=https://inner.local:8106/ pnpm build
 ```
+
+`astro.config.mjs` 会拒绝「`SITE_URL` 带路径但 `SITE_BASE` 留空」这种自相矛盾配置。
+
+### 本地复现 Pages 布局并验收深链
+
+```bash
+pnpm build                                                   # 需要 SITE_BASE=/tongstock/
+cd ../web && VITE_BASE_PATH=/tongstock/app/ pnpm build && cd ../site
+node scripts/assemble-pages.mjs --site-dist=dist --web-dist=../web/dist \
+  --out=../pages-dist --base=/tongstock/ --app-path=app
+node scripts/check-pages.mjs --root=../pages-dist --base=/tongstock/
+```
+
+`assemble-pages.mjs` 把 `site/dist` 放到根、`web/dist` 放进 `app/`、并生成根 `404.html`；`check-pages.mjs` 起一个**模拟 Pages 语义**的服务器（不存在路径 → 根 404.html + 状态 404），逐条断言官网首页、文档深链（带/不带尾斜杠）、`/app/`、`/app/stock/000001` 刷新、旧深链 `/stock/000001` 重定向，以及两端参数名/旧路由表不漂移。
 
 ## 自检脚本做了什么
 
