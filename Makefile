@@ -1,6 +1,6 @@
 .PHONY: all web cli server install clean run check \
 	fmt-check go-check go-arch-check go-migration-check web-check quality-check \
-	docker-build docker-push
+	docker-build docker-push site site-check
 
 # Default to ~/.local/bin for installation, which is the standard user binary directory
 # Users can override with BINDIR environment variable if needed
@@ -84,3 +84,21 @@ docker-build:
 docker-push: docker-build
 	docker push $(DOCKER_IMAGE):latest
 	docker push $(DOCKER_IMAGE):$(DOCKER_TAG)
+
+# 官网站点（site/）：完全隔离的一套工具链，不进入上面的 check 门禁。
+# 先构建 CLI 二进制，因为文档里的命令与参数表由 `tongstock --help` 实跑生成，
+# 端点表由 api/openapi.json 生成——两者都不允许手写。
+# 产物在 site/dist/（已 gitignore），部署位置未定，本目标只保证“本地可构建”。
+SITE_DIR := site
+SITE_BIN := $(CURDIR)/$(CLI_BIN)
+
+site: cli
+	cd $(SITE_DIR) && pnpm install --frozen-lockfile
+	cd $(SITE_DIR) && TONGSTOCK_BIN=$(SITE_BIN) ASTRO_TELEMETRY_DISABLED=1 pnpm gen
+	cd $(SITE_DIR) && ASTRO_TELEMETRY_DISABLED=1 pnpm build
+	cd $(SITE_DIR) && node scripts/check-links.mjs
+
+# 只校验不写盘：生成物是否与仓库现状一致（需要已有的 CLI 二进制与 site/dist）。
+site-check:
+	cd $(SITE_DIR) && TONGSTOCK_BIN=$(SITE_BIN) pnpm gen:check
+	cd $(SITE_DIR) && node scripts/check-links.mjs

@@ -1,0 +1,939 @@
+---
+import { site } from '../config/site';
+import generated from '../data/generated.json';
+
+const stats = generated.stats;
+---
+
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{site.name} · {site.tagline}</title>
+    <meta name="description" content={site.description} />
+    <meta name="theme-color" content="#0b1220" />
+    <link rel="icon" href={`${import.meta.env.BASE_URL}favicon.png`} />
+    <link rel="canonical" href={new URL(import.meta.env.BASE_URL, Astro.site ?? 'https://sjzsdu.github.io').toString()} />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={site.name} />
+    <meta property="og:title" content={`${site.name} · ${site.tagline}`} />
+    <meta property="og:description" content={site.description} />
+    <meta property="og:image" content={`${import.meta.env.BASE_URL}og.png`} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={`${site.name} · ${site.tagline}`} />
+    <meta name="twitter:description" content={site.description} />
+    <meta name="twitter:image" content={`${import.meta.env.BASE_URL}og.png`} />
+
+    <script
+      type="application/ld+json"
+      set:html={JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'SoftwareApplication',
+        name: site.name,
+        description: site.description,
+        applicationCategory: 'FinanceApplication',
+        operatingSystem: 'Linux, macOS, Windows, Docker',
+        license: 'https://opensource.org/licenses/MIT',
+        url: site.repoUrl,
+        offers: { '@type': 'Offer', price: '0', priceCurrency: 'CNY' },
+      })}
+    />
+  </head>
+
+  <body>
+    <a class="skip" href="#main">跳到正文</a>
+
+    <header class="nav">
+      <div class="wrap nav-inner">
+        <a class="brand" href={import.meta.env.BASE_URL}>
+          <img src={`${import.meta.env.BASE_URL}favicon.png`} alt="" width="22" height="22" />
+          <span>{site.name}</span>
+        </a>
+        <nav class="nav-links">
+          <a href="#features">特性</a>
+          <a href={site.docsPath}>文档</a>
+          <a href={`${site.docsPath}api/endpoints/`}>API</a>
+          <a href={site.repoUrl} target="_blank" rel="noreferrer">GitHub</a>
+        </nav>
+        <a class="btn btn-primary btn-sm" href={site.appUrl}>进入控制台</a>
+      </div>
+    </header>
+
+    <main id="main">
+      <!-- 1. Hero -->
+      <section class="hero">
+        <div class="wrap hero-inner">
+          <div class="hero-copy">
+            <p class="eyebrow">自托管 · MIT · Go + React</p>
+            <h1>{site.tagline}</h1>
+            <p class="lede">
+              AI 提出投资规律，确定性引擎用真实 A 股数据编译、冻结、回测并审查证据。
+              <strong>证据不足时，系统拒绝推荐。</strong>
+            </p>
+            <div class="cta-row">
+              <a class="btn btn-primary" href={site.appUrl}>进入控制台</a>
+              <a class="btn btn-ghost" href={`${site.docsPath}getting-started/install/`}>十分钟跑起来</a>
+            </div>
+            <p class="cta-note">{site.appUrlNote}</p>
+          </div>
+
+          <div class="hero-term" aria-label="终端示例">
+            <div class="term-bar"><span></span><span></span><span></span><em>bash</em></div>
+            <pre><code><span class="d">$</span> make cli
+<span class="d">$</span> ./tongstock serve
+  <span class="m">监听 http://127.0.0.1:8106</span>
+
+<span class="d">$</span> ./tongstock quote 000001
+  <span class="m">000001 平安银行</span>
+  最新价: 12.350   开盘: 12.200
+  最高: 12.400     最低: 12.150
+
+<span class="d">$</span> ./tongstock indicator --code 000001 --json
+  <span class="m">&#123; "ma": &#123; "trend": "bullish" &#125;,
+    "macd": &#123; "signal": "golden_cross" &#125;,
+    "signals": ["golden_cross", "多头排列"] &#125;</span></code></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. 痛点对照 -->
+      <section class="contrast">
+        <div class="wrap contrast-grid">
+          <div class="contrast-col muted">
+            <h2>行情工具给你数据</h2>
+            <p>K 线、指标、财务、板块都能查。然后呢？哪只该买、买多少、什么时候卖，仍然由你自己拼。</p>
+          </div>
+          <div class="contrast-col">
+            <h2>{site.name} 给你带证据的候选</h2>
+            <p>候选同时给出真实数据日期、方法证据、买入窗口、仓位上限和退出计划；凑不出证据就返回空榜，而不是凑一个答案。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. 三个卖点 -->
+      <section id="features" class="section">
+        <div class="wrap">
+          <h2 class="section-title">三个不靠包装的卖点</h2>
+          <p class="section-sub">每一条都能在仓库里指到实现，而不是一句宣传语。</p>
+          <div class="cards-3">
+            <article class="card">
+              <div class="card-icon">◆</div>
+              <h3>决策，不是数据</h3>
+              <p>今日候选不只有代码和价格，还有真实数据日期、方法证据等级、买入窗口、仓位上限与退出计划。没有方法通过门槛时，榜单就是空的。</p>
+              <p class="card-meta">对应 <code>/api/dashboard/today</code>、<code>/api/selections/today</code></p>
+            </article>
+            <article class="card">
+              <div class="card-icon">◇</div>
+              <h3>方法可审计</h3>
+              <p>一句话规则被编译成稳定结构并哈希版本化，在冻结的真实数据上回测，再由前向监控跟踪衰减。停牌或 T+1 时不会假装已经成交。</p>
+              <p class="card-meta">对应 <code>method compile</code>、<code>/api/forward/*</code>、<code>/api/monitoring/*</code></p>
+            </article>
+            <article class="card">
+              <div class="card-icon">▣</div>
+              <h3>数据留在你自己的机器上</h3>
+              <p>TDX 行情写入本地 SQLite 单库，数据、缓存与同步水位同库管理。默认只监听回环地址，要从别的机器访问必须显式配令牌，否则服务拒绝启动。</p>
+              <p class="card-meta">对应 <code>~/.tongstock/cache/tongstock.db</code>、<code>server.access_token</code></p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. 终端 demo：三 tab -->
+      <section class="section section-alt">
+        <div class="wrap">
+          <h2 class="section-title">三种用同一个引擎的方式</h2>
+          <p class="section-sub">同一个 DB-first 数据服务，被 CLI、HTTP API 和 AI 助手共用。</p>
+          <div class="tabs" data-tabs>
+            <div class="tab-bar" role="tablist">
+              <button class="tab is-active" role="tab" data-tab="cli" aria-selected="true">CLI</button>
+              <button class="tab" role="tab" data-tab="http" aria-selected="false">HTTP API</button>
+              <button class="tab" role="tab" data-tab="skill" aria-selected="false">AI 助手</button>
+            </div>
+
+            <div class="tab-panel is-active" data-panel="cli">
+              <pre><code><span class="c"># 单股指标：MA / MACD / KDJ / BOLL / RSI / 量比 + 信号</span>
+./tongstock indicator --code 000001 --type day --json --days 5
+
+<span class="c"># 批量信号筛选，并发池默认 10</span>
+./tongstock screen --codes "000001,600519,000858" --type day --signal golden_cross
+
+<span class="c"># 板块成员与个股归属板块</span>
+./tongstock block show 沪深300 -f block_zs.dat
+./tongstock block show --code 600519</code></pre>
+            </div>
+
+            <div class="tab-panel" data-panel="http">
+              <pre><code><span class="c"># 服务默认只监听 127.0.0.1:8106</span>
+curl "http://localhost:8106/api/quote?code=000001"
+
+<span class="c"># 非本机访问必须带令牌，且服务端要配 access_token</span>
+curl -H "Authorization: Bearer $TONGSTOCK_ACCESS_TOKEN" \
+  "http://server-host:8106/api/kline?code=000001&type=day"
+
+<span class="c"># 契约与路由由测试双向比对，唯一事实源是 api/openapi.json</span>
+curl "http://localhost:8106/api/methods"</code></pre>
+            </div>
+
+            <div class="tab-panel" data-panel="skill">
+              <pre><code><span class="c"># 把 TongStock 的能力装进 AI 编码助手</span>
+npx skills add sjzsdu/tongstock
+
+<span class="c"># 装好后可以直接对话：</span>
+<span class="q">"分析 600519 最近的走势和基本面"</span>
+<span class="q">"筛出今天出现金叉的股票"</span>
+<span class="a">→ 助手调用 tongstock-cli / tongstock-workflow 完成多步查询</span></code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. 能力矩阵 -->
+      <section class="section">
+        <div class="wrap">
+          <h2 class="section-title">能力矩阵</h2>
+          <p class="section-sub">规模数字由脚本从仓库统计得出，随代码一起更新。</p>
+          <div class="matrix">
+            <div class="mx">
+              <span class="mx-num">{stats.klineTypes}</span>
+              <span class="mx-label">种 K 线周期</span>
+              <span class="mx-desc">1/5/15/30/60 分钟与日、周、月、季、年</span>
+            </div>
+            <div class="mx">
+              <span class="mx-num">{stats.indicatorFamilies}</span>
+              <span class="mx-label">类技术指标</span>
+              <span class="mx-desc">MA / MACD / KDJ / BOLL / RSI / 量比，参数可覆盖</span>
+            </div>
+            <div class="mx">
+              <span class="mx-num">{stats.apiPaths}</span>
+              <span class="mx-label">条 API 路径</span>
+              <span class="mx-desc">共 {stats.httpOperations} 个方法端点，契约落在 <code>api/openapi.json</code></span>
+            </div>
+            <div class="mx">
+              <span class="mx-num">{stats.cliTopLevel}</span>
+              <span class="mx-label">个 CLI 顶层命令</span>
+              <span class="mx-desc">行情查询、指标、筛选、方法与决策流水线</span>
+            </div>
+            <div class="mx">
+              <span class="mx-num">{stats.webPages}</span>
+              <span class="mx-label">个 Web 页面</span>
+              <span class="mx-desc">今日决策、选股方法、持仓卖出、个股详情等</span>
+            </div>
+            <div class="mx">
+              <span class="mx-num">{stats.newsSources}</span>
+              <span class="mx-label">个资讯源</span>
+              <span class="mx-desc">财联社、东方财富、巨潮、证券时报等</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5.5 界面预览：真实截图 -->
+      <section class="section section-alt">
+        <div class="wrap">
+          <h2 class="section-title">界面预览</h2>
+          <p class="section-sub">本机实例的真实截图，不是设计稿，也没有替换任何数据。</p>
+          <figure class="shot">
+            <img
+              src={`${import.meta.env.BASE_URL}shots/stock-detail.jpg`}
+              alt="TongStock 个股详情页：五档行情、多周期 K 线、技术指标、财务与资讯"
+              width="1200"
+              height="833"
+              loading="lazy"
+              decoding="async"
+            />
+            <figcaption>
+              个股详情（<code>/stock/:code</code>）：五档行情、多周期 K 线、MA/MACD/KDJ/BOLL/RSI 指标、财务与资讯。
+              截图取自本地 <code>./tongstock serve</code> 实例，数据来自通达信行情服务器。
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <!-- 6. 给谁用 -->
+      <section class="section section-alt">
+        <div class="wrap">
+          <h2 class="section-title">给谁用</h2>
+          <div class="cards-3">
+            <article class="card plain">
+              <h3>个人研究者</h3>
+              <p>想把自己的一句话交易直觉变成可回测、可复核的规则，又不愿意把持仓和数据交给第三方 SaaS。</p>
+            </article>
+            <article class="card plain">
+              <h3>已在用 AI 编程助手的人</h3>
+              <p>装上 Skills 之后，查行情、跑指标、筛信号都可以在对话里完成，不必记参数。</p>
+            </article>
+            <article class="card plain">
+              <h3>要自托管的团队</h3>
+              <p>一个二进制加一个 SQLite 文件就是全部依赖；Docker 镜像已发布，反向代理与令牌有明确约束。</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- 7. 可验证的信任 -->
+      <section class="section">
+        <div class="wrap">
+          <h2 class="section-title">可以自己验证的几件事</h2>
+          <p class="section-sub">这里不放用户数、不放收益率、不放客户 logo，只放能跑起来核对的东西。</p>
+          <ul class="trust">
+            <li><strong>MIT 许可</strong><span>代码、文档、Skills 定义都在同一个仓库里。</span></li>
+            <li><strong>无云依赖</strong><span>不需要注册账号，不需要 API key 就能查行情；数据落在本地 SQLite。</span></li>
+            <li><strong>统一质量门禁</strong><span><code>make check</code> 串联格式基线、单元测试、竞态检测、架构检查、迁移幂等、前端 lint/typecheck/契约校验/构建。</span></li>
+            <li><strong>契约双向比对</strong><span>Go 侧测试比对实际 Gin 路由与 OpenAPI，前端校验生成的 DTO 没有漂移。</span></li>
+            <li><strong>一条命令起服务</strong><span><code>make cli</code> 后 <code>./tongstock serve</code>，或者拉 Docker 镜像。</span></li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- 8. 收尾 CTA -->
+      <section class="final">
+        <div class="wrap final-inner">
+          <h2>先在本地把它跑起来，再决定要不要信它。</h2>
+          <p>默认只监听回环地址，不需要账号，数据不出机器。</p>
+          <div class="cta-row center">
+            <a class="btn btn-primary" href={`${site.docsPath}getting-started/install/`}>查看安装步骤</a>
+            <a class="btn btn-ghost" href={site.appUrl}>进入控制台</a>
+          </div>
+          <div class="copy-line">
+            <code id="cmd">{site.localCommand}</code>
+            <button class="copy" data-copy="#cmd" aria-label="复制命令">复制</button>
+          </div>
+          <p class="cta-note">{site.appUrlNote}</p>
+        </div>
+      </section>
+    </main>
+
+    <!-- 9. 页脚 -->
+    <footer class="footer">
+      <div class="wrap footer-inner">
+        <div class="footer-brand">
+          <strong>{site.name}</strong>
+          <p>{site.disclaimer}</p>
+        </div>
+        <div class="footer-links">
+          <a href={`${site.docsPath}`}>文档</a>
+          <a href={`${site.docsPath}api/endpoints/`}>API 端点</a>
+          <a href={site.repoUrl} target="_blank" rel="noreferrer">GitHub</a>
+          <a href={site.releasesUrl} target="_blank" rel="noreferrer">Release</a>
+          <a href={site.dockerHubUrl} target="_blank" rel="noreferrer">Docker Hub</a>
+          <a href={`${site.docsPath}reference/license/`}>MIT 许可</a>
+        </div>
+      </div>
+      <div class="wrap footer-note">
+        <span>© {new Date().getFullYear()} {site.name} · 文档与本站内容同样以 MIT 发布</span>
+      </div>
+    </footer>
+
+    <script>
+      // tab 切换：不引框架，纯事件委托。
+      document.querySelectorAll('[data-tabs]').forEach((root) => {
+        root.addEventListener('click', (event) => {
+          const btn = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-tab]');
+          if (!btn) return;
+          const key = btn.dataset.tab;
+          root.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((b) => {
+            const active = b.dataset.tab === key;
+            b.classList.toggle('is-active', active);
+            b.setAttribute('aria-selected', String(active));
+          });
+          root.querySelectorAll<HTMLElement>('[data-panel]').forEach((p) => {
+            p.classList.toggle('is-active', p.dataset.panel === key);
+          });
+        });
+      });
+
+      // 复制命令：失败时静默（用户可手动选中）。
+      document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const target = document.querySelector(btn.dataset.copy || '');
+          if (!target) return;
+          try {
+            await navigator.clipboard.writeText(target.textContent || '');
+            btn.textContent = '已复制';
+            setTimeout(() => (btn.textContent = '复制'), 1500);
+          } catch {
+            btn.textContent = '请手动复制';
+          }
+        });
+      });
+    </script>
+
+    <style>
+      :root {
+        --bg: #0b1220;
+        --bg-alt: #0e1727;
+        --panel: #121c2e;
+        --line: rgba(255, 255, 255, 0.08);
+        --line-strong: rgba(255, 255, 255, 0.14);
+        --text: #e8edf6;
+        --muted: #93a1b8;
+        --accent: #2f6fed;
+        --accent-soft: rgba(47, 111, 237, 0.16);
+        --ok: #16c39a;
+        --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      :global(html) {
+        background: var(--bg);
+      }
+
+      :global(body) {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        line-height: 1.65;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .wrap {
+        width: min(1120px, calc(100% - 48px));
+        margin: 0 auto;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      code,
+      pre {
+        font-family: var(--mono);
+      }
+
+      .skip {
+        position: absolute;
+        left: -9999px;
+      }
+      .skip:focus {
+        left: 16px;
+        top: 16px;
+        z-index: 99;
+        background: var(--panel);
+        padding: 8px 14px;
+        border-radius: 8px;
+      }
+
+      /* nav */
+      .nav {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        backdrop-filter: blur(12px);
+        background: rgba(11, 18, 32, 0.78);
+        border-bottom: 1px solid var(--line);
+      }
+      .nav-inner {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        height: 62px;
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        font-weight: 650;
+        letter-spacing: 0.2px;
+      }
+      .brand img {
+        border-radius: 5px;
+      }
+      .nav-links {
+        display: flex;
+        gap: 22px;
+        margin-left: auto;
+        font-size: 14px;
+        color: var(--muted);
+      }
+      .nav-links a:hover {
+        color: var(--text);
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 11px 20px;
+        border-radius: 10px;
+        font-size: 14.5px;
+        font-weight: 600;
+        border: 1px solid transparent;
+        transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+        white-space: nowrap;
+      }
+      .btn:hover {
+        transform: translateY(-1px);
+      }
+      .btn-primary {
+        background: linear-gradient(180deg, #3d7bf5, #2a63dc);
+        color: #fff;
+        box-shadow: 0 6px 22px rgba(47, 111, 237, 0.32);
+      }
+      .btn-ghost {
+        border-color: var(--line-strong);
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.02);
+      }
+      .btn-sm {
+        padding: 8px 15px;
+        font-size: 13.5px;
+      }
+
+      /* hero */
+      .hero {
+        position: relative;
+        padding: 84px 0 72px;
+        overflow: hidden;
+        border-bottom: 1px solid var(--line);
+      }
+      .hero::before {
+        content: "";
+        position: absolute;
+        inset: -40% 30% 40% -10%;
+        background: radial-gradient(closest-side, rgba(47, 111, 237, 0.22), transparent);
+        pointer-events: none;
+      }
+      .hero-inner {
+        position: relative;
+        display: grid;
+        grid-template-columns: 1.05fr 0.95fr;
+        gap: 56px;
+        align-items: center;
+      }
+      .eyebrow {
+        font-size: 13px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin: 0 0 18px;
+      }
+      .hero h1 {
+        font-size: clamp(38px, 5.2vw, 62px);
+        line-height: 1.1;
+        letter-spacing: -0.02em;
+        margin: 0 0 20px;
+        font-weight: 700;
+      }
+      .lede {
+        font-size: 17.5px;
+        color: #c3cfe2;
+        margin: 0 0 30px;
+        max-width: 34em;
+      }
+      .lede strong {
+        color: #fff;
+      }
+      .cta-row {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .cta-row.center {
+        justify-content: center;
+      }
+      .cta-note {
+        margin: 14px 0 0;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .hero-term {
+        background: var(--panel);
+        border: 1px solid var(--line-strong);
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow: 0 30px 70px rgba(0, 0, 0, 0.45);
+      }
+      .term-bar {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 11px 14px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.02);
+      }
+      .term-bar span {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #33415c;
+      }
+      .term-bar em {
+        margin-left: auto;
+        font-style: normal;
+        font-size: 12px;
+        color: var(--muted);
+        font-family: var(--mono);
+      }
+      .hero-term pre,
+      .tab-panel pre {
+        margin: 0;
+        padding: 18px;
+        font-size: 12.8px;
+        line-height: 1.72;
+        overflow-x: auto;
+        color: #cbd6e8;
+      }
+      .d {
+        color: var(--ok);
+      }
+      .m {
+        color: #7fa8f0;
+      }
+      .c {
+        color: #6b7b95;
+      }
+      .q {
+        color: #d8c48a;
+      }
+      .a {
+        color: var(--ok);
+      }
+
+      /* contrast */
+      .contrast {
+        padding: 56px 0;
+        border-bottom: 1px solid var(--line);
+        background: var(--bg-alt);
+      }
+      .contrast-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 28px;
+      }
+      .contrast-col {
+        padding: 26px 28px;
+        border-radius: 14px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+      }
+      .contrast-col h2 {
+        font-size: 19px;
+        margin: 0 0 10px;
+      }
+      .contrast-col p {
+        margin: 0;
+        color: #b9c6da;
+        font-size: 15px;
+      }
+      .contrast-col.muted {
+        background: transparent;
+        border-style: dashed;
+      }
+      .contrast-col.muted h2 {
+        color: var(--muted);
+      }
+      .contrast-col.muted p {
+        color: #7b8aa3;
+      }
+
+      /* sections */
+      .section {
+        padding: 78px 0;
+      }
+      .section-alt {
+        background: var(--bg-alt);
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+      }
+      .section-title {
+        font-size: clamp(26px, 3.2vw, 34px);
+        margin: 0 0 10px;
+        letter-spacing: -0.01em;
+      }
+      .section-sub {
+        color: var(--muted);
+        margin: 0 0 38px;
+        font-size: 15.5px;
+      }
+
+      .cards-3 {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 20px;
+      }
+      .card {
+        padding: 26px;
+        border-radius: 14px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        transition: border-color 0.18s ease, transform 0.18s ease;
+      }
+      .card:hover {
+        border-color: rgba(47, 111, 237, 0.45);
+        transform: translateY(-2px);
+      }
+      .card.plain {
+        background: transparent;
+      }
+      .card-icon {
+        color: #6f9bf0;
+        font-size: 17px;
+        margin-bottom: 12px;
+      }
+      .card h3 {
+        margin: 0 0 10px;
+        font-size: 18.5px;
+      }
+      .card p {
+        margin: 0 0 12px;
+        color: #b9c6da;
+        font-size: 14.8px;
+      }
+      .card-meta {
+        font-size: 12.6px;
+        color: #6b7b95;
+        font-family: var(--mono);
+      }
+      .card-meta code,
+      .trust code,
+      .mx-desc code {
+        color: #8fb4f0;
+      }
+
+      /* tabs */
+      .tabs {
+        border: 1px solid var(--line-strong);
+        border-radius: 14px;
+        overflow: hidden;
+        background: var(--panel);
+      }
+      .tab-bar {
+        display: flex;
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.02);
+      }
+      .tab {
+        appearance: none;
+        background: none;
+        border: 0;
+        border-bottom: 2px solid transparent;
+        color: var(--muted);
+        font: inherit;
+        font-size: 14px;
+        padding: 13px 22px;
+        cursor: pointer;
+      }
+      .tab.is-active {
+        color: #fff;
+        border-bottom-color: var(--accent);
+        background: var(--accent-soft);
+      }
+      .tab-panel {
+        display: none;
+      }
+      .tab-panel.is-active {
+        display: block;
+      }
+
+      /* matrix */
+      .matrix {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1px;
+        background: var(--line);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        overflow: hidden;
+      }
+      .mx {
+        background: var(--bg);
+        padding: 24px 22px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .mx-num {
+        font-family: var(--mono);
+        font-size: 30px;
+        font-weight: 650;
+        color: #8fb4f0;
+        letter-spacing: -0.02em;
+      }
+      .mx-label {
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .mx-desc {
+        font-size: 13.2px;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      /* 界面预览 */
+      .shot {
+        margin: 0;
+        border: 1px solid var(--line-strong);
+        border-radius: 14px;
+        overflow: hidden;
+        background: var(--panel);
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+      }
+      .shot img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      .shot figcaption {
+        padding: 14px 18px;
+        font-size: 13.2px;
+        color: var(--muted);
+        border-top: 1px solid var(--line);
+        line-height: 1.6;
+      }
+      .shot figcaption code {
+        color: #8fb4f0;
+      }
+
+      /* trust */
+      .trust {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+      .trust li {
+        padding: 20px 22px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .trust strong {
+        font-size: 15.5px;
+      }
+      .trust span {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      /* final */
+      .final {
+        padding: 82px 0;
+        background: radial-gradient(60% 120% at 50% 0%, rgba(47, 111, 237, 0.18), transparent 70%), var(--bg-alt);
+        border-top: 1px solid var(--line);
+        text-align: center;
+      }
+      .final h2 {
+        font-size: clamp(24px, 3vw, 32px);
+        margin: 0 0 12px;
+      }
+      .final p {
+        color: var(--muted);
+        margin: 0 0 26px;
+      }
+      .copy-line {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 24px;
+        padding: 8px 8px 8px 16px;
+        border: 1px solid var(--line-strong);
+        border-radius: 10px;
+        background: var(--panel);
+      }
+      .copy-line code {
+        font-size: 14px;
+        color: #cbd6e8;
+      }
+      .copy {
+        appearance: none;
+        border: 1px solid var(--line-strong);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--text);
+        border-radius: 7px;
+        padding: 6px 12px;
+        font: inherit;
+        font-size: 12.6px;
+        cursor: pointer;
+      }
+
+      /* footer */
+      .footer {
+        border-top: 1px solid var(--line);
+        padding: 48px 0 32px;
+        background: var(--bg);
+      }
+      .footer-inner {
+        display: flex;
+        gap: 40px;
+        justify-content: space-between;
+        flex-wrap: wrap;
+      }
+      .footer-brand {
+        max-width: 46em;
+      }
+      .footer-brand strong {
+        font-size: 16px;
+      }
+      .footer-brand p {
+        color: #7b8aa3;
+        font-size: 13px;
+        margin: 8px 0 0;
+      }
+      .footer-links {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+        font-size: 13.6px;
+        color: var(--muted);
+      }
+      .footer-links a:hover {
+        color: var(--text);
+      }
+      .footer-note {
+        margin-top: 32px;
+        padding-top: 18px;
+        border-top: 1px solid var(--line);
+        color: #5f6d85;
+        font-size: 12.4px;
+      }
+
+      @media (max-width: 980px) {
+        .hero-inner {
+          grid-template-columns: 1fr;
+          gap: 36px;
+        }
+        .cards-3,
+        .matrix,
+        .trust,
+        .contrast-grid {
+          grid-template-columns: 1fr;
+        }
+        .nav-links {
+          display: none;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .wrap {
+          width: calc(100% - 32px);
+        }
+        .hero {
+          padding: 56px 0 48px;
+        }
+        .section {
+          padding: 56px 0;
+        }
+        .btn {
+          width: 100%;
+        }
+        .cta-row {
+          flex-direction: column;
+        }
+      }
+    </style>
+  </body>
+</html>

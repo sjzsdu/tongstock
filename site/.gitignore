@@ -1,0 +1,7 @@
+# site/ 的构建产物与本地依赖不进入版本库。
+# 依赖边界：本目录自带 package.json 与 lockfile，不参与仓库根 Makefile 的既有门禁。
+node_modules/
+dist/
+.astro/
+.pnpm-store/
+*.log
