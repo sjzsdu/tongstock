@@ -113,6 +113,48 @@ func TestAppStaticAssetServed(t *testing.T) {
 	}
 }
 
+// 回归：/app/<目录>（无尾斜杠）必须 301 到 /app/<目录>/，不能丢 /app 前缀。
+// FileServer 基于改写后的 URL.Path 拼 Location，直接放行会跳到 /assets/（白页）。
+func TestAppDirectoryRedirectKeepsPrefix(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(server.RequestID())
+	setupStaticRoutes(router)
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/app/assets", nil))
+	if response.Code != http.StatusMovedPermanently {
+		t.Fatalf("GET /app/assets: status = %d, want 301", response.Code)
+	}
+	if loc := response.Header().Get("Location"); loc != "/app/assets/" {
+		t.Fatalf("GET /app/assets: Location = %q, want /app/assets/（不能丢 /app 前缀）", loc)
+	}
+
+	// query 要跟着走，旧链接里的筛选参数才不会丢。
+	withQuery := httptest.NewRecorder()
+	router.ServeHTTP(withQuery, httptest.NewRequest(http.MethodGet, "/app/assets?x=1", nil))
+	if loc := withQuery.Header().Get("Location"); loc != "/app/assets/?x=1" {
+		t.Fatalf("GET /app/assets?x=1: Location = %q, want /app/assets/?x=1", loc)
+	}
+}
+
+// 目录型请求带尾斜杠时：没有 index.html 就 404 文本，绝不列目录内容。
+func TestAppDirectoryWithoutIndexReturns404(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(server.RequestID())
+	setupStaticRoutes(router)
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/app/assets/", nil))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("GET /app/assets/: status = %d, want 404", response.Code)
+	}
+	if ct := response.Header().Get("Content-Type"); !strings.Contains(ct, "text/plain") {
+		t.Fatalf("GET /app/assets/: content-type = %s, want text/plain（不能是目录列表）", ct)
+	}
+}
+
 // 应用内的 SPA 路由（无扩展名）仍回退 app/index.html —— 深链直接进应用，
 // 不再依赖静态托管的 404 脚本。根路径下的同名旧路由则 302 到 /app/。
 func TestSPARoutesStillFallBackToIndex(t *testing.T) {

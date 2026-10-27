@@ -607,14 +607,38 @@ var (
 
 // serveAppPath 处理 /app/** 下的请求（inner 已去掉 "app/" 前缀）。
 func serveAppPath(c *gin.Context, inner string) {
-	if inner == "" {
+	// 尾斜杠统一去掉再判存在：pkg/web 的 Exists 直接把这些路径喂给 embed.FS，
+	// 而 embed 不接受以分隔符结尾的路径（fs.ValidPath），不归一化就会把
+	// 真实存在的目录判成不存在、白白回退 index.html。
+	clean := strings.Trim(inner, "/")
+	if clean == "" {
 		serveEmbeddedIndex(c, web.DistFS())
 		return
 	}
-	if web.Exists(inner) {
-		// http.FileServer 按 Request.URL.Path 找文件，而这里 FS 的根是 web/dist，
+	if web.Exists(clean) {
+		// 目录要自己发跳转：http.FileServer 是基于**改写后的** URL.Path 拼 Location 的，
+		// 若交给它，`/app/assets` 会被跳到 `/assets/`（丢了 /app 前缀，用户撞上就是白页）。
+		// 这里用原始请求路径补尾斜杠，Location 才是 `/app/assets/`。
+		if isFSDir(web.DistFS(), clean) {
+			if !strings.HasSuffix(c.Request.URL.Path, "/") {
+				target := c.Request.URL.Path + "/"
+				if raw := c.Request.URL.RawQuery; raw != "" {
+					target += "?" + raw
+				}
+				c.Redirect(http.StatusMovedPermanently, target)
+				return
+			}
+			// 带尾斜杠的目录请求：只认 index.html，绝不列目录内容。
+			if web.Exists(clean + "/index.html") {
+				serveFromFSWithPath(c, webFileServer, "/"+clean+"/")
+				return
+			}
+			c.Data(http.StatusNotFound, "text/plain; charset=utf-8", []byte("static asset not found"))
+			return
+		}
+		// 普通文件：http.FileServer 按 Request.URL.Path 找文件，而这里 FS 的根是 web/dist，
 		// URL 却带着 /app/ 前缀——必须先把路径换成应用内相对路径，否则文件找不着。
-		serveFromFSWithPath(c, webFileServer, "/"+inner)
+		serveFromFSWithPath(c, webFileServer, "/"+clean)
 		return
 	}
 	// 静态资源（带内容 hash 的 js/css/字体等）缺失时必须 404，
@@ -622,11 +646,22 @@ func serveAppPath(c *gin.Context, inner string) {
 	// chunk，返回 HTML 会让浏览器报「Failed to fetch dynamically
 	// imported module」，页面直接渲染失败。404 则由前端捕获并
 	// 自动刷新到新版本。仅无扩展名的 SPA 路由才回退 index.html。
-	if hasFileExtension(inner) {
+	if hasFileExtension(clean) {
 		c.Data(http.StatusNotFound, "text/plain; charset=utf-8", []byte("static asset not found"))
 		return
 	}
 	serveEmbeddedIndex(c, web.DistFS())
+}
+
+// isFSDir 判断 name 在给定 FS 里是否是目录（不存在或出错都按「不是目录」处理）。
+func isFSDir(fs http.FileSystem, name string) bool {
+	f, err := fs.Open(strings.Trim(name, "/"))
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	return err == nil && info.IsDir()
 }
 
 // serveFromFSWithPath 用指定的 FS 路径服务当前请求，结束后还原 URL.Path。

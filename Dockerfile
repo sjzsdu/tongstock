@@ -14,8 +14,8 @@ ARG PICOCLAW_PIN=1f8286e5e91187a1d978d0a1869d9ddb5a1d9c9c
 
 # ---- Stage 1: 前端与官网构建 ----
 # web/ 与 site/ 都用 pnpm（各自带 pnpm-lock.yaml），没有 package-lock.json。
-# Node 22 是 Astro 7 的硬要求（engines: >=22.23.4），web 也兼容。
-FROM node:22-bookworm AS web-builder
+# Node 24：Astro 7 的硬下界是 22.23.4，固定大版本 24 避免再被 patch 拖累。
+FROM node:24-bookworm AS web-builder
 RUN npm install -g pnpm@10
 WORKDIR /src/web
 COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./

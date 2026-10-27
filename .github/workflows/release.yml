@@ -61,7 +61,9 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          # Astro 7 要求 >=22.23.4；写裸 '22' 会解析到旧 patch（22.23.3）直接卡死。
+          # 24 是满足要求且不会再被 patch 拖累的 LTS 大版本。
+          node-version: '24'
           cache: pnpm
           cache-dependency-path: |
             tongstock/web/pnpm-lock.yaml
