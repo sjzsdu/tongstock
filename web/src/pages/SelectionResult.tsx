@@ -30,6 +30,7 @@ import {
   groupCandidatesByMethod,
   hasMethodAttribution,
   isTruncatedDowngrade,
+  truncationBreakdown,
   type MethodGroup,
 } from '../lib/selectionGrouping';
 
@@ -609,6 +610,7 @@ export default function SelectionResult() {
           />
           {groups.map((group) => {
             const primary = [...group.kept, ...group.truncated];
+            const truncation = truncationBreakdown(group);
             return (
               <Card
                 key={group.methodId}
@@ -620,12 +622,17 @@ export default function SelectionResult() {
                       买入 {group.kept.length}
                       {group.cap !== undefined ? ` / 上限 ${group.cap}` : ''}
                     </Tag>
-                    {group.truncated.length > 0 && (
+                    {truncation.downgraded > 0 && (
                       <Tooltip title="已达到买入门槛，只因该方法名额已满而降级观察；不是股票不达标。">
-                        <Tag color="gold">名额已满降级 {group.truncated.length}</Tag>
+                        <Tag color="gold">名额已满降级 {truncation.downgraded}</Tag>
                       </Tooltip>
                     )}
-                    {group.others.length > 0 && <Tag>其它观察 {group.others.length}</Tag>}
+                    {truncation.keptElsewhere > 0 && (
+                      <Tooltip title="被该方法的名额截断，但买入名额来自其它方法，本票仍是买入。">
+                        <Tag>本方法名额外 {truncation.keptElsewhere}</Tag>
+                      </Tooltip>
+                    )}
+                    {group.others.length > 0 && <Tag>其它候选 {group.others.length}</Tag>}
                   </Space>
                 }
               >

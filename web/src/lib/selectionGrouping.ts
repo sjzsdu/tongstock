@@ -86,6 +86,15 @@ export function isTruncatedDowngrade(candidate: SelectionCandidate): boolean {
   return candidate.truncated_from_buy === true && candidate.action !== 'buy';
 }
 
+/**
+ * 组内被截断项的拆分：真正降级为观察的，和只是在本方法名额外、却被别的方法
+ * 保住的（后者仍是 buy）。分组标题不能把后者也算成「降级」。
+ */
+export function truncationBreakdown(group: MethodGroup): { downgraded: number; keptElsewhere: number } {
+  const downgraded = group.truncated.filter(isTruncatedDowngrade).length;
+  return { downgraded, keptElsewhere: group.truncated.length - downgraded };
+}
+
 export function attributeCandidate(candidate: SelectionCandidate, legacy = false): CandidateMethodAttribution {
   const kept = keptMethodIds(candidate, legacy);
   const truncated = truncatedMethodIds(candidate);

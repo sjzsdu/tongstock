@@ -8,6 +8,7 @@ import {
   groupCandidatesByMethod,
   hasMethodAttribution,
   isTruncatedDowngrade,
+  truncationBreakdown,
 } from './selectionGrouping';
 
 function trigger(methodId: string, methodName = methodId.toUpperCase()): SelectionTrigger {
@@ -181,6 +182,27 @@ describe('groupCandidatesByMethod', () => {
     expect(groups[0].methodName).toBe('放量突破');
     expect(groups[0].kept.map((c) => c.code)).toEqual(['OLD1']);
     expect(groups[0].cap).toBeUndefined();
+  });
+
+  it('组内被截断项要拆开：真正降级的 vs 仍被别的方法保住的', () => {
+    const keptElsewhere = candidate({
+      code: 'MIXED',
+      kept_by_method_ids: ['method-a'],
+      truncated_by_method_ids: ['method-b'],
+      triggers: [trigger('method-a', '放量突破'), trigger('method-b', '回调企稳')],
+    });
+    const downgraded = candidate({
+      code: 'CAPPED',
+      action: 'watch',
+      truncated_from_buy: true,
+      truncated_by_method_ids: ['method-b'],
+      triggers: [trigger('method-b', '回调企稳')],
+    });
+    const groups = groupCandidatesByMethod([keptElsewhere, downgraded], 5);
+    const b = groups.find((g) => g.methodId === 'method-b')!;
+    expect(truncationBreakdown(b)).toEqual({ downgraded: 1, keptElsewhere: 1 });
+    const a = groups.find((g) => g.methodId === 'method-a')!;
+    expect(truncationBreakdown(a)).toEqual({ downgraded: 0, keptElsewhere: 0 });
   });
 
   it('空榜单返回空分组，不伪造空壳方法组', () => {
