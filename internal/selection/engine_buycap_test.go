@@ -55,14 +55,15 @@ type capFixture struct {
 }
 
 type capEnv struct {
-	t          *testing.T
-	ctx        context.Context
-	snapshots  *marketsnapshotrepo.SQLiteRepository
-	runs       *selectionrepo.SQLiteRepository
-	engine     *selection.Engine
-	marketID   string
-	signals    map[string]map[string]float64
-	featureIDs []string
+	t           *testing.T
+	ctx         context.Context
+	snapshots   *marketsnapshotrepo.SQLiteRepository
+	methodsRepo *methodregistryrepo.SQLiteRepository
+	runs        *selectionrepo.SQLiteRepository
+	engine      *selection.Engine
+	marketID    string
+	signals     map[string]map[string]float64
+	featureIDs  []string
 }
 
 func capEvidence(confidence string, oosTrades int, maxDrawdown float64) *methodregistry.EvidenceSummary {
@@ -161,7 +162,7 @@ func newCapEnv(t *testing.T, f capFixture) *capEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &capEnv{t: t, ctx: ctx, snapshots: snapshots, runs: runs, engine: engine, marketID: market.ID, signals: signals}
+	return &capEnv{t: t, ctx: ctx, snapshots: snapshots, methodsRepo: methodsRepo, runs: runs, engine: engine, marketID: market.ID, signals: signals}
 }
 
 // addFeatureSnapshot 只为给定代码建特征快照（用于「截断前/截断后」同快照对比）。
