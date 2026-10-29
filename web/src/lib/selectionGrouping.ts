@@ -59,6 +59,17 @@ export function hasMethodAttribution(candidates: SelectionCandidate[]): boolean 
   );
 }
 
+/**
+ * 旧 run 的判定用字段而不是内容：per-method 口径之后的 run 一定带
+ * buy_cap_per_method，哪怕这次只有因子通道候选（它从不占名额、也不带归属）。
+ * 完全没有该字段时才退回内容启发，兼容手工构造/回填的历史产物。
+ */
+export function isLegacyRun(run?: SelectionRun | null): boolean {
+  if (!run) return false;
+  if (run.buy_cap_per_method !== undefined) return false;
+  return !hasMethodAttribution(run.candidates ?? []);
+}
+
 function unique(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean)));
 }
@@ -132,12 +143,13 @@ function byScoreThenCode(a: SelectionCandidate, b: SelectionCandidate): number {
  * 仅被该方法触发却没占名额的候选（真 watch 等）。
  * 同一只票被多个方法保留时会在多个分组里各出现一次 —— 这是分组视图的要点，
  * 调用方用 `attribution.kept.length` 标注「同时被 N 个方法选中」。
+ * `legacy` 由 run 层判定（见 isLegacyRun）后传入，缺省时才退回内容启发。
  */
 export function groupCandidatesByMethod(
   candidates: SelectionCandidate[],
   cap?: number,
+  legacy = !hasMethodAttribution(candidates),
 ): MethodGroup[] {
-  const legacy = !hasMethodAttribution(candidates);
   const names = methodNameMap(candidates);
   const groups = new Map<string, MethodGroup>();
   const ensure = (methodId: string): MethodGroup => {
@@ -187,7 +199,7 @@ export function groupCandidatesByMethod(
 /** 平铺视图的说明数据：总买入数、来源方法数、单方法上限、降级数量。 */
 export function flatViewNote(run: SelectionRun): FlatViewNote {
   const candidates = run.candidates ?? [];
-  const legacy = !hasMethodAttribution(candidates);
+  const legacy = isLegacyRun(run);
   const cap = buyCapPerMethod(run);
   const buys = candidates.filter((c) => c.action === 'buy');
   const methods = new Set<string>();
