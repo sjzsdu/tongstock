@@ -21,7 +21,15 @@ const (
 	// selection-v3: the missing-features gate now covers every AST-referenced
 	// indicator (including builtins like gap_pct); cached v2 runs could hold
 	// silent all-miss results with zero exclusions.
-	EngineVersion          = "selection-v3"
+	// selection-v4: one method can contribute at most BuyCapPerMethod buy
+	// candidates per run; cached v3 runs were produced without that cap and
+	// would be re-served for identical inputs, silently ignoring the limit.
+	//
+	// This constant is an input of the run idempotency hash (see
+	// runHashForVersion), so bumping it is what retires old cached runs:
+	// a v3 record is stored under a different run_hash and can never be hit
+	// again. Do not remove it from the hash input.
+	EngineVersion          = "selection-v4"
 	ActionBuy              = "buy"
 	ActionWatch            = "watch"
 	ActionAvoid            = "avoid"

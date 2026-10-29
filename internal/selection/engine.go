@@ -469,9 +469,22 @@ func buyWindow(m *methodregistry.Method) string {
 func explain(c Candidate) string {
 	return fmt.Sprintf("%s 在 %s 的冻结数据上触发 %d 个独立方法族；确定性评分 %.2f，结论为 %s。", c.Code, c.DataDate, len(c.Triggers), c.Score, c.Action)
 }
+
+// computeRunHash 用当前 EngineVersion 计算本次 run 的幂等哈希。
 func computeRunHash(m *marketsnapshot.MarketSnapshot, f *marketsnapshot.FeatureSnapshot, items []*methodregistry.Method, requested []string, factorPick *factorlab.PickRun) string {
+	return runHashForVersion(EngineVersion, m, f, items, requested, factorPick)
+}
+
+// runHashForVersion 把 engineVersion 作为第一个哈希输入：EngineVersion 参与
+// 缓存身份，输出语义一变就 bump 版本，旧记录留在自己的 run_hash 下（可审计、
+// 不被覆盖），相同输入的新一次请求算出新哈希因而必然重算。
+//
+// 之所以把版本放进哈希而不是「命中 run_hash 后再比对 engine_version」：run_id
+// 由 run_hash 派生，仓库又是 INSERT OR IGNORE 落库，命中后才发现版本不符只能
+// 重算而无法覆盖旧行——那样每次请求都会重算、且永远写不进库。
+func runHashForVersion(version string, m *marketsnapshot.MarketSnapshot, f *marketsnapshot.FeatureSnapshot, items []*methodregistry.Method, requested []string, factorPick *factorlab.PickRun) string {
 	h := sha256.New()
-	fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s\x00%s", EngineVersion, m.ID, m.ContentHash, f.ID, f.ContentHash)
+	fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s\x00%s", version, m.ID, m.ContentHash, f.ID, f.ContentHash)
 	for _, id := range requested {
 		fmt.Fprintf(h, "\x00requested:%s", id)
 	}
