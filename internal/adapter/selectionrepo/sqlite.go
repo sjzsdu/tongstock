@@ -144,6 +144,38 @@ func filter(run *selection.Run, methodID string) {
 			run.BuyCount++
 		}
 	}
+	recomputeBuyCapAggregates(run, out)
+}
+
+// recomputeBuyCapAggregates 在按方法过滤候选后重算名额聚合：BuyCountByMethod /
+// TruncatedFromBuy 和 BuyCount 一样是 run 级聚合，不重算就会和过滤后的候选对不上
+// （sum(BuyCountByMethod) ≠ BuyCount）。名额定于截断前的那次运行的完整候选集，
+// 过滤后只是重算可见子集的和，不改变任何单票判定。
+// 历史 run 没有名额字段（KeptByMethodIDs 全空），保持原样，不伪造归属。
+func recomputeBuyCapAggregates(run *selection.Run, candidates []selection.Candidate) {
+	hasCapData := false
+	for _, c := range candidates {
+		if len(c.KeptByMethodIDs) > 0 || len(c.TruncatedByMethodIDs) > 0 || c.TruncatedFromBuy {
+			hasCapData = true
+			break
+		}
+	}
+	if !hasCapData {
+		return
+	}
+	run.BuyCountByMethod = map[string]int{}
+	run.TruncatedFromBuy = 0
+	for _, c := range candidates {
+		if c.TruncatedFromBuy {
+			run.TruncatedFromBuy++
+		}
+		if c.Action != selection.ActionBuy {
+			continue
+		}
+		for _, id := range c.KeptByMethodIDs {
+			run.BuyCountByMethod[id]++
+		}
+	}
 }
 
 var _ selection.Repository = (*SQLiteRepository)(nil)

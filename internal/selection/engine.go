@@ -78,7 +78,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Run, error) {
 		return previous, nil
 	}
 
-	run := &Run{ID: "selection-" + runHash[:16], RunHash: runHash, EngineVersion: EngineVersion, SnapshotID: market.ID, FeatureSnapshotID: feature.ID, SnapshotDate: market.SnapshotDate, Status: "completed", ScannedStocks: len(feature.Values), ActionCounts: map[string]int{ActionBuy: 0, ActionWatch: 0, ActionAvoid: 0, ActionInsufficientData: 0}, Candidates: []Candidate{}, Exclusions: []Exclusion{}, RequestedMethodIDs: requested, CreatedAt: e.now()}
+	run := &Run{ID: "selection-" + runHash[:16], RunHash: runHash, EngineVersion: EngineVersion, SnapshotID: market.ID, FeatureSnapshotID: feature.ID, SnapshotDate: market.SnapshotDate, Status: "completed", ScannedStocks: len(feature.Values), ActionCounts: map[string]int{ActionBuy: 0, ActionWatch: 0, ActionAvoid: 0, ActionInsufficientData: 0}, BuyCapPerMethod: BuyCapPerMethod, BuyCountByMethod: map[string]int{}, Candidates: []Candidate{}, Exclusions: []Exclusion{}, RequestedMethodIDs: requested, CreatedAt: e.now()}
 	if len(requested) > 0 {
 		found := map[string]bool{}
 		for _, m := range allMethods {
@@ -187,6 +187,9 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Run, error) {
 	}
 	// 因子通道候选：watch-only、staleness 门控、贡献分解透出（见 factor_channel.go）。
 	e.appendFactorCandidates(run, factorPick, factorPickErr)
+	// 每个方法最多贡献 BuyCapPerMethod 个 buy 候选：在聚合打分之后做纯输出过滤，
+	// Score 不受影响（见 buycap.go）。
+	applyPerMethodBuyCap(run)
 	sort.Slice(run.Candidates, func(i, j int) bool {
 		if run.Candidates[i].Score == run.Candidates[j].Score {
 			return run.Candidates[i].Code < run.Candidates[j].Code
