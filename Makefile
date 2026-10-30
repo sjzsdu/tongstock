@@ -113,8 +113,10 @@ site: cli
 	rm -rf pkg/site/dist
 	cp -rf $(SITE_DIR)/dist pkg/site/dist
 	cd $(SITE_DIR) && node scripts/check-links.mjs
+	cd $(SITE_DIR) && node scripts/check-theme.mjs
 
 # 只校验不写盘：生成物（含 Go 侧旧 SPA 路由表）是否与仓库现状一致。
 site-check:
 	cd $(SITE_DIR) && TONGSTOCK_BIN=$(SITE_BIN) pnpm gen:check
 	cd $(SITE_DIR) && node scripts/check-links.mjs
+	cd $(SITE_DIR) && node scripts/check-theme.mjs

@@ -1,42 +1,57 @@
-import { Card, Space, Tag, Typography } from 'antd';
+import { Card, Space, Tag, Typography, theme } from 'antd';
 
 const { Text, Paragraph, Title } = Typography;
+
+/** 四段流程各自的色相；具体色值在渲染时从主题色板取（见 STAGE_COLOR_STEP）。 */
+type StageTone = 'blue' | 'purple' | 'cyan' | 'orange';
 
 interface Stage {
   key: string;
   title: string;
-  color: string;
+  tone: StageTone;
   summary: string;
   detail: string;
 }
+
+/**
+ * 每个色相取色板里「在深色卡片底（colorBgContainer）上仍达 4.5:1」的那一档。
+ * 不能用 token.blue / token.purple 这类预设主色：它们是给浅色底准备的，
+ * 紫色 #722ed1 压在深色卡片上只有 2.56:1（蓝 #1677ff 也只有 4.32:1）。
+ */
+const STAGE_COLOR_STEP = {
+  blue: 'blue7',
+  purple: 'purple8',
+  cyan: 'cyan6',
+  orange: 'orange6',
+} as const;
 
 /** 这套工具的四段式思考流程。顺序即依赖：后一步只接受前一步的产物。 */
 const STAGES: Stage[] = [
   {
     key: 'research',
     title: '① 研究',
-    color: '#1677ff',
+    tone: 'blue',
     summary: '把想法写成可编译的方法',
     detail: '入场条件、出场条件、失效条件必须写成机器可判定的规则，而不是一句主观描述。',
   },
   {
     key: 'verify',
     title: '② 验证',
-    color: '#722ed1',
+    tone: 'purple',
     summary: '在冻结的真实历史上做样本外回测',
     detail: '训练段调参、样本外段检验；证据不达标的方法直接拒绝，绝不进入候选。',
   },
   {
     key: 'select',
     title: '③ 选股',
-    color: '#13c2c2',
+    tone: 'cyan',
     summary: '只让通过验证的方法判定今天',
     detail: '用今天的冻结快照执行已验证的方法；命中的股票才成为候选，并附上触发它的方法证据。',
   },
   {
     key: 'sell',
     title: '④ 卖出',
-    color: '#fa8c16',
+    tone: 'orange',
     summary: '按方法自带的退出计划离场',
     detail: '止损、止盈、最长持有天数与失效条件共同决定减仓或清仓，不靠临时情绪。',
   },
@@ -49,6 +64,9 @@ const STAGES: Stage[] = [
  * 一张图把链条讲清楚，比任何口号都更能降低理解成本。
  */
 export default function MethodMechanismDiagram() {
+  const { token } = theme.useToken();
+  const stageColor = (tone: StageTone) => token[STAGE_COLOR_STEP[tone]];
+
   return (
     <Card size="small" title="这套工具怎么思考">
       <Space direction="vertical" size={12} style={{ display: 'flex' }}>
@@ -59,52 +77,58 @@ export default function MethodMechanismDiagram() {
             gap: 12,
           }}
         >
-          {STAGES.map((stage, idx) => (
-            <div
-              key={stage.key}
-              style={{
-                position: 'relative',
-                border: `1px solid ${stage.color}33`,
-                borderTop: `3px solid ${stage.color}`,
-                borderRadius: 8,
-                padding: '10px 12px',
-                background: `${stage.color}0a`,
-              }}
-            >
-              <Space direction="vertical" size={4} style={{ display: 'flex' }}>
-                <Text strong style={{ color: stage.color }}>
-                  {stage.title}
-                </Text>
-                <Text style={{ fontSize: 13 }}>{stage.summary}</Text>
-                <Text type="secondary" style={{ fontSize: 12, lineHeight: 1.5 }}>
-                  {stage.detail}
-                </Text>
-              </Space>
-              {idx < STAGES.length - 1 && (
-                <span
-                  aria-hidden
-                  style={{
-                    position: 'absolute',
-                    right: -10,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    color: '#bfbfbf',
-                    fontSize: 14,
-                  }}
-                >
-                  →
-                </span>
-              )}
-            </div>
-          ))}
+          {STAGES.map((stage, idx) => {
+            const color = stageColor(stage.tone);
+            return (
+              <div
+                key={stage.key}
+                style={{
+                  position: 'relative',
+                  border: `1px solid ${color}33`,
+                  borderTop: `3px solid ${color}`,
+                  borderRadius: 8,
+                  padding: '10px 12px',
+                  background: `${color}0a`,
+                }}
+              >
+                <Space direction="vertical" size={4} style={{ display: 'flex' }}>
+                  <Text strong style={{ color }}>
+                    {stage.title}
+                  </Text>
+                  <Text style={{ fontSize: 13 }}>{stage.summary}</Text>
+                  <Text type="secondary" style={{ fontSize: 12, lineHeight: 1.5 }}>
+                    {stage.detail}
+                  </Text>
+                </Space>
+                {idx < STAGES.length - 1 && (
+                  <span
+                    aria-hidden
+                    style={{
+                      position: 'absolute',
+                      right: -10,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      // 装饰性箭头：走主题的次级文字色，别写死浅灰（深色底上要么刺眼要么看不见）
+                      color: token.colorTextSecondary,
+                      fontSize: 14,
+                    }}
+                  >
+                    →
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         <div
           style={{
-            border: '1px dashed #d9d9d9',
+            // 深色主题下不能出现写死的浅色块：原来的 #fafafa 底 + 默认浅色文字
+            // 等于白底白字（1.05:1），整段「一个真实例子」几乎不可读。
+            border: `1px dashed ${token.colorBorder}`,
             borderRadius: 8,
             padding: '10px 12px',
-            background: '#fafafa',
+            background: token.colorBgLayout,
           }}
         >
           <Title level={5} style={{ marginTop: 0, marginBottom: 6 }}>

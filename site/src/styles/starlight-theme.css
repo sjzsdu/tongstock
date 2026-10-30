@@ -2,27 +2,46 @@
  * Starlight 品牌色覆盖。
  * 只调整变量，不改布局：文档站要保持「读得下去」的默认密度，
  * 视觉冲击留给落地页。
+ *
+ * 两条硬约束，动之前先看 `pnpm check:theme`（它会按 dark/light 两套主题分别解析变量并核对比度）：
+ *
+ * 1. 必须写在 @layer starlight.base 里。Starlight 自己的色板就声明在这个层中；
+ *    未分层的 :root 会同时压过它给 dark 和 light 的两套主题（层叠层优先级高于特异性），
+ *    浅色主题于是保留深色底、却拿到浅色主题的强调色——白字压在浅蓝底上 1.45:1。
+ *
+ * 2. 选择器要比 Starlight 高一档具体性，并且显式排除另一套主题。
+ *    Starlight 写的是 `:root`（0,1,0）与 `:root[data-theme='light']`（0,2,0），
+ *    同为层内声明时特异性相同就只能靠书写顺序分胜负，而 Astro 打包会把 customCss
+ *    排在 Starlight 主题之前——靠顺序就等着哪天主题静默失效。
+ *    所以两处都多带一个 `html`（多一个类型选择器，0,2,1）：深色 0,2,1 > 0,1,0，
+ *    浅色 0,2,1 > 0,2,0，且两份色板互不污染，完全不依赖顺序。
  */
 
-:root {
-  --sl-color-accent-low: #10233f;
-  --sl-color-accent: #2f6fed;
-  --sl-color-accent-high: #bcd4ff;
+@layer starlight.base {
+  /* 深色（站点默认）：与落地页同款深海军蓝 */
+  html:root:not([data-theme='light']),
+  html:root:not([data-theme='light']) ::backdrop {
+    --sl-color-accent-low: #10233f;
+    --sl-color-accent: #2f6fed;
+    --sl-color-accent-high: #bcd4ff;
 
-  --sl-color-white: #ffffff;
-  --sl-color-gray-1: #e8edf6;
-  --sl-color-gray-2: #c2cbdb;
-  --sl-color-gray-3: #8d99ae;
-  --sl-color-gray-4: #55627a;
-  --sl-color-gray-5: #29344a;
-  --sl-color-gray-6: #161e2e;
-  --sl-color-black: #0b1220;
-}
+    --sl-color-white: #ffffff;
+    --sl-color-gray-1: #e8edf6;
+    --sl-color-gray-2: #c2cbdb;
+    --sl-color-gray-3: #8d99ae;
+    --sl-color-gray-4: #55627a;
+    --sl-color-gray-5: #29344a;
+    --sl-color-gray-6: #161e2e;
+    --sl-color-black: #0b1220;
+  }
 
-:root[data-theme='light'] {
-  --sl-color-accent-low: #dbe7ff;
-  --sl-color-accent: #1f5fe0;
-  --sl-color-accent-high: #10306e;
+  /* 浅色：白/黑/灰留给 Starlight 的反转色板，这里只接管强调色 */
+  html:root[data-theme='light'],
+  html:root[data-theme='light'] ::backdrop {
+    --sl-color-accent-low: #dbe7ff;
+    --sl-color-accent: #1f5fe0;
+    --sl-color-accent-high: #10306e;
+  }
 }
 
 /* 强调「代码即事实」：行内代码与表格在浅色/深色下都保持可读边界。 */
