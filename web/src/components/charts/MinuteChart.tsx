@@ -60,7 +60,9 @@ export default function MinuteChart({ data, lastClose, onClickIndex }: Props) {
       height: 320,
       layout: {
         background: { color: '#0f172a' },
-        textColor: '#64748b',
+        // 坐标轴刻度是正文尺寸的文字：#64748b 压在 #0f172a 上只有 3.75:1，
+        // 与 FinanceTrendChart 一起统一到 6.96:1 的那一档
+        textColor: '#94a3b8',
         fontFamily: 'system-ui, sans-serif',
       },
       grid: {

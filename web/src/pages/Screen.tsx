@@ -24,6 +24,7 @@ import {
   Tag,
   Typography,
   message,
+  theme,
 } from 'antd';
 import { api } from '../api/client';
 import type { ScreenResult, ScreenCodeStatus, SyncFreshnessResult } from '../types/api';
@@ -43,6 +44,7 @@ import { exportCsv, stockNamesFromCodesCache, formatPercent, getChangePct, getMa
 const { Paragraph, Text, Title } = Typography;
 
 export default function Screen() {
+  const { token } = theme.useToken();
   const navigate = useNavigate();
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const [messageApi, contextHolder] = message.useMessage();
@@ -437,8 +439,10 @@ export default function Screen() {
                 <Text>扫描总数: <strong>{total}</strong></Text>
                 <Text>命中结果: <strong>{filteredResults.length}</strong></Text>
                 <Text>活跃信号: <strong>{Object.keys(signalCounts).length}</strong></Text>
+                {/* 深色主题里不能用浅色主题的固定红（#cf1322 压在卡片底上只有 3.18:1），
+                    取色板里仍达 4.5:1 的那一档 */}
                 {failedCodes.length > 0 && (
-                  <Text style={{ color: '#cf1322' }}>失败: <strong>{failedCodes.length}</strong></Text>
+                  <Text style={{ color: token.red7 }}>失败: <strong>{failedCodes.length}</strong></Text>
                 )}
                 {screenedAt && (
                   <Tooltip title={fromCache ? '当前展示本地缓存，点击「强制刷新」获取最新行情' : '本次筛选的取数时间'}>

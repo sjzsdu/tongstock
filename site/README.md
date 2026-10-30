@@ -81,6 +81,7 @@ node scripts/check-pages.mjs --root=../pages-dist --base=/tongstock/
 ## 自检脚本做了什么
 
 - `scripts/check-links.mjs`：扫 `dist/` 里的 HTML 找死链；再扫 Markdown 里出现的 `/api/...`，确认它在生成的端点表里真实存在（防止文档提到一个仓库里没有的接口）。
+- `scripts/check-theme.mjs`：主题与可读性自检（`pnpm check:theme`）。把 `dist/` 里的 CSS 过一遍真实的层叠规则（`@layer` / 特异性 / 顺序），分别解析出 dark 与 light 两套主题的变量，再核对「正文 / 链接 / 导航 / 侧栏 / 提示块」这几对色是否达到 WCAG AA；落地页另外检查页内调色板对每种底色的对比度，以及 grid 轨道有没有用裸 `fr`（会被长标识符撑破容器，窄屏整页横向滚动）。有 Chromium 时会再用它实际渲染落地页与两个文档页（1440 / 1024 / 390 三个宽度 × 两套主题），逐个可见文字算对比度、逐个元素查是否越出视口；没装浏览器就明确打印「跳过」，不假装通过。改动主题色板后先跑它，比肉眼看截图可靠。
 - `scripts/gen-api-docs.mjs`：解析 openapi 的路径、参数（含 `$ref`）、请求体与响应码，按 10 个业务分组出表；同时统计落地页用的规模数字，取数规则写在脚本的 `STAT_RULES` 里。
 - `scripts/gen-cli-docs.mjs`：递归遍历 `--help`，解析命令树与 flag（含默认值），生成 27 个顶层命令的参考页。找不到二进制会直接失败，不产出半份文档。
 
