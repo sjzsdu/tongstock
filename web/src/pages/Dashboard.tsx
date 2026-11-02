@@ -11,7 +11,6 @@ import {
   Popconfirm,
   Row,
   Space,
-  Spin,
   Tag,
   Typography,
   message,
@@ -38,6 +37,7 @@ import WorkLogPanel from '../components/dashboard/WorkLogPanel';
 import EmptyStatePanel, { ExclusionBreakdown } from '../components/dashboard/EmptyStatePanel';
 import OnboardingWizard from '../components/dashboard/OnboardingWizard';
 import MethodMechanismDiagram from '../components/dashboard/MethodMechanismDiagram';
+import PageLoading from '../components/PageLoading';
 
 const { Text, Title } = Typography;
 
@@ -281,7 +281,7 @@ export default function Dashboard() {
       </Card>
 
       {loading ? (
-        <Spin />
+        <PageLoading tip="正在加载今日决策…" />
       ) : !today ? (
         <Alert
           type="error"
