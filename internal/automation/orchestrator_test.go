@@ -1,8 +1,12 @@
 package automation_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -119,5 +123,33 @@ func TestRunFailsJobOnSelectionError(t *testing.T) {
 	}
 	if repo.completed {
 		t.Fatal("failed run must not Complete")
+	}
+}
+
+func TestRunLogsFailPersistenceErrorWithRootCause(t *testing.T) {
+	repo := &fakeRepo{
+		claimJob:   automation.Job{ID: "job-3", IdempotencyKey: "daily-automation-v1:s-missing"},
+		claimOwner: true,
+		failErr:    errors.New("磁盘只读"),
+	}
+	o := newTestOrchestrator(t, repo)
+
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+
+	_, runErr := o.Run(context.Background(), "s-missing")
+	if runErr == nil {
+		t.Fatal("expected selection error for missing snapshot")
+	}
+	logged := buf.String()
+	if !strings.Contains(logged, "job-3") {
+		t.Fatalf("log missing job id: %q", logged)
+	}
+	if !strings.Contains(logged, runErr.Error()) {
+		t.Fatalf("log missing original run error: %q", logged)
+	}
+	if !strings.Contains(logged, "磁盘只读") {
+		t.Fatalf("log missing fail persistence error: %q", logged)
 	}
 }
