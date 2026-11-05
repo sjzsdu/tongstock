@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/gin-gonic/gin"
 	"github.com/sjzsdu/tongstock/internal/marketsnapshot"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -72,12 +73,18 @@ func (s *Server) StartAutomationScheduler(ctx context.Context, snapshots readySn
 		run := func() {
 			xs, err := snapshots.ListMarketSnapshots("", "", "ready")
 			if err != nil {
+				log.Printf("automation scheduler: 列出 ready 快照失败: %v", err)
 				return
 			}
 			for _, x := range xs {
-				if x.Frozen {
-					_, _ = s.automationEngine.Run(ctx, x.ID)
-					return
+				if !x.Frozen {
+					continue
+				}
+				// 去重由 orchestrator 的 Claim（key=version:snapshotID）负责，
+				// 这里必须遍历全部 frozen 快照；单只失败不能影响其余快照。
+				if _, runErr := s.automationEngine.Run(ctx, x.ID); runErr != nil {
+					log.Printf("automation scheduler: 快照 %s 运行失败: %v", x.ID, runErr)
+					continue
 				}
 			}
 		}
