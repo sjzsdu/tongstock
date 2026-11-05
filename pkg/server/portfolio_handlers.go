@@ -1148,6 +1148,17 @@ func (s *Server) handleStockinfoSync(c *gin.Context) {
 		{"bj", protocol.ExchangeBJ},
 	}
 
+	// GetStale 是全表扫描，必须在循环外只查一次，否则退化成 O(股票数×全表)。
+	staleCodes, staleErr := s.stockinfoDB.GetStale(24 * 60) // 24 hours
+	if staleErr != nil {
+		// 无法判断新鲜度时宁可多刷一轮，也不无依据地跳过全部股票。
+		log.Printf("获取股票信息过期列表失败，本轮不做新鲜度跳过: %v", staleErr)
+	}
+	staleSet := make(map[string]bool, len(staleCodes))
+	for _, staleCode := range staleCodes {
+		staleSet[staleCode] = true
+	}
+
 	for _, item := range exchanges {
 		codes, err := s.svc.FetchCodes(item.ex)
 		if err != nil {
@@ -1163,19 +1174,14 @@ func (s *Server) handleStockinfoSync(c *gin.Context) {
 			totalProcessed++
 
 			// Skip if not force and data is fresh (updated in last 24 hours)
-			if !req.Force {
-				if exists, _ := s.stockinfoDB.Exists(code.Code); exists {
-					staleCodes, _ := s.stockinfoDB.GetStale(24 * 60) // 24 hours
-					isStale := false
-					for _, staleCode := range staleCodes {
-						if staleCode == code.Code {
-							isStale = true
-							break
-						}
-					}
-					if !isStale {
-						continue
-					}
+			if !req.Force && staleErr == nil {
+				exists, existsErr := s.stockinfoDB.Exists(code.Code)
+				if existsErr != nil {
+					log.Printf("检查 %s 股票信息是否存在失败，按需要刷新处理: %v", code.Code, existsErr)
+					exists = false
+				}
+				if exists && !staleSet[code.Code] {
+					continue
 				}
 			}
 
