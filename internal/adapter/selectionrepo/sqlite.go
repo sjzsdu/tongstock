@@ -38,7 +38,11 @@ func (r *SQLiteRepository) Save(ctx context.Context, run *selection.Run) error {
 	if err != nil {
 		return fmt.Errorf("save selection run: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		// 读不到影响行数就无法判断是否已存在，静默跳过会丢掉本次选股明细。
+		return fmt.Errorf("读取 selection run 写入结果失败: %w", err)
+	}
 	if n == 0 {
 		return tx.Commit()
 	}
