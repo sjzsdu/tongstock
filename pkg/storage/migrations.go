@@ -1035,6 +1035,66 @@ ALTER TABLE investment_method_audit_nocascade RENAME TO investment_method_audit;
 CREATE INDEX IF NOT EXISTS idx_investment_method_audit_method ON investment_method_audit(method_id, created_at_ns);
 `,
 	},
+	{
+		version: 24,
+		name:    "kline_append_only_revision",
+		// K 线原始数据是只增不改的事实流：主表 kline 只接受首次写入，
+		// 数据源回改历史（复权因子重算、补数据）时把新值追加进
+		// kline_revision，读路径通过 kline_latest 视图取最新版本。
+		// 老数据没有 revision 行时视图回落到主表（version 视为 1）。
+		sql: `
+CREATE TABLE IF NOT EXISTS kline_revision (
+	code TEXT NOT NULL,
+	ktype INTEGER NOT NULL,
+	date TEXT NOT NULL,
+	version INTEGER NOT NULL,
+	open REAL NOT NULL,
+	high REAL NOT NULL,
+	low REAL NOT NULL,
+	close REAL NOT NULL,
+	volume REAL NOT NULL,
+	amount REAL NOT NULL,
+	reason TEXT NOT NULL DEFAULT '',
+	created_at_ns INTEGER NOT NULL,
+	PRIMARY KEY (code, ktype, date, version)
+);
+CREATE INDEX IF NOT EXISTS idx_kline_revision_key
+	ON kline_revision(code, ktype, date, version DESC);
+
+CREATE TABLE IF NOT EXISTS data_version (
+	name TEXT PRIMARY KEY,
+	version INTEGER NOT NULL DEFAULT 1,
+	updated_at_ns INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO data_version(name, version, updated_at_ns) VALUES ('kline', 1, 0);
+
+CREATE VIEW IF NOT EXISTS kline_latest AS
+SELECT
+	b.code AS code,
+	b.ktype AS ktype,
+	b.date AS date,
+	COALESCE(r.open, b.open) AS open,
+	COALESCE(r.high, b.high) AS high,
+	COALESCE(r.low, b.low) AS low,
+	COALESCE(r.close, b.close) AS close,
+	COALESCE(r.volume, b.volume) AS volume,
+	COALESCE(r.amount, b.amount) AS amount
+FROM kline b
+LEFT JOIN kline_revision r
+	ON r.code = b.code AND r.ktype = b.ktype AND r.date = b.date
+	AND r.version = (
+		SELECT MAX(x.version) FROM kline_revision x
+		WHERE x.code = b.code AND x.ktype = b.ktype AND x.date = b.date
+	);
+
+DROP TRIGGER IF EXISTS trg_kline_append_only_update;
+CREATE TRIGGER trg_kline_append_only_update
+BEFORE UPDATE ON kline
+BEGIN
+	SELECT RAISE(ABORT, 'kline is append-only: append a kline_revision row instead of updating');
+END;
+`,
+	},
 }
 
 // Migrate upgrades the SQLite database transactionally. Store constructors
