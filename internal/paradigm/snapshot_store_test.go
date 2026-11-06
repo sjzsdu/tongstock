@@ -1,6 +1,7 @@
 package paradigm
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"path/filepath"
@@ -204,10 +205,27 @@ func TestDatasetSnapshot_CreateKlineSnapshotFreezesRealContent(t *testing.T) {
 		t.Fatalf("unexpected frozen bars: %+v", before)
 	}
 
-	// 修改可变的实时 K 线表，已冻结快照必须保持原值。
-	if _, err := raw.DB().Exec(`UPDATE kline SET high = 100, close = 99, amount = volume * 99
-		WHERE code = '000001' AND ktype = 9 AND date = '20240103'`); err != nil {
-		t.Fatalf("mutate live K line: %v", err)
+	// 数据源回改历史：追加一条 revision（主表只增不改），已冻结快照必须保持原值。
+	tx, err := raw.DB().Begin()
+	if err != nil {
+		t.Fatalf("begin revision tx: %v", err)
+	}
+	if _, err := storage.AppendKline(context.Background(), tx, storage.KlineBar{
+		Code: "000001", KType: 9, Date: "20240103",
+		Open: 10.5, High: 100, Low: 10, Close: 99, Volume: 1200, Amount: 1200 * 99,
+	}, "test.live-revision", time.Now()); err != nil {
+		_ = tx.Rollback()
+		t.Fatalf("append live revision: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit live revision: %v", err)
+	}
+	live, err := readLiveKlines(raw.DB(), "000001", 9, "20240102", "20240103")
+	if err != nil {
+		t.Fatalf("readLiveKlines after revision: %v", err)
+	}
+	if len(live) == 0 || live[len(live)-1].Close != 99 {
+		t.Fatalf("live read did not pick up latest revision: %+v", live)
 	}
 	after, err := store.GetFrozenKlines(snapshot.ID, "000001", 9)
 	if err != nil {
