@@ -63,25 +63,30 @@ func AppendKline(ctx context.Context, tx *sql.Tx, bar KlineBar, reason string, n
 		return KlineAppendResult{Inserted: true, Version: 1}, nil
 	}
 
-	stored := KlineBar{Code: bar.Code, KType: bar.KType, Date: bar.Date}
-	err = tx.QueryRowContext(ctx, `SELECT open, high, low, close, volume, amount FROM kline
-		WHERE code = ? AND ktype = ? AND date = ?`, bar.Code, bar.KType, bar.Date).
-		Scan(&stored.Open, &stored.High, &stored.Low, &stored.Close, &stored.Volume, &stored.Amount)
+	// Compare against the latest visible version, not the main row: a repeat of
+	// an already-recorded correction must not append a duplicate revision.
+	latest := KlineBar{Code: bar.Code, KType: bar.KType, Date: bar.Date}
+	var current int64
+	err = tx.QueryRowContext(ctx, `SELECT version, open, high, low, close, volume, amount
+		FROM kline_revision WHERE code = ? AND ktype = ? AND date = ?
+		ORDER BY version DESC LIMIT 1`, bar.Code, bar.KType, bar.Date).
+		Scan(&current, &latest.Open, &latest.High, &latest.Low, &latest.Close, &latest.Volume, &latest.Amount)
 	if errors.Is(err, sql.ErrNoRows) {
-		// The row vanished between insert and read (concurrent repair). Retry
-		// once so the caller does not see a phantom conflict.
-		return AppendKline(ctx, tx, bar, reason, now)
+		current = 1
+		latest = KlineBar{Code: bar.Code, KType: bar.KType, Date: bar.Date}
+		err = tx.QueryRowContext(ctx, `SELECT open, high, low, close, volume, amount FROM kline
+			WHERE code = ? AND ktype = ? AND date = ?`, bar.Code, bar.KType, bar.Date).
+			Scan(&latest.Open, &latest.High, &latest.Low, &latest.Close, &latest.Volume, &latest.Amount)
+		if errors.Is(err, sql.ErrNoRows) {
+			// The row vanished between insert and read (concurrent repair). Retry
+			// once so the caller does not see a phantom conflict.
+			return AppendKline(ctx, tx, bar, reason, now)
+		}
 	}
 	if err != nil {
 		return KlineAppendResult{}, err
 	}
-
-	var current int64
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(version), 1) FROM kline_revision
-		WHERE code = ? AND ktype = ? AND date = ?`, bar.Code, bar.KType, bar.Date).Scan(&current); err != nil {
-		return KlineAppendResult{}, err
-	}
-	if sameKlineValues(stored, bar) {
+	if sameKlineValues(latest, bar) {
 		return KlineAppendResult{Version: current}, nil
 	}
 
