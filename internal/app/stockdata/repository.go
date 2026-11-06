@@ -75,7 +75,7 @@ func (c *SQLiteTradingCalendar) load(ctx context.Context) error {
 	// calendar from the union of validated daily stock bars instead of treating
 	// every weekday (including public holidays) as a trading day.
 	if len(days) == 0 {
-		days, err = loadTradingDays(ctx, c.storage.DB(), `SELECT DISTINCT date FROM kline
+		days, err = loadTradingDays(ctx, c.storage.DB(), `SELECT DISTINCT date FROM kline_latest
 			WHERE ktype IN (4,9) AND code <> '999999'
 				AND length(date)=8 AND date BETWEEN '19900101' AND strftime('%Y%m%d','now','+1 day')
 			ORDER BY date`)
@@ -122,7 +122,7 @@ func (r *SQLiteRepository) InspectCoverage(ctx context.Context, spec DataSpec) (
 	switch spec.Type {
 	case DataKline:
 		rows, err := r.storage.DB().QueryContext(ctx,
-			`SELECT date FROM kline WHERE code = ? AND ktype = ? ORDER BY date`, spec.Code, spec.KType)
+			`SELECT date FROM kline_latest WHERE code = ? AND ktype = ? ORDER BY date`, spec.Code, spec.KType)
 		if err != nil {
 			return Coverage{}, err
 		}
@@ -177,7 +177,7 @@ func (r *SQLiteRepository) InspectCoverage(ctx context.Context, spec DataSpec) (
 func (r *SQLiteRepository) Query(ctx context.Context, spec DataSpec) (Dataset, error) {
 	switch spec.Type {
 	case DataKline:
-		query := `SELECT date, open, high, low, close, volume, amount FROM kline WHERE code = ? AND ktype = ?`
+		query := `SELECT date, open, high, low, close, volume, amount FROM kline_latest WHERE code = ? AND ktype = ?`
 		args := []any{spec.Code, spec.KType}
 		if !spec.Start.IsZero() {
 			query += ` AND date >= ?`
@@ -256,20 +256,25 @@ func (r *SQLiteRepository) SaveSynced(ctx context.Context, spec DataSpec, datase
 			if err := validateKlineRecord(item, time.Now()); err != nil {
 				return fmt.Errorf("invalid kline at index %d: %w", index, err)
 			}
-			if _, err := tx.ExecContext(ctx, `INSERT INTO kline
-				(code, ktype, date, open, high, low, close, volume, amount)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-				ON CONFLICT(code, ktype, date) DO UPDATE SET
-				open=excluded.open, high=excluded.high, low=excluded.low, close=excluded.close,
-				volume=excluded.volume, amount=excluded.amount`,
-				spec.Code, spec.KType, item.Time.Format("20060102"), item.Open, item.High,
-				item.Low, item.Close, item.Volume, item.Amount); err != nil {
+			// 主表只增不改：同一 (code,ktype,date) 的新值进入 kline_revision，
+			// 历史结果因此可复现（旧值永远查得到）。
+			if _, err := storage.AppendKline(ctx, tx, storage.KlineBar{
+				Code:   spec.Code,
+				KType:  spec.KType,
+				Date:   item.Time.Format("20060102"),
+				Open:   item.Open,
+				High:   item.High,
+				Low:    item.Low,
+				Close:  item.Close,
+				Volume: item.Volume,
+				Amount: item.Amount,
+			}, "stockdata.sync", time.Now()); err != nil {
 				return err
 			}
 			rowsWritten++
 		}
 		if err := tx.QueryRowContext(ctx,
-			`SELECT COALESCE(MIN(date), ''), COALESCE(MAX(date), '') FROM kline WHERE code = ? AND ktype = ?`,
+			`SELECT COALESCE(MIN(date), ''), COALESCE(MAX(date), '') FROM kline_latest WHERE code = ? AND ktype = ?`,
 			spec.Code, spec.KType).Scan(&coverageStart, &coverageEnd); err != nil {
 			return err
 		}
