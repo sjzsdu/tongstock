@@ -648,3 +648,75 @@ func validKline(day time.Time, price float64) *protocol.Kline {
 		Close: price, Volume: 100, Amount: 1000,
 	}
 }
+
+// TestSaveSyncedKlineIsAppendOnly 锁定阶段②的验收口径：同一个
+// (code,ktype,date) 用不同数值重复写入时，主表不变、kline_revision 多一行、
+// data_version 递增，而读路径返回最新版本。
+func TestSaveSyncedKlineIsAppendOnly(t *testing.T) {
+	store, repository := testRepository(t)
+	ctx := context.Background()
+	day := time.Date(2026, 7, 28, 0, 0, 0, 0, time.Local)
+	spec := DataSpec{Type: DataKline, Market: "sh", Code: "600000", Granularity: "day", KType: 9}
+
+	first := validKline(day, 10)
+	if err := repository.SaveSynced(ctx, spec, Dataset{Klines: []*protocol.Kline{first}}, SyncMetadata{}); err != nil {
+		t.Fatal(err)
+	}
+	versionBefore, err := store.KlineDataVersion(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	second := validKline(day, 12)
+	second.Close = 12.5
+	if err := repository.SaveSynced(ctx, spec, Dataset{Klines: []*protocol.Kline{second}}, SyncMetadata{}); err != nil {
+		t.Fatal(err)
+	}
+
+	var mainClose float64
+	if err := store.DB().QueryRow(`SELECT close FROM kline WHERE code=? AND ktype=? AND date=?`,
+		spec.Code, spec.KType, day.Format("20060102")).Scan(&mainClose); err != nil {
+		t.Fatal(err)
+	}
+	if mainClose != first.Close {
+		t.Fatalf("main table close = %v, want first observed %v", mainClose, first.Close)
+	}
+
+	var revisions int
+	if err := store.DB().QueryRow(`SELECT COUNT(*) FROM kline_revision WHERE code=? AND ktype=? AND date=?`,
+		spec.Code, spec.KType, day.Format("20060102")).Scan(&revisions); err != nil {
+		t.Fatal(err)
+	}
+	if revisions != 1 {
+		t.Fatalf("revision rows = %d, want 1", revisions)
+	}
+
+	versionAfter, err := store.KlineDataVersion(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if versionAfter <= versionBefore {
+		t.Fatalf("data_version did not increase: %d -> %d", versionBefore, versionAfter)
+	}
+
+	dataset, err := repository.Query(ctx, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dataset.Klines) != 1 || dataset.Klines[0].Close != second.Close {
+		t.Fatalf("read path returned stale values: %+v", dataset.Klines)
+	}
+
+	// 重复发送相同数值不产生历史，版本号保持稳定。
+	if err := repository.SaveSynced(ctx, spec, Dataset{Klines: []*protocol.Kline{second}}, SyncMetadata{}); err != nil {
+		t.Fatal(err)
+	}
+	var revisionsAfterRepeat int
+	if err := store.DB().QueryRow(`SELECT COUNT(*) FROM kline_revision WHERE code=? AND ktype=? AND date=?`,
+		spec.Code, spec.KType, day.Format("20060102")).Scan(&revisionsAfterRepeat); err != nil {
+		t.Fatal(err)
+	}
+	if revisionsAfterRepeat != revisions {
+		t.Fatalf("identical rewrite appended history: %d -> %d", revisions, revisionsAfterRepeat)
+	}
+}
