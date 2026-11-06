@@ -401,7 +401,7 @@ func (s *Server) captureForwardExecutionMarket(entry ledger.SignalEntry) (ledger
 	}
 	var execution row
 	if err := s.storage.DB().QueryRow(`SELECT date, open, high, low, close, volume, amount
-		FROM kline WHERE code=? AND ktype=9 AND REPLACE(date, '-', '')>?
+		FROM kline_latest WHERE code=? AND ktype=9 AND REPLACE(date, '-', '')>?
 		ORDER BY REPLACE(date, '-', '') LIMIT 1`, code, signalDate.Format("20060102")).
 		Scan(&execution.date, &execution.open, &execution.high, &execution.low,
 			&execution.close, &execution.volume, &execution.amount); err != nil {

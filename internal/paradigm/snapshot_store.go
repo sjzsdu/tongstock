@@ -311,7 +311,7 @@ type rowQueryer interface {
 
 func readLiveKlines(q rowQueryer, code string, ktype uint8, startDate, endDate string) ([]SnapshotKlineBar, error) {
 	rows, err := q.Query(`SELECT date, open, high, low, close, volume, amount
-		FROM kline
+		FROM kline_latest
 		WHERE code = ? AND ktype = ? AND REPLACE(date, '-', '') >= ? AND REPLACE(date, '-', '') <= ?
 		ORDER BY REPLACE(date, '-', '')`, code, ktype, startDate, endDate)
 	if err != nil {

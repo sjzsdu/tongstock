@@ -181,7 +181,7 @@ func (p *SQLiteWatermarkProvider) FetchWatermarks(date string, codes []string) (
 	for _, code := range codes {
 		var last string
 		var count int
-		err := p.db.DB().QueryRow(`SELECT COALESCE(MAX(date),''), COUNT(*) FROM kline WHERE code=? AND ktype=? AND date<=?`, code, ktype, compactDate).Scan(&last, &count)
+		err := p.db.DB().QueryRow(`SELECT COALESCE(MAX(date),''), COUNT(*) FROM kline_latest WHERE code=? AND ktype=? AND date<=?`, code, ktype, compactDate).Scan(&last, &count)
 		if err != nil {
 			return nil, err
 		}
@@ -279,7 +279,7 @@ func (c *SQLiteTradingCalendar) IsTradingDay(date string) (bool, error) {
 	}
 	// Fail on absence of actual market rows, but allow legacy databases whose
 	// workday table has not yet been materialized.
-	err = c.db.DB().QueryRow(`SELECT COUNT(*) FROM kline WHERE ktype=9 AND date=?`, strings.ReplaceAll(date, "-", "")).Scan(&cnt)
+	err = c.db.DB().QueryRow(`SELECT COUNT(*) FROM kline_latest WHERE ktype=9 AND date=?`, strings.ReplaceAll(date, "-", "")).Scan(&cnt)
 	return cnt > 0, err
 }
 
@@ -448,7 +448,7 @@ func (e *SQLiteFeatureEngine) Compute(date string, codes []string, features []ma
 		rows, err := e.db.DB().Query(`SELECT code, AVG(amount * 1.0 / close) FROM (
 				SELECT code, amount, close,
 					ROW_NUMBER() OVER (PARTITION BY code ORDER BY date DESC) AS rn
-				FROM kline WHERE ktype = 9 AND date <= ? AND close > 0 AND amount > 0
+				FROM kline_latest WHERE ktype = 9 AND date <= ? AND close > 0 AND amount > 0
 			) WHERE rn <= 120 GROUP BY code`, queryDate)
 		if err != nil {
 			return nil, fmt.Errorf("load avg turnover: %w", err)
@@ -500,7 +500,7 @@ func (e *SQLiteFeatureEngine) Compute(date string, codes []string, features []ma
 		// K 线派生特征需要真实日线。
 		if len(klineFeatures) > 0 {
 			rows, err := e.db.DB().Query(`SELECT date, open, high, low, close, volume, amount
-				FROM kline WHERE code = ? AND ktype = 9 AND date <= ? ORDER BY date DESC LIMIT 260`, code, queryDate)
+				FROM kline_latest WHERE code = ? AND ktype = 9 AND date <= ? ORDER BY date DESC LIMIT 260`, code, queryDate)
 			if err != nil {
 				return nil, err
 			}
