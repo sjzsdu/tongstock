@@ -1,6 +1,7 @@
 package tdx
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -77,19 +78,24 @@ func (s *KlineStore) saveKlinesLocked(code string, ktype uint8, klines []*protoc
 	}
 	defer tx.Rollback()
 
-	stmt, err := tx.Prepare(s.saveSQL())
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
 	if replace {
-		if _, err := tx.Exec(fmt.Sprintf(`DELETE FROM kline WHERE code = %s AND ktype = %s`, s.ph(1), s.ph(2)), code, ktype); err != nil {
+		if err := s.pruneMissingDates(tx, code, ktype, valid); err != nil {
 			return err
 		}
 	}
 	for _, k := range valid {
-		if _, err := stmt.Exec(code, ktype, k.Time.Format("20060102"), k.Open, k.High, k.Low, k.Close, k.Volume, k.Amount); err != nil {
+		// 主表只增不改：值变化时追加 revision，旧值保留以便复现历史结果。
+		if _, err := storage.AppendKline(context.Background(), tx, storage.KlineBar{
+			Code:   code,
+			KType:  ktype,
+			Date:   k.Time.Format("20060102"),
+			Open:   k.Open,
+			High:   k.High,
+			Low:    k.Low,
+			Close:  k.Close,
+			Volume: k.Volume,
+			Amount: k.Amount,
+		}, "tdx.sync", now); err != nil {
 			return err
 		}
 	}
@@ -100,21 +106,46 @@ func (s *KlineStore) saveKlinesLocked(code string, ktype uint8, klines []*protoc
 	return tx.Commit()
 }
 
-func (s *KlineStore) saveSQL() string {
-	switch s.s.Dialect() {
-	case storage.Postgres:
-		return `INSERT INTO kline (code, ktype, date, open, high, low, close, volume, amount) 
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
-				ON CONFLICT (code, ktype, date) DO UPDATE SET 
-				open=EXCLUDED.open, high=EXCLUDED.high, low=EXCLUDED.low, close=EXCLUDED.close, volume=EXCLUDED.volume, amount=EXCLUDED.amount`
-	case storage.MySQL:
-		return "INSERT INTO kline (code, ktype, date, open, high, low, close, volume, amount) " +
-			"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) " +
-			"ON DUPLICATE KEY UPDATE open=VALUES(open), high=VALUES(high), low=VALUES(low), close=VALUES(close), volume=VALUES(volume), amount=VALUES(amount)"
-	default: // SQLite
-		return `INSERT OR REPLACE INTO kline (code, ktype, date, open, high, low, close, volume, amount) 
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+// pruneMissingDates removes bars that no longer exist upstream. Deletion is a
+// withdrawal, not a rewrite: the bar's revision history is withdrawn with it so
+// a later re-insert starts clean instead of resurrecting an old version.
+func (s *KlineStore) pruneMissingDates(tx *sql.Tx, code string, ktype uint8, valid []*protocol.Kline) error {
+	keep := make(map[string]struct{}, len(valid))
+	for _, k := range valid {
+		keep[k.Time.Format("20060102")] = struct{}{}
 	}
+	rows, err := tx.Query(fmt.Sprintf(`SELECT date FROM kline WHERE code = %s AND ktype = %s`, s.ph(1), s.ph(2)), code, ktype)
+	if err != nil {
+		return err
+	}
+	var stale []string
+	for rows.Next() {
+		var date string
+		if err := rows.Scan(&date); err != nil {
+			rows.Close()
+			return err
+		}
+		if _, ok := keep[date]; !ok {
+			stale = append(stale, date)
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	deleteKline := fmt.Sprintf(`DELETE FROM kline WHERE code = %s AND ktype = %s AND date = %s`, s.ph(1), s.ph(2), s.ph(3))
+	deleteRevisions := fmt.Sprintf(`DELETE FROM kline_revision WHERE code = %s AND ktype = %s AND date = %s`, s.ph(1), s.ph(2), s.ph(3))
+	for _, date := range stale {
+		if _, err := tx.Exec(deleteKline, code, ktype, date); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(deleteRevisions, code, ktype, date); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ph 返回占位符 ? 或 $N
@@ -130,7 +161,7 @@ func (s *KlineStore) GetKline(code string, ktype uint8, startDate, endDate strin
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	query := fmt.Sprintf(`SELECT date, open, high, low, close, volume, amount FROM kline WHERE code = %s AND ktype = %s`, s.ph(1), s.ph(2))
+	query := fmt.Sprintf(`SELECT date, open, high, low, close, volume, amount FROM kline_latest WHERE code = %s AND ktype = %s`, s.ph(1), s.ph(2))
 	args := []interface{}{code, ktype}
 	idx := 3
 	if startDate != "" {
@@ -202,7 +233,7 @@ func (s *KlineStore) GetLatestDate(code string, ktype uint8) (string, error) {
 	defer s.mu.RUnlock()
 
 	var date string
-	err := s.s.DB().QueryRow(fmt.Sprintf(`SELECT date FROM kline WHERE code = %s AND ktype = %s ORDER BY date DESC LIMIT 1`, s.ph(1), s.ph(2)), code, ktype).Scan(&date)
+	err := s.s.DB().QueryRow(fmt.Sprintf(`SELECT date FROM kline_latest WHERE code = %s AND ktype = %s ORDER BY date DESC LIMIT 1`, s.ph(1), s.ph(2)), code, ktype).Scan(&date)
 	if err == sql.ErrNoRows {
 		return "", ErrKlineNotFound
 	}
@@ -216,7 +247,7 @@ func (s *KlineStore) UpdateSyncState(code string, ktype uint8, status, errMsg st
 
 	var first, last string
 	var count int
-	s.s.DB().QueryRow(fmt.Sprintf(`SELECT COALESCE(MIN(date), ''), COALESCE(MAX(date), ''), COUNT(*) FROM kline WHERE code = %s AND ktype = %s`, s.ph(1), s.ph(2)), code, ktype).Scan(&first, &last, &count)
+	s.s.DB().QueryRow(fmt.Sprintf(`SELECT COALESCE(MIN(date), ''), COALESCE(MAX(date), ''), COUNT(*) FROM kline_latest WHERE code = %s AND ktype = %s`, s.ph(1), s.ph(2)), code, ktype).Scan(&first, &last, &count)
 
 	switch s.s.Dialect() {
 	case storage.Postgres:
@@ -278,7 +309,7 @@ func (s *KlineStore) DetectAndCleanCorruptedKlines(code string, ktype uint8) (in
 	maxDate := now.AddDate(0, 0, 1)
 	minDate := time.Date(1990, 1, 1, 0, 0, 0, 0, s.loc)
 
-	rows, err := s.s.DB().Query(fmt.Sprintf(`SELECT date, open, high, low, close FROM kline WHERE code = %s AND ktype = %s ORDER BY date`, s.ph(1), s.ph(2)), code, ktype)
+	rows, err := s.s.DB().Query(fmt.Sprintf(`SELECT date, open, high, low, close FROM kline_latest WHERE code = %s AND ktype = %s ORDER BY date`, s.ph(1), s.ph(2)), code, ktype)
 	if err != nil {
 		return 0, err
 	}
@@ -344,8 +375,10 @@ func (s *KlineStore) DetectAndCleanCorruptedKlines(code string, ktype uint8) (in
 	defer tx.Rollback()
 
 	deleteSQL := fmt.Sprintf(`DELETE FROM kline WHERE code = %s AND ktype = %s AND date = %s`, s.ph(1), s.ph(2), s.ph(3))
+	deleteRevisionsSQL := fmt.Sprintf(`DELETE FROM kline_revision WHERE code = %s AND ktype = %s AND date = %s`, s.ph(1), s.ph(2), s.ph(3))
 	for _, d := range corrupted {
 		tx.Exec(deleteSQL, code, ktype, d)
+		tx.Exec(deleteRevisionsSQL, code, ktype, d)
 	}
 
 	if err := tx.Commit(); err != nil {
