@@ -1095,6 +1095,21 @@ BEGIN
 END;
 `,
 	},
+	{
+		version: 25,
+		name:    "run_inputs_digest",
+		// 只加列、不回填、不改旧表：历史 run 的 inputs_digest 保持 NULL，读方
+		// 因此能区分「这条老记录还没有输入指纹」与「指纹是空串」。SQLite 的
+		// ADD COLUMN 不支持 IF NOT EXISTS，所以真正的工作放在 after 里用
+		// PRAGMA table_info 判断后再加，整条迁移可以重复执行。
+		sql: `SELECT 1;`,
+		after: func(tx *sql.Tx) error {
+			if err := ensureSQLiteColumn(tx, "daily_selection_run", "inputs_digest", "TEXT"); err != nil {
+				return err
+			}
+			return ensureSQLiteColumn(tx, "position_decision_run", "inputs_digest", "TEXT")
+		},
+	},
 }
 
 // Migrate upgrades the SQLite database transactionally. Store constructors
