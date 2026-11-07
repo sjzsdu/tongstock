@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 	"time"
@@ -240,7 +241,11 @@ func (s *Service) sync(ctx context.Context, code string) ([]SourceDegradation, e
 		total += len(items)
 	}
 
-	s.markSync(code, total, lastErr)
+	// 水位写不进去会导致每次请求都重抓，必须显式暴露而不是静默吞掉。
+	if syncErr := s.markSync(code, total, lastErr); syncErr != nil {
+		log.Printf("news: %v", syncErr)
+		degraded = append(degraded, SourceDegradation{Source: SourceSyncState, Error: syncErr.Error()})
+	}
 
 	// 所有源都失败才算失败；部分失败只是降级。
 	if len(degraded) > 0 && total == 0 {
@@ -249,13 +254,13 @@ func (s *Service) sync(ctx context.Context, code string) ([]SourceDegradation, e
 	return degraded, nil
 }
 
-func (s *Service) markSync(code string, count int, err error) {
+func (s *Service) markSync(code string, count int, err error) error {
 	now := s.now().Format(time.RFC3339)
 	errMsg := ""
 	if err != nil {
 		errMsg = err.Error()
 	}
-	_, _ = s.store.db.Exec(`
+	if _, execErr := s.store.db.Exec(`
 		INSERT INTO news_sync_state (scope, source, last_fetch_at, last_success_at, last_item_count, last_error, updated_at)
 		VALUES (?, '*', ?, ?, ?, ?, ?)
 		ON CONFLICT(scope, source) DO UPDATE SET
@@ -264,7 +269,10 @@ func (s *Service) markSync(code string, count int, err error) {
 			last_error = excluded.last_error,
 			last_success_at = CASE WHEN excluded.last_error = '' THEN excluded.last_fetch_at ELSE last_success_at END,
 			updated_at = excluded.updated_at
-	`, code, now, now, count, errMsg, now)
+	`, code, now, now, count, errMsg, now); execErr != nil {
+		return fmt.Errorf("写入资讯同步水位失败 scope=%s: %w", code, execErr)
+	}
+	return nil
 }
 
 func (s *Service) fromStore(ctx context.Context, req StockNewsRequest, degraded []SourceDegradation, msg string) (*StockNewsResult, error) {
@@ -356,7 +364,10 @@ func (s *Service) GlobalSync(ctx context.Context) (int, []SourceDegradation) {
 		poolHits = appendPoolHits(poolHits, items)
 		total += len(items)
 	}
-	s.markSync("global", total, nil)
+	if syncErr := s.markSync("global", total, nil); syncErr != nil {
+		log.Printf("news: %v", syncErr)
+		degraded = append(degraded, SourceDegradation{Source: SourceSyncState, Error: syncErr.Error()})
+	}
 
 	s.syncStockPool(ctx, poolHits)
 

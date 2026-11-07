@@ -9,6 +9,7 @@ import (
 	"github.com/sjzsdu/tongstock/internal/positiondecision"
 	"github.com/sjzsdu/tongstock/internal/selection"
 	tradeengine "github.com/sjzsdu/tongstock/internal/trading"
+	"log"
 	"time"
 )
 
@@ -35,7 +36,15 @@ func (o *Orchestrator) Run(ctx context.Context, snapshotID string) (job *Job, er
 	}
 	defer func() {
 		if err != nil {
-			_ = o.repo.Fail(ctx, job, err)
+			// 失败状态本身写不进去时，job 会永远卡在 running；至少把原始错误
+			// 和 job id 打进日志，保留可追溯的根因。
+			if failErr := o.repo.Fail(ctx, job, err); failErr != nil {
+				jobID := ""
+				if job != nil {
+					jobID = job.ID
+				}
+				log.Printf("automation: 记录任务失败状态失败 job=%s run_err=%v fail_err=%v", jobID, err, failErr)
+			}
 		}
 	}()
 	sel, err := o.selection.Run(ctx, selection.Request{MarketSnapshotID: snapshotID})

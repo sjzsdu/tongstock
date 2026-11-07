@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"runtime"
 	"strings"
 	"time"
 
@@ -95,14 +96,19 @@ func Recovery() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
 			if recovered := recover(); recovered != nil {
+				buf := make([]byte, 64<<10)
+				buf = buf[:runtime.Stack(buf, false)]
 				record := struct {
 					Level     string `json:"level"`
 					Event     string `json:"event"`
 					RequestID string `json:"request_id"`
 					Path      string `json:"path"`
+					Panic     any    `json:"panic"`
+					Stack     string `json:"stack"`
 				}{
 					Level: "error", Event: "http_panic",
 					RequestID: RequestIDFromContext(c), Path: c.Request.URL.Path,
+					Panic: recovered, Stack: string(buf),
 				}
 				data, _ := json.Marshal(record)
 				log.Print(string(data))

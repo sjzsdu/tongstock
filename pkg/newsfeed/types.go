@@ -18,6 +18,8 @@ const (
 	SourceSinaFinance    SourceType = "新浪财经"
 	SourceTencentFinance SourceType = "腾讯财经"
 	SourceUnknown        SourceType = "未知"
+	// SourceSyncState 表示同步水位（news_sync_state）本身的读写失败，不是上游数据源故障。
+	SourceSyncState SourceType = "sync_state"
 )
 
 // NewsType 定义新闻类型

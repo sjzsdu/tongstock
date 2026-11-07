@@ -31,6 +31,9 @@ type Client struct {
 	done      chan struct{}
 	closeOnce sync.Once
 	closeErr  error
+
+	// broken 表示底层连接已确认不可用，下一次 send 或心跳会触发重连。
+	broken bool
 }
 
 func Dial(addr string, opts ...Option) (*Client, error) {
@@ -130,27 +133,56 @@ func (c *Client) heartbeat() {
 				c.mu.Unlock()
 				return
 			}
-			if err := c.conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+			if c.broken {
+				// 已确认失效的连接不再读写，仅在有 hosts 时尝试恢复。
+				var reconnectErr error
+				if c.redial && len(c.hosts) > 0 {
+					reconnectErr = c.reconnectLocked()
+				}
 				c.mu.Unlock()
-				log.Printf("心跳设置超时失败: %v", err)
+				if reconnectErr != nil {
+					log.Printf("心跳重连失败: %v", reconnectErr)
+				}
+				continue
+			}
+			if err := c.conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+				c.invalidateLocked()
+				c.mu.Unlock()
+				log.Printf("心跳设置超时失败，连接已标记失效: %v", err)
 				return
 			}
 			f := protocol.MHeart.Frame()
 			_, err := c.conn.Write(f.Bytes())
 			if err != nil {
 				_ = c.conn.SetDeadline(time.Time{})
+				c.invalidateLocked()
 				c.mu.Unlock()
-				log.Printf("心跳失败: %v", err)
+				log.Printf("心跳写入失败，连接已标记失效: %v", err)
 				return
 			}
 			// Must read and discard the heartbeat response, otherwise it
 			// stays in the bufio.Reader buffer and the next send() call
 			// picks up the stale heartbeat response, causing a type mismatch
 			// error like "响应类型不匹配: 请求 2c5, 响应 4".
-			_, _ = c.readResponse()
+			if _, readErr := c.readResponse(); readErr != nil {
+				_ = c.conn.SetDeadline(time.Time{})
+				c.invalidateLocked()
+				c.mu.Unlock()
+				log.Printf("心跳读取响应失败，连接已标记失效: %v", readErr)
+				return
+			}
 			_ = c.conn.SetDeadline(time.Time{})
 			c.mu.Unlock()
 		}
+	}
+}
+
+// invalidateLocked 关闭底层连接并标记失效；调用方必须持有 c.mu。
+// 关闭连接是为了让仍在等待响应的调用立即失败，而不是继续使用坏连接。
+func (c *Client) invalidateLocked() {
+	c.broken = true
+	if c.conn != nil {
+		_ = c.conn.Close()
 	}
 }
 
@@ -168,6 +200,12 @@ func (c *Client) send(frame *protocol.Frame) ([]byte, error) {
 
 	if c.closed {
 		return nil, errors.New("client closed")
+	}
+	if c.broken {
+		if c.redial && c.hosts != nil {
+			return nil, c.reconnectAndRetry(frame)
+		}
+		return nil, errors.New("连接已失效，且未启用重连")
 	}
 
 	c.msgID++
@@ -206,52 +244,70 @@ func (c *Client) send(frame *protocol.Frame) ([]byte, error) {
 func (c *Client) reconnectAndRetry(frame *protocol.Frame) error {
 	log.Printf("连接断开，尝试重连...")
 
+	if err := c.reconnectLocked(); err != nil {
+		return err
+	}
+
+	c.msgID++
+	frame.MsgID = c.msgID
+
+	if err := c.conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		return err
+	}
+	_, err := c.conn.Write(frame.Bytes())
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.readResponse()
+	if err != nil {
+		return err
+	}
+
+	if resp.Type != frame.Type {
+		return fmt.Errorf("响应类型不匹配: 请求 %x, 响应 %x", frame.Type, resp.Type)
+	}
+
+	return nil
+}
+
+// reconnectLocked 依次尝试 hosts 建立新连接，成功后清除失效标记。
+// 调用方必须持有 c.mu；失败时返回最后一个错误，保留 broken 状态。
+func (c *Client) reconnectLocked() error {
+	var lastErr error
 	for _, addr := range c.hosts {
 		if !strings.Contains(addr, ":") {
 			addr += ":7709"
 		}
 		conn, err := net.Dial("tcp", addr)
 		if err != nil {
+			lastErr = err
 			log.Printf("重连 %s 失败: %v", addr, err)
 			continue
 		}
 
-		c.conn.Close()
+		if c.conn != nil {
+			_ = c.conn.Close()
+		}
 		c.conn = conn
 		c.reader = bufio.NewReader(conn)
 		c.addr = addr
 
 		if err := c.connect(); err != nil {
+			lastErr = err
 			log.Printf("重连 %s 失败: %v", addr, err)
 			continue
 		}
 
+		c.broken = false
 		log.Printf("重连成功: %s", addr)
-
-		c.msgID++
-		frame.MsgID = c.msgID
-
-		if err := c.conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
-			return err
-		}
-		_, err = c.conn.Write(frame.Bytes())
-		if err != nil {
-			return err
-		}
-
-		resp, err := c.readResponse()
-		if err != nil {
-			return err
-		}
-
-		if resp.Type != frame.Type {
-			return fmt.Errorf("响应类型不匹配: 请求 %x, 响应 %x", frame.Type, resp.Type)
-		}
-
 		return nil
 	}
 
-	return errors.New("重连失败")
+	if lastErr == nil {
+		lastErr = errors.New("无可用服务器")
+	}
+	return fmt.Errorf("重连失败: %w", lastErr)
 }
 
 func (c *Client) Close() error {

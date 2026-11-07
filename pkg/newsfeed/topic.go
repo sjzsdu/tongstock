@@ -122,8 +122,15 @@ func (s *Service) HotStockTopics(ctx context.Context, req HotTopicsRequest) (*Ho
 			}
 		}
 		synced, degraded = s.GlobalSync(ctx)
+		// 水位写入失败不属于上游数据源故障，不能据此返回 502。
+		failedSources := 0
+		for _, d := range degraded {
+			if d.Source != SourceSyncState {
+				failedSources++
+			}
+		}
 		// 全军覆没且要求新鲜数据 —— 与个股资讯同一契约，明确报错。
-		if synced == 0 && len(degraded) > 0 && mode == NewsRequireFresh {
+		if synced == 0 && failedSources > 0 && mode == NewsRequireFresh {
 			return nil, fmt.Errorf("%w: 全局快讯同步失败", ErrFetchUnavailable)
 		}
 	}

@@ -7,6 +7,7 @@ import (
 	"github.com/sjzsdu/tongstock/internal/app/stockdata"
 	"github.com/sjzsdu/tongstock/pkg/tdx"
 	"github.com/sjzsdu/tongstock/pkg/tdx/protocol"
+	"log"
 	"net/http"
 	"sort"
 	"strconv"
@@ -263,10 +264,13 @@ func (s *Server) handleCodesWithMarketCap(c *gin.Context) {
 	codesMap := make(map[string]gin.H)
 	processed := 0
 	maxProcess := 500 // Limit to avoid timeout
+	// 取不到行情/财务时不再静默剔除：记录降级原因随结果一起返回。
+	skipped := make([]gin.H, 0)
 
 	for _, item := range exchanges {
 		codes, err := s.svc.FetchCodes(item.ex)
 		if err != nil {
+			log.Printf("market codes: 获取 %s 代码列表失败: %v", item.name, err)
 			continue
 		}
 		for _, code := range codes {
@@ -278,8 +282,8 @@ func (s *Server) handleCodesWithMarketCap(c *gin.Context) {
 			}
 
 			fullCode := item.name + code.Code
-			quotes, _ := s.svc.GetQuote(fullCode)
-			finance, _ := s.svc.FetchFinance(fullCode)
+			quotes, quoteErr := s.svc.GetQuote(fullCode)
+			finance, financeErr := s.svc.FetchFinance(fullCode)
 
 			var marketCap float64
 			var price float64
@@ -293,10 +297,35 @@ func (s *Server) handleCodesWithMarketCap(c *gin.Context) {
 			// Apply market cap filter
 			// Skip stocks with missing market cap data
 			if marketCap <= 0 {
+				reason := "流通市值数据缺失"
+				switch {
+				case quoteErr != nil:
+					reason = "获取行情失败: " + quoteErr.Error()
+				case financeErr != nil:
+					reason = "获取财务数据失败: " + financeErr.Error()
+				case len(quotes) == 0:
+					reason = "行情返回为空"
+				case finance == nil:
+					reason = "财务数据为空"
+				}
+				log.Printf("market codes: 降级剔除 %s(%s): %s", fullCode, code.Name, reason)
+				skipped = append(skipped, gin.H{
+					"code": code.Code, "name": code.Name, "exchange": item.name, "reason": reason,
+				})
 				continue
 			}
-			if (minMarketCap > 0 && marketCap < minMarketCap) ||
-				(maxMarketCap > 0 && marketCap > maxMarketCap) {
+			if minMarketCap > 0 && marketCap < minMarketCap {
+				skipped = append(skipped, gin.H{
+					"code": code.Code, "name": code.Name, "exchange": item.name,
+					"reason": fmt.Sprintf("流通市值 %.2f 亿低于下限 %.2f 亿", marketCap, minMarketCap),
+				})
+				continue
+			}
+			if maxMarketCap > 0 && marketCap > maxMarketCap {
+				skipped = append(skipped, gin.H{
+					"code": code.Code, "name": code.Name, "exchange": item.name,
+					"reason": fmt.Sprintf("流通市值 %.2f 亿高于上限 %.2f 亿", marketCap, maxMarketCap),
+				})
 				continue
 			}
 
@@ -322,8 +351,9 @@ func (s *Server) handleCodesWithMarketCap(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"total": len(result),
-		"codes": result,
+		"total":   len(result),
+		"codes":   result,
+		"skipped": skipped,
 	})
 }
 
@@ -1141,18 +1171,27 @@ func isValidBlockNameServer(name string) bool {
 func (s *Server) getCodeNameMapServer() map[string]string {
 	codeNameMap := make(map[string]string)
 
-	codes, _ := s.svc.FetchCodes(protocol.ExchangeSH)
+	codes, err := s.svc.FetchCodes(protocol.ExchangeSH)
+	if err != nil {
+		log.Printf("getCodeNameMap: 获取 sh 代码列表失败: %v", err)
+	}
 	for _, c := range codes {
 		codeNameMap[c.Code] = c.Name
 	}
 
-	codes, _ = s.svc.FetchCodes(protocol.ExchangeSZ)
+	codes, err = s.svc.FetchCodes(protocol.ExchangeSZ)
+	if err != nil {
+		log.Printf("getCodeNameMap: 获取 sz 代码列表失败: %v", err)
+	}
 	for _, c := range codes {
 		// 深市股票代码与部分上证指数代码重叠，板块成分股中 000/002/300 通常应优先展示深市股票名称。
 		codeNameMap[c.Code] = c.Name
 	}
 
-	codes, _ = s.svc.FetchCodes(protocol.ExchangeBJ)
+	codes, err = s.svc.FetchCodes(protocol.ExchangeBJ)
+	if err != nil {
+		log.Printf("getCodeNameMap: 获取 bj 代码列表失败: %v", err)
+	}
 	for _, c := range codes {
 		codeNameMap[c.Code] = c.Name
 	}

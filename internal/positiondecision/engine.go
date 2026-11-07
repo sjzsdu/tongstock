@@ -167,8 +167,11 @@ func applyMethod(d *Decision, m *methodregistry.Method, p trading.Trade, date st
 		return
 	}
 	bar := methods.Bar{Date: date, Open: values["open"], High: values["high"], Low: values["low"], Close: values["close"], Volume: values["volume"], Amount: values["amount"], Indicators: values}
-	res, _ := v.Method.Exit(bar, []methods.Bar{bar}, &methods.PositionState{EntryPrice: p.Price, EntryDate: p.CreatedAt.Format("2006-01-02")})
-	if res != nil {
+	res, exitErr := v.Method.Exit(bar, []methods.Bar{bar}, &methods.PositionState{EntryPrice: p.Price, EntryDate: p.CreatedAt.Format("2006-01-02")})
+	if exitErr != nil {
+		// 卖出规则执行失败必须显式暴露，不能让错误吞掉后落进正常态的 hold/watch。
+		applyExitFailure(d, exitErr)
+	} else if res != nil {
 		for _, x := range res.Trace {
 			d.Facts = append(d.Facts, Fact{Kind: x.Path, Passed: x.Passed, Detail: x.Detail})
 		}
@@ -189,6 +192,23 @@ func applyMethod(d *Decision, m *methodregistry.Method, p trading.Trade, date st
 		d.Facts = append(d.Facts, Fact{Kind: "method_health", Passed: true, Detail: "方法状态=" + string(m.Status)})
 	}
 }
+
+// applyExitFailure 把买入方法卖出规则的计算错误写成可追溯的异常决策：
+// 复用既有 insufficient_data 动作，Priority 拉到 critical，并禁止执行，
+// 避免卖出信号因错误而静默丢失。
+func applyExitFailure(d *Decision, err error) {
+	d.Action = "insufficient_data"
+	d.Priority = "critical"
+	d.Executable = false
+	detail := "卖出规则执行失败: " + err.Error()
+	if d.Constraint != "" {
+		d.Constraint += "；" + detail
+	} else {
+		d.Constraint = detail
+	}
+	d.Facts = append(d.Facts, Fact{Kind: "exit_error", Passed: false, Detail: detail})
+}
+
 func version(m *methodregistry.Method, id string) *methodregistry.MethodVersion {
 	for i := range m.Versions {
 		if m.Versions[i].ID == id {
