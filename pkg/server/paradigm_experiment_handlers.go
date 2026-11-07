@@ -228,7 +228,7 @@ func (s *Server) resolveParadigmSnapshot(p *paradigms.Paradigm, req paradigmBack
 	if start == "" || end == "" {
 		var availableStart, availableEnd sql.NullString
 		err := s.storage.DB().QueryRow(`SELECT MIN(REPLACE(date, '-', '')), MAX(REPLACE(date, '-', ''))
-			FROM kline WHERE code = ? AND ktype = ?`, p.StockCode, req.KType).
+			FROM kline_latest WHERE code = ? AND ktype = ?`, p.StockCode, req.KType).
 			Scan(&availableStart, &availableEnd)
 		if err != nil {
 			return "", fmt.Errorf("inspect real K-line range: %w", err)

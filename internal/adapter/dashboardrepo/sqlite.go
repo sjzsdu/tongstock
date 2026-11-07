@@ -28,7 +28,7 @@ func NewKlineDateReader(db *storage.Storage) (*KlineDateReader, error) {
 // 没有任何真实日线时返回空字符串，而不是伪造日期。
 func (r *KlineDateReader) LatestKlineDate() (string, error) {
 	var raw sql.NullString
-	err := r.db.DB().QueryRow(`SELECT MAX(REPLACE(date,'-','')) FROM kline
+	err := r.db.DB().QueryRow(`SELECT MAX(REPLACE(date,'-','')) FROM kline_latest
 		WHERE ktype = ? AND open > 0 AND high > 0 AND low > 0 AND close > 0
 		AND length(REPLACE(date,'-','')) = 8`, klineTypeDaily).Scan(&raw)
 	if err != nil {

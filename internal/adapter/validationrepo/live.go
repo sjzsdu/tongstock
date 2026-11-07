@@ -57,7 +57,7 @@ func (s *LiveSource) universeCounts(windowStart string) (map[string]int, error) 
 		return s.uniCounts, nil
 	}
 	rows, err := s.store.DB().Query(
-		`SELECT code, COUNT(*) FROM kline WHERE ktype=? AND date >= ? GROUP BY code`,
+		`SELECT code, COUNT(*) FROM kline_latest WHERE ktype=? AND date >= ? GROUP BY code`,
 		KlineTypeDaily, windowStart,
 	)
 	if err != nil {
@@ -157,7 +157,7 @@ func (s *LiveSource) liveSnapshot() (*paradigm.DatasetSnapshot, error) {
 	}
 	var minDate, maxDate string
 	if err := s.store.DB().QueryRow(
-		`SELECT MIN(date), MAX(date) FROM kline WHERE ktype=?`, KlineTypeDaily,
+		`SELECT MIN(date), MAX(date) FROM kline_latest WHERE ktype=?`, KlineTypeDaily,
 	).Scan(&minDate, &maxDate); err != nil || maxDate == "" {
 		if err != nil {
 			return nil, fmt.Errorf("probe live kline range: %w", err)
@@ -278,14 +278,14 @@ func (s *LiveSource) LoadBars(ctx context.Context, snapshotID, code, dateStart, 
 	var prevClose float64
 	if start != "" {
 		if err := s.store.DB().QueryRow(
-			`SELECT close FROM kline WHERE code=? AND ktype=? AND date < ? ORDER BY date DESC LIMIT 1`,
+			`SELECT close FROM kline_latest WHERE code=? AND ktype=? AND date < ? ORDER BY date DESC LIMIT 1`,
 			code, KlineTypeDaily, start,
 		).Scan(&prevClose); err != nil && err.Error() != "sql: no rows in result set" {
 			return nil, fmt.Errorf("probe prev close %s: %w", code, err)
 		}
 	}
 
-	query := `SELECT date, open, high, low, close, volume, amount FROM kline WHERE code=? AND ktype=?`
+	query := `SELECT date, open, high, low, close, volume, amount FROM kline_latest WHERE code=? AND ktype=?`
 	args := []any{code, KlineTypeDaily}
 	if start != "" {
 		query += ` AND date >= ?`

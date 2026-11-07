@@ -162,7 +162,7 @@ func (r *Runner) missingCodes(ctx context.Context, codes []string) ([]string, er
 	var missing []string
 	for _, code := range codes {
 		var n int
-		err := r.store.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM kline
+		err := r.store.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM kline_latest
 			WHERE code = ? AND ktype = 9 AND open > 0 AND high > 0 AND low > 0 AND close > 0
 			AND volume > 0`, code).Scan(&n)
 		if err != nil {
@@ -196,7 +196,7 @@ func resolveRealRange(ctx context.Context, store *storage.Storage, codes []strin
 	for _, code := range codes {
 		var minDate, maxDate string
 		err := store.DB().QueryRowContext(ctx, `SELECT
-			MIN(REPLACE(date, '-', '')), MAX(REPLACE(date, '-', '')) FROM kline
+			MIN(REPLACE(date, '-', '')), MAX(REPLACE(date, '-', '')) FROM kline_latest
 			WHERE code = ? AND ktype = 9 AND open > 0 AND high > 0 AND low > 0 AND close > 0
 			AND volume > 0 AND length(REPLACE(date, '-', '')) = 8
 			AND REPLACE(date, '-', '') BETWEEN '19900101' AND '20991231'`, code).Scan(&minDate, &maxDate)

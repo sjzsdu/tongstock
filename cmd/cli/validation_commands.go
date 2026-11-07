@@ -259,7 +259,7 @@ func resolveRealValidationRange(ctx context.Context, store *storage.Storage, cod
 	var minDate, maxDate string
 	err := store.DB().QueryRowContext(ctx, `SELECT
 		MIN(REPLACE(date, '-', '')), MAX(REPLACE(date, '-', ''))
-		FROM kline WHERE code = ? AND ktype = ?
+		FROM kline_latest WHERE code = ? AND ktype = ?
 		AND open > 0 AND high > 0 AND low > 0 AND close > 0
 		AND length(REPLACE(date, '-', '')) = 8
 		AND REPLACE(date, '-', '') BETWEEN '19900101' AND '20991231'`,
