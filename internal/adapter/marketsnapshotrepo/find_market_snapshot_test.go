@@ -1,6 +1,7 @@
 package marketsnapshotrepo_test
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -64,5 +65,43 @@ func TestFindMarketSnapshotReleasesCursorBeforeLoading(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("FindMarketSnapshot deadlocked: the cursor kept the only pooled connection")
+	}
+}
+
+func TestListMarketSnapshotsReleasesCursorBeforeLoading(t *testing.T) {
+	store, err := storage.New(storage.Config{Driver: "sqlite3", DSN: filepath.Join(t.TempDir(), "snap.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	repo, err := marketsnapshotrepo.New(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := &marketsnapshot.MarketSnapshot{
+		ID: "snap-list-1", SnapshotDate: "2026-07-16",
+		Universe: marketsnapshot.UniverseDefinition{Name: "universe_usable"},
+		Market:   "CN-A", PriceAdjustment: "forward", CoveragePct: 1,
+		Status: marketsnapshot.StatusReady, Codes: []marketsnapshot.CodeStatus{{Code: "000063", UniverseMember: true}},
+		BuiltAt: time.Now(),
+	}
+	if err := repo.SaveMarketSnapshot(snapshot); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		got, err := repo.ListMarketSnapshots("", "", "")
+		if err == nil && (len(got) != 1 || got[0].ID != snapshot.ID) {
+			err = fmt.Errorf("unexpected snapshots: %+v", got)
+		}
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("ListMarketSnapshots deadlocked: the cursor kept the only pooled connection")
 	}
 }
