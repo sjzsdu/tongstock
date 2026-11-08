@@ -89,3 +89,69 @@ func appliedMigrationCount(db *storage.Storage) (int, error) {
 	err := row.Scan(&n)
 	return n, err
 }
+
+// TestInputsDigestColumnsAreAddedWithoutBackfill pins migration 25: both run
+// tables gain a nullable inputs_digest column, and existing rows keep NULL
+// instead of being rewritten with a fabricated digest.
+func TestInputsDigestColumnsAreAddedWithoutBackfill(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "digest-columns.db")
+	db, err := storage.New(storage.Config{Driver: "sqlite3", DSN: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	for _, table := range []string{"daily_selection_run", "position_decision_run"} {
+		if !tableHasColumn(t, db, table, "inputs_digest") {
+			t.Fatalf("%s has no inputs_digest column after migration 25", table)
+		}
+	}
+
+	// A pre-existing row must stay readable with a NULL digest.
+	if _, err := db.DB().Exec(`INSERT INTO market_snapshot(id,snapshot_date,universe_definition,status)
+		VALUES ('snap','2024-01-05','{"name":"universe_usable"}','ready')`); err != nil {
+		t.Fatalf("insert market snapshot: %v", err)
+	}
+	if _, err := db.DB().Exec(`INSERT INTO feature_snapshot(id,market_snapshot_id,snapshot_date,feature_ids_json,status)
+		VALUES ('fs','snap','2024-01-05','[]','ready')`); err != nil {
+		t.Fatalf("insert feature snapshot: %v", err)
+	}
+	if _, err := db.DB().Exec(`INSERT INTO position_decision_run
+		(run_id,run_hash,engine_version,snapshot_id,feature_snapshot_id,snapshot_date,decision_json,created_at_ns)
+		VALUES ('legacy-run','legacy-hash','position-decision-v1','snap','fs','2024-01-05','{}',1)`); err != nil {
+		t.Fatalf("insert legacy run: %v", err)
+	}
+	var digest any
+	if err := db.DB().QueryRow(`SELECT inputs_digest FROM position_decision_run WHERE run_id='legacy-run'`).Scan(&digest); err != nil {
+		t.Fatalf("read legacy digest: %v", err)
+	}
+	if digest != nil {
+		t.Fatalf("legacy row was backfilled with %v", digest)
+	}
+
+	// Re-running the migration must stay a no-op (ADD COLUMN has no IF NOT EXISTS).
+	if err := db.Migrate(); err != nil {
+		t.Fatalf("second migrate: %v", err)
+	}
+}
+
+func tableHasColumn(t *testing.T, db *storage.Storage, table, column string) bool {
+	t.Helper()
+	rows, err := db.DB().Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		t.Fatalf("pragma %s: %v", table, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, kind string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &kind, &notNull, &defaultValue, &pk); err != nil {
+			t.Fatalf("scan pragma %s: %v", table, err)
+		}
+		if name == column {
+			return true
+		}
+	}
+	return false
+}
