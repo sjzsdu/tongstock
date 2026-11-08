@@ -1,11 +1,11 @@
 {
   "_generated": "由 site/scripts/gen-api-docs.mjs 与 gen-cli-docs.mjs 生成，请勿手工编辑。",
   "stats": {
-    "apiPaths": 151,
-    "httpOperations": 159,
+    "apiPaths": 150,
+    "httpOperations": 158,
     "klineTypes": 10,
     "indicatorFamilies": 6,
-    "webPages": 20,
+    "webPages": 19,
     "newsSources": 9,
     "cliTopLevel": 27
   },
@@ -72,7 +72,7 @@
     {
       "id": "other",
       "title": "其他",
-      "endpoints": 5
+      "endpoints": 4
     }
   ]
 }

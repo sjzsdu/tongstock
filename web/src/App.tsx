@@ -15,7 +15,6 @@ import {
   SafetyCertificateOutlined,
   WalletOutlined,
   BlockOutlined,
-  FormOutlined,
 } from '@ant-design/icons';
 import { Avatar, Breadcrumb, Button, Drawer, Layout, Menu, Skeleton, Space, Typography } from 'antd';
 import type { MenuProps } from 'antd';
@@ -35,7 +34,6 @@ const SettingsPage = lazy(lazyWithReload(() => import('./pages/settings/Settings
 const IndexDetail = lazy(lazyWithReload(() => import('./pages/index/IndexDetail')));
 const AgentWeb = lazy(lazyWithReload(() => import('./pages/AgentWeb')));
 const Paradigms = lazy(lazyWithReload(() => import('./pages/Paradigms')));
-const OvernightArbitrage = lazy(lazyWithReload(() => import('./pages/strategy/OvernightArbitrage')));
 const EventDetail = lazy(lazyWithReload(() => import('./pages/news/EventDetail')));
 const NewsHome = lazy(lazyWithReload(() => import('./pages/news/NewsHome')));
 const Monitoring = lazy(lazyWithReload(() => import('./pages/Monitoring')));
@@ -103,7 +101,6 @@ const marketMenuItems: MenuProps['items'] = [
   { key: '/stock/choose', icon: <StockOutlined />, label: <Link to="/stock/choose">个股分析</Link> },
   { key: '/blocks', icon: <BlockOutlined />, label: <Link to="/blocks">股票池</Link> },
   { key: '/screen', icon: <SearchOutlined />, label: <Link to="/screen">信号筛选</Link> },
-  { key: '/strategy/overnight', icon: <FormOutlined />, label: <Link to="/strategy/overnight">隔夜套利</Link> },
   { key: '/news', icon: <FileTextOutlined />, label: <Link to="/news">财经资讯</Link> },
 ];
 
@@ -130,7 +127,6 @@ const SUBMENU_BY_KEY: Record<string, string> = {
   '/stock/choose': 'market-submenu',
   '/blocks': 'market-submenu',
   '/screen': 'market-submenu',
-  '/strategy/overnight': 'market-submenu',
   '/news': 'market-submenu',
   '/settings': 'system-submenu',
 };
@@ -155,7 +151,6 @@ function getSelectedKey(pathname: string): string {
   if (pathname.startsWith('/settings')) return '/settings';
   if (pathname.startsWith('/agent')) return '/agent';
   if (pathname.startsWith('/paradigms')) return '/paradigms';
-  if (pathname.startsWith('/strategy')) return '/strategy/overnight';
   if (pathname.startsWith('/news')) return '/news';
   return '/';
 }
@@ -350,7 +345,6 @@ export default function App() {
             <Route path="/methods" element={<MyMethods />} />
             <Route path="/methods/advanced" element={<Methods />} />
             <Route path="/methods/selection/:runId" element={<SelectionResult />} />
-            <Route path="/strategy/overnight" element={<OvernightArbitrage />} />
             <Route path="/news" element={<NewsHome />} />
             <Route path="/news/event/:id" element={<EventDetail />} />
             <Route path="*" element={<NotFound />} />
@@ -389,8 +383,6 @@ function buildBreadcrumbs(pathname: string) {
     methods: '我的选股方法',
     advanced: '高级研究与管理',
     selection: '选股结果',
-    strategy: '策略',
-    overnight: '隔夜套利',
     agent: 'AI 助手',
     index: '指数详情',
     news: '财经资讯',

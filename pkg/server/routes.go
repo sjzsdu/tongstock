@@ -68,7 +68,6 @@ func (s *Server) registerAnalysisRoutes(api *gin.RouterGroup) {
 	api.GET("/screen", s.handleScreen)
 	api.GET("/signal-analysis", s.handleSignalAnalysis)
 	api.GET("/stock/compare", s.handleStockCompare)
-	api.POST("/strategy/overnight", s.handleOvernightArbitrage)
 }
 
 func (s *Server) registerPortfolioRoutes(api *gin.RouterGroup) {

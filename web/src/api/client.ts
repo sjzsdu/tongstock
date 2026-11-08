@@ -568,13 +568,6 @@ export const api = {
   paradigmDelete: (id: string) =>
 	fetchJSON<{ message: string }>(`/api/paradigm/${id}`, { method: 'DELETE' }),
 
-	// Strategy APIs
-	overnightArbitrage: (codes: string[], minMarketCap?: number, maxMarketCap?: number) =>
-		fetchJSON<OvernightArbitrageResponse>('/api/strategy/overnight', {
-			method: 'POST',
-			body: JSON.stringify({ codes, minMarketCap, maxMarketCap }),
-		}),
-
 	// Newsfeed APIs
 	newsFeed: (params?: {
 		sources?: string;
@@ -996,45 +989,6 @@ export interface FactorResearchResult { engine_version:string;snapshot_id:string
 /** 落库后的因子通道产出：run_id = pick-<截面日期>，同截面日重跑幂等更新 */
 export interface FactorPickEntry { code:string;score:number;contributions?:Record<string,number> }
 export interface FactorPickRun { run_id:string;snapshot_id:string;snapshot_date_end?:string;as_of:string;stale_days:number;factors_snapshot:FactorEval[];note:string;picks:FactorPickEntry[];created_at:number;updated_at:number }
-
-export interface OvernightCriteria {
-	change_pct: boolean;
-	volume_ratio: boolean;
-	turnover_rate: boolean;
-	market_cap: boolean;
-	limit_up_history: boolean;
-	ma_multiple: boolean;
-	above_vwap: boolean;
-}
-
-export interface OvernightCandidate {
-	code: string;
-	name: string;
-	price: number;
-	change_pct: number;
-	volume_ratio: number;
-	turnover_rate: number;
-	market_cap: number;
-	criteria: OvernightCriteria;
-	passed: boolean;
-	fail_reason: string;
-}
-
-export interface OvernightArbitrageResponse {
-	total: number;
-	stage1_passed: number;
-	stage1_failed: number;
-	stage2_passed: number;
-	stage2_failed: number;
-	stage3_passed: number;
-	stage3_failed: number;
-	stage4_passed: number;
-	stage4_failed: number;
-	final_candidates: OvernightCandidate[];
-	failed: { code: string; reason: string }[];
-	current_time: string;
-	is_overnight_time: boolean;
-}
 
 export interface TradeInfo {
   id: number;

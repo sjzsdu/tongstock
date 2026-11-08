@@ -102,19 +102,3 @@ func TestMonitoringAlertErrorContract(t *testing.T) {
 			http.StatusNotFound)
 	})
 }
-
-func TestStrategyErrorContract(t *testing.T) {
-	router := newContractGinEngine(t, Dependencies{})
-
-	t.Run("overnight invalid JSON", func(t *testing.T) {
-		assertLegacyErrorGolden(t,
-			doLegacyErrorRequest(t, router, http.MethodPost, "/api/strategy/overnight", `{invalid`),
-			http.StatusBadRequest)
-	})
-
-	t.Run("overnight missing codes", func(t *testing.T) {
-		assertLegacyErrorGolden(t,
-			doLegacyErrorRequest(t, router, http.MethodPost, "/api/strategy/overnight", `{}`),
-			http.StatusBadRequest)
-	})
-}

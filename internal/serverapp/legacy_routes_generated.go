@@ -27,6 +27,5 @@ var legacySPARoutes = []string{
 	"/stock/:code",
 	"/stock/:code/:tab",
 	"/stock/choose",
-	"/strategy/overnight",
 	"/watchlist",
 }

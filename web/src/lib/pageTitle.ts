@@ -56,7 +56,6 @@ const ROUTE_PAGES: Array<[RegExp, string]> = [
   [/^\/paradigms(\/|$)/, '范式库'],
   [/^\/monitoring(\/|$)/, '范式监控'],
   [/^\/agent(\/|$)/, 'AI 助手'],
-  [/^\/strategy\/overnight(\/|$)/, '隔夜套利'],
   [/^\/news\/event\/[^/]+/, '热点事件'],
   [/^\/news(\/|$)/, '财经资讯'],
   [/^\/settings(\/|$)/, '配置'],

@@ -20,7 +20,6 @@ describe('pageTitle', () => {
       expect(titleForPath('/screen')).toBe('信号筛选 · TongStock')
       expect(titleForPath('/blocks')).toBe('股票池 · TongStock')
       expect(titleForPath('/agent')).toBe('AI 助手 · TongStock')
-      expect(titleForPath('/strategy/overnight')).toBe('隔夜套利 · TongStock')
       expect(titleForPath('/news')).toBe('财经资讯 · TongStock')
       expect(titleForPath('/news/event/abc123')).toBe('热点事件 · TongStock')
       expect(titleForPath('/settings')).toBe('配置 · TongStock')

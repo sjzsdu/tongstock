@@ -53,7 +53,6 @@ func TestCoreRouteCompatibility(t *testing.T) {
 		"GET /api/screen",
 		"GET /api/signal-analysis",
 		"GET /api/stock/compare",
-		"POST /api/strategy/overnight",
 		"GET /api/history",
 		"POST /api/history",
 		"DELETE /api/history/:code",

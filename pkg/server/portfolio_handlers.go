@@ -1068,8 +1068,6 @@ func containsAny(value string, needles []string) bool {
 	return false
 }
 
-// handleOvernightArbitrage handles overnight arbitrage strategy screening
-
 func (s *Server) handleStockinfoList(c *gin.Context) {
 	minMarketCapStr := c.Query("minMarketCap")
 	maxMarketCapStr := c.Query("maxMarketCap")
