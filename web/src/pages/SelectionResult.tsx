@@ -24,13 +24,15 @@ import { api, type SelectionCandidate, type SelectionRun } from '../api/client';
 import { formatDateTime } from '../lib/datetime';
 import { evidenceLevel, exclusionReasonLabel, formatPercent } from '../lib/methodPresentation';
 import {
+  FACTOR_METHOD_ID,
   attributeCandidate,
   buyCapPerMethod,
   flatViewNote,
   groupCandidatesByMethod,
-  hasMethodAttribution,
+  isLegacyRun,
   isTruncatedDowngrade,
   truncationBreakdown,
+  truncatedMethodIds,
   type MethodGroup,
 } from '../lib/selectionGrouping';
 
@@ -89,7 +91,7 @@ function actionCell(c: SelectionCandidate, cap?: number, groupMethodId?: string)
     );
   }
   const meta = actionMeta(c.action);
-  const truncatedHere = groupMethodId !== undefined && (c.truncated_by_method_ids ?? []).includes(groupMethodId);
+  const truncatedHere = groupMethodId !== undefined && truncatedMethodIds(c).includes(groupMethodId);
   if (truncatedHere && c.action === 'buy') {
     return (
       <Space size={4} wrap>
@@ -138,8 +140,11 @@ export default function SelectionResult() {
   const candidates = useMemo(() => run?.candidates ?? [], [run]);
   /** 上限一律读 run 字段：旧 run 没有该字段时不当成 5，也不显示上限数字。 */
   const cap = useMemo(() => buyCapPerMethod(run), [run]);
-  const legacyAttribution = useMemo(() => !hasMethodAttribution(candidates), [candidates]);
-  const groups = useMemo<MethodGroup[]>(() => groupCandidatesByMethod(candidates, cap), [candidates, cap]);
+  const legacyAttribution = useMemo(() => isLegacyRun(run), [run]);
+  const groups = useMemo<MethodGroup[]>(
+    () => groupCandidatesByMethod(candidates, cap, legacyAttribution),
+    [candidates, cap, legacyAttribution],
+  );
   const flat = useMemo(() => (run ? flatViewNote(run) : undefined), [run]);
   const truncatedCount = useMemo(() => candidates.filter(isTruncatedDowngrade).length, [candidates]);
 
@@ -286,7 +291,7 @@ export default function SelectionResult() {
           return (
             <Space orientation="vertical" size={2}>
               <Text style={{ fontSize: 12 }}>{triggerNames(c)}</Text>
-              {attribution.kept.length >= 2 && (
+              {c.action === 'buy' && attribution.kept.length >= 2 && (
                 <Tag color="geekblue">同时被 {attribution.kept.length} 个方法选中</Tag>
               )}
               {c.action === 'buy' && attribution.kept.length === 1 && (
@@ -620,7 +625,8 @@ export default function SelectionResult() {
                     <Text strong>{group.methodName}</Text>
                     <Tag color="red">
                       买入 {group.kept.length}
-                      {group.cap !== undefined ? ` / 上限 ${group.cap}` : ''}
+                      {/* 因子通道 watch-only、不占名额，显示上限会误导 */}
+                      {group.cap !== undefined && group.methodId !== FACTOR_METHOD_ID ? ` / 上限 ${group.cap}` : ''}
                     </Tag>
                     {truncation.downgraded > 0 && (
                       <Tooltip title="已达到买入门槛，只因该方法名额已满而降级观察；不是股票不达标。">

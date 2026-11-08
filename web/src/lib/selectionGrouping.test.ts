@@ -7,7 +7,9 @@ import {
   flatViewNote,
   groupCandidatesByMethod,
   hasMethodAttribution,
+  isLegacyRun,
   isTruncatedDowngrade,
+  truncatedMethodIds,
   truncationBreakdown,
 } from './selectionGrouping';
 
@@ -210,6 +212,53 @@ describe('groupCandidatesByMethod', () => {
   });
 });
 
+describe('isLegacyRun', () => {
+  it('带 buy_cap_per_method 的 run 不算旧 run —— 哪怕这次只有因子通道候选（从不带归属）', () => {
+    const factorOnly = candidate({
+      code: 'F1',
+      action: 'watch',
+      triggers: [trigger(FACTOR_METHOD_ID, '因子组合（截面排序）')],
+    });
+    expect(hasMethodAttribution([factorOnly])).toBe(false);
+    expect(isLegacyRun(run({ buy_cap_per_method: 5, candidates: [factorOnly] }))).toBe(false);
+  });
+
+  it('没有该字段且没有任何归属才是旧 run', () => {
+    const plain = candidate({ code: 'OLD', triggers: [trigger('method-a')] });
+    expect(isLegacyRun(run({ candidates: [plain] }))).toBe(true);
+  });
+
+  it('没有该字段但有归属时按新口径处理（回填过的历史产物）', () => {
+    const attributed = candidate({ code: 'A0', kept_by_method_ids: ['method-a'], triggers: [trigger('method-a')] });
+    expect(isLegacyRun(run({ candidates: [attributed] }))).toBe(false);
+  });
+});
+
+describe('truncatedMethodIds', () => {
+  it('同一方法既 kept 又 truncated 时只算 once（kept 优先），UI 不重复标「本方法未入选」', () => {
+    const both = candidate({
+      code: 'BOTH',
+      kept_by_method_ids: ['method-a'],
+      truncated_by_method_ids: ['method-a'],
+      triggers: [trigger('method-a')],
+    });
+    expect(truncatedMethodIds(both)).toEqual([]);
+  });
+});
+
+describe('非 buy 候选的归属语义', () => {
+  it('后端按排名写 kept、不看 action：watch 也可能带 2 个 kept，所以 UI 必须按 action 门控标注', () => {
+    const watchKeptByTwo = candidate({
+      code: 'W2',
+      action: 'watch',
+      kept_by_method_ids: ['method-a', 'method-b'],
+      triggers: [trigger('method-a'), trigger('method-b')],
+    });
+    expect(attributeCandidate(watchKeptByTwo).kept).toEqual(['method-a', 'method-b']);
+    expect(isTruncatedDowngrade(watchKeptByTwo)).toBe(false);
+  });
+});
+
 describe('flatViewNote', () => {
   it('买入总数超过单方法上限时说明来源方法数', () => {
     const note = flatViewNote(twoMethodRun());
@@ -237,6 +286,16 @@ describe('flatViewNote', () => {
   it('空榜单：没有买入也没有方法来源，且不判定为超限', () => {
     const note = flatViewNote(run());
     expect(note).toEqual({ buyCount: 0, methodCount: 0, cap: undefined, truncatedCount: 0, exceedsCap: false });
+  });
+
+  it('只有因子通道候选的新 run 不被说成「per-method 之前」（cap 仍在、不超限）', () => {
+    const note = flatViewNote(run({
+      buy_cap_per_method: 5,
+      candidates: [candidate({ code: 'F1', action: 'watch', triggers: [trigger(FACTOR_METHOD_ID)] })],
+    }));
+    expect(note.cap).toBe(5);
+    expect(note.exceedsCap).toBe(false);
+    expect(isLegacyRun(run({ buy_cap_per_method: 5 }))).toBe(false);
   });
 
   it('旧 run 用触发方法兜底统计来源方法数', () => {
