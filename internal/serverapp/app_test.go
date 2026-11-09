@@ -58,7 +58,6 @@ func TestMissingStaticAssetReturns404InsteadOfSPA(t *testing.T) {
 	setupStaticRoutes(router)
 
 	for _, path := range []string{
-		"/app/assets/OvernightArbitrage-DaJ8vyzY.js",
 		"/app/assets/index-OLDHASH.css",
 		"/app/fonts/foo.woff2",
 		"/assets/index-OLDHASH.js",

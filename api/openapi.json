@@ -3265,34 +3265,6 @@
         }
       }
     },
-    "/api/strategy/overnight": {
-      "post": {
-        "operationId": "postApiStrategyOvernight",
-        "responses": {
-          "200": {
-            "description": "Successful legacy-compatible response"
-          },
-          "400": {
-            "$ref": "#/components/responses/Error"
-          },
-          "401": {
-            "$ref": "#/components/responses/Error"
-          },
-          "404": {
-            "$ref": "#/components/responses/Error"
-          },
-          "409": {
-            "$ref": "#/components/responses/Error"
-          },
-          "500": {
-            "$ref": "#/components/responses/Error"
-          },
-          "503": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
     "/api/sync/daily": {
       "post": {
         "operationId": "postApiSyncDaily",

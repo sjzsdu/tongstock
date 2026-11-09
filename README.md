@@ -113,7 +113,6 @@ npx skills add sjzsdu/tongstock
 | Agent | `/agent` | 股票 Agent 对话与诊断 |
 | 投资范式（高级） | `/paradigms` | 范式分析、复盘与告警；路由保留，从高级研究入口进入 |
 | 范式监控（高级） | `/monitoring` | 范式前向表现监控：漂移/衰减/集中度评分、输入源诊断与预警确认；路由仍保留 |
-| 隔夜策略 | `/strategy/overnight` | 隔夜套利策略分析 |
 | 新闻 | `/news` | 新闻流、热点事件和情绪 |
 | 设置 | `/settings` | 指标参数等本地设置 |
 

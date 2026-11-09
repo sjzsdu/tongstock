@@ -207,7 +207,6 @@ export const operations = {
   deleteApiStockpoolId: { method: "DELETE", path: "/api/stockpool/{id}" },
   getApiStocksSearch: { method: "GET", path: "/api/stocks/search" },
   getApiStocksSearchIndex: { method: "GET", path: "/api/stocks/search-index" },
-  postApiStrategyOvernight: { method: "POST", path: "/api/strategy/overnight" },
   postApiSyncDaily: { method: "POST", path: "/api/sync/daily" },
   getApiSyncFreshness: { method: "GET", path: "/api/sync/freshness" },
   getApiSyncState: { method: "GET", path: "/api/sync/state" },
