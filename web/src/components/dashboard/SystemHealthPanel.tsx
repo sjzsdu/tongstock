@@ -1,5 +1,5 @@
 import { Card, Space, Tooltip, Typography } from 'antd';
-import type { DashboardHealth, DashboardSignal } from '../../api/client';
+import type { DashboardDataStatus, DashboardHealth, DashboardSignal } from '../../api/client';
 
 const { Text } = Typography;
 
@@ -29,7 +29,8 @@ const OVERALL_COLOR: Record<DashboardHealth['overall'], string> = {
  * 让用户第一眼就知道系统处于什么状态，才敢开始操作。
  * 所有数值都来自后端聚合的真实事实，不在这里臆造任何指标。
  */
-export default function SystemHealthPanel({ health }: { health: DashboardHealth }) {
+export default function SystemHealthPanel({ health, data, asOf }: { health: DashboardHealth; data: DashboardDataStatus; asOf: string }) {
+  const observedAt = Number.isNaN(Date.parse(asOf)) ? asOf : new Date(asOf).toLocaleString('zh-CN', { hour12: false });
   return (
     <Card
       size="small"
@@ -72,6 +73,9 @@ export default function SystemHealthPanel({ health }: { health: DashboardHealth 
           </Tooltip>
         ))}
       </Space>
+      <Text type="secondary" style={{ display: 'block', marginTop: 10, fontSize: 12 }}>
+        首页行情来源：本地日线库（最新交易日 {data.latest_kline_date || '暂无'}） · 快照 {data.latest_snapshot_date || '暂无'} · 读模型时间 {observedAt}
+      </Text>
     </Card>
   );
 }

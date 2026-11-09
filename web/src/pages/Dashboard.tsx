@@ -297,7 +297,7 @@ export default function Dashboard() {
       ) : (
         <>
           {/* P5・系统健康状态面板 */}
-          <SystemHealthPanel health={today.health} />
+          <SystemHealthPanel health={today.health} data={today.data} asOf={today.as_of} />
 
           {/* P3・首次引导 */}
           {showGuide ? (

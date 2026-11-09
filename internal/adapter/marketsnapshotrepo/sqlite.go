@@ -172,15 +172,23 @@ func (r *SQLiteRepository) ListMarketSnapshots(dateStart, dateEnd, status string
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	var ids []string
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
+			rows.Close()
 			return nil, err
 		}
 		ids = append(ids, id)
 	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	// storage deliberately uses a single SQLite connection. Release the
+	// cursor before loading each snapshot, otherwise LoadMarketSnapshot waits
+	// forever for the same connection and /api/dashboard/today never returns.
+	rows.Close()
 	out := make([]*marketsnapshot.MarketSnapshot, 0, len(ids))
 	for _, id := range ids {
 		s, err := r.LoadMarketSnapshot(id, false)
