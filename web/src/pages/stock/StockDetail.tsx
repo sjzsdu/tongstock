@@ -12,6 +12,7 @@ import ParadigmResultDrawer from '../../components/ParadigmResultDrawer';
 import { StockInfoHeader } from '../../components/stock/StockInfoHeader';
 import { StockStatistics } from '../../components/stock/StockStatistics';
 import { SignalTabContent } from '../../components/stock/SignalTabContent';
+import { StateSnapshotCard } from '../../components/stock/StateSnapshotCard';
 import { FinanceTabContent } from '../../components/stock/FinanceTabContent';
 import { CompanyTabContent } from '../../components/stock/CompanyTabContent';
 import { DividendTabContent } from '../../components/stock/DividendTabContent';
@@ -51,7 +52,9 @@ export default function StockDetail() {
   const [agentPanelOpen, setAgentPanelOpen] = useState(false);
 
   const { code, quote, loading, revalidating, detailStatus, detailError, syncState, refreshSyncState, ktype, setKtype } = useStockDetail();
-  const { klines, indicator, chartLoading, analysis, sortedSignals, sortedSignalOutcomes, latestClose, mainOverlay, setMainOverlay, subPanel, setSubPanel } = useStockChart(code, ktype, detailStatus, refreshSyncState);
+  // 状态带只在「K线+指标」与「信号」两个 tab 需要，其它 tab 不拉取（可能拉全历史，较重）。
+  const stateSeriesEnabled = tab === 'chart' || tab === 'signal';
+  const { klines, indicator, chartLoading, analysis, sortedSignals, sortedSignalOutcomes, latestClose, mainOverlay, setMainOverlay, subPanel, setSubPanel, stateSeries, stateHint, reloadStateSeries } = useStockChart(code, ktype, detailStatus, refreshSyncState, stateSeriesEnabled);
   // compare/finance/minute 较重，改为对应 tab 激活时才拉取（资讯已是 enabled 模式）。
   // 财务接口同时供「分时」tab 的换手计算使用，故 finance|intraday 任一激活即拉取。
   const { finance, financeTrends, financeMetrics, financeTrendMode, setFinanceTrendMode, financeCompareMode, setFinanceCompareMode, financeViewMode, setFinanceViewMode, selectedFinanceMetrics, setSelectedFinanceMetrics, financeTrendLoading, availableFinanceMetrics, financeChartGroups, financeDisplayRecords, activeFinanceMetrics, latestFinanceRecord, formatFinanceMetricValue, financeItems } = useStockFinance(code, detailStatus, tab === 'finance' || tab === 'intraday');
@@ -264,21 +267,26 @@ export default function StockDetail() {
                 {chartLoading && (
                   <div style={{ marginBottom: 8 }}><Typography.Text type="secondary">行情刷新中，展示的是上一份数据…</Typography.Text></div>
                 )}
-                <Card bodyStyle={{ padding: 0 }}><CandlestickChart klines={klines} indicator={indicator} mainOverlay={mainOverlay} subPanel={subPanel} /></Card>
+                <Card bodyStyle={{ padding: 0 }}>
+                  <CandlestickChart code={code} ktype={ktype} klines={klines} indicator={indicator} mainOverlay={mainOverlay} subPanel={subPanel} stateSeries={stateSeries} stateHint={stateHint} />
+                </Card>
               </>
             )}
           </Space>
         )}
 
         {showTabs && tab === 'signal' && (
-          <SignalTabContent
-            chartLoading={chartLoading}
-            analysis={analysis}
-            sortedSignals={sortedSignals}
-            sortedSignalOutcomes={sortedSignalOutcomes}
-            pct={pct}
-            up={up}
-          />
+          <Space direction="vertical" size={16} style={{ display: 'flex' }}>
+            <StateSnapshotCard series={stateSeries} hint={stateHint} onReload={reloadStateSeries} />
+            <SignalTabContent
+              chartLoading={chartLoading}
+              analysis={analysis}
+              sortedSignals={sortedSignals}
+              sortedSignalOutcomes={sortedSignalOutcomes}
+              pct={pct}
+              up={up}
+            />
+          </Space>
         )}
 
         {showTabs && tab === 'compare' && (

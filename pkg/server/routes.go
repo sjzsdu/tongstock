@@ -68,6 +68,8 @@ func (s *Server) registerAnalysisRoutes(api *gin.RouterGroup) {
 	api.GET("/screen", s.handleScreen)
 	api.GET("/signal-analysis", s.handleSignalAnalysis)
 	api.GET("/stock/compare", s.handleStockCompare)
+	// 状态型模型：单股逐日四维状态时序（现算，不落库）。
+	api.GET("/stock/:code/state-series", s.handleStockStateSeries)
 }
 
 func (s *Server) registerPortfolioRoutes(api *gin.RouterGroup) {

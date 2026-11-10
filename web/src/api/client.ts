@@ -1,7 +1,7 @@
 import type {
   Quote, QuoteItem, KlineItem, IndicatorData, Finance, XdXrItem,
   CompanyCategory, MinuteItem, TradeItem, AuctionItem,
-  BlockItem, CodeItem, IndexBar, ScreenResponse, SignalAnalysis,
+  BlockItem, CodeItem, IndexBar, ScreenResponse, SignalAnalysis, StateSeriesResponse,
   StockSearchResponse,
   StockSearchIndexResponse,
   HistoryStock,
@@ -277,6 +277,21 @@ export const api = {
 
   signalAnalysis: (code: string, type = 'day') =>
     fetchJSON<SignalAnalysis>(`/api/signal-analysis?code=${code}&type=${type}`),
+
+  // 状态型模型：单股逐日四维状态时序（后端现算，不落库）。
+  // includeReasons 默认关闭：全历史四维 reason 文本约 5MB，按需用 from=to=某天 单日拉取。
+  stockStateSeries: (
+    code: string,
+    type = 'day',
+    options: { from?: string; to?: string; includeReasons?: boolean; timeoutMs?: number } = {},
+  ) => {
+    const params = new URLSearchParams({ type, adjust: 'raw' });
+    if (options.from) params.set('from', options.from);
+    if (options.to) params.set('to', options.to);
+    if (options.includeReasons) params.set('include_reasons', '1');
+    if (options.timeoutMs) params.set('timeout_ms', String(options.timeoutMs));
+    return fetchJSON<StateSeriesResponse>(`/api/stock/${code}/state-series?${params}`);
+  },
 
   searchStocks: (query: string, limit = 10) =>
     fetchJSON<StockSearchResponse>(`/api/stocks/search?query=${encodeURIComponent(query)}&limit=${limit}`),

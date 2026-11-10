@@ -2995,6 +2995,93 @@
         }
       }
     },
+    "/api/stock/{code}/state-series": {
+      "get": {
+        "operationId": "getApiStockStateSeries",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "schema": {
+              "type": "string",
+              "default": "day"
+            }
+          },
+          {
+            "in": "query",
+            "name": "adjust",
+            "schema": {
+              "type": "string",
+              "default": "raw",
+              "enum": [
+                "raw"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_reasons",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
+            "in": "query",
+            "name": "timeout_ms",
+            "schema": {
+              "type": "integer",
+              "default": 25000
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful legacy-compatible response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/api/stockinfo": {
       "get": {
         "operationId": "getApiStockinfo",

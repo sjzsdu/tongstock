@@ -198,6 +198,7 @@ export const operations = {
   putApiSettingsIndicator: { method: "PUT", path: "/api/settings/indicator" },
   getApiSignalAnalysis: { method: "GET", path: "/api/signal-analysis" },
   getApiStockCompare: { method: "GET", path: "/api/stock/compare" },
+  getApiStockStateSeries: { method: "GET", path: "/api/stock/{code}/state-series" },
   getApiStockinfo: { method: "GET", path: "/api/stockinfo" },
   getApiStockinfoCount: { method: "GET", path: "/api/stockinfo/count" },
   postApiStockinfoSync: { method: "POST", path: "/api/stockinfo/sync" },

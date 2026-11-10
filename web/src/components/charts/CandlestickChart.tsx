@@ -1,14 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createChart, CandlestickSeries, HistogramSeries, LineSeries, type IChartApi, type Time } from 'lightweight-charts';
-import type { KlineItem, IndicatorData } from '../../types/api';
+import type { KlineItem, IndicatorData, StateSeriesResponse } from '../../types/api';
+import StateBandOverlay from './StateBandOverlay';
+import { addStateBands } from './stateBands';
 import { formatDateTime, formatTdxDate } from '../../lib/datetime';
 import { PRICE_PALETTE } from '../../lib/palette';
 
 interface Props {
+  /** 股票代码与 K 线类型：状态序列按需拉取判定依据时要用（指数页不传）。 */
+  code?: string;
+  ktype?: string;
   klines: KlineItem[];
   indicator?: IndicatorData;
   mainOverlay: string;
   subPanel: string;
+  /** 逐日四维状态时序：有值就在主图底部叠加状态带图层。 */
+  stateSeries?: StateSeriesResponse | null;
+  /** 状态带的加载/失败提示（首次拉全历史较慢、或超时需先同步）。 */
+  stateHint?: React.ReactNode;
 }
 
 interface HoverInfo {
@@ -82,12 +91,14 @@ function fmtPct(v: number): string {
   return `${sign}${v.toFixed(2)}%`;
 }
 
-export default function CandlestickChart({ klines, indicator, mainOverlay, subPanel }: Props) {
+export default function CandlestickChart({ code, ktype, klines, indicator, mainOverlay, subPanel, stateSeries, stateHint }: Props) {
   const mainRef = useRef<HTMLDivElement>(null);
   const subRef = useRef<HTMLDivElement>(null);
   const chartRefs = useRef<IChartApi[]>([]);
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+  // 状态带读数跟随十字光标所在的交易日，保证状态带图例与 K 线始终是「同一天」。
+  const [hoverDate, setHoverDate] = useState<string | undefined>(undefined);
 
   const MAIN_H = 320;
   const SUB_H = 150;
@@ -142,7 +153,9 @@ export default function CandlestickChart({ klines, indicator, mainOverlay, subPa
           vertLine: { color: '#3b82f6', width: 1, style: 2, labelBackgroundColor: '#3b82f6' },
           horzLine: { color: '#3b82f6', width: 1, style: 2, labelBackgroundColor: '#3b82f6' },
         },
-        rightPriceScale: { borderColor: '#334155', scaleMargins: h === MAIN_H ? { top: 0.05, bottom: 0.2 } : { top: 0.1, bottom: 0.1 } },
+        // 主图底部让出 4 条状态带的位置（StateBandOverlay 的泳道占 0.872~1.0），
+        // 量柱相应上移，保证「K线 + 量 + 状态带」在同一张图里互不遮挡。
+        rightPriceScale: { borderColor: '#334155', scaleMargins: h === MAIN_H ? { top: 0.04, bottom: 0.34 } : { top: 0.1, bottom: 0.1 } },
         timeScale: { borderColor: '#334155', timeVisible: intraday, secondsVisible: false, rightOffset: 5 },
       });
       charts.push(chart);
@@ -168,7 +181,7 @@ export default function CandlestickChart({ klines, indicator, mainOverlay, subPa
         priceFormat: { type: 'volume' },
         priceScaleId: '',
       });
-      volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.80, bottom: 0 } });
+      volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.685, bottom: 0.135 } });
       volumeSeries.setData(chartKlines.map(k => ({
         time: toTime(k.Time, intraday)!,
         value: k.Volume,
@@ -202,12 +215,18 @@ export default function CandlestickChart({ klines, indicator, mainOverlay, subPa
         }
       }
 
+      // 状态带图层：与 K 线共用时间轴，缩放到哪一天都能逐日对照。
+      if (stateSeries) {
+        addStateBands({ chart: mainChart, klines: chartKlines, series: stateSeries });
+      }
+
       // Crosshair move for hover info
       mainChart.subscribeCrosshairMove((param) => {
-        if (!param.time) { setHover(null); setMousePos(null); return; }
+        if (!param.time) { setHover(null); setMousePos(null); setHoverDate(undefined); return; }
         const idx = chartKlines.findIndex(k => toTime(k.Time, intraday) === param.time);
-        if (idx < 0) { setHover(null); setMousePos(null); return; }
+        if (idx < 0) { setHover(null); setMousePos(null); setHoverDate(undefined); return; }
         const k = chartKlines[idx];
+        setHoverDate((k.Time ?? '').slice(0, 10));
         const prev = idx > 0 ? chartKlines[idx - 1].Close : k.Close;
         const pct = prev > 0 ? (k.Close - prev) / prev * 100 : 0;
         const ma: Record<string, number> = {};
@@ -324,7 +343,7 @@ export default function CandlestickChart({ klines, indicator, mainOverlay, subPa
       window.removeEventListener('resize', handleResize);
       charts.forEach(c => c.remove());
     };
-  }, [chartKlines, indicator, mainOverlay, subPanel]);
+  }, [chartKlines, indicator, mainOverlay, subPanel, stateSeries]);
 
   const last = chartKlines[chartKlines.length - 1];
   const intraday = isIntradayKline(chartKlines);
@@ -351,6 +370,7 @@ export default function CandlestickChart({ klines, indicator, mainOverlay, subPa
             <div ref={subRef} style={{ height: SUB_H }} />
           </div>
         )}
+        <StateBandOverlay code={code} ktype={ktype} series={stateSeries ?? null} hoverDate={hoverDate} hint={stateHint} />
       </div>
 
       {/* Floating tooltip */}

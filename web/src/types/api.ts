@@ -390,11 +390,85 @@ export interface IndicatorParams {
   rsi: number[];
 }
 
+/** 三态状态模型的阈值（params.yaml 的 state 段），保存指标设置时必须原样回传。 */
+export interface StateThresholds {
+  cross?: { wrap_ratio?: number };
+  osc?: { oversold_j?: number; overbought_j?: number };
+  boll?: { zone_ratio?: number };
+  ma?: { min_spread_ratio?: number };
+}
+
 export interface IndicatorConfig {
   defaults: IndicatorParams;
   categories: Record<string, Partial<IndicatorParams>>;
   overrides: Record<string, Partial<IndicatorParams>>;
+  state?: StateThresholds;
   path?: string;
+}
+
+/** 状态型模型：四维之一（cross/osc/boll/ma）。枚举由后端 pkg/signalstate 定义。 */
+export type StateDim = 'cross' | 'osc' | 'boll' | 'ma';
+
+/**
+ * 单维状态。三态 buy/sell/neutral 之外，insufficient_data 是独立的技术态
+ * （热身不足 / 停牌），不属于三态、也不能按中性渲染。
+ */
+export type StateValue = 'buy' | 'sell' | 'neutral' | 'insufficient_data';
+
+/**
+ * 状态方向。口径固定在后端枚举里（DirectionOf），前端只读不推导：
+ * 「突破上轨 = 买、跌破下轨 = 卖」这类映射不允许在前端再写一遍。
+ */
+export type StateDirection = 'buy' | 'sell' | 'neutral' | 'insufficient_data';
+
+export interface StateMetaItem {
+  state: StateValue;
+  label: string;
+  direction: StateDirection;
+  color: string;
+  description: string;
+}
+
+/** 维度元数据：标签、说明与四态的文案/配色，全部由后端下发。 */
+export interface DimensionMeta {
+  dim: StateDim;
+  label: string;
+  description: string;
+  states: StateMetaItem[];
+}
+
+/** 逐日状态带：当天四维状态 + 当日未复权收盘价。 */
+export interface StateSeriesItem {
+  date: string;
+  close: number;
+  states: Record<StateDim, StateValue>;
+  /** 只列出当天算不出来的维度 */
+  insufficient?: StateDim[];
+  /** 判定依据（含具体数值），仅在 include_reasons=1 时返回 */
+  reasons?: Partial<Record<StateDim, string>>;
+  adjust_version: string;
+}
+
+export interface StateSeriesResponse {
+  code: string;
+  type: string;
+  adjust: string;
+  dimensions: DimensionMeta[];
+  definition: Record<string, unknown>;
+  warmup: Record<StateDim, number>;
+  items: StateSeriesItem[];
+  /** 最新一根 bar 的状态（始终带判定依据） */
+  latest?: StateSeriesItem;
+  meta: {
+    bar_count: number;
+    rows: number;
+    first_date?: string;
+    last_date?: string;
+    fetch_ms: number;
+    calc_version: string;
+    dims: number;
+  };
+  note?: string;
 }
 
 export interface BlockComparisonStock {

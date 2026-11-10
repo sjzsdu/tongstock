@@ -22,6 +22,9 @@ type ParamConfig struct {
 	Defaults   CategoryParams            `yaml:"defaults"`
 	Categories map[string]CategoryParams `yaml:"categories,omitempty"`
 	Overrides  map[string]CategoryParams `yaml:"overrides,omitempty"`
+	// State 是三态状态模型的阈值（params.yaml 的 state 段）。它与个股/分类无关，
+	// 全局一份；指标周期仍然复用上面三层覆盖的默认/分类/个股配置。
+	State *StateThresholds `yaml:"state,omitempty" json:"state,omitempty"`
 }
 
 type ParamEntry struct {

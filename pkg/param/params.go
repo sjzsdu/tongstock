@@ -69,6 +69,7 @@ func LoadDefault() {
 				KDJ: &ta.KDJConfig{N: 5, M1: 3, M2: 3},
 			},
 		},
+		State: DefaultStateThresholds(),
 	}
 }
 
@@ -146,6 +147,23 @@ defaults:
     n: 20
     k: 2.0
   rsi: [6, 12, 24]
+
+# 三态状态模型（买入/卖出/中性）的阈值。指标周期复用上面的 defaults /
+# categories / overrides，这里只放「判定阈值」。0 或不写 = 用默认值。
+state:
+  cross:
+    # |DIF - DEA| / 收盘价 <= 该比例 视为 DIF/DEA 缠绕（中性）。默认 0.002（0.2%）
+    wrap_ratio: 0.002
+  osc:
+    # J <= oversold_j 为超卖（买入）；J >= overbought_j 为超买（卖出）。默认 0 / 100
+    oversold_j: 0
+    overbought_j: 100
+  boll:
+    # 以上轨/下轨为中心的触发带宽度 = zone_ratio x 布林带宽（上轨-下轨），默认 0.15
+    zone_ratio: 0.15
+  ma:
+    # 均线排列的最小间距（最短均线-最长均线占收盘价比例），默认 0.001（0.1%）
+    min_spread_ratio: 0.001
 
 categories:
   large_cap:
