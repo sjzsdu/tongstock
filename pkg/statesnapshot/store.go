@@ -6,7 +6,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/mattn/go-sqlite3"
 	"strings"
 	"time"
 
@@ -84,7 +86,25 @@ func (s Store) Run(ctx context.Context, opt Options) (Result, error) {
 			continue
 		}
 		seen[code] = true
-		r, err := s.runCode(ctx, code, opt)
+		var r Result
+		var err error
+		for attempt := 0; attempt < 8; attempt++ {
+			r, err = s.runCode(ctx, code, opt)
+			var locked sqlite3.Error
+			if !errors.As(err, &locked) || (locked.Code != sqlite3.ErrBusy && locked.Code != sqlite3.ErrLocked) {
+				break
+			}
+			if attempt == 7 {
+				break
+			}
+			timer := time.NewTimer(time.Duration(attempt+1) * 100 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return out, ctx.Err()
+			case <-timer.C:
+			}
+		}
 		if err != nil {
 			return out, fmt.Errorf("states %s: %w", code, err)
 		}

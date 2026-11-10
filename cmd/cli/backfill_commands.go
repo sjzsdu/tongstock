@@ -28,7 +28,7 @@ func init() {
 		if err != nil {
 			return err
 		}
-		store, err := storage.New(storage.Config{Driver: cfg.Database.Driver, DSN: cfg.Database.DSN})
+		store, err := storage.New(storage.Config{Driver: cfg.Database.Driver, DSN: stateBackfillDSN(cfg.Database.DSN)})
 		if err != nil {
 			return err
 		}
@@ -69,4 +69,17 @@ func runStatesBackfill(ctx context.Context, store *storage.Storage, opt statesna
 		err = e
 	}
 	return err
+}
+
+// Acquire the SQLite write reservation before reading each stock, so another
+// sync cannot invalidate the read snapshot before the first state write.
+func stateBackfillDSN(dsn string) string {
+	if dsn == "" {
+		dsn = config.DBPath()
+	}
+	sep := "?"
+	if strings.Contains(dsn, "?") {
+		sep = "&"
+	}
+	return dsn + sep + "_txlock=immediate"
 }
