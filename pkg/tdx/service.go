@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sjzsdu/tongstock/pkg/cache"
+	"github.com/sjzsdu/tongstock/pkg/statesnapshot"
 	"github.com/sjzsdu/tongstock/pkg/storage"
 	protocol "github.com/sjzsdu/tongstock/pkg/tdx/protocol"
 )
@@ -456,6 +457,25 @@ func (s *Service) SyncDailyKlines(codes []string, mode SyncMode, concurrency int
 		}(i, code)
 	}
 	wg.Wait()
+	// Publish states only after the daily batch has finished. Failed symbols keep
+	// their sync error; snapshot failures are surfaced instead of silently succeeding.
+	var synced []string
+	for _, r := range out.Results {
+		if r.Status == "ok" {
+			synced = append(synced, r.Code)
+		}
+	}
+	if len(synced) > 0 {
+		_, err := (statesnapshot.Store{DB: s.storage.DB()}).Run(context.Background(), statesnapshot.Options{Codes: synced, Mode: "incremental"})
+		if err != nil {
+			for i := range out.Results {
+				if out.Results[i].Status == "ok" {
+					out.Results[i].Status = "failed"
+					out.Results[i].Error = "daily states: " + err.Error()
+				}
+			}
+		}
+	}
 	for _, r := range out.Results {
 		if r.Status == "ok" {
 			out.Success++

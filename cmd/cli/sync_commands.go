@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/sjzsdu/tongstock/pkg/param"
 	"github.com/sjzsdu/tongstock/pkg/tdx"
 	"github.com/spf13/cobra"
 	"strings"
@@ -22,6 +23,9 @@ var syncDailyCmd = &cobra.Command{
 	Use:   "daily",
 	Short: "同步指定代码的日K数据",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := param.AutoInit(); err != nil {
+			return err
+		}
 		codes := splitCodes(syncCodes)
 		if len(codes) == 0 {
 			return fmt.Errorf("请通过 --codes 指定股票代码")

@@ -280,4 +280,6 @@ export const operations = {
   getApiParadigmIdEvidence: { method: "GET", path: "/api/paradigm/{id}/evidence" },
   getApiMethodsResearchTracesSummary: { method: "GET", path: "/api/methods/research/traces/{id}/summary" },
   getApiMethodsIdPool: { method: "GET", path: "/api/methods/{id}/pool" },
+  getApiStates: { method: "GET", path: "/api/states" },
+  getApiStatesSeries: { method: "GET", path: "/api/states/series" },
 } as const;

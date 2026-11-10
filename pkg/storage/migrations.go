@@ -1110,6 +1110,28 @@ END;
 			return ensureSQLiteColumn(tx, "position_decision_run", "inputs_digest", "TEXT")
 		},
 	},
+	{
+		version: 26,
+		name:    "signal_state_daily",
+		sql: `
+CREATE TABLE signal_state_daily (
+ code TEXT NOT NULL, trade_date TEXT NOT NULL, ktype INTEGER NOT NULL,
+ dim TEXT NOT NULL CHECK(dim IN ('cross','osc','boll','ma')),
+ state TEXT NOT NULL CHECK(state IN ('buy','sell','neutral','insufficient_data')),
+ insufficient INTEGER NOT NULL CHECK(insufficient IN (0,1)),
+ adjust_version TEXT NOT NULL, calc_version TEXT NOT NULL, calc_hash TEXT NOT NULL,
+ PRIMARY KEY(code,trade_date,ktype,dim),
+ CHECK((state='insufficient_data')=insufficient)
+) WITHOUT ROWID;
+CREATE INDEX idx_signal_state_date ON signal_state_daily(trade_date);
+CREATE INDEX idx_signal_state_code_date ON signal_state_daily(code,trade_date);
+CREATE TABLE signal_state_seed (
+ code TEXT NOT NULL, ktype INTEGER NOT NULL, definition TEXT NOT NULL,
+ input_hash TEXT NOT NULL, bar_count INTEGER NOT NULL, last_date TEXT NOT NULL,
+ PRIMARY KEY(code,ktype)
+) WITHOUT ROWID;
+`,
+	},
 }
 
 // Migrate upgrades the SQLite database transactionally. Store constructors

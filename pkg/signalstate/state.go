@@ -54,9 +54,10 @@ func (s State) IsTriState() bool {
 
 // StateVector 是一只股票某个交易日的状态向量。
 type StateVector struct {
-	Code  string
-	Date  time.Time
-	KType uint8
+	CalcHash string // SHA-256 of definition, causal input prefix and state vector.
+	Code     string
+	Date     time.Time
+	KType    uint8
 	// Dims 对每个维度给一个状态；四维必须齐全。数据不足的维度取
 	// StateInsufficient，且同一维度在 Insufficient 中为 true。
 	Dims map[Dim]State

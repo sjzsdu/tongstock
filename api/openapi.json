@@ -5628,6 +5628,90 @@
           }
         }
       }
+    },
+    "/api/states": {
+      "get": {
+        "operationId": "getApiStates",
+        "summary": "Read persisted raw daily signal states without upstream requests",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "codes",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dimension rows with code, trade_date (YYYYMMDD), ktype, dim, state, insufficient, adjust_version, calc_version and calc_hash; empty items when not backfilled"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/states/series": {
+      "get": {
+        "operationId": "getApiStatesSeries",
+        "summary": "Read persisted raw daily signal states without upstream requests",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dimension rows with code, trade_date (YYYYMMDD), ktype, dim, state, insufficient, adjust_version, calc_version and calc_hash; empty items when not backfilled"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "servers": [

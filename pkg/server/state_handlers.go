@@ -41,6 +41,8 @@ type stateSeriesItem struct {
 	Reasons map[string]string `json:"reasons,omitempty"`
 	// AdjustVersion 是这条状态带对应的复权口径。
 	AdjustVersion string `json:"adjust_version"`
+	CalcHash      string `json:"calc_hash"`
+	CalcVersion   string `json:"calc_version"`
 }
 
 // handleStockStateSeries 返回单股逐日四维状态时序（现算，不落库）。
@@ -210,6 +212,8 @@ func buildStateSeriesItem(v signalstate.StateVector, includeReasons bool) stateS
 		}
 	}
 	item := stateSeriesItem{
+		CalcHash:      v.CalcHash,
+		CalcVersion:   v.CalcVersion,
 		Date:          v.Date.Format("2006-01-02"),
 		Close:         v.Close,
 		States:        states,
