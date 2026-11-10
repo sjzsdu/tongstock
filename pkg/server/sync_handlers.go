@@ -322,7 +322,10 @@ type indicatorParamPayload struct {
 	Defaults   indicatorCategoryPayload            `json:"defaults" yaml:"defaults"`
 	Categories map[string]indicatorCategoryPayload `json:"categories,omitempty" yaml:"categories,omitempty"`
 	Overrides  map[string]indicatorCategoryPayload `json:"overrides,omitempty" yaml:"overrides,omitempty"`
-	Path       string                              `json:"path,omitempty"`
+	// State 是三态状态模型的阈值。它必须原样往返：早期版本只搬运指标字段，
+	// 结果一次「保存指标设置」就会把 params.yaml 里的 state 段抹掉。
+	State *param.StateThresholds `json:"state,omitempty" yaml:"state,omitempty"`
+	Path  string                 `json:"path,omitempty"`
 }
 
 // indicatorCategoryPayload 是指标分类参数字段负载
@@ -349,6 +352,7 @@ func indicatorCategoryToPayload(src param.CategoryParams) indicatorCategoryPaylo
 func indicatorConfigToPayload(cfg *param.ParamConfig) indicatorParamPayload {
 	payload := indicatorParamPayload{
 		Defaults: indicatorCategoryToPayload(cfg.Defaults),
+		State:    cfg.State,
 	}
 	if len(cfg.Categories) > 0 {
 		payload.Categories = make(map[string]indicatorCategoryPayload, len(cfg.Categories))
@@ -380,6 +384,7 @@ func payloadCategoryToParam(src indicatorCategoryPayload) param.CategoryParams {
 func payloadToIndicatorConfig(payload indicatorParamPayload) *param.ParamConfig {
 	cfg := &param.ParamConfig{
 		Defaults: payloadCategoryToParam(payload.Defaults),
+		State:    normalizedStateThresholds(payload.State),
 	}
 	if len(payload.Categories) > 0 {
 		cfg.Categories = make(map[string]param.CategoryParams, len(payload.Categories))
@@ -563,3 +568,16 @@ type financeMetricRow struct {
 }
 
 // handleStockCompare handles stock vs block comparison requests
+
+// normalizedStateThresholds 合法化客户端提交的 state 阈值。客户端没带 state 段时
+// 保留当前配置里的 state（而不是写成 nil 丢配置），只有显式提交才覆盖。
+func normalizedStateThresholds(incoming *param.StateThresholds) *param.StateThresholds {
+	if incoming != nil {
+		return incoming.Normalized()
+	}
+	current, err := param.GetConfig()
+	if err != nil || current == nil {
+		return nil
+	}
+	return current.State
+}
