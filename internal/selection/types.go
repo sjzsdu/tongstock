@@ -68,20 +68,42 @@ type ExitPlan struct {
 	Complete       bool     `json:"complete"`
 }
 
+// ScoreExplanation preserves the inputs used at decision time; absent on old runs.
+type MethodScoreExplanation struct {
+	MethodID             string   `json:"method_id"`
+	EvidenceBase         float64  `json:"evidence_base"`
+	SampleBonus          float64  `json:"sample_bonus"`
+	DrawdownPenalty      float64  `json:"drawdown_penalty"`
+	MissingAmountPenalty float64  `json:"missing_amount_penalty"`
+	HealthScore          *float64 `json:"health_score,omitempty"`
+	BeforeHealth         float64  `json:"before_health"`
+	Score                float64  `json:"score"`
+}
+type ScoreExplanation struct {
+	Methods             []MethodScoreExplanation `json:"methods"`
+	PrimaryScore        float64                  `json:"primary_score"`
+	ExtraTriggerBonuses []float64                `json:"extra_trigger_bonuses"`
+	AggregateCap        float64                  `json:"aggregate_cap"`
+	BuyThreshold        float64                  `json:"buy_threshold"`
+	ExitComplete        bool                     `json:"exit_complete"`
+	BuyCapPerMethod     int                      `json:"buy_cap_per_method"`
+}
+
 type Candidate struct {
-	Rank              int       `json:"rank"`
-	Code              string    `json:"code"`
-	Action            string    `json:"action"`
-	Score             float64   `json:"score"`
-	DataDate          string    `json:"data_date"`
-	SnapshotID        string    `json:"snapshot_id"`
-	FeatureSnapshotID string    `json:"feature_snapshot_id"`
-	Triggers          []Trigger `json:"triggers"`
-	PositionCapPct    float64   `json:"position_cap_pct"`
-	BuyWindow         string    `json:"buy_window"`
-	Exit              ExitPlan  `json:"exit"`
-	Invalidations     []string  `json:"invalidations,omitempty"`
-	Risks             []string  `json:"risks,omitempty"`
+	ScoreExplanation  *ScoreExplanation `json:"score_explanation,omitempty"`
+	Rank              int               `json:"rank"`
+	Code              string            `json:"code"`
+	Action            string            `json:"action"`
+	Score             float64           `json:"score"`
+	DataDate          string            `json:"data_date"`
+	SnapshotID        string            `json:"snapshot_id"`
+	FeatureSnapshotID string            `json:"feature_snapshot_id"`
+	Triggers          []Trigger         `json:"triggers"`
+	PositionCapPct    float64           `json:"position_cap_pct"`
+	BuyWindow         string            `json:"buy_window"`
+	Exit              ExitPlan          `json:"exit"`
+	Invalidations     []string          `json:"invalidations,omitempty"`
+	Risks             []string          `json:"risks,omitempty"`
 	// KeptByMethodIDs 记录把它计入各自方法内前 N 名（名额内）的方法 ID。
 	// 只有非空时才可能落在 buy；与 TruncatedByMethodIDs 一起让「为什么是 buy」
 	// 可复核：同一个候选可能被一个方法保留、被另一个方法截断。

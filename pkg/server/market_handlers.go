@@ -185,10 +185,12 @@ func (s *Server) handleCodesMarket(c *gin.Context) {
 
 	// Use map for deduplication by code
 	codesMap := make(map[string]gin.H)
+	var failedExchanges []string
 
 	for _, item := range exchanges {
 		codes, err := s.svc.FetchCodes(item.ex)
 		if err != nil {
+			failedExchanges = append(failedExchanges, item.name)
 			continue
 		}
 		for _, code := range codes {
@@ -205,6 +207,11 @@ func (s *Server) handleCodesMarket(c *gin.Context) {
 				}
 			}
 		}
+	}
+	if len(failedExchanges) > 0 {
+		WriteError(c, http.StatusServiceUnavailable, "codes_unavailable",
+			fmt.Sprintf("获取交易所股票列表失败: %s", strings.Join(failedExchanges, ",")))
+		return
 	}
 
 	// Convert map to slice

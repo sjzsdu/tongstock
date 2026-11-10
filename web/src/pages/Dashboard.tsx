@@ -38,10 +38,70 @@ import EmptyStatePanel, { ExclusionBreakdown } from '../components/dashboard/Emp
 import OnboardingWizard from '../components/dashboard/OnboardingWizard';
 import MethodMechanismDiagram from '../components/dashboard/MethodMechanismDiagram';
 import PageLoading from '../components/PageLoading';
+import CandidateExplanation from '../components/dashboard/CandidateExplanation';
 
 const { Text, Title } = Typography;
 
 const ONBOARDING_KEY = 'tongstock.onboarding.done';
+const MARKET_SYNC_DATE_KEY = 'tongstock.market.sync.date';
+const MARKET_REBUILD_DATE_KEY = 'tongstock.market.rebuild.date';
+
+let marketSyncPromise: Promise<Awaited<ReturnType<typeof api.syncDaily>> | null> | null = null;
+let marketRebuildPromise: Promise<Awaited<ReturnType<typeof api.onboardingRun>>> | null = null;
+
+function localSyncDate() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+/** 同一浏览器会话每天只启动一次全市场同步，并共享并发中的请求。 */
+async function syncAllMarketOnce(force = false) {
+  if (!force && typeof window !== 'undefined' && window.sessionStorage.getItem(MARKET_SYNC_DATE_KEY) === localSyncDate()) {
+    return null;
+  }
+  if (marketSyncPromise) return marketSyncPromise;
+
+  marketSyncPromise = (async () => {
+    const idx = await api.codesMarket();
+    const codes = (idx.codes || []).map((item) => item.code).filter(Boolean);
+    if (!codes.length) throw new Error('未获取到股票列表，请确认已同步股票基础信息');
+    if (idx.total !== codes.length) {
+      throw new Error(`股票列表不完整（接口报告 ${idx.total} 只，实际收到 ${codes.length} 只），已停止全市场同步`);
+    }
+    const result = await api.syncDaily(codes, 'auto', 8);
+    if (result.failed === 0 && typeof window !== 'undefined') {
+      window.sessionStorage.setItem(MARKET_SYNC_DATE_KEY, localSyncDate());
+    }
+    return result;
+  })().finally(() => {
+    marketSyncPromise = null;
+  });
+
+  return marketSyncPromise;
+}
+
+/** 同步成功后每天只重建一次快照/特征/选股，并共享并发中的编排请求。 */
+async function rebuildMarketOnce(force = false) {
+  if (!force && typeof window !== 'undefined' && window.sessionStorage.getItem(MARKET_REBUILD_DATE_KEY) === localSyncDate()) {
+    return null;
+  }
+  if (marketRebuildPromise) return marketRebuildPromise;
+
+  marketRebuildPromise = (async () => {
+    const result = await api.onboardingRun({ sync: false, force: true });
+    if (result.status !== 'completed') {
+      throw new Error(result.blocked_reason || `快照编排${result.status === 'failed' ? '失败' : '被阻断'}`);
+    }
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem(MARKET_REBUILD_DATE_KEY, localSyncDate());
+    }
+    return result;
+  })().finally(() => {
+    marketRebuildPromise = null;
+  });
+
+  return marketRebuildPromise;
+}
 
 function QuickStartCard({
   icon,
@@ -128,52 +188,71 @@ export default function Dashboard() {
   const [showExclusions, setShowExclusions] = useState(false);
   const [seedResult, setSeedResult] = useState<MethodSeedResult>();
   const [syncing, setSyncing] = useState(false);
+  const [stockNames, setStockNames] = useState<Record<string, string>>({});
   const [showGuide, setShowGuide] = useState(() => {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem(ONBOARDING_KEY) !== '1';
   });
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const refreshDashboardData = useCallback(async () => {
     await Promise.allSettled([
       api.dashboardToday().then(setToday),
       api.positionDecisionToday().then(setPositions),
+      api.stockSearchIndex().then((index) => {
+        setStockNames(Object.fromEntries(index.items.map((item) => [item.code, item.name])));
+      }),
     ]);
-    setLoading(false);
   }, []);
+
+  const runBackgroundRefresh = useCallback(async (forceSync = false, forceRebuild = false) => {
+    if (marketSyncPromise || marketRebuildPromise) return;
+    setSyncing(true);
+    try {
+      const result = await syncAllMarketOnce(forceSync);
+      if (result && result.failed > 0) {
+        void message.warning(`后台同步完成：成功 ${result.success}，失败 ${result.failed}`);
+        return;
+      }
+      await rebuildMarketOnce(forceRebuild);
+      await refreshDashboardData();
+    } catch (e) {
+      void message.warning(e instanceof Error ? `后台行情更新未完成：${e.message}` : '后台行情更新未完成');
+    } finally {
+      setSyncing(false);
+    }
+  }, [refreshDashboardData]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    await refreshDashboardData();
+    setLoading(false);
+    void runBackgroundRefresh();
+  }, [refreshDashboardData, runBackgroundRefresh]);
 
   useEffect(() => {
     queueMicrotask(() => void load());
   }, [load]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const now = new Date();
+      const minutes = now.getHours() * 60 + now.getMinutes();
+      const weekday = now.getDay();
+      if (weekday >= 1 && weekday <= 5 && minutes >= 9 * 60 + 30 && minutes <= 15 * 60) {
+        void runBackgroundRefresh(true);
+      }
+    }, 5 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, [runBackgroundRefresh]);
 
   const dismissGuide = useCallback(() => {
     setShowGuide(false);
     if (typeof window !== 'undefined') window.localStorage.setItem(ONBOARDING_KEY, '1');
   }, []);
 
-  /** 全市场日线同步：读搜索索引拿全量代码，POST /api/sync/daily（auto 模式，幂等）。 */
+  /** 全市场日线同步：读取全量股票代码，POST /api/sync/daily（auto 模式，幂等）。 */
   const syncAllMarket = async () => {
-    setSyncing(true);
-    try {
-      const idx = await api.stockSearchIndex();
-      const codes = (idx.items || []).map((i) => i.code);
-      if (!codes.length) {
-        void message.warning('未获取到股票列表，请确认已同步股票基础信息');
-        return;
-      }
-      void message.info(`开始同步 ${codes.length} 只，全量约需数分钟`);
-      const res = await api.syncDaily(codes, 'auto', 8);
-      if (res.failed > 0) {
-        void message.warning(`同步完成：成功 ${res.success}，失败 ${res.failed}`);
-      } else {
-        void message.success(`同步完成：${res.success} 只全部成功`);
-      }
-      await load();
-    } catch (e) {
-      void message.error(e instanceof Error ? e.message : '全市场同步失败');
-    } finally {
-      setSyncing(false);
-    }
+    await runBackgroundRefresh(true, true);
   };
 
   const research = async () => {
@@ -281,7 +360,7 @@ export default function Dashboard() {
       </Card>
 
       {loading ? (
-        <PageLoading tip="正在加载今日决策…" />
+        <PageLoading tip={syncing ? '正在同步全市场日线…' : '正在加载今日决策…'} />
       ) : !today ? (
         <Alert
           type="error"
@@ -360,37 +439,7 @@ export default function Dashboard() {
               }
             >
               {hasCandidates ? (
-                <List
-                  dataSource={candidates}
-                  renderItem={(c) => (
-                    <List.Item
-                      actions={[
-                        <Button key="detail" onClick={() => navigate(`/stock/${c.code}`)}>
-                          查看个股
-                        </Button>,
-                      ]}
-                    >
-                      <List.Item.Meta
-                        title={
-                          <Space>
-                            <Text code>{c.code}</Text>
-                            <Tag color={c.action === 'buy' ? 'red' : 'orange'}>{c.action}</Tag>
-                            <Tag>评分 {c.score.toFixed(2)}</Tag>
-                          </Space>
-                        }
-                        description={
-                          <Space direction="vertical" size={2}>
-                            <span>{c.explanation}</span>
-                            <span>
-                              买入窗口：{c.buy_window}；仓位上限 {(c.position_cap_pct * 100).toFixed(0)}%
-                            </span>
-                            <span>退出计划：{c.exit.complete ? '完整' : '不完整，仅观察'}</span>
-                          </Space>
-                        }
-                      />
-                    </List.Item>
-                  )}
-                />
+                <CandidateExplanation candidates={candidates} stockNames={stockNames} onStock={(code) => navigate(`/stock/${code}`)} />
               ) : (
                 <Text type="secondary">本次运行没有候选。上方「运行日志」列出了扫描与排除的真实明细。</Text>
               )}
@@ -493,6 +542,7 @@ export default function Dashboard() {
           </Card>
         </>
       )}
+
     </Space>
   );
 }

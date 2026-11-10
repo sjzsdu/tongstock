@@ -182,6 +182,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Run, error) {
 			risks = append(risks, "退出计划不完整，仅可观察")
 		}
 		candidate := Candidate{Code: code, Action: action, Score: score, DataDate: market.SnapshotDate, SnapshotID: market.ID, FeatureSnapshotID: feature.ID, Triggers: triggers, PositionCapPct: positionCap(v.Method), BuyWindow: buyWindow(primary), Exit: exit, Invalidations: append([]string{}, primary.Invalidations...), Risks: risks}
+		candidate.ScoreExplanation = candidateScoreExplanation(triggers, methodByID, feature.Values[code], exit)
 		candidate.Explanation = explain(candidate)
 		run.Candidates = append(run.Candidates, candidate)
 	}
@@ -408,24 +409,46 @@ func resolveSnapshotValues(x *methods.Expr, code string, all map[string]map[stri
 	return x
 }
 func methodScore(m *methodregistry.Method, v map[string]float64) float64 {
+	return methodScoreExplanation(m, v).Score
+}
+func methodScoreExplanation(m *methodregistry.Method, v map[string]float64) MethodScoreExplanation {
 	ev := currentVersion(m).Evidence
-	base := 0.55
+	detail := MethodScoreExplanation{MethodID: m.ID, EvidenceBase: .55}
 	if ev.Confidence == "strong" {
-		base = .72
+		detail.EvidenceBase = .72
 	}
 	if ev.OOSTrades >= 100 {
-		base += .04
+		detail.SampleBonus = .04
 	}
 	if ev.OOSMaxDrawdown < -.2 {
-		base -= .08
+		detail.DrawdownPenalty = .08
 	}
 	if amount, ok := v["amount"]; !ok || amount <= 0 {
-		base -= .08
+		detail.MissingAmountPenalty = .08
 	}
+	detail.BeforeHealth = detail.EvidenceBase + detail.SampleBonus - detail.DrawdownPenalty - detail.MissingAmountPenalty
+	score := detail.BeforeHealth
 	if m.Health != nil {
-		base = .75*base + .25*clamp(m.Health.Score, 0, 1)
+		health := clamp(m.Health.Score, 0, 1)
+		detail.HealthScore = &health
+		score = .75*score + .25*health
 	}
-	return round(clamp(base, 0, 1))
+	detail.Score = round(clamp(score, 0, 1))
+	return detail
+}
+func candidateScoreExplanation(triggers []Trigger, items map[string]*methodregistry.Method, values map[string]float64, exit ExitPlan) *ScoreExplanation {
+	detail := &ScoreExplanation{AggregateCap: .9, BuyThreshold: .65, ExitComplete: exit.Complete, BuyCapPerMethod: BuyCapPerMethod, ExtraTriggerBonuses: []float64{}}
+	for i, t := range triggers {
+		if m := items[t.MethodID]; m != nil {
+			detail.Methods = append(detail.Methods, methodScoreExplanation(m, values))
+		}
+		if i == 0 {
+			detail.PrimaryScore = t.Score
+		} else {
+			detail.ExtraTriggerBonuses = append(detail.ExtraTriggerBonuses, math.Min(.03, t.Score*.04))
+		}
+	}
+	return detail
 }
 func dedupeFamilies(in []Trigger) []Trigger {
 	seen := map[string]bool{}

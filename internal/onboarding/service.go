@@ -217,12 +217,10 @@ func (s *Service) dataStep(ctx context.Context, opts RunOptions, res *Result, tr
 // marketStep 复用或构建一个 ready+frozen 的市场快照。
 func (s *Service) marketStep(ctx context.Context, opts RunOptions, res *Result, tradeDate string, def marketsnapshot.UniverseDefinition) (*marketsnapshot.MarketSnapshot, string) {
 	adj := firstNonEmpty(s.deps.Builder.PriceAdjustment, "forward")
-	if !opts.Force {
-		if existing, err := s.deps.Snapshots.FindMarketSnapshot(tradeDate, def.Name, adj); err == nil && existing != nil && existing.IsReady() {
-			res.Steps = append(res.Steps, Step{Key: "snapshot", Label: "冻结行情快照", Status: StepSkipped,
-				Detail: fmt.Sprintf("复用已就绪快照 %s（覆盖 %.1f%%）", existing.ID, existing.CoveragePct*100)})
-			return existing, ""
-		}
+	if existing, err := s.deps.Snapshots.FindMarketSnapshot(tradeDate, def.Name, adj); err == nil && existing != nil && existing.IsReady() && existing.Frozen {
+		res.Steps = append(res.Steps, Step{Key: "snapshot", Label: "冻结行情快照", Status: StepSkipped,
+			Detail: fmt.Sprintf("复用已冻结快照 %s（覆盖 %.1f%%）", existing.ID, existing.CoveragePct*100)})
+		return existing, ""
 	}
 
 	b := *s.deps.Builder

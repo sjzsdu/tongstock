@@ -102,7 +102,7 @@ const INDICATOR_LABELS: Record<string, string> = {
   float_shares: '流通股本',
 };
 
-function indicatorLabel(name: string): string {
+export function indicatorLabel(name: string): string {
   if (INDICATOR_LABELS[name]) return INDICATOR_LABELS[name];
   const ma = /^ma(\d+)$/.exec(name);
   if (ma) return `${ma[1]}日均线`;
@@ -152,9 +152,9 @@ const PERCENT_INDICATORS = new Set([
   'gap_pct', 'return1', 'turnover_rate', 'closepos',
 ]);
 
-function isPercentIndicator(name: string): boolean {
+export function isPercentIndicator(name: string): boolean {
   if (PERCENT_INDICATORS.has(name)) return true;
-  return /^(ret|bias|volatility|atrp|offhigh|offlow|updays|amplitude|volratio)(\d+)?$/.test(name);
+  return /^(ret|bias|volatility|atrp|offhigh|offlow|updays|amplitude)(\d+)?$/.test(name);
 }
 
 function numberText(v: number): string {

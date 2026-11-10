@@ -157,6 +157,8 @@ type Query struct {
 	Limit          int
 }
 type Card struct {
+	MethodVersionID  string              `json:"method_version_id,omitempty"`
+	Description      string              `json:"description,omitempty"`
 	ID               string              `json:"id"`
 	FamilyID         string              `json:"family_id"`
 	VariantID        string              `json:"variant_id"`

@@ -175,9 +175,11 @@ func toCard(m *Method) Card {
 	c := Card{ID: m.ID, FamilyID: m.FamilyID, VariantID: m.VariantID, Name: m.Name, Status: m.Status, Market: m.Market, Universe: m.Universe, TriggerFrequency: m.TriggerFrequency, HoldingPeriod: holdingText(m.HoldingMinDays, m.HoldingMaxDays), EntrySummary: m.EntrySummary, ExitSummary: m.ExitSummary, Invalidations: append([]string{}, m.Invalidations...), Health: m.Health, UpdatedAt: m.UpdatedAt}
 	if len(m.Versions) > 0 {
 		v := m.Versions[len(m.Versions)-1]
+		c.MethodVersionID = v.ID
 		c.Evidence = v.Evidence
 		c.SourceResearchID = v.SourceResearchID
 		if v.Method != nil {
+			c.Description = v.Method.Description
 			c.Scope = v.Method.Scope
 			c.Outcome = v.Method.Outcome
 			c.Rules = &CardRules{EntryRule: v.Method.EntryRule, ExitRule: v.Method.ExitRule, InvalidRule: v.Method.InvalidRule, Position: &v.Method.Position, Holding: &v.Method.Holding}

@@ -941,10 +941,12 @@ export const api = {
     fetchJSON<SelectionRun>(`/api/selections/runs/${encodeURIComponent(id)}`),
 };
 
-export interface SelectionTriggerFact { path:string;rule?:string;passed:boolean;detail?:string }
+export interface SelectionTriggerFact { path:string;rule?:string;passed:boolean;detail?:string;left?:unknown;op?:string;right?:unknown }
 export interface SelectionTrigger { method_id:string;method_version_id?:string;method_name:string;family_id?:string;score:number;facts:SelectionTriggerFact[];evidence?:MethodEvidence }
 /** 逐方法买入名额归属见 selectionGrouping：kept/truncated 都是方法 ID 列表。 */
-export interface SelectionCandidate { rank:number;code:string;action:'buy'|'watch'|'avoid'|'insufficient_data';score:number;data_date:string;buy_window:string;position_cap_pct:number;exit:{max_holding_days?:number;stop_loss_pct?:number;take_profit_pct?:number;complete:boolean};risks?:string[];explanation:string;triggers:SelectionTrigger[];kept_by_method_ids?:string[];truncated_by_method_ids?:string[];truncated_from_buy?:boolean }
+export interface MethodScoreExplanation { method_id:string;evidence_base:number;sample_bonus:number;drawdown_penalty:number;missing_amount_penalty:number;before_health:number;health_score?:number;score:number }
+export interface CandidateScoreExplanation { methods:MethodScoreExplanation[];primary_score:number;extra_trigger_bonuses:number[];aggregate_cap:number;buy_threshold:number;exit_complete:boolean;buy_cap_per_method:number }
+export interface SelectionCandidate { score_explanation?:CandidateScoreExplanation; rank:number;code:string;action:'buy'|'watch'|'avoid'|'insufficient_data';score:number;data_date:string;buy_window:string;position_cap_pct:number;exit:{max_holding_days?:number;stop_loss_pct?:number;take_profit_pct?:number;complete:boolean};risks?:string[];explanation:string;triggers:SelectionTrigger[];kept_by_method_ids?:string[];truncated_by_method_ids?:string[];truncated_from_buy?:boolean }
 /** buy_cap_per_method / buy_count_by_method / truncated_from_buy 为 per-method 口径字段，旧 run 不带。 */
 export interface SelectionRun { id:string;run_hash?:string;snapshot_id:string;feature_snapshot_id:string;snapshot_date:string;eligible_methods?:number;scanned_stocks?:number;candidate_count:number;buy_count:number;buy_cap_per_method?:number;buy_count_by_method?:Record<string,number>;truncated_from_buy?:number;action_counts?:Record<string,number>;candidates:SelectionCandidate[];exclusions:Array<{method_id?:string;code?:string;reason_code:string;detail:string}>;requested_method_ids?:string[];created_at?:string }
 export interface SelectionRunRequest { market_snapshot_id?:string;feature_snapshot_id?:string;method_ids:string[] }
@@ -952,7 +954,7 @@ export interface PositionDecision { code:string;name:string;action:'hold'|'watch
 export interface PositionDecisionRun { id:string;snapshot_id:string;snapshot_date:string;decisions:PositionDecision[] }
 export interface MethodHealthState { score:number;forward_samples:number;drift?:boolean;decay?:boolean;execution_deviation?:boolean;critical_alerts?:number;consecutive_severe?:number;as_of?:string }
 export interface MethodEvidence { confidence:string;confidence_reason?:string;passable?:boolean;oos_trades:number;oos_return:number;oos_win_rate?:number;outcome_hit_rate?:number;outcome_observations?:number;oos_max_drawdown:number;sharpe_ratio?:number;sortino_ratio?:number;snapshot_id?:string;result_hash?:string;universe_size?:number;validation_start?:string;validation_end?:string }
-export interface MethodScope { universe?:string;board_filter?:string[];market_cap_min?:number;market_cap_max?:number;avg_shares_per_holder_min?:number;avg_shares_per_holder_max?:number;exclude_st?:boolean;market_state?:string[];feature_deps?:string[] }
+export interface MethodScope { avg_turnover_min?:number;avg_turnover_max?:number; universe?:string;board_filter?:string[];market_cap_min?:number;market_cap_max?:number;avg_shares_per_holder_min?:number;avg_shares_per_holder_max?:number;exclude_st?:boolean;market_state?:string[];feature_deps?:string[] }
 
 /** GET /api/methods/:id/pool 单条股票池判定 */
 export interface MethodPoolEntry {
@@ -971,7 +973,7 @@ export interface MethodRuleExpr { type:string;indicator?:string;params?:string[]
 export interface MethodHoldingRule { max_days?:number;min_days?:number;stop_loss_pct?:number;take_profit_pct?:number;trailing_stop_pct?:number }
 export interface MethodPosRule { mode?:string;pct_equity?:number;fixed_lots?:number }
 export interface MethodRules { entry_rule?:MethodRuleExpr;exit_rule?:MethodRuleExpr;invalid_rule?:MethodRuleExpr;position?:MethodPosRule;holding?:MethodHoldingRule }
-export interface MethodCard { id:string;family_id?:string;variant_id?:string;name:string;status:string;market:string;universe:string;scope?:MethodScope;outcome?:MethodOutcome;rules?:MethodRules;holding_period:string;trigger_frequency?:string;entry_summary:string;exit_summary:string;invalidations?:string[];source_research_id?:string;evidence?:MethodEvidence;health?:MethodHealthState;updated_at:string }
+export interface MethodCard { method_version_id?:string;description?:string; id:string;family_id?:string;variant_id?:string;name:string;status:string;market:string;universe:string;scope?:MethodScope;outcome?:MethodOutcome;rules?:MethodRules;holding_period:string;trigger_frequency?:string;entry_summary:string;exit_summary:string;invalidations?:string[];source_research_id?:string;evidence?:MethodEvidence;health?:MethodHealthState;updated_at:string }
 export interface MethodCardQuery { status?:string;market?:string;universe?:string;family_id?:string;holding_min_days?:number;holding_max_days?:number;limit?:number }
 export interface MethodAuditEvent { id:string;method_id:string;from:string;to:string;action:string;reason:string;actor:string;evidence_hash?:string;automatic:boolean;created_at:string }
 
