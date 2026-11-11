@@ -428,6 +428,91 @@
             "description": "被置信度阈值过滤掉的弱关联条数"
           }
         }
+      },
+      "StateFilter": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "conditions": {
+            "type": "array",
+            "maxItems": 4,
+            "description": "All conditions must match on the same snapshot date. Omitted dimensions are unrestricted; neutral is explicit. Any stock-day with insufficient or missing dimensions is excluded.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "dim",
+                "state"
+              ],
+              "properties": {
+                "dim": {
+                  "type": "string",
+                  "enum": [
+                    "cross",
+                    "osc",
+                    "boll",
+                    "ma"
+                  ]
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "buy",
+                    "sell",
+                    "neutral"
+                  ]
+                }
+              }
+            }
+          },
+          "transition": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "dim",
+              "from",
+              "to",
+              "within_days"
+            ],
+            "description": "Adjacent observed snapshots change from one of from to to in the inclusive calendar window [date-within_days+1,date]. Insufficient observations never bridge transitions. The destination need not persist to date.",
+            "properties": {
+              "dim": {
+                "type": "string",
+                "enum": [
+                  "cross",
+                  "osc",
+                  "boll",
+                  "ma"
+                ]
+              },
+              "from": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "buy",
+                    "sell",
+                    "neutral"
+                  ]
+                }
+              },
+              "to": {
+                "type": "string",
+                "enum": [
+                  "buy",
+                  "sell",
+                  "neutral"
+                ]
+              },
+              "within_days": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 365
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -2862,7 +2947,7 @@
         "operationId": "getApiScreen",
         "responses": {
           "200": {
-            "description": "Successful legacy-compatible response"
+            "description": "Snapshot matches, dimensions, date, total, successCount, insufficientCount and missingCount; results contain full four-dimensional state vectors."
           },
           "400": {
             "$ref": "#/components/responses/Error"
@@ -2882,7 +2967,50 @@
           "503": {
             "$ref": "#/components/responses/Error"
           }
-        }
+        },
+        "summary": "AND screening of persisted daily signal states",
+        "description": "Replaces the removed signals OR parameter. No live signal detection or 500-code cap. Reads one shared date; omitted date uses the newest snapshot trade date. Reports insufficientCount (stock-days with incomplete/insufficient vectors) and missingCount (codes without that date). Results carry date, all four states, and local historical close/PrevClose; dimensions carries canonical labels, direction, direction_label, colors and descriptions.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "codes",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated stock codes; deduplicated without truncation."
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "day"
+              ],
+              "default": "day"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date",
+            "schema": {
+              "type": "string"
+            },
+            "description": "YYYY-MM-DD or YYYYMMDD; default newest snapshot date."
+          },
+          {
+            "in": "query",
+            "name": "state_filter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StateFilter"
+                }
+              }
+            }
+          }
+        ]
       }
     },
     "/api/settings/indicator": {
@@ -5702,6 +5830,35 @@
             "description": "Dimension rows with code, trade_date (YYYYMMDD), ktype, dim, state, insufficient, adjust_version, calc_version and calc_hash; empty items when not backfilled"
           },
           "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/screen/options": {
+      "get": {
+        "operationId": "getApiScreenOptions",
+        "summary": "Canonical screening dimensions and state metadata",
+        "responses": {
+          "200": {
+            "description": "dimensions: four dimensions, each with states containing state, label, direction, direction_label, color, description."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
             "$ref": "#/components/responses/Error"
           },
           "500": {
