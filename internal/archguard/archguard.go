@@ -324,6 +324,8 @@ func (r *runner) noDeadProductionCallers() GateResult {
 		"internal/picoclaw":             "optional runtime wiring",
 		"internal/adapter/paradigmrepo": "injected at composition root in serverapp",
 		"pkg/tdx/adjust":                "used by cmd/* through tdx.Service, indirectly via adjust.{ApplyForward|Split}",
+		"internal/llm":                  "stage-1 core abstraction (WAN-64); business wiring lands in the WAN-63 agentservice migration",
+		"internal/llm/openai":           "stage-2 provider adapter (WAN-65); business wiring lands in the WAN-63 agentservice migration",
 	}
 	const prefix = "github.com/sjzsdu/tongstock/"
 	importedBy := map[string]bool{}
