@@ -234,3 +234,75 @@ func TestStreamOpenError(t *testing.T) {
 		t.Fatalf("Stream() error = %v, want ErrAuth", err)
 	}
 }
+
+// A healthy SSE stream must NOT be cut by Config.Timeout. Here the config
+// timeout is shorter than the whole stream, the server keeps emitting frames
+// the entire time, and llm.Request.Timeout is left unset. The stream must be
+// read to completion and end with a done event, never llm.ErrTimeout. With the
+// old cfg.Timeout fallback this test would fail at the first deadline.
+func TestStreamNotCutByConfigTimeout(t *testing.T) {
+	const (
+		frameCount = 6
+		frameGap   = 30 * time.Millisecond
+		cfgTimeout = 40 * time.Millisecond // shorter than frameCount*frameGap
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		fl := w.(http.Flusher)
+		for i := 0; i < frameCount; i++ {
+			select {
+			case <-time.After(frameGap):
+			case <-r.Context().Done():
+				return
+			}
+			writeSSE(w, fl, map[string]any{"choices": []any{map[string]any{
+				"index": 0, "delta": map[string]any{"content": fmt.Sprintf("tok%d", i)},
+			}}})
+		}
+		writeSSE(w, fl, map[string]any{"choices": []any{map[string]any{
+			"index": 0, "delta": map[string]any{}, "finish_reason": "stop",
+		}}})
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		fl.Flush()
+	}))
+	defer srv.Close()
+
+	p := newTestProvider(t, srv.URL, func(cfg *Config) {
+		cfg.Timeout = cfgTimeout
+	})
+	s, err := p.Stream(context.Background(), helloRequest()) // req.Timeout unset
+	if err != nil {
+		t.Fatalf("Stream() error: %v", err)
+	}
+	defer s.Close()
+
+	var texts []string
+	sawDone := false
+	for {
+		ev, err := s.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Recv() error = %v; a healthy stream was cut by Config.Timeout", err)
+		}
+		switch ev.Type {
+		case llm.EventTypeTextDelta:
+			texts = append(texts, ev.Text)
+		case llm.EventTypeDone:
+			sawDone = true
+		}
+	}
+	if len(texts) != frameCount {
+		t.Fatalf("got %d text deltas, want %d (stream was cut early): %v", len(texts), frameCount, texts)
+	}
+	for i, txt := range texts {
+		if want := fmt.Sprintf("tok%d", i); txt != want {
+			t.Fatalf("text delta %d = %q, want %q", i, txt, want)
+		}
+	}
+	if !sawDone {
+		t.Fatal("stream ended without a done event")
+	}
+}

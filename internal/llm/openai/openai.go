@@ -34,15 +34,17 @@ const (
 
 // Config configures a Provider. APIKeyEnv is the NAME of an environment
 // variable (for example "DEEPSEEK_API_KEY"), never the key value itself.
-// BaseURL, APIKeyEnv and Model are required; Timeout/MaxTokens/Streaming have
-// usable defaults.
+// BaseURL, APIKeyEnv and Model are required; Timeout and MaxTokens have usable
+// defaults. Streaming is a caller-side preference consumed only by the
+// upper-layer configuration assembly: this package never reads it — callers
+// choose streaming by calling Provider.Stream (or Provider.Complete) directly.
 type Config struct {
 	BaseURL   string
 	APIKeyEnv string
 	Model     string
 	Timeout   time.Duration
 	MaxTokens int
-	Streaming bool
+	Streaming bool // caller-side preference; not read by this adapter
 }
 
 // Provider is an OpenAI-compatible llm.Provider. It is safe for concurrent use:
@@ -217,9 +219,11 @@ type chatResponse struct {
 	Usage   wireUsage    `json:"usage"`
 }
 
-// effectiveTimeout returns the per-request timeout declared on llm.Request when
-// the caller set one, otherwise the provider-level Config.Timeout default. Both
-// Complete and Stream use this so the interface's Timeout field is honored.
+// effectiveTimeout returns the timeout for the single non-streaming Complete
+// request: the per-request llm.Request.Timeout when set, otherwise the
+// provider-level Config.Timeout. Stream deliberately does not use this helper:
+// applying Config.Timeout to a stream's total duration would cut healthy long
+// streams, so Stream only honors an explicit llm.Request.Timeout (opt-in).
 func (p *Provider) effectiveTimeout(req llm.Request) time.Duration {
 	if req.Timeout > 0 {
 		return req.Timeout

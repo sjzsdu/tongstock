@@ -58,12 +58,13 @@ type toolAcc struct {
 }
 
 // stream is a pull-based llm.Stream. The context passed to Stream is bound to
-// the upstream http.Request via a derived context that carries both cancellation
-// and the effective timeout, so cancelling it or exceeding the deadline
-// interrupts the connection. Close is idempotent and never panics.
+// the upstream http.Request via a derived context, so cancelling it interrupts
+// the connection. A timeout is applied only when the caller explicitly sets
+// llm.Request.Timeout; otherwise the caller's ctx alone governs the lifetime.
+// Close is idempotent and never panics.
 type stream struct {
 	ctx      context.Context // parent ctx, used for cancellation errors
-	reqCtx   context.Context // derived request ctx, carries the effective timeout
+	reqCtx   context.Context // derived request ctx; carries req.Timeout when set
 	cancel   context.CancelFunc
 	provider *Provider
 	body     io.ReadCloser
@@ -82,9 +83,12 @@ type stream struct {
 }
 
 // Stream implements llm.Provider. It opens a streaming chat/completions request
-// and returns a pull-based event stream bound to ctx. The derived request
-// context carries the effective timeout (llm.Request.Timeout when set, else
-// Config.Timeout), so a stalled stream is bounded just like Complete.
+// and returns a pull-based event stream bound to ctx. Config.Timeout is NOT
+// applied to the total stream duration: a healthy stream that outlasts the
+// configured timeout must not be cut (research / long-form output). Only an
+// explicit llm.Request.Timeout opts into a total-time deadline on the request
+// (covering the connection/first-byte phase); otherwise the caller's ctx alone
+// governs. No per-frame idle timer is used.
 func (p *Provider) Stream(ctx context.Context, req llm.Request) (llm.Stream, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -96,8 +100,10 @@ func (p *Provider) Stream(ctx context.Context, req llm.Request) (llm.Stream, err
 
 	var requestCtx context.Context
 	var cancel context.CancelFunc
-	if d := p.effectiveTimeout(req); d > 0 {
-		requestCtx, cancel = context.WithTimeout(ctx, d)
+	if req.Timeout > 0 {
+		// Explicit opt-in only. Config.Timeout is intentionally ignored here:
+		// it is a single-request timeout, not a cap on a whole SSE stream.
+		requestCtx, cancel = context.WithTimeout(ctx, req.Timeout)
 	} else {
 		requestCtx, cancel = context.WithCancel(ctx)
 	}
@@ -135,9 +141,10 @@ func (p *Provider) Stream(ctx context.Context, req llm.Request) (llm.Stream, err
 }
 
 // ctxError returns the error a Recv call should surface when a context ends.
-// A caller-driven cancellation is returned as-is (context.Canceled); any
-// deadline — the caller's or the adapter's effective per-request timeout — is
-// mapped onto llm.ErrTimeout via a short llm.ProviderError.
+// A caller-driven cancellation is returned as-is (context.Canceled); a deadline
+// — from the caller's ctx or the explicit opt-in llm.Request.Timeout — is
+// mapped onto llm.ErrTimeout via a short llm.ProviderError. Config.Timeout is
+// never a stream deadline.
 func (s *stream) ctxError() error {
 	if err := s.ctx.Err(); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
