@@ -4,8 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	pcwrap "github.com/sjzsdu/tongstock/internal/picoclaw"
 )
 
 func TestListWithPathsAddsAndOverridesAgents(t *testing.T) {
@@ -122,13 +120,72 @@ func writeAgentFile(t *testing.T, path, id, name string) {
 	}
 }
 
-func agentName(items []pcwrap.EmbeddedAgent, id string) string {
+func agentName(items []Definition, id string) string {
 	for _, item := range items {
 		if item.ID == id {
 			return item.Name
 		}
 	}
 	return ""
+}
+
+// Definition is the TongStock-owned replacement for picoclaw.EmbeddedAgent:
+// all frontmatter fields plus the Markdown body prompt are preserved.
+func TestDefinitionKeepsAllFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "full.md")
+	content := `---
+id: full-agent
+name: Full Agent
+description: a fully specified agent
+soul: be concise
+aliases: [fa, 全量]
+skills: [research]
+tools: [data_snapshot]
+no_history: true
+---
+
+The body prompt.
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	list, err := ListWithPaths([]string{path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	def, ok := Resolve(list, "FA") // alias, case-insensitive
+	if !ok {
+		t.Fatal("full-agent not resolvable by alias")
+	}
+	if def.ID != "full-agent" || def.Name != "Full Agent" || def.Description != "a fully specified agent" {
+		t.Fatalf("identity fields = %+v", def)
+	}
+	if def.Prompt != "The body prompt." || def.Soul != "be concise" {
+		t.Fatalf("prompt/soul = %q/%q", def.Prompt, def.Soul)
+	}
+	if len(def.Aliases) != 2 || len(def.Skills) != 1 || len(def.Tools) != 1 || !def.NoHistory {
+		t.Fatalf("list/bool fields = %+v", def)
+	}
+}
+
+// Resolve matches canonical IDs and aliases case-insensitively and returns the
+// canonical definition; unknown/blank IDs do not resolve.
+func TestResolve(t *testing.T) {
+	defs := []Definition{
+		{ID: "Risk-Reviewer", Name: "Risk Reviewer", Aliases: []string{"risk", "风险"}},
+		{ID: "Stock-Analyst", Name: "Stock Analyst"},
+	}
+	for _, id := range []string{"RISK-REVIEWER", "  risk  ", "风险"} {
+		got, ok := Resolve(defs, id)
+		if !ok || got.ID != "Risk-Reviewer" {
+			t.Fatalf("Resolve(%q) = (%q, %v), want canonical ID", id, got.ID, ok)
+		}
+	}
+	for _, id := range []string{"", "   ", "missing"} {
+		if _, ok := Resolve(defs, id); ok {
+			t.Fatalf("Resolve(%q) unexpectedly resolved", id)
+		}
+	}
 }
 
 func TestListWithPathsLoadsAliasesFromSingleMarkdownFile(t *testing.T) {
