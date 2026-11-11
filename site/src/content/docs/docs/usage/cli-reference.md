@@ -6,7 +6,7 @@ description: 由 tongstock --help 实跑输出生成的命令与参数表，请�
 本页由 `site/scripts/gen-cli-docs.mjs` 调用二进制自身的 `--help` 生成，**不要手工编辑**。
 参数的事实源永远是二进制：任何一处不一致，都以 `tongstock <cmd> --help` 的输出为准。
 
-- 顶层命令：**27** 个（已省略 cobra 自动生成的 `completion` 与 `help`）
+- 顶层命令：**29** 个（已省略 cobra 自动生成的 `completion` 与 `help`）
 - 每个命令都有的 `-h, --help` 已省略，不重复列出
 - 想给 AI 助手用，见 [AI 助手集成](/docs/usage/skills/)；想看决策流水线怎么串，见 [决策流水线](/docs/usage/decision-pipeline/)。
 
@@ -27,6 +27,7 @@ description: 由 tongstock --help 实跑输出生成的命令与参数表，请�
 | [`tongstock arch`](#tongstock-arch) | 架构质量门: 依赖方向、循环引用、死代码、重复领域类型、Mock/合成结果扫描 |
 | [`tongstock auction`](#tongstock-auction) | 查询集合竞价数据 |
 | [`tongstock automation`](#tongstock-automation) | 每日真实数据选股、持仓判断和提醒闭环 |
+| [`tongstock backfill`](#tongstock-backfill) | 回填本地派生数据 |
 | [`tongstock block`](#tongstock-block) | 查询板块分类信息 |
 | [`tongstock codes`](#tongstock-codes) | 获取证券代码列表 |
 | [`tongstock company`](#tongstock-company) | 获取指定股票的 F10 公司信息分类目录，包括公司概况、财务分析、股东研究等。 |
@@ -41,6 +42,7 @@ description: 由 tongstock --help 实跑输出生成的命令与参数表，请�
 | [`tongstock position`](#tongstock-position) | 基于真实持仓和冻结快照判断何时卖 |
 | [`tongstock quality`](#tongstock-quality) | 执行统一质量门检查, 覆盖数据质量、回测黄金集、范式阶段门、AI 评测、前向监控和恢复就绪 |
 | [`tongstock quote`](#tongstock-quote) | 查询股票行情 |
+| [`tongstock reconcile`](#tongstock-reconcile) | 对账诊断命令（旁路，不写入正式结果） |
 | [`tongstock screen`](#tongstock-screen) | 批量筛选股票信号 |
 | [`tongstock select`](#tongstock-select) | 在冻结真实数据上生成可审计的每日买入候选 |
 | [`tongstock serve`](#tongstock-serve) | 启动、停止、查看状态或重启 TongStock HTTP 服务。不带子命令时默认以前台模式运行。旧命令名 server 仍可作为别名使用。 |
@@ -168,6 +170,41 @@ tongstock automation unlock <snapshot_id> [flags]
 **Flags**
 
 该命令没有自己的 flag。
+
+## `tongstock backfill`
+
+回填本地派生数据
+
+```bash
+tongstock backfill [command]
+```
+
+**Flags**
+
+该命令没有自己的 flag。
+
+**子命令**
+
+| 子命令 | 作用 |
+| --- | --- |
+| [`tongstock backfill states`](#tongstock-backfill-states) | 按股单遍回填四维每日状态（只读本地行情） |
+
+## `tongstock backfill states`
+
+按股单遍回填四维每日状态（只读本地行情）
+
+```bash
+tongstock backfill states [flags]
+```
+
+**Flags**
+
+| Flag | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `--codes` | string | — | 可选股票池，缺省为本地全市场（无数量上限） |
+| `--from` | string | — | 起始交易日 YYYY-MM-DD；指标种子始终读完整历史 |
+| `--mode` | string | "full" | full/incremental |
+| `--verify` | bool | — | 逐行校验持久化状态和参考内核 hash/覆盖率 |
 
 ## `tongstock block`
 
@@ -917,6 +954,40 @@ tongstock quote [codes...] [flags]
 **Flags**
 
 该命令没有自己的 flag。
+
+## `tongstock reconcile`
+
+对账诊断命令（旁路，不写入正式结果）
+
+```bash
+tongstock reconcile [command]
+```
+
+**Flags**
+
+该命令没有自己的 flag。
+
+**子命令**
+
+| 子命令 | 作用 |
+| --- | --- |
+| [`tongstock reconcile asof`](#tongstock-reconcile-asof) | 在同一交易日分别跑「冻结快照 + 特征快照」与「kline_latest 的 date <= T 时点视图」，比对候选代码集合、每只票的 action、score（容差 1e-9）与 content hash。不写入 daily_selection_run / position_decision_run，生产读取路径不受影响。 |
+
+## `tongstock reconcile asof`
+
+在同一交易日分别跑「冻结快照 + 特征快照」与「kline_latest 的 date <= T 时点视图」，比对候选代码集合、每只票的 action、score（容差 1e-9）与 content hash。不写入 daily_selection_run / position_decision_run，生产读取路径不受影响。
+退出码：0 一致（或无快照可对账），1 有差异，2 运行失败。
+
+```bash
+tongstock reconcile asof [flags]
+```
+
+**Flags**
+
+| Flag | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `--date` | string | — | 交易日 YYYY-MM-DD |
+| `--json` | bool | — | 以 JSON 输出报告 |
 
 ## `tongstock screen`
 
