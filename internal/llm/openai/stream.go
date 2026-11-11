@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"sort"
@@ -57,10 +58,12 @@ type toolAcc struct {
 }
 
 // stream is a pull-based llm.Stream. The context passed to Stream is bound to
-// the upstream http.Request via a derived cancelable context, so cancelling it
+// the upstream http.Request via a derived context that carries both cancellation
+// and the effective timeout, so cancelling it or exceeding the deadline
 // interrupts the connection. Close is idempotent and never panics.
 type stream struct {
 	ctx      context.Context // parent ctx, used for cancellation errors
+	reqCtx   context.Context // derived request ctx, carries the effective timeout
 	cancel   context.CancelFunc
 	provider *Provider
 	body     io.ReadCloser
@@ -79,7 +82,9 @@ type stream struct {
 }
 
 // Stream implements llm.Provider. It opens a streaming chat/completions request
-// and returns a pull-based event stream bound to ctx.
+// and returns a pull-based event stream bound to ctx. The derived request
+// context carries the effective timeout (llm.Request.Timeout when set, else
+// Config.Timeout), so a stalled stream is bounded just like Complete.
 func (p *Provider) Stream(ctx context.Context, req llm.Request) (llm.Stream, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -89,7 +94,13 @@ func (p *Provider) Stream(ctx context.Context, req llm.Request) (llm.Stream, err
 		return nil, p.providerError(llm.CodeInvalidResponse, "cannot encode request")
 	}
 
-	requestCtx, cancel := context.WithCancel(ctx)
+	var requestCtx context.Context
+	var cancel context.CancelFunc
+	if d := p.effectiveTimeout(req); d > 0 {
+		requestCtx, cancel = context.WithTimeout(ctx, d)
+	} else {
+		requestCtx, cancel = context.WithCancel(ctx)
+	}
 	httpReq, err := http.NewRequestWithContext(requestCtx, http.MethodPost, p.baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		cancel()
@@ -113,6 +124,7 @@ func (p *Provider) Stream(ctx context.Context, req llm.Request) (llm.Stream, err
 	sc.Buffer(make([]byte, 4096), 1<<20)
 	return &stream{
 		ctx:      ctx,
+		reqCtx:   requestCtx,
 		cancel:   cancel,
 		provider: p,
 		body:     resp.Body,
@@ -120,6 +132,23 @@ func (p *Provider) Stream(ctx context.Context, req llm.Request) (llm.Stream, err
 		acc:      make(map[int]*toolAcc),
 		finish:   llm.FinishReasonStop,
 	}, nil
+}
+
+// ctxError returns the error a Recv call should surface when a context ends.
+// A caller-driven cancellation is returned as-is (context.Canceled); any
+// deadline — the caller's or the adapter's effective per-request timeout — is
+// mapped onto llm.ErrTimeout via a short llm.ProviderError.
+func (s *stream) ctxError() error {
+	if err := s.ctx.Err(); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return s.provider.providerError(llm.CodeTimeout, "request deadline exceeded")
+		}
+		return err
+	}
+	if s.reqCtx != nil && errors.Is(s.reqCtx.Err(), context.DeadlineExceeded) {
+		return s.provider.providerError(llm.CodeTimeout, "request timed out")
+	}
+	return nil
 }
 
 // Recv implements llm.Stream. Cancellation takes priority over buffered events
@@ -130,7 +159,7 @@ func (s *stream) Recv() (llm.Event, error) {
 		s.mu.Unlock()
 		return llm.Event{}, io.EOF
 	}
-	if err := s.ctx.Err(); err != nil {
+	if err := s.ctxError(); err != nil {
 		s.mu.Unlock()
 		return llm.Event{}, err
 	}
@@ -150,7 +179,7 @@ func (s *stream) Recv() (llm.Event, error) {
 	// stream terminates. No lock is held across the blocking scanner read, so
 	// Close can always unblock it by closing the body.
 	for {
-		if err := s.ctx.Err(); err != nil {
+		if err := s.ctxError(); err != nil {
 			return llm.Event{}, err
 		}
 		if !s.scanner.Scan() {
@@ -187,7 +216,7 @@ func (s *stream) Recv() (llm.Event, error) {
 			s.mu.Unlock()
 			return llm.Event{}, io.EOF
 		}
-		if err := s.ctx.Err(); err != nil {
+		if err := s.ctxError(); err != nil {
 			s.mu.Unlock()
 			return llm.Event{}, err
 		}
@@ -209,14 +238,15 @@ func (s *stream) Recv() (llm.Event, error) {
 
 // endOfStream handles the scanner finishing without an explicit [DONE]. It
 // still surfaces a final done event (and any buffered tool calls) so callers
-// always observe a terminal; a read error maps to ErrInvalidResponse.
+// always observe a terminal; a context deadline maps to ErrTimeout, any other
+// read error maps to ErrInvalidResponse.
 func (s *stream) endOfStream() (llm.Event, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
 		return llm.Event{}, io.EOF
 	}
-	if err := s.ctx.Err(); err != nil {
+	if err := s.ctxError(); err != nil {
 		return llm.Event{}, err
 	}
 	if s.done {

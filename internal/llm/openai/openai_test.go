@@ -322,3 +322,48 @@ func TestCompatibleEndpoints(t *testing.T) {
 		})
 	}
 }
+
+// llm.Request.Timeout must override Config.Timeout: a long config timeout and a
+// short per-request timeout must produce llm.ErrTimeout against a slow server,
+// for both Complete and Stream. The server still answers (after a delay shorter
+// than cfg.Timeout) so ignoring req.Timeout would make the call succeed instead
+// of timing out — the assertion therefore proves the override, not the fallback.
+func TestRequestTimeoutOverridesConfig(t *testing.T) {
+	const serverDelay = 400 * time.Millisecond
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// A client-side timeout cancels the request, so exit without writing.
+		// Otherwise reply with a valid completion after the delay.
+		select {
+		case <-time.After(serverDelay):
+		case <-r.Context().Done():
+			return
+		}
+		serveJSON(w, 200, map[string]any{
+			"id": "chatcmpl-slow",
+			"choices": []any{map[string]any{
+				"index":         0,
+				"message":       map[string]any{"role": "assistant", "content": "late"},
+				"finish_reason": "stop",
+			}},
+		})
+	}))
+	defer srv.Close()
+
+	req := helloRequest()
+	req.Timeout = 40 * time.Millisecond // short; must win over cfg.Timeout
+	p := newTestProvider(t, srv.URL, func(cfg *Config) {
+		cfg.Timeout = 2 * time.Second // long
+	})
+
+	if _, err := p.Complete(context.Background(), req); !errors.Is(err, llm.ErrTimeout) {
+		t.Fatalf("Complete with req.Timeout override: err = %v, want llm.ErrTimeout", err)
+	}
+	s, err := p.Stream(context.Background(), req)
+	if err == nil {
+		_ = s.Close()
+		t.Fatal("Stream with req.Timeout override: expected llm.ErrTimeout, got a stream")
+	}
+	if !errors.Is(err, llm.ErrTimeout) {
+		t.Fatalf("Stream with req.Timeout override: err = %v, want llm.ErrTimeout", err)
+	}
+}

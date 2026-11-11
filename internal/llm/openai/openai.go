@@ -217,6 +217,16 @@ type chatResponse struct {
 	Usage   wireUsage    `json:"usage"`
 }
 
+// effectiveTimeout returns the per-request timeout declared on llm.Request when
+// the caller set one, otherwise the provider-level Config.Timeout default. Both
+// Complete and Stream use this so the interface's Timeout field is honored.
+func (p *Provider) effectiveTimeout(req llm.Request) time.Duration {
+	if req.Timeout > 0 {
+		return req.Timeout
+	}
+	return p.cfg.Timeout
+}
+
 // Complete implements llm.Provider. It performs a single non-streaming POST to
 // {BaseURL}/chat/completions and maps backend failures onto llm's stable
 // sentinels via llm.ProviderError.
@@ -228,8 +238,8 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 
 	callCtx := ctx
 	var cancel context.CancelFunc = func() {}
-	if p.cfg.Timeout > 0 {
-		callCtx, cancel = context.WithTimeout(ctx, p.cfg.Timeout)
+	if d := p.effectiveTimeout(req); d > 0 {
+		callCtx, cancel = context.WithTimeout(ctx, d)
 	}
 	defer cancel()
 
