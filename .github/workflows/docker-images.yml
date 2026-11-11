@@ -11,11 +11,6 @@ name: Build and Push Docker Images
 # 必需的仓库 Secrets(sjzsdu/tongstock → Settings → Secrets and variables → Actions):
 #   DOCKERHUB_USERNAME  Docker Hub 用户名(sjzsdu)
 #   DOCKERHUB_TOKEN     Docker Hub Personal Access Token(Write 权限)
-#
-# 说明:go.mod 通过 `replace => ../picoclaw` 引用本地兄弟仓库,Actions 的
-# checkout 里没有它;Dockerfile 已内置从公开 fork(sjzsdu/picoclaw)按
-# PICOCLAW_PIN 固定 commit 拉取,CI 环境无需额外处理。本地 picoclaw 有
-# 更新需要进镜像时,更新 Dockerfile 里的 PICOCLAW_PIN。
 
 on:
   push:

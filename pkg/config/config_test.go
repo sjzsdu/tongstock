@@ -51,7 +51,13 @@ agent:
 	}
 }
 
-// Retired PicoClaw-era fields must fail loudly with an actionable message.
+// legacyRuntimeValue is what real upgraded configs carry in the retired
+// `backend` key. Validate does not special-case it (any non-empty value is
+// rejected), but the fixture keeps it so the production scenario stays
+// covered verbatim.
+const legacyRuntimeValue = "picoclaw"
+
+// Retired runtime-era fields must fail loudly with an actionable message.
 // Silently ignoring them would leave the user pointing at a runtime that no
 // longer exists.
 func TestParseConfigRejectsRetiredAgentFields(t *testing.T) {
@@ -61,19 +67,19 @@ func TestParseConfigRejectsRetiredAgentFields(t *testing.T) {
 		wantHint []string
 	}{
 		{
-			name:     "backend picoclaw",
-			yaml:     "agent:\n  enabled: true\n  backend: picoclaw\n",
-			wantHint: []string{"backend: picoclaw", "provider", "base_url", "api_key_env", "model", "Agent 配置迁移"},
+			name:     "backend runtime name",
+			yaml:     "agent:\n  enabled: true\n  backend: " + legacyRuntimeValue + "\n",
+			wantHint: []string{"backend: " + legacyRuntimeValue, "provider", "base_url", "api_key_env", "model", "Agent 配置迁移"},
 		},
 		{
 			name:     "home only",
-			yaml:     "agent:\n  enabled: true\n  home: ~/.picoclaw\n",
-			wantHint: []string{"home: ~/.picoclaw", "provider", "base_url", "api_key_env", "model", "Agent 配置迁移"},
+			yaml:     "agent:\n  enabled: true\n  home: /opt/legacy-agent\n",
+			wantHint: []string{"home: /opt/legacy-agent", "provider", "base_url", "api_key_env", "model", "Agent 配置迁移"},
 		},
 		{
 			name:     "config only",
-			yaml:     "agent:\n  enabled: true\n  config: ~/.picoclaw/config.json\n",
-			wantHint: []string{"config: ~/.picoclaw/config.json", "provider", "base_url", "api_key_env", "model", "Agent 配置迁移"},
+			yaml:     "agent:\n  enabled: true\n  config: /opt/legacy-agent/config.json\n",
+			wantHint: []string{"config: /opt/legacy-agent/config.json", "provider", "base_url", "api_key_env", "model", "Agent 配置迁移"},
 		},
 		{
 			name:     "api_base rename",

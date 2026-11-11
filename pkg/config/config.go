@@ -122,7 +122,7 @@ type AgentScenarioDefaults struct {
 }
 
 // ErrLegacyAgentConfig reports an agent section that still relies on the
-// PicoClaw-era fields (backend / home / config / api_base). TongStock has a
+// retired runtime fields (backend / home / config / api_base). TongStock has a
 // single runtime now, so these fields are a hard configuration error instead
 // of a silent backend switch.
 var ErrLegacyAgentConfig = errors.New("agent 配置使用了已退役字段")
@@ -132,7 +132,7 @@ const MigrationDocHint = "迁移表见 README.md「Agent 配置迁移」"
 
 // Validate rejects retired fields and malformed option values. Every caller
 // that reads config.yaml must run it before using the agent section: a
-// leftover `backend: picoclaw` has to fail loudly rather than select a
+// leftover `backend: <runtime>` has to fail loudly rather than select a
 // runtime that no longer exists.
 func (c AgentConfig) Validate() error {
 	var legacy []string

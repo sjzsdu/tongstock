@@ -56,7 +56,7 @@ make docker-build
 make docker-push
 ```
 
-`Dockerfile` 里通过 `PICOCLAW_REPO` 与 `PICOCLAW_PIN` 两个 build-arg 拉取固定 commit 的相邻依赖（`go.mod` 里有 `replace ... => ../picoclaw`），所以构建过程不依赖你本地的目录结构。
+`Dockerfile` 全程只依赖本仓库：Go 依赖走 `go mod download`，前端与官网产物在镜像内构建，不再需要额外的 build-arg 或相邻仓库。
 
 ## 数据备份
 

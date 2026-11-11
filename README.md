@@ -137,13 +137,13 @@ DeepSeek、通义（DashScope 兼容模式）、OpenRouter、Ollama、vLLM 都�
 
 ### Agent 配置迁移
 
-PicoClaw 运行时已删除，旧 `agent` 字段在启动时会直接报错并给出迁移指引，**不会静默降级**。按下表替换即可：
+旧的 agent 运行时已删除，遗留的 `agent` 字段在启动时会直接报错并给出迁移指引，**不会静默降级**。按下表替换即可：
 
 | 旧字段 | 新字段 | 说明 |
 | --- | --- | --- |
-| `backend`（如 `picoclaw` / `builtin`） | — | 只有一种运行时，删除该行即可 |
-| `home`（如 `~/.picoclaw`） | `provider` / `base_url` / `model` | 运行时目录不再存在，模型改为直连 endpoint |
-| `config`（如 `~/.picoclaw/config.json`） | `api_key_env` / `model` | 密钥改为环境变量名，模型写在本段配置里 |
+| `backend` | — | 只剩一种运行时，删除该行即可 |
+| `home` | `provider` / `base_url` / `model` | 运行时目录不再存在，模型改为直连 endpoint |
+| `config` | `api_key_env` / `model` | 密钥改为环境变量名，模型写在本段配置里 |
 | `api_base` | `base_url` | 仅字段改名，值不变 |
 
 迁移示例：
@@ -152,9 +152,9 @@ PicoClaw 运行时已删除，旧 `agent` 字段在启动时会直接报错并�
 # 旧
 agent:
   enabled: true
-  backend: picoclaw
-  home: ~/.picoclaw
-  config: ~/.picoclaw/config.json
+  backend: legacy
+  home: /opt/legacy-agent
+  config: /opt/legacy-agent/config.json
   model: deepseek-chat
 
 # 新
