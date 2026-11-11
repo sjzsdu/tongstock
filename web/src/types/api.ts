@@ -459,6 +459,45 @@ export interface StateSeriesResponse {
   note?: string;
 }
 
+export interface StateCompareItem {
+  date: string;
+  close: number | null;
+  states: Record<StateDim, StateValue>;
+}
+
+export interface StateCompareTransition {
+  dim: StateDim;
+  date: string;
+  from: StateValue;
+  to: StateValue;
+}
+
+export interface StateCompareDuration {
+  dim: StateDim;
+  state: StateValue;
+  from: string;
+  to: string;
+  trading_days: number;
+  start_close: number | null;
+  end_close: number | null;
+  return_pct: number | null;
+}
+
+export interface StateCompareStock {
+  code: string;
+  name: string;
+  items: StateCompareItem[];
+  transitions: StateCompareTransition[];
+  durations: StateCompareDuration[];
+}
+
+export interface StateCompareResponse {
+  from: string;
+  to: string;
+  dimensions: DimensionMeta[];
+  stocks: StateCompareStock[];
+}
+
 export interface BlockComparisonStock {
   code: string;
   name: string;

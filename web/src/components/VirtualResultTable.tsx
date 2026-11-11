@@ -46,8 +46,17 @@ export function VirtualResultTable({
     overscan: 18,
   });
 
+  const compareResults = results.slice(0, 20);
+  const compareDates = compareResults.map((result) => result.date).filter(Boolean).sort();
+  const comparePath = compareResults.length > 0 && compareDates.length > 0
+    ? `/states/compare?codes=${encodeURIComponent(compareResults.map((result) => result.code).join(','))}&from=${encodeURIComponent(compareDates[0])}&to=${encodeURIComponent(compareDates[compareDates.length - 1])}`
+    : '';
+
   return (
-    <Card styles={{ body: { padding: 0, overflowX: 'auto' } }} extra={extra}>
+    <Card
+      styles={{ body: { padding: 0, overflowX: 'auto' } }}
+      extra={<Space>{extra}{comparePath && <Button size="small" type="primary" onClick={() => navigate(comparePath)}>对照命中股票{results.length > 20 ? '（前20只）' : ''}</Button>}</Space>}
+    >
       <div style={{ minWidth: 1120 }}>
       <div
         style={{

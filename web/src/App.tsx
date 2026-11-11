@@ -40,6 +40,7 @@ const Monitoring = lazy(lazyWithReload(() => import('./pages/Monitoring')));
 const Methods = lazy(lazyWithReload(() => import('./pages/Methods')));
 const MyMethods = lazy(lazyWithReload(() => import('./pages/MyMethods')));
 const SelectionResult = lazy(lazyWithReload(() => import('./pages/SelectionResult')));
+const StateCompare = lazy(lazyWithReload(() => import('./pages/StateCompare')));
 const NotFound = lazy(lazyWithReload(() => import('./pages/NotFound')));
 
 // 懒加载 chunk 失败（重新部署后旧标签页请求旧 hash 文件返回 404）时，
@@ -345,6 +346,7 @@ export default function App() {
             <Route path="/methods" element={<MyMethods />} />
             <Route path="/methods/advanced" element={<Methods />} />
             <Route path="/methods/selection/:runId" element={<SelectionResult />} />
+            <Route path="/states/compare" element={<StateCompare />} />
             <Route path="/news" element={<NewsHome />} />
             <Route path="/news/event/:id" element={<EventDetail />} />
             <Route path="*" element={<NotFound />} />

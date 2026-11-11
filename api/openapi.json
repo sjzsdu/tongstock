@@ -5841,6 +5841,23 @@
         }
       }
     },
+    "/api/states/compare": {
+      "get": {
+        "operationId": "getApiStatesCompare",
+        "summary": "Compare persisted states and aligned prices for multiple stocks",
+        "parameters": [
+          { "in": "query", "name": "codes", "required": true, "schema": { "type": "string" } },
+          { "in": "query", "name": "from", "required": true, "schema": { "type": "string" } },
+          { "in": "query", "name": "to", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Aligned stock state bands, transitions and valid-state duration returns" },
+          "400": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/screen/options": {
       "get": {
         "operationId": "getApiScreenOptions",
