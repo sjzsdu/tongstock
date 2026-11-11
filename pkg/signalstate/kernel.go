@@ -38,14 +38,35 @@ func ComputeSeries(code string, ktype uint8, klines []ta.KlineInput, def Definit
 }
 
 func computeSeries(code string, ktype uint8, klines []ta.KlineInput, def Definition) []StateVector {
+	return ComputeSeriesFrom(code, ktype, klines, def, 0)
+}
+
+// ComputeSeriesFrom keeps the entire causal indicator seed but classifies only
+// bars at and after start. It shares exactly the same classifier and hashes as
+// Compute/ComputeSeries; daily persistence need not reclassify the old prefix.
+func ComputeSeriesFrom(code string, ktype uint8, klines []ta.KlineInput, def Definition, start int) []StateVector {
+	if start < 0 {
+		start = 0
+	}
+	if start > len(klines) {
+		start = len(klines)
+	}
 	def = def.Normalized()
-	out := make([]StateVector, len(klines))
-	if len(klines) == 0 {
+	out := make([]StateVector, 0, len(klines)-start)
+	if start == len(klines) {
 		return out
 	}
 	ind := calcIndicators(klines, def)
+	prefix := NewInputHasher()
+	definition := DefinitionHash(def)
 	for i := range klines {
-		out[i] = classify(code, ktype, klines, ind, def, i)
+		HashInput(prefix, klines[i])
+		if i < start {
+			continue
+		}
+		v := classify(code, ktype, klines, ind, def, i)
+		v.CalcHash = vectorHash(v, definition, fmt.Sprintf("%x", prefix.Sum(nil)))
+		out = append(out, v)
 	}
 	return out
 }
