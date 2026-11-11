@@ -51,6 +51,7 @@ const ROUTE_PAGES: Array<[RegExp, string]> = [
   [/^\/portfolio(\/|$)/, '持仓卖出'],
   [/^\/blocks(\/|$)/, '股票池'],
   [/^\/methods\/selection\//, '今日候选股票'],
+  [/^\/states\/compare(\/|$)/, '状态与股价对照'],
   [/^\/methods\/advanced(\/|$)/, '高级研究与管理'],
   [/^\/methods(\/|$)/, '我的选股方法'],
   [/^\/paradigms(\/|$)/, '范式库'],

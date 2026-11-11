@@ -73,6 +73,7 @@ func (s *Server) registerAnalysisRoutes(api *gin.RouterGroup) {
 	api.GET("/stock/:code/state-series", s.handleStockStateSeries)
 	api.GET("/states", s.handleStates)
 	api.GET("/states/series", s.handleStatesSeries)
+	api.GET("/states/compare", s.handleStatesCompare)
 }
 
 func (s *Server) registerPortfolioRoutes(api *gin.RouterGroup) {

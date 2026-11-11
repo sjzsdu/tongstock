@@ -44,3 +44,26 @@ func (s *Server) handleStatesSeries(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"code": code, "dimensions": signalstate.Metadata(), "items": items, "rows": len(items)})
 }
+
+func (s *Server) handleStatesCompare(c *gin.Context) {
+	codes := normalizeCodeList(strings.FieldsFunc(c.Query("codes"), func(r rune) bool { return r == ',' || r == ' ' || r == '\n' }))
+	from, to, err := parseStateSeriesRange(c.Query("from"), c.Query("to"))
+	if len(codes) == 0 || err != nil || from == "" || to == "" {
+		WriteError(c, http.StatusBadRequest, "validation_failed", "需要 codes 及合法的 from/to 日期区间")
+		return
+	}
+	if len(codes) > 20 {
+		WriteError(c, http.StatusBadRequest, "validation_failed", "codes 最多支持 20 只股票")
+		return
+	}
+	if s.storage == nil {
+		WriteError(c, http.StatusServiceUnavailable, "service_unavailable", "快照库未就绪")
+		return
+	}
+	out, err := (statesnapshot.Store{DB: s.storage.DB()}).Compare(c.Request.Context(), codes, strings.ReplaceAll(from, "-", ""), strings.ReplaceAll(to, "-", ""))
+	if err != nil {
+		WriteError(c, http.StatusInternalServerError, "storage_error", "读取状态对照失败")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"from": from, "to": to, "dimensions": signalstate.Metadata(), "stocks": out.Stocks})
+}

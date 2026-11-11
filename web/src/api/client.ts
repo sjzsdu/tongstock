@@ -293,6 +293,11 @@ export const api = {
     return fetchJSON<StateSeriesResponse>(`/api/stock/${code}/state-series?${params}`);
   },
 
+  stateCompare: (codes: string[], from: string, to: string) => {
+    const params = new URLSearchParams({ codes: codes.join(','), from, to });
+    return fetchJSON<import('../types/api').StateCompareResponse>(`/api/states/compare?${params}`);
+  },
+
   searchStocks: (query: string, limit = 10) =>
     fetchJSON<StockSearchResponse>(`/api/stocks/search?query=${encodeURIComponent(query)}&limit=${limit}`),
 
