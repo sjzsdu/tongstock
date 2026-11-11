@@ -26,7 +26,7 @@ func TestAgentHTTPAPIsResolveAliasesToCanonicalIDs(t *testing.T) {
 	s := &Server{}
 	s.SetAgentLister(func() ([]EmbeddedAgent, error) { return agents, nil })
 	if err := s.InitAgentStateWithOptions(AgentRuntimeOptions{
-		Backend: "builtin", Provider: "openai", APIBase: provider.URL,
+		Provider: "openai", BaseURL: provider.URL,
 		APIKeyEnv: "TEST_AGENT_ALIAS_KEY", Model: "test-model",
 		DefaultAgents: map[string]string{agentservice.ScenarioChat: "Risk-Reviewer"},
 		Workspace:     t.TempDir(),

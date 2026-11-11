@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sjzsdu/tongstock/internal/agents"
 	"github.com/sjzsdu/tongstock/internal/ai_tools"
@@ -43,20 +44,29 @@ func newTestService(t *testing.T, fake *llm.FakeProvider, defs []agents.Definiti
 	return svc
 }
 
-func TestFromAgentConfigResolvesBackendHomeAndPaths(t *testing.T) {
+func TestFromAgentConfigResolvesProviderFieldsAndPaths(t *testing.T) {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		t.Skip("no user home directory")
 	}
 	cfg := FromAgentConfig(config.AgentConfig{
-		Home:       "~/legacy-home",
+		Provider:   "deepseek",
+		BaseURL:    "https://api.deepseek.com/v1",
+		APIKeyEnv:  "DEEPSEEK_API_KEY",
+		Model:      "deepseek-chat",
+		Timeout:    "90s",
+		MaxTokens:  2048,
+		Streaming:  true,
 		AgentPaths: []string{"~/agents", "relative/agents"},
 	})
-	if cfg.Backend == "" {
-		t.Fatalf("backend should be inferred from legacy home: %+v", cfg)
+	if cfg.Provider != "deepseek" || cfg.BaseURL != "https://api.deepseek.com/v1" {
+		t.Fatalf("provider fields not carried over: %+v", cfg)
 	}
-	if cfg.Home != filepath.Join(home, "legacy-home") {
-		t.Fatalf("home = %q, want expanded legacy home", cfg.Home)
+	if cfg.APIKeyEnv != "DEEPSEEK_API_KEY" || cfg.Model != "deepseek-chat" {
+		t.Fatalf("model fields not carried over: %+v", cfg)
+	}
+	if cfg.Timeout != 90*time.Second || cfg.MaxTokens != 2048 || !cfg.Streaming {
+		t.Fatalf("provider options not carried over: %+v", cfg)
 	}
 	want := filepath.Join(home, "agents")
 	if len(cfg.AgentPaths) != 2 || cfg.AgentPaths[0] != want || cfg.AgentPaths[1] != "relative/agents" {
@@ -64,6 +74,15 @@ func TestFromAgentConfigResolvesBackendHomeAndPaths(t *testing.T) {
 	}
 	if cfg.Enabled {
 		t.Fatalf("enabled must propagate from config: %+v", cfg)
+	}
+}
+
+// An unparsable timeout is rejected by config.Load; a programmatic caller that
+// bypasses Load must still get a usable service with the adapter default.
+func TestFromAgentConfigIgnoresUnparsableTimeout(t *testing.T) {
+	cfg := FromAgentConfig(config.AgentConfig{Timeout: "eventually"})
+	if cfg.Timeout != 0 {
+		t.Fatalf("timeout = %v, want adapter default 0", cfg.Timeout)
 	}
 }
 
@@ -91,7 +110,7 @@ func TestOpenRejectsDisabledAgentConfig(t *testing.T) {
 }
 
 func TestNewRequiresModelWhenNoProviderInjected(t *testing.T) {
-	_, err := New(Config{Backend: "builtin", Provider: "openai", APIKeyEnv: "MISSING_KEY"}, Options{})
+	_, err := New(Config{Provider: "openai", APIKeyEnv: "MISSING_KEY"}, Options{})
 	if err == nil || !strings.Contains(err.Error(), "agent.model") {
 		t.Fatalf("New(no provider, no model) error = %v, want explicit agent.model error", err)
 	}
@@ -103,7 +122,7 @@ func TestNewBuildsProviderFromConfig(t *testing.T) {
 	t.Setenv("WAN66_AGENTSERVICE_TEST_KEY", "placeholder-not-a-secret")
 	svc, err := New(Config{
 		Model:     "test-model",
-		APIBase:   "https://example.com/v1",
+		BaseURL:   "https://example.com/v1",
 		APIKeyEnv: "WAN66_AGENTSERVICE_TEST_KEY",
 	}, Options{Lister: func() ([]agents.Definition, error) { return testDefs(), nil }})
 	if err != nil {

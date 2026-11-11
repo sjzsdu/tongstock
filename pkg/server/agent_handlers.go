@@ -114,19 +114,6 @@ const maxTranscriptBytes = 256 * 1024
 // agent service.
 type AgentRuntimeOptions = agentservice.Config
 
-// InitAgentState initializes the legacy PicoClaw-file runtime and runner.
-// Deprecated: use InitAgentStateWithOptions for native TongStock settings.
-func (s *Server) InitAgentState(home, configPath, model, agentID, stockAgent, workspace string) error {
-	return s.InitAgentStateWithOptions(AgentRuntimeOptions{
-		Backend: "picoclaw", Home: home, ConfigPath: configPath, Model: model,
-		DefaultAgents: map[string]string{
-			agentservice.ScenarioChat:  agentID,
-			agentservice.ScenarioStock: stockAgent,
-		},
-		Workspace: workspace,
-	})
-}
-
 // InitAgentStateWithOptions builds the shared agent service from a resolved
 // runtime config. Agent definitions default to TongStock's own loader and can
 // be replaced through SetAgentLister (tests).
@@ -188,7 +175,7 @@ func (s *Server) handleAgentDiagnose(c *gin.Context) {
 		if s.agentInitError != "" {
 			resp.Errors = append(resp.Errors, s.agentInitError)
 			if strings.Contains(s.agentInitError, "agent.model") {
-				resp.Hints = append(resp.Hints, "内建后端需要配置 agent.model；如需沿用 PicoClaw，请设置 backend: picoclaw 或保留 home/config")
+				resp.Hints = append(resp.Hints, "需要配置 agent.model；provider / base_url / api_key_env 与旧字段的对应关系见 README「Agent 配置迁移」")
 			} else if strings.Contains(s.agentInitError, "api key") || strings.Contains(s.agentInitError, "api_key_env") {
 				resp.Hints = append(resp.Hints, "远程 provider 需要有效的 agent.api_key_env；Ollama、vLLM、LM Studio 等本地 provider 可不配置密钥")
 			}
@@ -357,9 +344,10 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	}
 	req.Agent = canonicalAgent
 	// Paradigm mining requires the verified research pipeline.  The direct
-	// chat runner only exposes PicoClaw tools, so allowing this request through
-	// would make the model appear to have research tools that are not actually
-	// registered.  Keep the explicit API contract until tool bridging is added.
+	// chat runner only exposes the read-only tool set from internal/ai_tools,
+	// so allowing this request through would make the model appear to have
+	// research tools that are not actually registered.  Keep the explicit API
+	// contract until tool bridging is added.
 	if req.Agent == "stock-paradigm-miner" {
 		code, message := statusError(http.StatusConflict)
 		WriteError(c, http.StatusConflict, code, message)

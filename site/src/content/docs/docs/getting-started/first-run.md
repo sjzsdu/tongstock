@@ -80,7 +80,9 @@ database:
 
 ### 可选：Agent 配置
 
-`config.yaml` 里还有一段被注释掉的 `agent` 配置，用于 `/agent` 页面与 Agent 相关接口使用的模型与角色。不配置也能运行，默认走内建 backend；模型、`api_key_env`、以及按场景声明的默认角色都写在段配置里，无需另外维护 PicoClaw 配置文件。历史 PicoClaw 的 `home/config` 仍然可用，会自动进入兼容模式。
+`config.yaml` 里还有一段被注释掉的 `agent` 配置，用于 `/agent` 页面与 Agent 相关接口使用的模型与角色。不配置也能运行；启用后由 TongStock 自有的通用 LLM 适配层直连 OpenAI-compatible 端点，模型、`base_url`、`api_key_env`、`timeout` / `max_tokens` / `streaming` 以及按场景声明的默认角色都写在段配置里，不需要另外维护任何外部运行时配置文件。
+
+旧字段 `backend` / `home` / `config` 已退役，仍保留它们会在启动时直接报错（不静默降级）。字段对应关系见 README 的「Agent 配置迁移」：`backend` 直接删除，`home` / `config` 换成 `provider` + `base_url` + `api_key_env` + `model`，`api_base` 改名为 `base_url`。
 
 ## 指标参数 `indicator.yaml`
 

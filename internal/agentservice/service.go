@@ -55,15 +55,21 @@ type Config struct {
 	// Enabled gates the capability. Only FromAgentConfig/Open consult it;
 	// New treats an empty Config as explicitly opted in so programmatic
 	// callers (tests, embedders) can construct a runtime directly.
-	Enabled    bool
-	Backend    string
-	Home       string
-	ConfigPath string
-	Provider   string
-	APIBase    string
-	APIKeyEnv  string
-	Model      string
-	Session    string
+	Enabled   bool
+	Provider  string
+	BaseURL   string
+	APIKeyEnv string
+	Model     string
+	Session   string
+	// Timeout is the per-request provider timeout. Zero keeps the adapter
+	// default.
+	Timeout time.Duration
+	// MaxTokens caps completion length on every request. Zero keeps the
+	// adapter default.
+	MaxTokens int
+	// Streaming records the configured response-mode preference. The HTTP
+	// layer still decides per request based on the endpoint the client calls.
+	Streaming bool
 	// DefaultAgents maps a scenario (ScenarioChat, ScenarioStock, ...) to
 	// the agent ID that serves it. Empty scenarios are dropped on load.
 	DefaultAgents map[string]string
@@ -148,9 +154,11 @@ type Service struct {
 }
 
 // FromAgentConfig converts the YAML agent section into a resolved runtime
-// config: legacy backend detection, "~/" expansion, and the fold of the
-// legacy flat agent/stock_agent fields into the scenario map happen here,
-// once. Explicit defaults.* always win over the legacy fields.
+// config: timeout parsing, "~/" expansion, and the fold of the legacy flat
+// agent/stock_agent fields into the scenario map happen here, once. Explicit
+// defaults.* always win over the legacy fields. A malformed agent.timeout is
+// already rejected by config.Load; here it degrades to the adapter default so
+// programmatic callers keep a non-failing constructor.
 func FromAgentConfig(cfg config.AgentConfig) Config {
 	paths := make([]string, 0, len(cfg.AgentPaths))
 	for _, path := range cfg.AgentPaths {
@@ -170,16 +178,17 @@ func FromAgentConfig(cfg config.AgentConfig) Config {
 	}
 	setScenario(ScenarioChat, cfg.Defaults.Chat, cfg.Agent)
 	setScenario(ScenarioStock, cfg.Defaults.Stock, cfg.StockAgent)
+	timeout, _ := cfg.ParseTimeout()
 	return Config{
 		Enabled:       cfg.Enabled,
-		Backend:       cfg.EffectiveBackend(),
-		Home:          config.ExpandHome(cfg.Home),
-		ConfigPath:    config.ExpandHome(cfg.Config),
 		Provider:      cfg.Provider,
-		APIBase:       cfg.APIBase,
+		BaseURL:       cfg.BaseURL,
 		APIKeyEnv:     cfg.APIKeyEnv,
 		Model:         cfg.Model,
 		Session:       cfg.Session,
+		Timeout:       timeout,
+		MaxTokens:     cfg.MaxTokens,
+		Streaming:     cfg.Streaming,
 		Workspace:     "",
 		AgentPaths:    paths,
 		DefaultAgents: scenarios,
@@ -228,9 +237,12 @@ func New(cfg Config, opts Options) (*Service, error) {
 			return nil, fmt.Errorf("agent.model is required when no llm.Provider is injected; configure agent.model or inject one via Options.Provider")
 		}
 		p, err := openai.New(openai.Config{
-			BaseURL:   cfg.APIBase,
+			BaseURL:   cfg.BaseURL,
 			APIKeyEnv: cfg.APIKeyEnv,
 			Model:     cfg.Model,
+			Timeout:   cfg.Timeout,
+			MaxTokens: cfg.MaxTokens,
+			Streaming: cfg.Streaming,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrRunner, err)
@@ -299,6 +311,7 @@ func (s *Service) Run(ctx context.Context, req Request) (string, error) {
 
 	def, _ := agents.Resolve(defs, agent)
 	llmReq := buildRequest(def, model, session, agent, req.Prompt)
+	llmReq.MaxTokens = s.cfg.MaxTokens
 
 	start := time.Now()
 	var (
