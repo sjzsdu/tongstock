@@ -12,23 +12,17 @@ import {
   Alert,
   Button,
   Card,
-  Collapse,
-  Divider,
   Empty,
   Flex,
-  List,
-  Segmented,
-  Select,
   Tooltip,
   Space,
   Tag,
   Typography,
   message,
-  theme,
 } from 'antd';
 import { api } from '../api/client';
-import type { ScreenResult, ScreenCodeStatus, SyncFreshnessResult } from '../types/api';
-import { KTYPE_OPTIONS, SIGNAL_OPTIONS } from '../types/screen';
+import type { ScreenResult, SyncFreshnessResult } from '../types/api';
+import { StateFilterControls } from '../components/screen/StateFilterControls';
 import { useCodesCache } from '../hooks/useCodesCache';
 import { useWatchlist } from '../hooks/useWatchlist';
 import { useTrade } from '../hooks/useTrade';
@@ -39,12 +33,11 @@ import { SourceSelectorModal } from '../components/screen/SourceSelectorModal';
 import { SignalHelpModal } from '../components/screen/SignalHelpModal';
 import { SyncResultModal } from '../components/screen/SyncResultModal';
 import { BlockStocksModal } from '../components/screen/BlockStocksModal';
-import { exportCsv, stockNamesFromCodesCache, formatPercent, getChangePct, getMaTrend } from '../utils/screen';
+import { exportCsv, stockNamesFromCodesCache, formatPercent, getChangePct } from '../utils/screen';
 
 const { Paragraph, Text, Title } = Typography;
 
 export default function Screen() {
-  const { token } = theme.useToken();
   const navigate = useNavigate();
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const [messageApi, contextHolder] = message.useMessage();
@@ -57,23 +50,16 @@ export default function Screen() {
     sourceTab,
     setSourceTab,
     ktype,
-    setKtype,
-    selectedSignals,
-    setSelectedSignals,
-    results,
-    failedCodes,
-    cappedInfo,
+    stateFilter, setStateFilter, date, setDate, dimensions, insufficientCount, missingCount, snapshotDate, error, conditionsChanged,
     hasScreenLoaded,
     total,
     loading,
     screenedAt,
-    fromCache,
     forceRefresh,
     sortKey,
     sortAsc,
     filteredResults,
     sortedResults,
-    signalCounts,
     blockFile,
     setBlockFile,
     blockData,
@@ -86,7 +72,6 @@ export default function Screen() {
     syncResult,
     setSyncResult,
     doScreen,
-    retryFailed,
     handleSortChange,
   } = useScreen();
 
@@ -272,16 +257,15 @@ export default function Screen() {
   const exportScreenResults = () => {
     exportCsv(
       `tongstock-screen-${new Date().toISOString().slice(0, 10)}.csv`,
-      ['代码', '名称', '收盘', '涨跌幅', 'MA趋势', '信号'],
+      ['代码', '名称', '日期', '收盘', '涨跌幅', ...dimensions.map((d) => d.label)],
       sortedResults.map((result) => {
-        const maTrend = getMaTrend(result);
         return [
           result.code,
           result.name || '',
+          result.date,
           String(result.last?.Close ?? ''),
-          formatPercent(getChangePct(result)),
-          maTrend.label,
-          (result.signals || []).map((signal) => `${signal.Indicator}${signal.Type}`).join(';'),
+          result.last?.PrevClose ? formatPercent(getChangePct(result)) : '-',
+          ...dimensions.map((d) => d.states.find((s) => s.state === result.states[d.dim])?.label || ''),
         ];
       }),
     );
@@ -339,7 +323,7 @@ export default function Screen() {
           <div>
             <Title level={3} style={{ margin: 0 }}>信号筛选</Title>
             <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              从自选股或板块成分股中批量计算指标信号，并快速跳转到个股详情。
+              按同一交易日的四维状态筛选股票，所有条件同时满足，点击结果查看对应日期的状态时序。
             </Paragraph>
           </div>
         </Flex>
@@ -362,50 +346,12 @@ export default function Screen() {
 
         <Card title="筛选设置" size="small">
           <Flex wrap="wrap" gap={12} align="center">
-            <Flex gap={8} align="center">
-              <Text type="secondary">周期</Text>
-              <Segmented
-                value={ktype}
-                onChange={(value) => setKtype(value as string)}
-                options={KTYPE_OPTIONS}
-                size="small"
-              />
-            </Flex>
+            <StateFilterControls dimensions={dimensions} value={stateFilter} onChange={setStateFilter} date={date} onDateChange={setDate} />
+            <Tooltip title="查看三态与迁移条件说明">
+              <Button icon={<InfoCircleOutlined />} onClick={() => setShowHelpModal(true)}>状态说明</Button>
+            </Tooltip>
 
-            <Divider type="vertical" />
-
-            <Flex gap={8} align="center" style={{ flex: 1, minWidth: 240 }}>
-              <Text type="secondary">信号过滤</Text>
-              <Tooltip title="查看信号含义说明">
-                <Button icon={<InfoCircleOutlined />} size="small" type="text" onClick={() => setShowHelpModal(true)} />
-              </Tooltip>
-              <Select
-                mode="multiple"
-                value={selectedSignals}
-                onChange={(value) => setSelectedSignals(value as string[])}
-                placeholder="选择信号类型"
-                style={{ flex: 1 }}
-                size="small"
-                options={[
-                  {
-                    label: '买入信号',
-                    options: SIGNAL_OPTIONS.filter((opt) => opt.buy).map((opt) => ({
-                      value: opt.value,
-                      label: opt.label,
-                    })),
-                  },
-                  {
-                    label: '卖出信号',
-                    options: SIGNAL_OPTIONS.filter((opt) => !opt.buy).map((opt) => ({
-                      value: opt.value,
-                      label: opt.label,
-                    })),
-                  },
-                ]}
-              />
-            </Flex>
-
-            <Tooltip title="忽略本地缓存，重新拉取最新行情并筛选">
+            <Tooltip title="使用当前条件重新读取股票池快照">
               <Button
                 icon={<SyncOutlined />}
                 loading={loading}
@@ -428,9 +374,8 @@ export default function Screen() {
           </Flex>
         </Card>
 
-        {cappedInfo && (
-          <Alert type="warning" showIcon message="批量已截断" description={cappedInfo.reason} />
-        )}
+        {conditionsChanged && <Alert type="info" showIcon title="条件已修改，请点击开始筛选；下方仍为上次执行结果。" />}
+        {error && <Alert type="error" showIcon title="筛选失败" description={error} />}
 
         {hasScreenLoaded && (
           <Card size="small" style={{ background: 'linear-gradient(135deg, rgba(22,119,255,0.08), rgba(14,165,233,0.06))' }}>
@@ -438,30 +383,17 @@ export default function Screen() {
               <Space size={24} wrap>
                 <Text>扫描总数: <strong>{total}</strong></Text>
                 <Text>命中结果: <strong>{filteredResults.length}</strong></Text>
-                <Text>活跃信号: <strong>{Object.keys(signalCounts).length}</strong></Text>
-                {/* 深色主题里不能用浅色主题的固定红（#cf1322 压在卡片底上只有 3.18:1），
-                    取色板里仍达 4.5:1 的那一档 */}
-                {failedCodes.length > 0 && (
-                  <Text style={{ color: token.red7 }}>失败: <strong>{failedCodes.length}</strong></Text>
-                )}
+                <Text>快照交易日: <strong>{snapshotDate || "无快照"}</strong></Text>
+                <Text>数据不足排除: <strong>{insufficientCount}</strong> 股日</Text>
+                <Text>缺少当日快照: <strong>{missingCount}</strong> 只</Text>
                 {screenedAt && (
-                  <Tooltip title={fromCache ? '当前展示本地缓存，点击「强制刷新」获取最新行情' : '本次筛选的取数时间'}>
-                    <Text type={fromCache ? 'warning' : 'secondary'}>
-                      数据时间: <strong>{new Date(screenedAt).toLocaleTimeString('zh-CN', { hour12: false })}</strong>
-                      {fromCache ? '（缓存）' : ''}
+                  <Tooltip title="本次筛选执行时间">
+                    <Text type="secondary">
+                      执行时间: <strong>{new Date(screenedAt).toLocaleTimeString('zh-CN', { hour12: false })}</strong>
                     </Text>
                   </Tooltip>
                 )}
               </Space>
-              {results.length > 0 && (
-                <Space size={[6, 6]} wrap>
-                  {Object.entries(signalCounts).map(([type, count]) => (
-                    <Tag key={type} color={type === '金叉' || type === '超卖' || type === '跌破下轨' || type === '多头排列' ? 'red' : 'green'}>
-                      {type} {count}
-                    </Tag>
-                  ))}
-                </Space>
-              )}
             </Flex>
           </Card>
         )}
@@ -499,41 +431,9 @@ export default function Screen() {
           </Card>
         )}
 
-        {hasScreenLoaded && failedCodes.length > 0 && (
-          <Collapse
-            items={[{
-              key: 'failed',
-              label: <Space><Tag color="error">失败 {failedCodes.length}</Tag><Text type="secondary">点击查看详情</Text></Space>,
-              children: (
-                <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                  <Flex justify="flex-end">
-                    <Button size="small" icon={<SyncOutlined />} loading={loading} onClick={() => void retryFailed()}>
-                      重试失败项
-                    </Button>
-                  </Flex>
-                  <List
-                    size="small"
-                    dataSource={failedCodes}
-                    renderItem={(item: ScreenCodeStatus) => (
-                      <List.Item>
-                        <Flex justify="space-between" align="center" style={{ width: '100%' }}>
-                          <Space>
-                            <Text code>{item.code}</Text>
-                            {item.name && <Text type="secondary">{item.name}</Text>}
-                          </Space>
-                          <Text type="danger" style={{ fontSize: 12 }}>{item.reason}</Text>
-                        </Flex>
-                      </List.Item>
-                    )}
-                  />
-                </Space>
-              ),
-            }]}
-          />
-        )}
-
         {sortedResults.length > 0 ? (
           <VirtualResultTable
+            dimensions={dimensions}
             results={sortedResults}
             tableContainerRef={tableContainerRef}
             sortKey={sortKey}
@@ -604,7 +504,7 @@ export default function Screen() {
         onRemoveStock={removeCode}
       />
 
-      <SignalHelpModal
+      <SignalHelpModal dimensions={dimensions}
         visible={showHelpModal}
         onCancel={() => setShowHelpModal(false)}
       />

@@ -1,13 +1,13 @@
 {
   "_generated": "由 site/scripts/gen-api-docs.mjs 与 gen-cli-docs.mjs 生成，请勿手工编辑。",
   "stats": {
-    "apiPaths": 150,
-    "httpOperations": 158,
+    "apiPaths": 154,
+    "httpOperations": 162,
     "klineTypes": 10,
     "indicatorFamilies": 6,
     "webPages": 19,
     "newsSources": 9,
-    "cliTopLevel": 27
+    "cliTopLevel": 29
   },
   "statRules": {
     "apiPaths": "openapi.json 里 paths 的条目数（api/openapi.json）",
@@ -37,7 +37,7 @@
     {
       "id": "signals",
       "title": "指标与信号筛选",
-      "endpoints": 8
+      "endpoints": 9
     },
     {
       "id": "company",
@@ -72,7 +72,7 @@
     {
       "id": "other",
       "title": "其他",
-      "endpoints": 4
+      "endpoints": 7
     }
   ]
 }

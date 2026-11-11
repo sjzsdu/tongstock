@@ -267,11 +267,11 @@ export const api = {
     return fetchJSON<{ total: number; codes: { code: string; name: string; exchange: string; marketCap: number; price: number }[] }>(`/api/codes/marketcap?${params}`);
   },
 
-  screen: (codes: string, type = 'day', signals?: string[]) => {
-    const p = new URLSearchParams({ codes, type });
-    if (signals && signals.length > 0) {
-      p.set('signals', signals.join(','));
-    }
+  screenOptions: () => fetchJSON<{ dimensions: import('../types/api').DimensionMeta[] }>('/api/screen/options'),
+
+  screen: (codes: string, type = 'day', filter: import('../types/screen').StateFilter = { conditions: [] }, date = '') => {
+    const p = new URLSearchParams({ codes, type, state_filter: JSON.stringify(filter) });
+    if (date) p.set('date', date);
     return fetchJSON<ScreenResponse>(`/api/screen?${p}`);
   },
 

@@ -2,16 +2,17 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { Card, Space, Button, Tag, Typography } from 'antd';
 import { ShoppingCartOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import type { RefObject } from 'react';
-import type { ScreenResult } from '../types/api';
+import type { ScreenResult, DimensionMeta } from '../types/api';
 import type { TradeInfo, SortKey } from '../types/screen';
 import { ROW_HEIGHT } from '../types/screen';
 import { SortHeader } from './SortHeader';
-import { formatPercent, getChangePct, getPriceColor, getMaTrend, isBuySignal } from '../utils/screen';
+import { formatPercent, getChangePct, getPriceColor } from '../utils/screen';
 
 const { Text } = Typography;
 
 interface VirtualResultTableProps {
   results: ScreenResult[];
+  dimensions: DimensionMeta[];
   tableContainerRef: RefObject<HTMLDivElement | null>;
   sortKey: SortKey;
   sortAsc: boolean;
@@ -26,6 +27,7 @@ interface VirtualResultTableProps {
 
 export function VirtualResultTable({
   results,
+  dimensions,
   tableContainerRef,
   sortKey,
   sortAsc,
@@ -45,11 +47,12 @@ export function VirtualResultTable({
   });
 
   return (
-    <Card bodyStyle={{ padding: 0 }} extra={extra}>
+    <Card styles={{ body: { padding: 0, overflowX: 'auto' } }} extra={extra}>
+      <div style={{ minWidth: 1120 }}>
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '80px 1fr 96px 96px 80px 1fr 140px',
+          gridTemplateColumns: '80px 100px 110px 90px 90px repeat(4, minmax(120px, 1fr)) 140px',
           gap: 0,
           padding: '0 16px',
           borderBottom: '1px solid var(--ant-color-border-secondary)',
@@ -58,10 +61,10 @@ export function VirtualResultTable({
       >
         <div style={{ padding: '10px 0' }}><SortHeader sortKey="code" sortAsc={sortAsc} current={sortKey} onChange={onSortChange}>代码</SortHeader></div>
         <div style={{ padding: '10px 12px' }}><SortHeader sortKey="name" sortAsc={sortAsc} current={sortKey} onChange={onSortChange}>名称</SortHeader></div>
+        <div style={{ padding: '10px 0' }}>快照日期</div>
         <div style={{ padding: '10px 0' }}><SortHeader sortKey="close" sortAsc={sortAsc} current={sortKey} onChange={onSortChange} align="right">收盘</SortHeader></div>
         <div style={{ padding: '10px 0' }}><SortHeader sortKey="change" sortAsc={sortAsc} current={sortKey} onChange={onSortChange} align="right">涨跌幅</SortHeader></div>
-        <div style={{ padding: '10px 0', textAlign: 'right', color: 'var(--ant-color-text-secondary)', fontSize: 12 }}>MA趋势</div>
-        <div style={{ padding: '10px 12px', color: 'var(--ant-color-text-secondary)', fontSize: 12 }}>信号</div>
+        {dimensions.map((dim) => <div key={dim.dim} style={{ padding: '10px 8px' }}>{dim.label}</div>)}
         <div style={{ padding: '10px 0', textAlign: 'center', color: 'var(--ant-color-text-secondary)', fontSize: 12 }}>虚拟操作</div>
       </div>
 
@@ -71,13 +74,15 @@ export function VirtualResultTable({
             const result = results[virtualRow.index];
             const close = result.last?.Close || 0;
             const changePct = getChangePct(result);
-            const signals = result.signals || [];
-            const maTrend = getMaTrend(result);
 
             return (
               <div
-                key={result.code}
-                onClick={() => navigate(`/stock/${result.code}/chart`)}
+                key={`${result.code}-${result.date}`}
+                role="link"
+                tabIndex={0}
+                aria-label={`${result.name || result.code} ${result.date} 状态时序`}
+                onKeyDown={(event) => { if (event.target === event.currentTarget && event.key === 'Enter') navigate(`/stock/${result.code}/chart?date=${result.date}`); }}
+                onClick={() => navigate(`/stock/${result.code}/chart?date=${result.date}`)}
                 style={{
                   position: 'absolute',
                   top: virtualRow.start,
@@ -86,7 +91,7 @@ export function VirtualResultTable({
                   height: ROW_HEIGHT,
                   padding: '0 16px',
                   display: 'grid',
-                  gridTemplateColumns: '80px 1fr 96px 96px 80px 1fr 140px',
+                  gridTemplateColumns: '80px 100px 110px 90px 90px repeat(4, minmax(120px, 1fr)) 140px',
                   alignItems: 'center',
                   borderBottom: '1px solid var(--ant-color-border-secondary)',
                   cursor: 'pointer',
@@ -95,22 +100,13 @@ export function VirtualResultTable({
               >
                 <Text code>{result.code}</Text>
                 <Text ellipsis style={{ padding: '0 12px' }}>{result.name || '-'}</Text>
-                <Text style={{ textAlign: 'right', color: getPriceColor(changePct), fontVariantNumeric: 'tabular-nums' }}>{close.toFixed(2)}</Text>
-                <Text style={{ textAlign: 'right', color: getPriceColor(changePct), fontVariantNumeric: 'tabular-nums' }}>{formatPercent(changePct)}</Text>
-                <Tag color={maTrend.color} style={{ justifySelf: 'end', fontSize: 12 }}>{maTrend.label}</Tag>
-                <div style={{ paddingLeft: 12 }}>
-                  {signals.length > 0 ? (
-                    <Space size={[4, 0]} wrap>
-                      {signals.map((signal, index) => (
-                        <Tag key={`${result.code}-${signal.Type}-${index}`} color={isBuySignal(signal.Type) ? 'red' : 'green'} style={{ fontSize: 11 }}>
-                          {signal.Indicator}{signal.Type}
-                        </Tag>
-                      ))}
-                    </Space>
-                  ) : (
-                    <Text type="secondary" style={{ fontSize: 12 }}>无信号</Text>
-                  )}
-                </div>
+                <Text>{result.date}</Text>
+                <Text style={{ textAlign: 'right', color: getPriceColor(changePct), fontVariantNumeric: 'tabular-nums' }}>{result.last?.Close == null ? '-' : close.toFixed(2)}</Text>
+                <Text style={{ textAlign: 'right', color: getPriceColor(changePct), fontVariantNumeric: 'tabular-nums' }}>{result.last?.PrevClose ? formatPercent(changePct) : '-'}</Text>
+                {dimensions.map((dim) => {
+                  const meta = dim.states.find((state) => state.state === result.states[dim.dim]);
+                  return <Tag key={dim.dim} color={meta?.color} style={{ marginInline: 8 }} title={meta?.description}>{meta?.label}（{meta?.direction_label}）</Tag>;
+                })}
                 <div style={{ textAlign: 'center' }}>
                   <Space size={4}>
                     <Button
@@ -144,6 +140,7 @@ export function VirtualResultTable({
             );
           })}
         </div>
+      </div>
       </div>
     </Card>
   );

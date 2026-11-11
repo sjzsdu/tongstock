@@ -65,3 +65,20 @@ describe('fetchWithAccessToken', () => {
     expect(storage.get('tongstock.access_token')).toBe('secret')
   })
 })
+
+describe('snapshot state screening', () => {
+  it('sends all state conditions and the transition as one structured filter', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ results: [] }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const filter = {
+      conditions: [{ dim: 'cross' as const, state: 'buy' as const }, { dim: 'osc' as const, state: 'neutral' as const }],
+      transition: { dim: 'cross' as const, from: ['sell' as const, 'neutral' as const], to: 'buy' as const, within_days: 5 },
+    }
+    await api.screen('000001,600000', 'day', filter, '2026-11-10')
+    const url = new URL(fetchMock.mock.calls[0][0], 'http://localhost')
+    expect(url.searchParams.has('signals')).toBe(false)
+    expect(JSON.parse(url.searchParams.get('state_filter')!)).toEqual(filter)
+    expect(url.searchParams.get('date')).toBe('2026-11-10')
+    expect(url.searchParams.get('codes')).toBe('000001,600000')
+  })
+})

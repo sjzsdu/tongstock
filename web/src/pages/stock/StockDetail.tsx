@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AreaChartOutlined, BankOutlined, BarChartOutlined, ClockCircleOutlined, DollarOutlined, FileExcelOutlined, GiftOutlined, InfoCircleOutlined, ThunderboltOutlined, WarningOutlined } from '@ant-design/icons';
 import { Button, Card, Collapse, Empty, Flex, Space, Spin, Tabs, Tag, Tooltip, Typography } from 'antd';
 import { api } from '../../api/client';
@@ -45,6 +45,8 @@ const TAB_ITEMS: { key: Tab; label: string; icon: React.ReactNode }[] = [
 
 export default function StockDetail() {
   const { tab: paramTab } = useParams();
+  const [searchParams] = useSearchParams();
+  const focusDate = searchParams.get('date') || undefined;
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>((paramTab as Tab) || 'chart');
   const [dividends, setDividends] = useState<XdXrItem[]>([]);
@@ -268,7 +270,7 @@ export default function StockDetail() {
                   <div style={{ marginBottom: 8 }}><Typography.Text type="secondary">行情刷新中，展示的是上一份数据…</Typography.Text></div>
                 )}
                 <Card bodyStyle={{ padding: 0 }}>
-                  <CandlestickChart code={code} ktype={ktype} klines={klines} indicator={indicator} mainOverlay={mainOverlay} subPanel={subPanel} stateSeries={stateSeries} stateHint={stateHint} />
+                  <CandlestickChart focusDate={focusDate} code={code} ktype={ktype} klines={klines} indicator={indicator} mainOverlay={mainOverlay} subPanel={subPanel} stateSeries={stateSeries} stateHint={stateHint} />
                 </Card>
               </>
             )}

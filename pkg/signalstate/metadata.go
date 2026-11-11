@@ -38,11 +38,12 @@ const (
 
 // StateMeta 描述一个状态在界面上的标签、方向与颜色。
 type StateMeta struct {
-	State       State     `json:"state"`
-	Label       string    `json:"label"`
-	Direction   Direction `json:"direction"`
-	Color       string    `json:"color"`
-	Description string    `json:"description"`
+	State          State     `json:"state"`
+	Label          string    `json:"label"`
+	Direction      Direction `json:"direction"`
+	DirectionLabel string    `json:"direction_label"`
+	Color          string    `json:"color"`
+	Description    string    `json:"description"`
 }
 
 // DimMeta 描述一个维度：它是什么、四态各自的标签与颜色。
@@ -55,11 +56,12 @@ type DimMeta struct {
 
 func stateMeta(state State, label, description string) StateMeta {
 	return StateMeta{
-		State:       state,
-		Label:       label,
-		Direction:   DirectionOf(state),
-		Color:       colorOf(state),
-		Description: description,
+		State:          state,
+		DirectionLabel: map[Direction]string{DirectionBuy: "买", DirectionSell: "卖", DirectionNeutral: "中性", DirectionInsufficient: "数据不足"}[DirectionOf(state)],
+		Label:          label,
+		Direction:      DirectionOf(state),
+		Color:          colorOf(state),
+		Description:    description,
 	}
 }
 

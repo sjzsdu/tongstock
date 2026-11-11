@@ -6,7 +6,7 @@ description: TongStock 全部 HTTP 路由，由 api/openapi.json 生成，请勿
 本页由 `site/scripts/gen-api-docs.mjs` 从仓库里的 `api/openapi.json` 生成，**不要手工编辑**。
 契约的权威定义、以及它与 Gin 实际路由的双向比对，都在仓库里完成；本页只是它的可读视图。
 
-- 路由总数：**158**（含 health 探针）
+- 路由总数：**162**（含 health 探针）
 - 生成来源：`api/openapi.json`
 - 参数列：带 `?` 表示可选；`(query)` / `(path)` 表示参数位置
 - 请求列：`是` 表示该端点接受 JSON 请求体
@@ -81,7 +81,7 @@ description: TongStock 全部 HTTP 路由，由 api/openapi.json 生成，请勿
 
 ## 指标与信号筛选
 
-共 8 个端点。
+共 9 个端点。
 
 | 方法 | 路径 | operationId | 参数 | 请求体 | 响应码 |
 | --- | --- | --- | --- | --- | --- |
@@ -91,7 +91,8 @@ description: TongStock 全部 HTTP 路由，由 api/openapi.json 生成，请勿
 | GET | `/api/factors/research/last` | getApiFactorsResearchLast | — | — | 200 / 500 |
 | POST | `/api/factors/research/run` | postApiFactorsResearchRun | — | 是 | 200 / 400 / 500 / 503 |
 | GET | `/api/indicator` | getApiIndicator | — | — | 200 / 400 / 401 / 404 / 409 / 500 / 503 |
-| GET | `/api/screen` | getApiScreen | — | — | 200 / 400 / 401 / 404 / 409 / 500 / 503 |
+| GET | `/api/screen` | getApiScreen | `codes`(query) · `type?`(query) · `date?`(query) · `state_filter?`(query) | — | 200 / 400 / 401 / 404 / 409 / 500 / 503 |
+| GET | `/api/screen/options` | getApiScreenOptions | — | — | 200 / 400 / 401 / 404 / 409 / 500 / 503 |
 | GET | `/api/signal-analysis` | getApiSignalAnalysis | — | — | 200 / 400 / 401 / 404 / 409 / 500 / 503 |
 
 ## 财务与公司
@@ -237,10 +238,13 @@ description: TongStock 全部 HTTP 路由，由 api/openapi.json 生成，请勿
 
 ## 其他
 
-共 4 个端点。
+共 7 个端点。
 
 | 方法 | 路径 | operationId | 参数 | 请求体 | 响应码 |
 | --- | --- | --- | --- | --- | --- |
+| GET | `/api/states` | getApiStates | `date`(query) · `codes?`(query) | — | 200 / 400 / 500 / 503 |
+| GET | `/api/states/series` | getApiStatesSeries | `code`(query) · `from?`(query) · `to?`(query) | — | 200 / 400 / 500 / 503 |
+| GET | `/api/stock/{code}/state-series` | getApiStockStateSeries | `code`(path) · `from?`(query) · `to?`(query) · `type?`(query) · `adjust?`(query) · `include_reasons?`(query) · `timeout_ms?`(query) | — | 200 / 400 / 401 / 404 / 409 / 500 / 503 |
 | GET | `/api/stock/compare` | getApiStockCompare | — | — | 200 / 400 / 401 / 404 / 409 / 500 / 503 |
 | POST | `/api/sync/daily` | postApiSyncDaily | — | — | 200 / 400 / 401 / 404 / 409 / 500 / 503 |
 | GET | `/api/sync/freshness` | getApiSyncFreshness | — | — | 200 / 400 / 401 / 404 / 409 / 500 / 503 |

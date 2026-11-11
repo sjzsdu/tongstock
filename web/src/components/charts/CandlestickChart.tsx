@@ -9,6 +9,7 @@ import { PRICE_PALETTE } from '../../lib/palette';
 interface Props {
   /** 股票代码与 K 线类型：状态序列按需拉取判定依据时要用（指数页不传）。 */
   code?: string;
+  focusDate?: string;
   ktype?: string;
   klines: KlineItem[];
   indicator?: IndicatorData;
@@ -91,7 +92,7 @@ function fmtPct(v: number): string {
   return `${sign}${v.toFixed(2)}%`;
 }
 
-export default function CandlestickChart({ code, ktype, klines, indicator, mainOverlay, subPanel, stateSeries, stateHint }: Props) {
+export default function CandlestickChart({ code, ktype, klines, indicator, mainOverlay, subPanel, stateSeries, stateHint, focusDate }: Props) {
   const mainRef = useRef<HTMLDivElement>(null);
   const subRef = useRef<HTMLDivElement>(null);
   const chartRefs = useRef<IChartApi[]>([]);
@@ -329,7 +330,9 @@ export default function CandlestickChart({ code, ktype, klines, indicator, mainO
 
     // Fit all
     const visibleBars = Math.max(80, Math.floor((mainRef.current?.clientWidth || 1000) / 7));
-    charts.forEach(c => c.timeScale().setVisibleLogicalRange({ from: Math.max(0, chartKlines.length - visibleBars), to: chartKlines.length }));
+    const focusIndex = chartKlines.findIndex((k) => k.Time?.slice(0, 10) === focusDate);
+    const right = focusIndex >= 0 ? focusIndex + Math.floor(visibleBars / 2) : chartKlines.length;
+    charts.forEach(c => c.timeScale().setVisibleLogicalRange({ from: Math.max(0, right - visibleBars), to: right }));
 
     const handleResize = () => {
       charts.forEach((c, i) => {
@@ -343,16 +346,19 @@ export default function CandlestickChart({ code, ktype, klines, indicator, mainO
       window.removeEventListener('resize', handleResize);
       charts.forEach(c => c.remove());
     };
-  }, [chartKlines, indicator, mainOverlay, subPanel, stateSeries]);
+  }, [chartKlines, indicator, mainOverlay, subPanel, stateSeries, focusDate]);
 
-  const last = chartKlines[chartKlines.length - 1];
+  const focusedIndex = chartKlines.findIndex((k) => k.Time?.slice(0, 10) === focusDate);
+  const readoutIndex = focusedIndex >= 0 ? focusedIndex : chartKlines.length - 1;
+  const last = chartKlines[readoutIndex];
+  const previous = chartKlines[readoutIndex - 1];
   const intraday = isIntradayKline(chartKlines);
-  const defaultPct = last && chartKlines.length > 1 ? ((last.Close - chartKlines[chartKlines.length - 2].Close) / chartKlines[chartKlines.length - 2].Close * 100) : 0;
+  const defaultPct = last && previous?.Close ? ((last.Close - previous.Close) / previous.Close * 100) : 0;
   const h = hover;
 
   return (
     <div className="relative">
-      {/* Static header - always shows last kline info */}
+      {/* The static readout uses the linked date, or the latest bar without a link. */}
       <div className="bg-slate-900 border border-slate-800 border-b-0 rounded-t-lg px-3 py-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs min-h-[28px]">
         <span className="text-slate-400 font-medium">{formatKlineTime(last?.Time, intraday)}</span>
         <span>开 <span className="text-white">{fmtN(last?.Open)}</span></span>
@@ -370,7 +376,7 @@ export default function CandlestickChart({ code, ktype, klines, indicator, mainO
             <div ref={subRef} style={{ height: SUB_H }} />
           </div>
         )}
-        <StateBandOverlay code={code} ktype={ktype} series={stateSeries ?? null} hoverDate={hoverDate} hint={stateHint} />
+        <StateBandOverlay code={code} ktype={ktype} series={stateSeries ?? null} hoverDate={hoverDate ?? focusDate} hint={stateHint} />
       </div>
 
       {/* Floating tooltip */}

@@ -237,32 +237,19 @@ export interface IndexBar extends KlineItem {
 export interface ScreenResult {
   code: string;
   name: string;
-  last: KlineItem;
-  ma: Record<string, number[]>;
-  macd: MACDResult | null;
-  kdj: KDJResult | null;
-  signals: Signal[];
-}
-
-export interface ScreenCodeStatus {
-  code: string;
-  name?: string;
-  status: 'failed' | 'skipped';
-  reason: string;
+  date: string;
+  states: Record<StateDim, StateValue>;
+  last: { Close: number | null; PrevClose: number | null };
 }
 
 export interface ScreenResponse {
   results: ScreenResult[];
+  date: string;
+  dimensions: DimensionMeta[];
   total: number;
-  matched?: number;
-  successCount?: number;
-  failedCount?: number;
-  skippedCount?: number;
-  failed?: ScreenCodeStatus[];
-  skipped?: ScreenCodeStatus[];
-  capped?: boolean;
-  maxCodes?: number;
-  reason?: string;
+  successCount: number;
+  insufficientCount: number;
+  missingCount: number;
 }
 
 export interface SignalOutcome {
@@ -422,6 +409,7 @@ export type StateValue = 'buy' | 'sell' | 'neutral' | 'insufficient_data';
 export type StateDirection = 'buy' | 'sell' | 'neutral' | 'insufficient_data';
 
 export interface StateMetaItem {
+  direction_label: string;
   state: StateValue;
   label: string;
   direction: StateDirection;
