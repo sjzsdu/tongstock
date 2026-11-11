@@ -12,20 +12,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sjzsdu/tongstock/internal/agents"
+	"github.com/sjzsdu/tongstock/internal/agentservice"
 	"github.com/sjzsdu/tongstock/internal/methodresearch"
-	"github.com/sjzsdu/tongstock/internal/picoclaw"
 )
 
-type RunFunc func(context.Context, picoclaw.RunOptions) (string, error)
+type RunFunc func(context.Context, agentservice.RunOptions) (string, error)
 
 type Provider struct {
 	run                   RunFunc
 	agent, model, session string
-	embedded              []picoclaw.EmbeddedAgent
+	embedded              []agents.Definition
 	client                *http.Client
 }
 
-func New(run RunFunc, agent, model, session string, embedded []picoclaw.EmbeddedAgent) (*Provider, error) {
+func New(run RunFunc, agent, model, session string, embedded []agents.Definition) (*Provider, error) {
 	if run == nil {
 		return nil, fmt.Errorf("AI research runner is required")
 	}
@@ -53,7 +54,7 @@ candidate 使用这些 JSON 字段：name,description,source_kind,source_text,un
 找不到可靠规则时 sources/claims/variants 保持为空或只返回能证实的部分，不得补造阈值、作者、时间、URL、引用或回测结果。
 日内规则若当前 DSL 不能表达，candidate 中使用 ambiguous 节点，不得用日线规则冒充。
 输入：` + string(b)
-	resp, err := p.run(ctx, picoclaw.RunOptions{Message: prompt, Agent: p.agent, Model: p.model, Session: p.session, Quiet: true, EmbeddedAgents: p.embedded})
+	resp, err := p.run(ctx, agentservice.RunOptions{Message: prompt, Agent: p.agent, Model: p.model, Session: p.session, Quiet: true, EmbeddedAgents: p.embedded})
 	if err != nil {
 		return nil, err
 	}
