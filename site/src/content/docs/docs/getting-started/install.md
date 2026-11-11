@@ -49,9 +49,7 @@ make cli
 make install          # 默认 ~/.local/bin，可用 BINDIR=/path 覆盖
 ```
 
-:::caution[go.mod 通过 replace 引用相邻目录]
-仓库 `go.mod` 里有 `replace github.com/sipeed/picoclaw => ../picoclaw`，即要求 `picoclaw` 与 `tongstock` 是同级目录。CI 与 Dockerfile 会按固定 commit 拉取该依赖；本地首次 `go build` 前需要把它放到 `../picoclaw`，否则会报找不到模块。
-:::
+仓库自带全部 Go 依赖，源码构建不再需要任何相邻仓库（`go.mod` 里没有 `replace` 指向本地目录）。
 
 ## 路径三：Docker
 

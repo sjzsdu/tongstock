@@ -13,7 +13,7 @@ import (
 func TestAgentDiagnoseReportsBuiltinModelConfigurationError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	s := &Server{}
-	err := s.InitAgentStateWithOptions(AgentRuntimeOptions{Backend: "builtin"})
+	err := s.InitAgentStateWithOptions(AgentRuntimeOptions{Enabled: true})
 	if err == nil {
 		t.Fatal("expected initialization error")
 	}
@@ -35,7 +35,7 @@ func TestAgentDiagnoseReportsBuiltinModelConfigurationError(t *testing.T) {
 	if len(got.Errors) == 0 || !strings.Contains(got.Errors[0], "agent.model") {
 		t.Fatalf("errors = %#v, want explicit agent.model error", got.Errors)
 	}
-	if len(got.Hints) == 0 || !strings.Contains(got.Hints[0], "backend: picoclaw") {
+	if len(got.Hints) == 0 || !strings.Contains(got.Hints[0], "README「Agent 配置迁移」") {
 		t.Fatalf("hints = %#v, want migration guidance", got.Hints)
 	}
 }

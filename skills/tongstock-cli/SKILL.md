@@ -80,10 +80,9 @@ if command -v gh >/dev/null 2>&1; then
   fi
 fi
 
-# 3) 回退：源码编译（需要 Go 1.25.13 + CGO/gcc + Node/pnpm，且 picoclaw 在 ../picoclaw）
+# 3) 回退：源码编译（需要 Go 1.25.13 + CGO/gcc + Node/pnpm，依赖全部来自本仓库）
 echo "无可用 release，回退源码编译……"
 command -v go >/dev/null 2>&1 || { echo "未安装 Go" >&2; exit 1; }
-[ -d ../picoclaw ] || git clone --depth 1 https://github.com/sipeed/picoclaw.git ../picoclaw
 ( cd web && { command -v pnpm >/dev/null 2>&1 && pnpm install --frozen-lockfile && pnpm build || npm ci && npm run build; } )
 rm -rf pkg/web/dist && cp -r web/dist pkg/web/dist
 CGO_ENABLED=1 go build -o "$BINDIR/tongstock" ./cmd/cli
@@ -98,8 +97,6 @@ echo "源码编译完成 -> $BINDIR/tongstock"
 ```bash
 git clone https://github.com/sjzsdu/tongstock.git
 cd tongstock
-# picoclaw 是同级 replace 依赖（go.mod: replace github.com/sipeed/picoclaw => ../picoclaw），需先就位
-git clone https://github.com/sipeed/picoclaw.git ../picoclaw
 cd web && pnpm install --frozen-lockfile && pnpm build && cd ..
 rm -rf pkg/web/dist && cp -r web/dist pkg/web/dist
 CGO_ENABLED=1 go build -o tongstock ./cmd/cli

@@ -5,13 +5,6 @@
 #   --build-arg GOPROXY=https://proxy.golang.org,direct
 ARG GOPROXY=https://goproxy.cn,direct
 
-# go.mod 通过 `replace github.com/sipeed/picoclaw => ../picoclaw` 引用本地兄弟
-# 仓库，Docker 构建上下文里不存在该目录。这里用公开 fork 固定 commit 在镜像内
-# 还原同一份代码（已实测 tongstock 全量 ./... 编译通过）。本地 picoclaw 有更新
-# 并需要进镜像时，更新 PICOCLAW_PIN。
-ARG PICOCLAW_REPO=https://github.com/sjzsdu/picoclaw.git
-ARG PICOCLAW_PIN=1f8286e5e91187a1d978d0a1869d9ddb5a1d9c9c
-
 # ---- Stage 1: 前端与官网构建 ----
 # web/ 与 site/ 都用 pnpm（各自带 pnpm-lock.yaml），没有 package-lock.json。
 # Node 24：Astro 7 的硬下界是 22.23.4，固定大版本 24 避免再被 patch 拖累。
@@ -33,16 +26,8 @@ RUN ASTRO_TELEMETRY_DISABLED=1 pnpm run build
 # ---- Stage 2: Go 构建（mattn/go-sqlite3 需要 CGO，不能用 CGO_ENABLED=0）----
 FROM golang:1.25.13-bookworm AS go-builder
 ARG GOPROXY
-ARG PICOCLAW_REPO
-ARG PICOCLAW_PIN
 ENV GOPROXY=${GOPROXY} \
     CGO_ENABLED=1
-# go.mod 的 replace ../picoclaw 相对 WORKDIR /src 解析，即 /picoclaw
-RUN git init /picoclaw \
- && git -C /picoclaw remote add origin "${PICOCLAW_REPO}" \
- && git -C /picoclaw fetch --depth 1 origin "${PICOCLAW_PIN}" \
- && git -C /picoclaw checkout --detach FETCH_HEAD \
- && rm -rf /picoclaw/.git
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

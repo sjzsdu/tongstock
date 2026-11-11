@@ -1,10 +1,13 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	yaml "gopkg.in/yaml.v3"
 )
@@ -60,13 +63,28 @@ type DatabaseConfig struct {
 	DSN    string `yaml:"dsn"`
 }
 
-// AgentConfig AI Agent 配置
+// AgentConfig AI Agent 配置。模型访问统一走 TongStock 自有的
+// OpenAI-compatible 适配层，配置只有一组字段：provider / base_url /
+// api_key_env / model（外加 timeout / max_tokens / streaming 三个可选项）。
 type AgentConfig struct {
-	Enabled   bool   `yaml:"enabled"`
-	Backend   string `yaml:"backend"`
-	Provider  string `yaml:"provider"`
-	APIBase   string `yaml:"api_base"`
+	Enabled bool `yaml:"enabled"`
+	// Provider is the provider family name used for diagnostics and the
+	// default API-key environment variable, e.g. "deepseek" or "openai".
+	Provider string `yaml:"provider"`
+	// BaseURL is the OpenAI-compatible endpoint, e.g.
+	// "https://api.deepseek.com/v1". Required when the agent capability runs a
+	// remote provider.
+	BaseURL   string `yaml:"base_url"`
 	APIKeyEnv string `yaml:"api_key_env"`
+	// Timeout is the per-request provider timeout as a Go duration string
+	// ("60s", "1m30s"). Empty keeps the adapter default.
+	Timeout string `yaml:"timeout"`
+	// MaxTokens caps the completion length for every request. Zero keeps the
+	// adapter default.
+	MaxTokens int `yaml:"max_tokens"`
+	// Streaming records the preferred response mode. It is a caller-side
+	// preference: the HTTP layer still streams when the client asks for it.
+	Streaming bool `yaml:"streaming"`
 	// AgentPaths is an ordered, file-level replacement list. It does not merge
 	// with defaults when a configuration file supplies one or more paths.
 	AgentPaths []string `yaml:"agent_paths"`
@@ -84,11 +102,14 @@ type AgentConfig struct {
 	Agent      string `yaml:"agent"`
 	StockAgent string `yaml:"stock_agent"`
 
-	// Home and Config are retained for existing PicoClaw-based installations.
-	// New installations should use the builtin backend and configure the model
-	// directly in TongStock.
-	Home   string `yaml:"home"`
-	Config string `yaml:"config"`
+	// Retired legacy fields. They are parsed only so Load can reject them with
+	// an actionable migration error (see Validate); nothing reads their
+	// values. Keeping the YAML tags is what makes the rejection possible at
+	// all: without them an old config would be silently ignored.
+	LegacyBackend string `yaml:"backend"`
+	LegacyHome    string `yaml:"home"`
+	LegacyConfig  string `yaml:"config"`
+	LegacyAPIBase string `yaml:"api_base"`
 }
 
 // AgentScenarioDefaults declares the default agent per usage scenario.
@@ -100,22 +121,55 @@ type AgentScenarioDefaults struct {
 	Stock string `yaml:"stock"`
 }
 
-const (
-	AgentBackendBuiltin  = "builtin"
-	AgentBackendPicoClaw = "picoclaw"
-)
+// ErrLegacyAgentConfig reports an agent section that still relies on the
+// retired runtime fields (backend / home / config / api_base). TongStock has a
+// single runtime now, so these fields are a hard configuration error instead
+// of a silent backend switch.
+var ErrLegacyAgentConfig = errors.New("agent 配置使用了已退役字段")
 
-// EffectiveBackend selects the native TongStock configuration unless legacy
-// PicoClaw paths are present. This makes old configuration files migrate
-// without requiring an explicit backend field.
-func (c AgentConfig) EffectiveBackend() string {
-	if backend := strings.ToLower(strings.TrimSpace(c.Backend)); backend != "" {
-		return backend
+// MigrationDocHint points at the field-by-field migration table.
+const MigrationDocHint = "迁移表见 README.md「Agent 配置迁移」"
+
+// Validate rejects retired fields and malformed option values. Every caller
+// that reads config.yaml must run it before using the agent section: a
+// leftover `backend: <runtime>` has to fail loudly rather than select a
+// runtime that no longer exists.
+func (c AgentConfig) Validate() error {
+	var legacy []string
+	for _, field := range []struct{ name, value string }{
+		{"backend", c.LegacyBackend},
+		{"home", c.LegacyHome},
+		{"config", c.LegacyConfig},
+	} {
+		if v := strings.TrimSpace(field.value); v != "" {
+			legacy = append(legacy, field.name+": "+v)
+		}
 	}
-	if strings.TrimSpace(c.Home) != "" || strings.TrimSpace(c.Config) != "" {
-		return AgentBackendPicoClaw
+	if len(legacy) > 0 {
+		return fmt.Errorf("%w（%s）：请改用 provider / base_url / api_key_env / model，%s",
+			ErrLegacyAgentConfig, strings.Join(legacy, "，"), MigrationDocHint)
 	}
-	return AgentBackendBuiltin
+	if v := strings.TrimSpace(c.LegacyAPIBase); v != "" {
+		return fmt.Errorf("%w（api_base: %s）：请改用 base_url，%s", ErrLegacyAgentConfig, v, MigrationDocHint)
+	}
+	if _, err := c.ParseTimeout(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ParseTimeout turns the YAML timeout string into a duration. Empty means the
+// adapter default applies.
+func (c AgentConfig) ParseTimeout() (time.Duration, error) {
+	value := strings.TrimSpace(c.Timeout)
+	if value == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(value)
+	if err != nil || d < 0 {
+		return 0, fmt.Errorf("agent.timeout %q 不是合法的时长（示例：60s、1m30s）", c.Timeout)
+	}
+	return d, nil
 }
 
 // ExpandHome resolves a leading "~/" against the current user's home
@@ -177,14 +231,19 @@ database:
   # 连接字符串
   # dsn: ~/.tongstock/cache/tongstock.db
 
-# AI Agent 配置（可选；Server 与 CLI 共用同一段配置，默认使用内建 backend）
+# AI Agent 配置（可选；Server 与 CLI 共用同一段配置）
+# 模型访问统一走 TongStock 自有的 OpenAI-compatible 适配层。
+# 旧字段 backend / home / config 已退役：仍配置它们会在启动时直接报错，
+# 字段对应关系见 README「Agent 配置迁移」。
 # agent:
 #   enabled: true
-#   backend: builtin
 #   provider: deepseek
-#   model: deepseek-chat
+#   base_url: https://api.deepseek.com/v1
 #   api_key_env: DEEPSEEK_API_KEY
-#   # api_base: https://api.deepseek.com/v1
+#   model: deepseek-chat
+#   # timeout: 60s          # 单次请求超时，留空用适配层默认值
+#   # max_tokens: 4096      # 单次补全 token 上限，留空用适配层默认值
+#   # streaming: true       # 优先流式返回（客户端仍可选择非流式接口）
 #   # agent_paths: [~/.tongstock/agents]
 #   session: ""
 #   # 按场景声明默认角色（HTTP handler 和 Web UI 都从这里取）
@@ -192,10 +251,9 @@ database:
 #     chat: stock-analyst    # 通用对话：/agent 页、不带 agent 的 API 请求
 #     stock: stock-analyst   # 个股详情分析面板
 #
-# 兼容旧 PicoClaw 配置：保留 home/config 即可自动使用 picoclaw backend
-#   # backend: picoclaw
-#   # home: ~/.picoclaw
-#   # config: ~/.picoclaw/config.json
+# 常见兼容端点：DeepSeek https://api.deepseek.com/v1、
+# OpenRouter https://openrouter.ai/api/v1、Ollama http://localhost:11434/v1、
+# vLLM http://localhost:8000/v1。
 `
 }
 
@@ -222,8 +280,18 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseConfig(data)
+}
+
+// parseConfig validates and merges one config.yaml payload. It is the single
+// place where retired agent fields are rejected, shared by Load and tests.
+// 合并优先级：环境变量 > config.yaml > 内置默认值。
+func parseConfig(data []byte) (*Config, error) {
 	tmp := &Config{}
 	if err := yaml.Unmarshal(data, tmp); err != nil {
+		return nil, err
+	}
+	if err := tmp.Agent.Validate(); err != nil {
 		return nil, err
 	}
 
@@ -258,26 +326,26 @@ func Load() (*Config, error) {
 	if tmp.Agent.Enabled {
 		merged.Agent.Enabled = tmp.Agent.Enabled
 	}
-	if tmp.Agent.Home != "" {
-		merged.Agent.Home = tmp.Agent.Home
-	}
-	if tmp.Agent.Config != "" {
-		merged.Agent.Config = tmp.Agent.Config
-	}
 	if tmp.Agent.Model != "" {
 		merged.Agent.Model = tmp.Agent.Model
-	}
-	if tmp.Agent.Backend != "" {
-		merged.Agent.Backend = tmp.Agent.Backend
 	}
 	if tmp.Agent.Provider != "" {
 		merged.Agent.Provider = tmp.Agent.Provider
 	}
-	if tmp.Agent.APIBase != "" {
-		merged.Agent.APIBase = tmp.Agent.APIBase
+	if tmp.Agent.BaseURL != "" {
+		merged.Agent.BaseURL = tmp.Agent.BaseURL
 	}
 	if tmp.Agent.APIKeyEnv != "" {
 		merged.Agent.APIKeyEnv = tmp.Agent.APIKeyEnv
+	}
+	if tmp.Agent.Timeout != "" {
+		merged.Agent.Timeout = tmp.Agent.Timeout
+	}
+	if tmp.Agent.MaxTokens != 0 {
+		merged.Agent.MaxTokens = tmp.Agent.MaxTokens
+	}
+	if tmp.Agent.Streaming {
+		merged.Agent.Streaming = tmp.Agent.Streaming
 	}
 	if len(tmp.Agent.AgentPaths) > 0 {
 		// A configured list intentionally replaces the default list. Path order is

@@ -1,32 +1,126 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
-func TestAgentConfigEffectiveBackend(t *testing.T) {
+func TestParseConfigReadsAgentProviderFields(t *testing.T) {
+	cfg, err := parseConfig([]byte(`
+agent:
+  enabled: true
+  provider: deepseek
+  base_url: https://api.deepseek.com/v1
+  api_key_env: DEEPSEEK_API_KEY
+  model: deepseek-chat
+  session: research
+  timeout: 90s
+  max_tokens: 2048
+  streaming: true
+  agent_paths: [~/.tongstock/agents]
+  defaults:
+    chat: stock-analyst
+`))
+	if err != nil {
+		t.Fatalf("parseConfig: %v", err)
+	}
+	agent := cfg.Agent
+	if !agent.Enabled || agent.Provider != "deepseek" || agent.BaseURL != "https://api.deepseek.com/v1" {
+		t.Fatalf("agent = %+v, want provider/base_url parsed", agent)
+	}
+	if agent.APIKeyEnv != "DEEPSEEK_API_KEY" || agent.Model != "deepseek-chat" || agent.Session != "research" {
+		t.Fatalf("agent = %+v, want api_key_env/model/session parsed", agent)
+	}
+	if agent.Timeout != "90s" || agent.MaxTokens != 2048 || !agent.Streaming {
+		t.Fatalf("agent = %+v, want timeout/max_tokens/streaming parsed", agent)
+	}
+	if len(agent.AgentPaths) != 1 || agent.AgentPaths[0] != "~/.tongstock/agents" {
+		t.Fatalf("agent paths = %#v", agent.AgentPaths)
+	}
+	if agent.Defaults.Chat != "stock-analyst" {
+		t.Fatalf("defaults.chat = %q", agent.Defaults.Chat)
+	}
+	if d, err := agent.ParseTimeout(); err != nil || d != 90*time.Second {
+		t.Fatalf("ParseTimeout() = (%v, %v), want 90s", d, err)
+	}
+}
+
+// legacyRuntimeValue is what real upgraded configs carry in the retired
+// `backend` key. Validate does not special-case it (any non-empty value is
+// rejected), but the fixture keeps it so the production scenario stays
+// covered verbatim.
+const legacyRuntimeValue = "picoclaw"
+
+// Retired runtime-era fields must fail loudly with an actionable message.
+// Silently ignoring them would leave the user pointing at a runtime that no
+// longer exists.
+func TestParseConfigRejectsRetiredAgentFields(t *testing.T) {
 	tests := []struct {
-		name string
-		cfg  AgentConfig
-		want string
+		name     string
+		yaml     string
+		wantHint []string
 	}{
-		{name: "native default", cfg: AgentConfig{}, want: AgentBackendBuiltin},
-		{name: "explicit native", cfg: AgentConfig{Backend: " BUILTIN "}, want: AgentBackendBuiltin},
-		{name: "explicit native wins over legacy paths", cfg: AgentConfig{Backend: "builtin", Home: "~/.picoclaw"}, want: AgentBackendBuiltin},
-		{name: "explicit legacy", cfg: AgentConfig{Backend: "picoclaw"}, want: AgentBackendPicoClaw},
-		{name: "legacy home migration", cfg: AgentConfig{Home: "~/.picoclaw"}, want: AgentBackendPicoClaw},
-		{name: "legacy config migration", cfg: AgentConfig{Config: "~/.picoclaw/config.json"}, want: AgentBackendPicoClaw},
+		{
+			name:     "backend runtime name",
+			yaml:     "agent:\n  enabled: true\n  backend: " + legacyRuntimeValue + "\n",
+			wantHint: []string{"backend: " + legacyRuntimeValue, "provider", "base_url", "api_key_env", "model", "Agent 配置迁移"},
+		},
+		{
+			name:     "home only",
+			yaml:     "agent:\n  enabled: true\n  home: /opt/legacy-agent\n",
+			wantHint: []string{"home: /opt/legacy-agent", "provider", "base_url", "api_key_env", "model", "Agent 配置迁移"},
+		},
+		{
+			name:     "config only",
+			yaml:     "agent:\n  enabled: true\n  config: /opt/legacy-agent/config.json\n",
+			wantHint: []string{"config: /opt/legacy-agent/config.json", "provider", "base_url", "api_key_env", "model", "Agent 配置迁移"},
+		},
+		{
+			name:     "api_base rename",
+			yaml:     "agent:\n  enabled: true\n  api_base: https://api.deepseek.com/v1\n",
+			wantHint: []string{"api_base", "base_url", "Agent 配置迁移"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.cfg.EffectiveBackend(); got != tt.want {
-				t.Fatalf("EffectiveBackend() = %q, want %q", got, tt.want)
+			_, err := parseConfig([]byte(tt.yaml))
+			if !errors.Is(err, ErrLegacyAgentConfig) {
+				t.Fatalf("error = %v, want ErrLegacyAgentConfig", err)
+			}
+			for _, hint := range tt.wantHint {
+				if !strings.Contains(err.Error(), hint) {
+					t.Fatalf("error = %q, want it to mention %q", err, hint)
+				}
 			}
 		})
+	}
+}
+
+func TestParseConfigRejectsInvalidTimeout(t *testing.T) {
+	_, err := parseConfig([]byte("agent:\n  timeout: soon\n"))
+	if err == nil || !strings.Contains(err.Error(), "agent.timeout") {
+		t.Fatalf("error = %v, want explicit agent.timeout error", err)
+	}
+}
+
+// Empty agent/session/model must keep parsing and stay empty so the service
+// layer applies its defaults; an absent agent section is not an error.
+func TestParseConfigAllowsEmptyAgentDefaults(t *testing.T) {
+	cfg, err := parseConfig([]byte("server:\n  port: 8200\n"))
+	if err != nil {
+		t.Fatalf("parseConfig: %v", err)
+	}
+	if cfg.Agent.Enabled || cfg.Agent.Model != "" || cfg.Agent.Session != "" || cfg.Agent.BaseURL != "" {
+		t.Fatalf("agent = %+v, want zero values from an absent section", cfg.Agent)
+	}
+	if cfg.Server.Port != 8200 {
+		t.Fatalf("server.port = %d, want 8200", cfg.Server.Port)
 	}
 }
 

@@ -116,7 +116,55 @@ npx skills add sjzsdu/tongstock
 | 新闻 | `/news` | 新闻流、热点事件和情绪 |
 | 设置 | `/settings` | 指标参数等本地设置 |
 
-Agent 默认支持由 TongStock 直接配置模型和注册自定义角色，不再要求单独维护 PicoClaw 配置文件：模型与场景默认角色配置在 `~/.tongstock/config.yaml` 的 `agent` 段（模板见 `pkg/config/config.go` 的 `defaultConfigTemplate`），内置角色定义见 `internal/agents/embedded/`。现有 PicoClaw `home/config` 配置仍可直接使用并自动进入兼容模式。
+Agent 由 TongStock 自有的通用 LLM 适配层提供（`internal/llm`，OpenAI-compatible HTTP），不再依赖任何外部 Agent 运行时，也不需要相邻仓库。模型与场景默认角色配置在 `~/.tongstock/config.yaml` 的 `agent` 段（模板见 `pkg/config/config.go` 的 `defaultConfigTemplate`），内置角色定义见 `internal/agents/embedded/`。可配置字段只有一组：
+
+```yaml
+agent:
+  enabled: true
+  provider: deepseek                          # provider 名称，用于诊断与默认密钥变量
+  base_url: https://api.deepseek.com/v1       # OpenAI-compatible 端点
+  api_key_env: DEEPSEEK_API_KEY               # 只写环境变量名，密钥不落盘
+  model: deepseek-chat
+  timeout: 60s                                # 可选，单次请求超时
+  max_tokens: 4096                            # 可选，补全 token 上限
+  streaming: true                             # 可选，优先流式返回
+  defaults:
+    chat: stock-analyst
+    stock: stock-analyst
+```
+
+DeepSeek、通义（DashScope 兼容模式）、OpenRouter、Ollama、vLLM 都只需改 `base_url` + `model`（本地端点可以不配 `api_key_env`）。
+
+### Agent 配置迁移
+
+旧的 agent 运行时已删除，遗留的 `agent` 字段在启动时会直接报错并给出迁移指引，**不会静默降级**。按下表替换即可：
+
+| 旧字段 | 新字段 | 说明 |
+| --- | --- | --- |
+| `backend` | — | 只剩一种运行时，删除该行即可 |
+| `home` | `provider` / `base_url` / `model` | 运行时目录不再存在，模型改为直连 endpoint |
+| `config` | `api_key_env` / `model` | 密钥改为环境变量名，模型写在本段配置里 |
+| `api_base` | `base_url` | 仅字段改名，值不变 |
+
+迁移示例：
+
+```yaml
+# 旧
+agent:
+  enabled: true
+  backend: legacy
+  home: /opt/legacy-agent
+  config: /opt/legacy-agent/config.json
+  model: deepseek-chat
+
+# 新
+agent:
+  enabled: true
+  provider: deepseek
+  base_url: https://api.deepseek.com/v1
+  api_key_env: DEEPSEEK_API_KEY
+  model: deepseek-chat
+```
 
 ### 开发模式
 
