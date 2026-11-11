@@ -129,8 +129,9 @@ func agentName(items []Definition, id string) string {
 	return ""
 }
 
-// Definition is the TongStock-owned replacement for picoclaw.EmbeddedAgent:
-// all frontmatter fields plus the Markdown body prompt are preserved.
+// Definition is the TongStock-owned replacement for the legacy vendor
+// EmbeddedAgent: all frontmatter fields plus the Markdown body prompt are
+// preserved.
 func TestDefinitionKeepsAllFields(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "full.md")
 	content := `---

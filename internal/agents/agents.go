@@ -19,10 +19,11 @@ var embeddedFS embed.FS
 // Definition is TongStock's own agent definition. It deliberately lives in
 // internal/agents rather than internal/llm: the LLM abstraction holds no
 // agent/session concepts, and business code must not depend on a vendor
-// Agent/Session type. It replaces picoclaw.EmbeddedAgent one-for-one, keeping
-// every field (ID/Name/Description/Prompt/Soul/Aliases/Skills/Tools/NoHistory)
-// so the embedded Markdown definitions and the user extension point are
-// unchanged. Prompt comes from the Markdown body, not the YAML frontmatter.
+// Agent/Session type. It replaces the legacy vendor EmbeddedAgent type
+// one-for-one, keeping every field
+// (ID/Name/Description/Prompt/Soul/Aliases/Skills/Tools/NoHistory) so the
+// embedded Markdown definitions and the user extension point are unchanged.
+// Prompt comes from the Markdown body, not the YAML frontmatter.
 type Definition struct {
 	ID          string   `yaml:"id"`
 	Name        string   `yaml:"name"`
@@ -37,8 +38,8 @@ type Definition struct {
 
 // Resolve resolves a definition by canonical ID or alias. Matching is
 // whitespace-tolerant and case-insensitive, while the returned definition
-// always carries the canonical ID declared by the agent. It replaces
-// picoclaw.ResolveEmbeddedAgent without importing the SDK.
+// always carries the canonical ID declared by the agent. It is the
+// TongStock-owned replacement for the legacy SDK resolver and imports no SDK.
 func Resolve(defs []Definition, id string) (Definition, bool) {
 	want := strings.TrimSpace(id)
 	if want == "" {

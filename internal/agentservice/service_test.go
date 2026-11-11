@@ -1,18 +1,47 @@
 package agentservice
 
 import (
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/sjzsdu/tongstock/internal/picoclaw"
+	"github.com/sjzsdu/tongstock/internal/agents"
+	"github.com/sjzsdu/tongstock/internal/ai_tools"
+	"github.com/sjzsdu/tongstock/internal/llm"
 	"github.com/sjzsdu/tongstock/pkg/config"
 )
+
+func testConfig() Config {
+	return Config{
+		Enabled:       true,
+		Model:         "default-model",
+		Session:       "default-session",
+		DefaultAgents: map[string]string{ScenarioChat: "Risk-Reviewer"},
+	}
+}
+
+func testDefs() []agents.Definition {
+	return []agents.Definition{
+		{ID: "Risk-Reviewer", Name: "Risk Reviewer", Aliases: []string{"risk"}, Prompt: "Review risk.", Tools: []string{"data_snapshot"}},
+	}
+}
+
+// newTestService builds a Service around llm.FakeProvider. No runtime is
+// constructed and no real provider/HTTP server is involved.
+func newTestService(t *testing.T, fake *llm.FakeProvider, defs []agents.Definition, cfg Config) *Service {
+	t.Helper()
+	svc, err := New(cfg, Options{
+		Provider: fake,
+		Lister:   func() ([]agents.Definition, error) { return defs, nil },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return svc
+}
 
 func TestFromAgentConfigResolvesBackendHomeAndPaths(t *testing.T) {
 	home, err := os.UserHomeDir()
@@ -23,8 +52,8 @@ func TestFromAgentConfigResolvesBackendHomeAndPaths(t *testing.T) {
 		Home:       "~/legacy-home",
 		AgentPaths: []string{"~/agents", "relative/agents"},
 	})
-	if cfg.Backend != config.AgentBackendPicoClaw {
-		t.Fatalf("backend = %q, want legacy backend inferred from home", cfg.Backend)
+	if cfg.Backend == "" {
+		t.Fatalf("backend should be inferred from legacy home: %+v", cfg)
 	}
 	if cfg.Home != filepath.Join(home, "legacy-home") {
 		t.Fatalf("home = %q, want expanded legacy home", cfg.Home)
@@ -61,78 +90,60 @@ func TestOpenRejectsDisabledAgentConfig(t *testing.T) {
 	}
 }
 
-func TestNewBuiltinBackendRequiresModel(t *testing.T) {
+func TestNewRequiresModelWhenNoProviderInjected(t *testing.T) {
 	_, err := New(Config{Backend: "builtin", Provider: "openai", APIKeyEnv: "MISSING_KEY"}, Options{})
 	if err == nil || !strings.Contains(err.Error(), "agent.model") {
-		t.Fatalf("New(builtin without model) error = %v, want explicit agent.model error", err)
+		t.Fatalf("New(no provider, no model) error = %v, want explicit agent.model error", err)
 	}
 }
 
-func TestServiceRunResolvesAliasAndStreamsThroughFakeProvider(t *testing.T) {
-	provider := newFakeProvider(t)
-	defer provider.Close()
-	t.Setenv("TEST_AGENT_SERVICE_KEY", "test-key")
-
-	defs := []picoclaw.EmbeddedAgent{
-		{ID: "Risk-Reviewer", Name: "Risk Reviewer", Aliases: []string{"risk"}, Prompt: "Review risk."},
-	}
+// Without an injected provider, New builds an OpenAI-compatible provider from
+// Config. This covers the production construction path without any network I/O.
+func TestNewBuildsProviderFromConfig(t *testing.T) {
+	t.Setenv("WAN66_AGENTSERVICE_TEST_KEY", "placeholder-not-a-secret")
 	svc, err := New(Config{
-		Enabled:       true,
-		Backend:       "builtin",
-		Provider:      "openai",
-		APIBase:       provider.URL,
-		APIKeyEnv:     "TEST_AGENT_SERVICE_KEY",
-		Model:         "test-model",
-		DefaultAgents: map[string]string{ScenarioChat: "Risk-Reviewer"},
-		Workspace:     t.TempDir(),
-		AgentPaths:    nil,
-	}, Options{Lister: func() ([]picoclaw.EmbeddedAgent, error) { return defs, nil }})
+		Model:     "test-model",
+		APIBase:   "https://example.com/v1",
+		APIKeyEnv: "WAN66_AGENTSERVICE_TEST_KEY",
+	}, Options{Lister: func() ([]agents.Definition, error) { return testDefs(), nil }})
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("New(config-driven): %v", err)
 	}
 	defer svc.Close()
-
 	if !svc.Ready() {
-		t.Fatal("service not ready after successful construction")
+		t.Fatal("service not ready after config-driven construction")
 	}
+	if got := svc.provider.Name(); got != "openai-compatible" {
+		t.Fatalf("provider name = %q, want openai-compatible", got)
+	}
+}
+
+// Defaults, scenario fallback, alias resolution, definition copy and the
+// Ready/Close lifecycle all stay unchanged after the provider migration.
+func TestDefaultsResolveDefinitionsAndLifecycle(t *testing.T) {
+	cfg := testConfig()
+	cfg.Session = "" // exercise the package default
+	svc := newTestService(t, llm.NewFakeProvider("fake"), testDefs(), cfg)
+	defer svc.Close()
+
 	got := svc.Defaults()
-	if got.Agent(ScenarioChat) != "Risk-Reviewer" || got.Model != "test-model" || got.Session != defaultSession {
+	if got.Agent(ScenarioChat) != "Risk-Reviewer" || got.Model != "default-model" || got.Session != defaultSession {
 		t.Fatalf("defaults = %+v", got)
 	}
-	// The stock scenario must fall back to the chat default so every scene
-	// resolves to a usable agent.
 	if got.Agent(ScenarioStock) != "Risk-Reviewer" {
 		t.Fatalf("stock scenario = %q, want fallback to chat default", got.Agent(ScenarioStock))
 	}
 	if svc.Workspace() == "" {
 		t.Fatal("workspace must not be empty")
 	}
-	agent, ok := svc.Resolve("RISK")
-	if !ok || agent.ID != "Risk-Reviewer" {
+	if !svc.Ready() {
+		t.Fatal("service not ready after successful construction")
+	}
+	if agent, ok := svc.Resolve("RISK"); !ok || agent.ID != "Risk-Reviewer" {
 		t.Fatalf("alias resolve = (%q, %v), want canonical ID", agent.ID, ok)
 	}
 	if len(svc.Definitions()) != 1 {
 		t.Fatalf("definitions = %d, want 1", len(svc.Definitions()))
-	}
-
-	// Blank agent/session/model fall back to defaults and still round-trip.
-	resp, err := svc.Run(nil, Request{Prompt: "hello"})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !strings.Contains(resp, "ok") {
-		t.Fatalf("response = %q, want provider content", resp)
-	}
-
-	// The legacy adapter path used by method research maps RunOptions to Run.
-	resp, err = svc.Process(t.Context(), picoclaw.RunOptions{
-		Message: "via adapter", Agent: "Risk-Reviewer", Session: "research", Model: "test-model",
-	})
-	if err != nil {
-		t.Fatalf("Process: %v", err)
-	}
-	if !strings.Contains(resp, "ok") {
-		t.Fatalf("adapter response = %q, want provider content", resp)
 	}
 
 	svc.Close()
@@ -140,36 +151,262 @@ func TestServiceRunResolvesAliasAndStreamsThroughFakeProvider(t *testing.T) {
 	if svc.Ready() {
 		t.Fatal("service still ready after Close")
 	}
-	// Calls after Close fail instead of panicking.
 	if _, err := svc.Run(nil, Request{Prompt: "late"}); err == nil {
 		t.Fatal("Run after Close should fail")
 	}
 }
 
-func newFakeProvider(t *testing.T) *httptest.Server {
-	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/chat/completions" {
-			http.NotFound(w, r)
-			return
+// Blank agent/session/model fall back to the service defaults (Defaults +
+// Config), which is the existing contract.
+func TestRunResolvesDefaultsForEmptyAgentSessionModel(t *testing.T) {
+	fake := llm.NewFakeProvider("fake")
+	fake.QueueComplete(llm.Response{Text: "ok"}, nil)
+	svc := newTestService(t, fake, testDefs(), testConfig())
+	defer svc.Close()
+
+	resp, err := svc.Run(nil, Request{Prompt: "hello"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(resp, "ok") {
+		t.Fatalf("response = %q, want provider content", resp)
+	}
+	req, ok := fake.LastRequest()
+	if !ok {
+		t.Fatal("no request recorded")
+	}
+	if req.Model != "default-model" {
+		t.Fatalf("model = %q, want default-model", req.Model)
+	}
+	if req.SessionID != "default-session" {
+		t.Fatalf("session = %q, want default-session", req.SessionID)
+	}
+	if req.Metadata["agent"] != "Risk-Reviewer" {
+		t.Fatalf("agent metadata = %q, want default chat agent", req.Metadata["agent"])
+	}
+	if len(req.Messages) == 0 || req.Messages[len(req.Messages)-1].Content != "hello" || req.Messages[len(req.Messages)-1].Role != llm.RoleUser {
+		t.Fatalf("unexpected messages: %+v", req.Messages)
+	}
+}
+
+// chat and research call sites can still select distinct model/session values;
+// the service passes them through to llm.Request unchanged.
+func TestRunChatAndResearchSelectDifferentModelSession(t *testing.T) {
+	fake := llm.NewFakeProvider("fake")
+	fake.QueueComplete(llm.Response{Text: "chat-ok"}, nil)
+	fake.QueueComplete(llm.Response{Text: "research-ok"}, nil)
+	svc := newTestService(t, fake, testDefs(), testConfig())
+	defer svc.Close()
+
+	if _, err := svc.Run(context.Background(), Request{Agent: "Risk-Reviewer", Session: "chat-sess", Model: "chat-model", Prompt: "p1"}); err != nil {
+		t.Fatalf("chat Run: %v", err)
+	}
+	if _, err := svc.Run(context.Background(), Request{Agent: "risk", Session: "research-sess", Model: "research-model", Prompt: "p2"}); err != nil {
+		t.Fatalf("research Run: %v", err)
+	}
+	reqs := fake.Requests()
+	if len(reqs) != 2 {
+		t.Fatalf("got %d requests, want 2", len(reqs))
+	}
+	if reqs[0].Model != "chat-model" || reqs[0].SessionID != "chat-sess" {
+		t.Fatalf("chat request = %+v", reqs[0])
+	}
+	if reqs[1].Model != "research-model" || reqs[1].SessionID != "research-sess" {
+		t.Fatalf("research request = %+v", reqs[1])
+	}
+}
+
+// Stream text deltas are translated into OnDelta in order at the service
+// layer; the provider never receives an OnDelta callback.
+func TestRunStreamDeltasForwardedToOnDeltaInOrder(t *testing.T) {
+	fake := llm.NewFakeProvider("fake")
+	fake.QueueStream([]llm.Event{
+		{Type: llm.EventTypeTextDelta, Text: "Hel"},
+		{Type: llm.EventTypeTextDelta, Text: "lo"},
+		{Type: llm.EventTypeDone, Usage: &llm.Usage{TotalTokens: 3}},
+	}, nil)
+	svc := newTestService(t, fake, testDefs(), testConfig())
+	defer svc.Close()
+
+	var deltas []string
+	resp, err := svc.Run(context.Background(), Request{
+		Prompt:  "hi",
+		OnDelta: func(s string) { deltas = append(deltas, s) },
+	})
+	if err != nil {
+		t.Fatalf("Run(stream): %v", err)
+	}
+	if resp != "Hello" {
+		t.Fatalf("response = %q, want Hello", resp)
+	}
+	if len(deltas) != 2 || deltas[0] != "Hel" || deltas[1] != "lo" {
+		t.Fatalf("OnDelta deltas = %#v, want [Hel lo] in order", deltas)
+	}
+	if _, ok := fake.LastRequest(); !ok {
+		t.Fatal("streaming request was not recorded")
+	}
+}
+
+// The context passed to Run is bound to the provider stream, so a client
+// disconnect (cancel) cancels the upstream and stops delivery.
+func TestRunClientDisconnectCancelsUpstream(t *testing.T) {
+	fake := llm.NewFakeProvider("fake")
+	fake.QueueStream([]llm.Event{
+		{Type: llm.EventTypeTextDelta, Text: "a"},
+		{Type: llm.EventTypeTextDelta, Text: "b"},
+		{Type: llm.EventTypeTextDelta, Text: "c"},
+	}, nil)
+	svc := newTestService(t, fake, testDefs(), testConfig())
+	defer svc.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var deltas []string
+	_, err := svc.Run(ctx, Request{
+		Prompt: "hi",
+		OnDelta: func(s string) {
+			deltas = append(deltas, s)
+			cancel() // simulate client disconnect after the first delta
+		},
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run after disconnect error = %v, want context.Canceled", err)
+	}
+	if len(deltas) != 1 || deltas[0] != "a" {
+		t.Fatalf("deltas after disconnect = %#v, want only [a] (upstream cancelled)", deltas)
+	}
+}
+
+// Provider failures map onto the stable llm sentinels via errors.Is.
+func TestRunProviderErrorsMapToStableSentinels(t *testing.T) {
+	cases := []struct {
+		code llm.ErrorCode
+		want error
+	}{
+		{llm.CodeAuth, llm.ErrAuth},
+		{llm.CodeRateLimited, llm.ErrRateLimited},
+		{llm.CodeTimeout, llm.ErrTimeout},
+		{llm.CodeInvalidResponse, llm.ErrInvalidResponse},
+		{llm.CodeToolCallFailed, llm.ErrToolCallFailed},
+	}
+	for _, c := range cases {
+		fake := llm.NewFakeProvider("fake")
+		fake.QueueComplete(llm.Response{}, &llm.ProviderError{Provider: "fake", Code: c.code, Message: "short failure"})
+		svc := newTestService(t, fake, testDefs(), testConfig())
+		_, err := svc.Run(context.Background(), Request{Prompt: "hi"})
+		if !errors.Is(err, c.want) {
+			t.Fatalf("code %s: err = %v, want errors.Is(..., %v)", c.code, err, c.want)
 		}
-		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
+		svc.Close()
+	}
+}
+
+// The allowlist is exactly the read-only (PermRead) set in internal/ai_tools —
+// no extra tool can ever be advertised.
+func TestReadOnlyToolAllowlistMatchesAiTools(t *testing.T) {
+	readOnly := []ai_tools.Tool{
+		ai_tools.NewDataSnapshotTool(nil),
+		ai_tools.NewFeatureQueryTool(nil),
+		ai_tools.NewExperimentReportTool(nil),
+		ai_tools.NewParadigmVersionTool(nil),
+	}
+	if len(readOnlyToolDefs) != len(readOnly) {
+		t.Fatalf("allowlist has %d tools, want exactly %d PermRead tools", len(readOnlyToolDefs), len(readOnly))
+	}
+	for _, tool := range readOnly {
+		if _, ok := readOnlyToolDefs[tool.Name()]; !ok {
+			t.Fatalf("read-only tool %q missing from allowlist", tool.Name())
 		}
-		if streaming, _ := body["stream"].(bool); streaming {
-			w.Header().Set("Content-Type", "text/event-stream")
-			fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n")
-			fmt.Fprint(w, "data: [DONE]\n\n")
-			return
+		hasRead := false
+		for _, p := range tool.Permissions() {
+			if p == ai_tools.PermRead {
+				hasRead = true
+			}
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"choices": []map[string]any{{
-				"message":       map[string]any{"content": "ok"},
-				"finish_reason": "stop",
-			}},
-		})
-	}))
+		if !hasRead {
+			t.Fatalf("tool %q in allowlist is not PermRead", tool.Name())
+		}
+	}
+}
+
+// The legacy runtime could enable write tools from a `tools:` list; the new
+// registration must never surface any of them, only read-only subsets.
+func TestToolDefinitionsNeverRegisterWriteTools(t *testing.T) {
+	writeTools := []string{
+		"exec", "bash", "shell", "write_file", "edit_file", "append_file",
+		"spawn", "subagent", "read_file", "list_dir", "web_search", "web_fetch",
+		"skills", "find_skills",
+	}
+	if got := toolDefinitions(writeTools); len(got) != 0 {
+		t.Fatalf("write-only declarations produced tools: %+v", got)
+	}
+	mixed := toolDefinitions([]string{
+		"data_snapshot", "exec", "feature_query", "write_file",
+		"experiment_report", "paradigm_version", "spawn", "DATA_SNAPSHOT",
+	})
+	var names []string
+	for _, d := range mixed {
+		names = append(names, d.Name)
+	}
+	want := []string{"data_snapshot", "feature_query", "experiment_report", "paradigm_version"}
+	if strings.Join(names, ",") != strings.Join(want, ",") {
+		t.Fatalf("tool names = %v, want read-only subset %v", names, want)
+	}
+	for _, n := range names {
+		for _, w := range writeTools {
+			if strings.EqualFold(n, w) {
+				t.Fatalf("write tool %q leaked into registration", n)
+			}
+		}
+	}
+}
+
+// End-to-end: an agent declaring write tools yields an llm.Request.Tools that
+// contains only the read-only subset.
+func TestRunAdvertisesOnlyReadOnlyTools(t *testing.T) {
+	defs := []agents.Definition{
+		{ID: "A", Name: "A", Tools: []string{"data_snapshot", "exec", "write_file", "feature_query"}},
+	}
+	cfg := testConfig()
+	cfg.DefaultAgents = map[string]string{ScenarioChat: "A"}
+	fake := llm.NewFakeProvider("fake")
+	fake.QueueComplete(llm.Response{Text: "ok"}, nil)
+	svc := newTestService(t, fake, defs, cfg)
+	defer svc.Close()
+
+	if _, err := svc.Run(context.Background(), Request{Prompt: "hi"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	req, _ := fake.LastRequest()
+	if len(req.Tools) != 2 {
+		t.Fatalf("advertised tools = %+v, want 2 read-only tools", req.Tools)
+	}
+	for _, td := range req.Tools {
+		if td.Name != "data_snapshot" && td.Name != "feature_query" {
+			t.Fatalf("non-read-only tool advertised: %q", td.Name)
+		}
+	}
+}
+
+// Process still adapts the legacy options shape to Run (used by method
+// research / adapters), now with the TongStock-owned RunOptions.
+func TestProcessAdaptsRunOptions(t *testing.T) {
+	fake := llm.NewFakeProvider("fake")
+	fake.QueueComplete(llm.Response{Text: "ok"}, nil)
+	svc := newTestService(t, fake, testDefs(), testConfig())
+	defer svc.Close()
+
+	resp, err := svc.Process(context.Background(), RunOptions{
+		Message: "via adapter", Agent: "Risk-Reviewer", Session: "research", Model: "adapter-model",
+	})
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if !strings.Contains(resp, "ok") {
+		t.Fatalf("adapter response = %q, want provider content", resp)
+	}
+	req, _ := fake.LastRequest()
+	if req.Model != "adapter-model" || req.SessionID != "research" {
+		t.Fatalf("adapter request = %+v, want model/session passed through", req)
+	}
 }

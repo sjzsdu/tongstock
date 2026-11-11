@@ -1,22 +1,31 @@
 // Package agentservice is the single entrypoint for the agent capability.
-// It turns config.AgentConfig into a runnable service: the PicoClaw/builtin
-// runtime, the embedded plus user-defined agent table, and the per-request
-// runner lifecycle all live behind one constructor and one Run method, so the
-// HTTP server, the CLI, and any future subsystem share the same configuration
-// resolution and execution semantics.
+// It turns config.AgentConfig into a runnable service: an llm.Provider, the
+// embedded plus user-defined agent definition table, and the default
+// agent/session/model selection all live behind one constructor and one Run
+// method, so the HTTP server, the CLI, and any future subsystem share the same
+// configuration resolution and execution semantics.
+//
+// The service depends only on TongStock-owned types (internal/agents,
+// internal/llm) and the provider-agnostic llm.Provider interface. Credentials
+// are read by the concrete adapter from the environment named by
+// Config.APIKeyEnv; the service never sees, logs, or stores an API key.
 package agentservice
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/sjzsdu/tongstock/internal/agents"
-	"github.com/sjzsdu/tongstock/internal/picoclaw"
+	"github.com/sjzsdu/tongstock/internal/llm"
+	"github.com/sjzsdu/tongstock/internal/llm/openai"
 	"github.com/sjzsdu/tongstock/pkg/config"
 )
 
@@ -24,9 +33,9 @@ import (
 // config.yaml (agent.enabled).
 var ErrDisabled = errors.New("AI agent 未启用：请在配置中设置 agent.enabled=true")
 
-// ErrRunner wraps runner-construction failures so callers can still tell
-// setup errors apart from execution errors (the SSE stream uses distinct
-// codes for each).
+// ErrRunner wraps provider-construction/setup failures so callers can still
+// tell construction errors apart from execution errors. It is a business
+// sentinel: provider execution failures are surfaced as llm.ProviderError.
 var ErrRunner = errors.New("agent runner initialization failed")
 
 const defaultSession = "tongstock:default"
@@ -84,7 +93,12 @@ type Options struct {
 	// Lister overrides agent definition loading. When nil the service loads
 	// the embedded agents plus Config.AgentPaths itself, which is the single
 	// definition source shared by server and CLI.
-	Lister func() ([]picoclaw.EmbeddedAgent, error)
+	Lister func() ([]agents.Definition, error)
+	// Provider injects a ready llm.Provider (for example llm.FakeProvider in
+	// tests, or a provider built by the composition root). When nil, New builds
+	// an OpenAI-compatible provider from Config. Either way the Service only
+	// ever holds an llm.Provider, never a concrete runtime.
+	Provider llm.Provider
 }
 
 // Request is one agent invocation.
@@ -98,19 +112,36 @@ type Request struct {
 	Model string
 	// Prompt is the user message.
 	Prompt string
-	// OnDelta, when set, receives streamed response chunks.
+	// OnDelta, when set, receives streamed response chunks. It lives only at
+	// this business layer: it is translated from llm.Event{EventTypeTextDelta}
+	// by the service and is never pushed down into a provider.
 	OnDelta func(string)
 }
 
-// Service owns the runtime, the agent definitions, and the readiness runner.
-// It is safe for concurrent use: every Run creates its own short-lived runner
-// so parallel requests (e.g. agent debate) never serialize on model execution.
+// RunOptions is the TongStock-owned options shape consumed by Process. It
+// replaces the legacy runtime options so this package no longer references
+// the vendor SDK. Process only consumes Message/Agent/Session/Model/OnDelta;
+// the remaining fields preserve the legacy shape for adapters and are ignored.
+type RunOptions struct {
+	Message        string
+	Session        string
+	Agent          string
+	Model          string
+	Workspace      string
+	Debug          bool
+	Quiet          bool
+	EmbeddedAgents []agents.Definition
+	OnDelta        func(string)
+}
+
+// Service owns the provider, the agent definitions, and the default selection.
+// It is safe for concurrent use: the provider is immutable and concurrency-safe,
+// so parallel requests never serialize on model execution.
 type Service struct {
 	mu        sync.Mutex
 	cfg       Config
-	rt        *picoclaw.Runtime
-	warm      *picoclaw.DirectRunner
-	defs      []picoclaw.EmbeddedAgent
+	provider  llm.Provider
+	defs      []agents.Definition
 	defaults  Defaults
 	workspace string
 	started   time.Time
@@ -166,9 +197,10 @@ func Open(cfg config.AgentConfig, opts Options) (*Service, error) {
 	return New(FromAgentConfig(cfg), opts)
 }
 
-// New builds the service from a resolved Config. It fails fast — runtime
-// load, definition load, and the readiness runner are all validated here so
-// callers degrade at startup instead of on the first request.
+// New builds the service from a resolved Config. It fails fast: provider
+// construction and definition load are validated here so callers degrade at
+// startup instead of on the first request. Empty Agent/Session/Model defaults
+// are resolved here (Defaults + Config) and re-applied on every Run.
 func New(cfg Config, opts Options) (*Service, error) {
 	workspace := strings.TrimSpace(cfg.Workspace)
 	if workspace == "" {
@@ -189,19 +221,21 @@ func New(cfg Config, opts Options) (*Service, error) {
 	if scenarios[ScenarioStock] == "" && scenarios[ScenarioChat] != "" {
 		scenarios[ScenarioStock] = scenarios[ScenarioChat]
 	}
-	chatAgent := scenarios[ScenarioChat]
 
-	rt, err := picoclaw.Load(picoclaw.Options{
-		Backend:   cfg.Backend,
-		Home:      cfg.Home,
-		Config:    cfg.ConfigPath,
-		Provider:  cfg.Provider,
-		APIBase:   cfg.APIBase,
-		APIKeyEnv: cfg.APIKeyEnv,
-		Model:     cfg.Model,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("load agent runtime failed: %w", err)
+	provider := opts.Provider
+	if provider == nil {
+		if strings.TrimSpace(cfg.Model) == "" {
+			return nil, fmt.Errorf("agent.model is required when no llm.Provider is injected; configure agent.model or inject one via Options.Provider")
+		}
+		p, err := openai.New(openai.Config{
+			BaseURL:   cfg.APIBase,
+			APIKeyEnv: cfg.APIKeyEnv,
+			Model:     cfg.Model,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrRunner, err)
+		}
+		provider = p
 	}
 
 	defs, err := loadDefinitions(cfg, opts)
@@ -209,21 +243,9 @@ func New(cfg Config, opts Options) (*Service, error) {
 		return nil, fmt.Errorf("load embedded agents failed: %w", err)
 	}
 
-	warm, err := rt.NewDirectRunner(picoclaw.RunOptions{
-		Agent:          chatAgent,
-		Model:          cfg.Model,
-		Workspace:      workspace,
-		Quiet:          true,
-		EmbeddedAgents: defs,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("create direct runner failed: %w", err)
-	}
-
 	return &Service{
 		cfg:       cfg,
-		rt:        rt,
-		warm:      warm,
+		provider:  provider,
 		defs:      defs,
 		workspace: workspace,
 		started:   time.Now(),
@@ -235,7 +257,7 @@ func New(cfg Config, opts Options) (*Service, error) {
 	}, nil
 }
 
-func loadDefinitions(cfg Config, opts Options) ([]picoclaw.EmbeddedAgent, error) {
+func loadDefinitions(cfg Config, opts Options) ([]agents.Definition, error) {
 	if opts.Lister != nil {
 		return opts.Lister()
 	}
@@ -243,7 +265,10 @@ func loadDefinitions(cfg Config, opts Options) ([]picoclaw.EmbeddedAgent, error)
 }
 
 // Run executes one request. Blank Agent/Session/Model fields fall back to the
-// service defaults, and the underlying runner is created and closed per call.
+// service defaults; when OnDelta is set the service pulls llm.Stream events and
+// translates text deltas into the business callback, otherwise it uses a single
+// Complete call. The caller's context is passed straight to the provider so a
+// client disconnect cancels the upstream request.
 func (s *Service) Run(ctx context.Context, req Request) (string, error) {
 	if s == nil {
 		return "", errors.New("agent service not initialized")
@@ -265,57 +290,242 @@ func (s *Service) Run(ctx context.Context, req Request) (string, error) {
 	}
 
 	s.mu.Lock()
-	if s.rt == nil {
-		s.mu.Unlock()
+	provider := s.provider
+	defs := s.defs
+	s.mu.Unlock()
+	if provider == nil {
 		return "", errors.New("agent service not initialized")
 	}
-	runner, err := s.rt.NewDirectRunner(picoclaw.RunOptions{
-		Agent:          agent,
-		Model:          model,
-		Workspace:      s.workspace,
-		Quiet:          true,
-		EmbeddedAgents: s.defs,
-		OnDelta:        req.OnDelta,
-	})
-	s.mu.Unlock()
-	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrRunner, err)
-	}
-	defer runner.Close()
 
-	return runner.ProcessDirectContext(ctx, picoclaw.RunOptions{
-		Message: req.Prompt,
-		Agent:   agent,
-		Session: session,
-	})
+	def, _ := agents.Resolve(defs, agent)
+	llmReq := buildRequest(def, model, session, agent, req.Prompt)
+
+	start := time.Now()
+	var (
+		text string
+		resp llm.Response
+		err  error
+	)
+	if req.OnDelta != nil {
+		text, resp, err = s.runStream(ctx, provider, llmReq, req.OnDelta)
+	} else {
+		resp, err = provider.Complete(ctx, llmReq)
+		text = resp.Text
+	}
+
+	// Audit: provider/model/request/session IDs, latency, token usage and a
+	// short error summary. Never log the API key or the (possibly sensitive)
+	// prompt/response content.
+	s.audit(provider, llmReq, resp, time.Since(start), err)
+	if err != nil {
+		return "", mapRunError(err)
+	}
+	return normalizeResponse(text)
 }
 
-// Process adapts picoclaw.RunOptions to Run so existing adapters written
-// against the legacy runner signature (e.g. method research) keep working.
-// EmbeddedAgents inside opt are ignored: the service owns the definition list.
-func (s *Service) Process(ctx context.Context, opt picoclaw.RunOptions) (string, error) {
+// buildRequest assembles an llm.Request from a resolved definition. Soul and
+// the Markdown body prompt become a system message; tools are restricted to
+// the read-only allowlist. Session and the resolved agent identity are carried
+// in SessionID/Metadata so chat and research scenarios stay distinguishable.
+func buildRequest(def agents.Definition, model, session, agent, prompt string) llm.Request {
+	var sys strings.Builder
+	if def.Soul != "" {
+		sys.WriteString(def.Soul)
+	}
+	if def.Prompt != "" {
+		if sys.Len() > 0 {
+			sys.WriteString("\n\n")
+		}
+		sys.WriteString(def.Prompt)
+	}
+	messages := make([]llm.Message, 0, 2)
+	if sys.Len() > 0 {
+		messages = append(messages, llm.Message{Role: llm.RoleSystem, Content: sys.String()})
+	}
+	messages = append(messages, llm.Message{Role: llm.RoleUser, Content: prompt})
+	return llm.Request{
+		Messages:  messages,
+		Model:     model,
+		Tools:     toolDefinitions(def.Tools),
+		SessionID: session,
+		Metadata:  map[string]string{"agent": agent},
+	}
+}
+
+// runStream pulls events and forwards text deltas to OnDelta in order. The
+// llm abstraction has no callback streaming: this translation is deliberately
+// kept at the service layer. OnDelta never reaches the provider.
+func (s *Service) runStream(ctx context.Context, provider llm.Provider, req llm.Request, onDelta func(string)) (string, llm.Response, error) {
+	stream, err := provider.Stream(ctx, req)
+	if err != nil {
+		return "", llm.Response{}, err
+	}
+	defer stream.Close()
+
+	var (
+		sb   strings.Builder
+		resp llm.Response
+	)
+	for {
+		ev, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return sb.String(), resp, err
+		}
+		switch ev.Type {
+		case llm.EventTypeTextDelta:
+			sb.WriteString(ev.Text)
+			if ev.Text != "" {
+				onDelta(ev.Text)
+			}
+		case llm.EventTypeDone:
+			if ev.Usage != nil {
+				resp.Usage = *ev.Usage
+			}
+		case llm.EventTypeError:
+			if ev.Err != nil {
+				return sb.String(), resp, ev.Err
+			}
+			return sb.String(), resp, &llm.ProviderError{Code: llm.CodeUnknown, Message: "stream error"}
+		}
+	}
+	resp.Text = sb.String()
+	return sb.String(), resp, nil
+}
+
+// normalizeResponse is the pure string post-processing migrated from the old
+// runtime: blank output or the provider's empty-response sentinel is turned
+// into a stable error instead of being returned as a successful empty answer.
+func normalizeResponse(text string) (string, error) {
+	const emptyResponseSentinel = "The model returned an empty response. This may indicate a provider error or token limit."
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return "", errors.New("model returned an empty response")
+	}
+	if trimmed == emptyResponseSentinel {
+		return "", errors.New("model returned an empty response (provider may have returned no final content)")
+	}
+	return text, nil
+}
+
+// mapRunError keeps the error surface stable. Client-side cancellation is
+// returned verbatim (a disconnected client is not a provider failure);
+// llm.ProviderError already implements errors.Is against the stable llm
+// sentinels (ErrAuth/ErrRateLimited/ErrTimeout/ErrInvalidResponse/
+// ErrToolCallFailed) and is passed through so those match unchanged.
+func mapRunError(err error) error {
+	return err
+}
+
+func (s *Service) audit(provider llm.Provider, req llm.Request, resp llm.Response, elapsed time.Duration, err error) {
+	model := resp.Model
+	if model == "" {
+		model = req.Model
+	}
+	log.Printf("agentservice: provider=%s model=%s request_id=%s session=%s latency=%s tokens(in=%d out=%d total=%d) status=%s",
+		provider.Name(), model, resp.RequestID, req.SessionID, elapsed,
+		resp.Usage.InputTokens, resp.Usage.OutputTokens, resp.Usage.TotalTokens, errShort(err))
+}
+
+// errShort returns a short, non-sensitive error summary for the audit log. It
+// never includes a full prompt, response body, or an API key.
+func errShort(err error) string {
+	if err == nil {
+		return "ok"
+	}
+	var pe *llm.ProviderError
+	if errors.As(err, &pe) {
+		return string(pe.Code) + ": " + pe.Message
+	}
+	switch {
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "deadline_exceeded"
+	default:
+		return "error"
+	}
+}
+
+// readOnlyToolDefs is the ONLY set of tools the service may advertise to a
+// provider. It mirrors the read-only (PermRead) tools in internal/ai_tools:
+// data_snapshot, feature_query, experiment_report, paradigm_version. The old
+// runtime had an applyEmbeddedAgentTools switch that could enable write tools
+// (exec/write_file/edit_file/append_file/spawn/subagent) from a `tools:` list;
+// that switch is deliberately NOT reproduced here. A `tools:` declaration can
+// only ever select a subset of this read-only set, and tool execution stays on
+// internal/ai_tools' ReadOnlyGuard / audit boundary.
+var readOnlyToolDefs = map[string]llm.ToolDefinition{
+	"data_snapshot": {
+		Name:        "data_snapshot",
+		Description: "Query TongStock internal data snapshots (read-only).",
+		Parameters:  json.RawMessage(`{"type":"object"}`),
+	},
+	"feature_query": {
+		Name:        "feature_query",
+		Description: "Query TongStock feature definitions (read-only).",
+		Parameters:  json.RawMessage(`{"type":"object"}`),
+	},
+	"experiment_report": {
+		Name:        "experiment_report",
+		Description: "Query TongStock experiment and backtest reports (read-only).",
+		Parameters:  json.RawMessage(`{"type":"object"}`),
+	},
+	"paradigm_version": {
+		Name:        "paradigm_version",
+		Description: "Query TongStock paradigm versions and evidence (read-only).",
+		Parameters:  json.RawMessage(`{"type":"object"}`),
+	},
+}
+
+// toolDefinitions intersects an agent's `tools:` declarations with the
+// read-only allowlist. Unknown names (including every write tool) are silently
+// dropped, so the registration result is always read-only.
+func toolDefinitions(declared []string) []llm.ToolDefinition {
+	seen := make(map[string]bool, len(declared))
+	out := make([]llm.ToolDefinition, 0, len(declared))
+	for _, name := range declared {
+		key := strings.ToLower(strings.TrimSpace(name))
+		if key == "" || seen[key] {
+			continue
+		}
+		if def, ok := readOnlyToolDefs[key]; ok {
+			seen[key] = true
+			out = append(out, def)
+		}
+	}
+	return out
+}
+
+// Process adapts the legacy RunOptions shape to Run so existing adapters
+// written against the old runner signature keep working. Definition lists and
+// other fields inside opt are ignored: the service owns the definition table.
+func (s *Service) Process(ctx context.Context, opt RunOptions) (string, error) {
 	return s.Run(ctx, Request{
 		Agent:   opt.Agent,
 		Session: opt.Session,
 		Model:   opt.Model,
 		Prompt:  opt.Message,
+		OnDelta: opt.OnDelta,
 	})
 }
 
 // Resolve returns the canonical definition for an ID or alias.
-func (s *Service) Resolve(id string) (picoclaw.EmbeddedAgent, bool) {
+func (s *Service) Resolve(id string) (agents.Definition, bool) {
 	if s == nil {
-		return picoclaw.EmbeddedAgent{}, false
+		return agents.Definition{}, false
 	}
-	return picoclaw.ResolveEmbeddedAgent(s.defs, id)
+	return agents.Resolve(s.defs, id)
 }
 
 // Definitions returns a copy of the loaded agent table.
-func (s *Service) Definitions() []picoclaw.EmbeddedAgent {
+func (s *Service) Definitions() []agents.Definition {
 	if s == nil {
 		return nil
 	}
-	return append([]picoclaw.EmbeddedAgent(nil), s.defs...)
+	return append([]agents.Definition(nil), s.defs...)
 }
 
 // Defaults returns the effective default agent/session/model selection. The
@@ -356,20 +566,16 @@ func (s *Service) Ready() bool {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.warm != nil
+	return s.provider != nil
 }
 
-// Close releases the readiness runner and marks the service unusable. It is
-// idempotent and nil-safe.
+// Close marks the service unusable. It is idempotent and nil-safe. The
+// provider holds only a reusable http.Client, so there is nothing to tear down.
 func (s *Service) Close() {
 	if s == nil {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.warm != nil {
-		s.warm.Close()
-		s.warm = nil
-	}
-	s.rt = nil
+	s.provider = nil
 }
