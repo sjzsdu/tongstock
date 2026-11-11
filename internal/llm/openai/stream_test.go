@@ -235,6 +235,59 @@ func TestStreamOpenError(t *testing.T) {
 	}
 }
 
+// llm.Request.Timeout is an opt-in deadline on Stream: a short per-request
+// timeout must terminate an ACTIVE SSE stream with llm.ErrTimeout. This is the
+// positive counterpart of TestStreamNotCutByConfigTimeout (which proves
+// Config.Timeout never cuts a healthy stream) and complements
+// TestRequestTimeoutOverridesConfig (whose timeout fires before any stream is
+// opened). Here the stream opens and delivers a frame first, then the explicit
+// req.Timeout deadline fires mid-stream and Recv surfaces llm.ErrTimeout.
+func TestStreamRequestTimeoutOptIn(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		fl := w.(http.Flusher)
+		// Emit one text delta, then stall a healthy-but-slow stream. Only an
+		// explicit llm.Request.Timeout can end it; Config.Timeout must not.
+		writeSSE(w, fl, map[string]any{"choices": []any{map[string]any{
+			"index": 0, "delta": map[string]any{"content": "partial"},
+		}}})
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	req := helloRequest()
+	req.Timeout = 120 * time.Millisecond // short opt-in
+	p := newTestProvider(t, srv.URL, func(cfg *Config) {
+		cfg.Timeout = 3 * time.Second // long; Stream must ignore it
+	})
+
+	s, err := p.Stream(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Stream() error = %v; the opt-in stream should open first", err)
+	}
+	defer s.Close()
+
+	// First event is the delivered delta, proving the stream was established
+	// (not rejected up front as in TestRequestTimeoutOverridesConfig).
+	ev, err := s.Recv()
+	if err != nil || ev.Type != llm.EventTypeTextDelta || ev.Text != "partial" {
+		t.Fatalf("first Recv = %+v, %v; want text_delta 'partial'", ev, err)
+	}
+
+	// The next Recv blocks on the stalled upstream until the opt-in deadline
+	// fires; it must map to llm.ErrTimeout rather than io.EOF/context error.
+	for {
+		_, err = s.Recv()
+		if err != nil {
+			break
+		}
+	}
+	if !errors.Is(err, llm.ErrTimeout) {
+		t.Fatalf("terminal Recv error = %v, want llm.ErrTimeout (req.Timeout opt-in)", err)
+	}
+}
+
 // A healthy SSE stream must NOT be cut by Config.Timeout. Here the config
 // timeout is shorter than the whole stream, the server keeps emitting frames
 // the entire time, and llm.Request.Timeout is left unset. The stream must be

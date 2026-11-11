@@ -17,12 +17,14 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sjzsdu/tongstock/internal/agents"
 	"github.com/sjzsdu/tongstock/internal/agentservice"
-	pcwrap "github.com/sjzsdu/tongstock/internal/picoclaw"
 )
 
-// EmbeddedAgent is a type alias to avoid import cycles
-type EmbeddedAgent = pcwrap.EmbeddedAgent
+// EmbeddedAgent is the TongStock-owned agent definition. It is kept as an
+// alias so the existing server code and tests keep using the same type while
+// the business layer no longer depends on the legacy runtime.
+type EmbeddedAgent = agents.Definition
 
 // AgentState is the server-side view of the unified agent service. The
 // service owns runtime, definitions, and runner lifecycle; AgentState only
@@ -30,7 +32,7 @@ type EmbeddedAgent = pcwrap.EmbeddedAgent
 // of the immutable service metadata for handlers and tests.
 type AgentState struct {
 	svc       *agentservice.Service
-	embedded  []pcwrap.EmbeddedAgent
+	embedded  []agents.Definition
 	workspace string
 	started   time.Time
 	defaults  AgentDefaults
@@ -682,7 +684,7 @@ func (s *Server) resolveAgentID(agentID string) (string, bool) {
 	if s.agentState == nil {
 		return "", false
 	}
-	if agent, ok := pcwrap.ResolveEmbeddedAgent(s.agentState.embedded, agentID); ok {
+	if agent, ok := agents.Resolve(s.agentState.embedded, agentID); ok {
 		return strings.TrimSpace(agent.ID), true
 	}
 	want := strings.TrimSpace(agentID)
