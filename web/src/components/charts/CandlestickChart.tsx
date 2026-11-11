@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createChart, CandlestickSeries, HistogramSeries, LineSeries, type IChartApi, type Time } from 'lightweight-charts';
+import { createChart, createSeriesMarkers, CandlestickSeries, HistogramSeries, LineSeries, type IChartApi, type AutoscaleInfo, type Time } from 'lightweight-charts';
 import type { KlineItem, IndicatorData, StateSeriesResponse } from '../../types/api';
 import StateBandOverlay from './StateBandOverlay';
 import { addStateBands } from './stateBands';
@@ -14,11 +14,13 @@ interface Props {
   klines: KlineItem[];
   indicator?: IndicatorData;
   mainOverlay: string;
-  subPanel: string;
+  subPanel?: string;
   /** 逐日四维状态时序：有值就在主图底部叠加状态带图层。 */
   stateSeries?: StateSeriesResponse | null;
   /** 状态带的加载/失败提示（首次拉全历史较慢、或超时需先同步）。 */
   stateHint?: React.ReactNode;
+  observation?: { baseline:number;target?:number;signalDate:string;hitDate?:string };
+
 }
 
 interface HoverInfo {
@@ -92,7 +94,7 @@ function fmtPct(v: number): string {
   return `${sign}${v.toFixed(2)}%`;
 }
 
-export default function CandlestickChart({ code, ktype, klines, indicator, mainOverlay, subPanel, stateSeries, stateHint, focusDate }: Props) {
+export default function CandlestickChart({ code, ktype, klines, indicator, mainOverlay, subPanel, stateSeries, stateHint, focusDate, observation }: Props) {
   const mainRef = useRef<HTMLDivElement>(null);
   const subRef = useRef<HTMLDivElement>(null);
   const chartRefs = useRef<IChartApi[]>([]);
@@ -170,6 +172,18 @@ export default function CandlestickChart({ code, ktype, klines, indicator, mainO
         upColor: PRICE_PALETTE.up, downColor: PRICE_PALETTE.down,
         borderUpColor: PRICE_PALETTE.up, borderDownColor: PRICE_PALETTE.down,
         wickUpColor: PRICE_PALETTE.up, wickDownColor: PRICE_PALETTE.down,
+        autoscaleInfoProvider: observation ? (base: () => AutoscaleInfo | null) => {
+          const info = base();
+          if (!info || !info.priceRange) return info;
+          const bounds = [observation.baseline, observation.target].filter((value): value is number => value != null && Number.isFinite(value) && value > 0);
+          return {
+            ...info,
+            priceRange: {
+              minValue: Math.min(info.priceRange.minValue, ...bounds),
+              maxValue: Math.max(info.priceRange.maxValue, ...bounds),
+            },
+          };
+        } : undefined,
       });
 
       const candleData = chartKlines.map(k => ({
@@ -177,6 +191,17 @@ export default function CandlestickChart({ code, ktype, klines, indicator, mainO
         open: k.Open, high: k.High, low: k.Low, close: k.Close,
       }));
       candleSeries.setData(candleData);
+      if (observation) {
+        candleSeries.createPriceLine({price:observation.baseline,color:'#3b82f6',lineWidth:2,lineStyle:2,axisLabelVisible:true,title:'冻结基准'});
+        if (observation.target != null && Number.isFinite(observation.target)) candleSeries.createPriceLine({price:observation.target,color:'#f59e0b',lineWidth:2,lineStyle:2,axisLabelVisible:true,title:`冻结目标 ${observation.target.toFixed(4)}`});
+        const markers = [{time:observation.signalDate as Time,position:'belowBar' as const,color:'#60a5fa',shape:'arrowUp' as const,text:'选股基准'}];
+        if (observation.hitDate) markers.push({time:observation.hitDate as Time,position:'belowBar',color:'#fbbf24',shape:'arrowUp',text:'观测达标'});
+        const availableDates = new Set(candleData.map(bar => String(bar.time)));
+        createSeriesMarkers(candleSeries, markers
+          .filter(marker => availableDates.has(String(marker.time)))
+          .sort((a, b) => String(a.time).localeCompare(String(b.time))));
+      }
+
 
       const volumeSeries = mainChart.addSeries(HistogramSeries, {
         priceFormat: { type: 'volume' },
@@ -346,7 +371,7 @@ export default function CandlestickChart({ code, ktype, klines, indicator, mainO
       window.removeEventListener('resize', handleResize);
       charts.forEach(c => c.remove());
     };
-  }, [chartKlines, indicator, mainOverlay, subPanel, stateSeries, focusDate]);
+  }, [chartKlines, indicator, mainOverlay, subPanel, stateSeries, focusDate, observation]);
 
   const focusedIndex = chartKlines.findIndex((k) => k.Time?.slice(0, 10) === focusDate);
   const readoutIndex = focusedIndex >= 0 ? focusedIndex : chartKlines.length - 1;
@@ -376,7 +401,8 @@ export default function CandlestickChart({ code, ktype, klines, indicator, mainO
             <div ref={subRef} style={{ height: SUB_H }} />
           </div>
         )}
-        <StateBandOverlay code={code} ktype={ktype} series={stateSeries ?? null} hoverDate={hoverDate ?? focusDate} hint={stateHint} />
+        {/* 状态带与观察标注是两个独立能力：有状态数据/提示才渲染，避免观察页出现"计算中"占位。 */}
+        {(stateSeries || stateHint) && <StateBandOverlay code={code} ktype={ktype} series={stateSeries ?? null} hoverDate={hoverDate ?? focusDate} hint={stateHint} />}
       </div>
 
       {/* Floating tooltip */}

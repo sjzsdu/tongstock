@@ -182,6 +182,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Run, error) {
 			risks = append(risks, "退出计划不完整，仅可观察")
 		}
 		candidate := Candidate{Code: code, Action: action, Score: score, DataDate: market.SnapshotDate, SnapshotID: market.ID, FeatureSnapshotID: feature.ID, Triggers: triggers, PositionCapPct: positionCap(v.Method), BuyWindow: buyWindow(primary), Exit: exit, Invalidations: append([]string{}, primary.Invalidations...), Risks: risks}
+		candidate.ReferencePrice = ReferencePriceFromFeature(feature, code)
 		candidate.ScoreExplanation = candidateScoreExplanation(triggers, methodByID, feature.Values[code], exit)
 		candidate.Explanation = explain(candidate)
 		run.Candidates = append(run.Candidates, candidate)

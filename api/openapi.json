@@ -513,6 +513,301 @@
             }
           }
         }
+      },
+      "ForwardObservation": {
+        "type": "object",
+        "description": "冻结选股候选的前瞻走势验证记录；列表响应省略规则明细（rules 为 null）。",
+        "properties": {
+          "contract": {
+            "$ref": "#/components/schemas/ForwardObservationContract"
+          },
+          "evaluation": {
+            "$ref": "#/components/schemas/ForwardObservationEvaluation"
+          }
+        },
+        "required": [
+          "contract"
+        ]
+      },
+      "ForwardObservationList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ForwardObservation"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "summary": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "summary"
+        ]
+      },
+      "ForwardObservationCreate": {
+        "type": "object",
+        "properties": {
+          "selection_run_id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "method_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "selection_run_id",
+          "code"
+        ]
+      },
+      "ForwardObservationRefresh": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "ForwardObservationRefreshResult": {
+        "type": "object",
+        "properties": {
+          "running": {
+            "type": "boolean"
+          },
+          "started": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "running",
+          "started"
+        ]
+      },
+      "ForwardObservationContract": {
+        "type": "object",
+        "description": "不可变合约：信号日收盘基准 + 该方法版本编译出的 outcome，冻结后不随方法版本变化。",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "selection_run_id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "method_id": {
+            "type": "string"
+          },
+          "method_version_id": {
+            "type": "string"
+          },
+          "method_name": {
+            "type": "string"
+          },
+          "signal_date": {
+            "type": "string",
+            "description": "信号日（YYYY-MM-DD）"
+          },
+          "baseline": {
+            "type": "number",
+            "description": "信号日收盘价，非成交价"
+          },
+          "baseline_kind": {
+            "type": "string"
+          },
+          "snapshot_id": {
+            "type": "string"
+          },
+          "feature_snapshot_id": {
+            "type": "string"
+          },
+          "feature_hash": {
+            "type": "string"
+          },
+          "snapshot_adjustment": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "object",
+            "properties": {
+              "horizon_days": {
+                "type": "integer"
+              },
+              "target_return_pct": {
+                "type": "number"
+              },
+              "price_basis": {
+                "type": "string",
+                "enum": [
+                  "close",
+                  "open",
+                  "high",
+                  "low"
+                ]
+              },
+              "success": {
+                "type": "string",
+                "enum": [
+                  "price_gte_target",
+                  "price_lte_target"
+                ]
+              }
+            }
+          },
+          "rules": {
+            "type": "object",
+            "nullable": true,
+            "description": "方法编译 AST；仅详情接口返回"
+          },
+          "evidence": {
+            "type": "object",
+            "description": "选股当时保存的证据摘要"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "contract_hash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "method_id",
+          "method_version_id",
+          "signal_date",
+          "baseline",
+          "outcome",
+          "contract_hash"
+        ]
+      },
+      "ForwardObservationEvaluation": {
+        "type": "object",
+        "description": "追加式评估快照；缺失数据不退化为失败。",
+        "properties": {
+          "evaluation_version": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ongoing",
+              "hit",
+              "expired",
+              "insufficient_data",
+              "target_undefined"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "as_of": {
+            "type": "string",
+            "description": "按市场交易日推进的行情截止日"
+          },
+          "data_as_of": {
+            "type": "string",
+            "description": "本股在该窗口内实际取到有效日线的截止日"
+          },
+          "progress": {
+            "type": "integer"
+          },
+          "horizon": {
+            "type": "integer"
+          },
+          "target": {
+            "type": "number"
+          },
+          "hit_date": {
+            "type": "string"
+          },
+          "deadline": {
+            "type": "string"
+          },
+          "latest_close": {
+            "type": "number"
+          },
+          "return_pct": {
+            "type": "number"
+          },
+          "complete": {
+            "type": "boolean",
+            "description": "整个窗口已结束且数据完整"
+          },
+          "missing_dates": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "data_hash": {
+            "type": "string"
+          },
+          "evaluated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "bars": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "date": {
+                  "type": "string"
+                },
+                "open": {
+                  "type": "number"
+                },
+                "high": {
+                  "type": "number"
+                },
+                "low": {
+                  "type": "number"
+                },
+                "close": {
+                  "type": "number"
+                },
+                "volume": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "date",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume"
+              ]
+            }
+          }
+        },
+        "required": [
+          "status",
+          "as_of",
+          "progress",
+          "horizon",
+          "complete",
+          "data_hash",
+          "evaluated_at"
+        ]
       }
     }
   },
@@ -5846,15 +6141,44 @@
         "operationId": "getApiStatesCompare",
         "summary": "Compare persisted states and aligned prices for multiple stocks",
         "parameters": [
-          { "in": "query", "name": "codes", "required": true, "schema": { "type": "string" } },
-          { "in": "query", "name": "from", "required": true, "schema": { "type": "string" } },
-          { "in": "query", "name": "to", "required": true, "schema": { "type": "string" } }
+          {
+            "in": "query",
+            "name": "codes",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
-          "200": { "description": "Aligned stock state bands, transitions and valid-state duration returns" },
-          "400": { "$ref": "#/components/responses/Error" },
-          "500": { "$ref": "#/components/responses/Error" },
-          "503": { "$ref": "#/components/responses/Error" }
+          "200": {
+            "description": "Aligned stock state bands, transitions and valid-state duration returns"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       }
     },
@@ -5876,6 +6200,169 @@
             "$ref": "#/components/responses/Error"
           },
           "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/forward/observations": {
+      "get": {
+        "operationId": "getApiForwardObservations",
+        "summary": "列出走势验证观察记录",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 30
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "观察记录列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForwardObservationList"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "postApiForwardObservations",
+        "summary": "冻结一个候选进入走势验证",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForwardObservationCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "已创建或已存在的观察记录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForwardObservation"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/forward/observations/refresh": {
+      "post": {
+        "operationId": "postApiForwardObservationsRefresh",
+        "summary": "后台刷新本地观察评估",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForwardObservationRefresh"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "刷新已排队",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForwardObservationRefreshResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/forward/observations/{id}": {
+      "get": {
+        "operationId": "getApiForwardObservationsId",
+        "summary": "读取单条走势验证详情",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "观察详情（含规则及有界K线）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForwardObservation"
+                }
+              }
+            }
+          },
+          "404": {
             "$ref": "#/components/responses/Error"
           },
           "500": {

@@ -234,13 +234,27 @@ func (s *Service) FetchCodes(exchange protocol.Exchange) ([]*protocol.CodeItem, 
 }
 
 func (s *Service) FetchXdXr(code string) ([]*protocol.XdXrItem, error) {
-	if s.xdxr != nil {
+	return s.fetchXdXrContext(context.Background(), code, false)
+}
+
+// RefreshXdXr refreshes the existing corporate-action cache for forward observations.
+func (s *Service) RefreshXdXr(code string) ([]*protocol.XdXrItem, error) {
+	return s.fetchXdXrContext(context.Background(), code, true)
+}
+
+// RefreshXdXrContext is the cancellable form used by background observation refresh.
+func (s *Service) RefreshXdXrContext(ctx context.Context, code string) ([]*protocol.XdXrItem, error) {
+	return s.fetchXdXrContext(ctx, code, true)
+}
+
+func (s *Service) fetchXdXrContext(ctx context.Context, code string, force bool) ([]*protocol.XdXrItem, error) {
+	if !force && s.xdxr != nil {
 		if items, err := s.xdxr.Get(code); err == nil && items != nil {
 			return items, nil
 		}
 	}
 	var items []*protocol.XdXrItem
-	err := s.withClient(func(c *Client) error {
+	err := s.withClientContext(ctx, func(c *Client) error {
 		var e error
 		items, e = c.GetXdXrInfo(code)
 		return e

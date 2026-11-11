@@ -15,6 +15,7 @@ import (
 
 // registerForwardRunRoutes registers forward run and signal ledger routes
 func (s *Server) registerForwardRunRoutes(api *gin.RouterGroup) {
+	s.registerObservationRoutes(api)
 	fr := api.Group("/forward")
 	{
 		fr.GET("/runs", s.handleForwardRunsList)

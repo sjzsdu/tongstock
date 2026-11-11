@@ -21,6 +21,7 @@ import {
 import { InfoCircleOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { api, type SelectionCandidate, type SelectionRun } from '../api/client';
+import ObservationCreateButton from '../components/ObservationCreateButton';
 import { formatDateTime } from '../lib/datetime';
 import { evidenceLevel, exclusionReasonLabel, formatPercent } from '../lib/methodPresentation';
 import {
@@ -310,6 +311,7 @@ export default function SelectionResult() {
           </Text>
         ),
       },
+      {title:'走势验证',key:'observation',width:135,render:(_,c) => run && <ObservationCreateButton runID={run.id} candidate={c} defaultMethodID={groupMethodId} />},
       {
         title: '操作',
         key: 'watch',
@@ -329,7 +331,7 @@ export default function SelectionResult() {
           ),
       },
     ],
-    [addedCodes, addToWatchlist, cap, legacyAttribution],
+    [addedCodes, addToWatchlist, cap, legacyAttribution, run],
   );
 
   const expandedRowRender = useCallback(

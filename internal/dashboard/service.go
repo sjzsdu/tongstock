@@ -235,6 +235,34 @@ func (s *Service) selectionStatus(ctx context.Context, latestSnapshotID string) 
 	} else {
 		st.Candidates = append([]selection.Candidate{}, chosen.Candidates...)
 	}
+	// Enrich only the copied read model for legacy runs; never rewrite stored
+	// candidates or frozen snapshots. The actual repository supports this optional
+	// reader while lightweight dashboard readers can omit it.
+	needsReferencePrice := false
+	for _, candidate := range st.Candidates {
+		if candidate.ReferencePrice == nil {
+			needsReferencePrice = true
+			break
+		}
+	}
+	if !needsReferencePrice {
+		return st, nil
+	}
+	if reader, ok := s.deps.Snapshots.(interface {
+		LoadFeatureSnapshot(string, bool) (*marketsnapshot.FeatureSnapshot, error)
+	}); ok && chosen.FeatureSnapshotID != "" {
+		if feature, loadErr := reader.LoadFeatureSnapshot(chosen.FeatureSnapshotID, true); loadErr == nil && feature != nil && feature.ID == chosen.FeatureSnapshotID && feature.MarketSnapshotID == chosen.SnapshotID && feature.SnapshotDate == chosen.SnapshotDate && feature.Status == marketsnapshot.StatusReady && feature.LeakChecked {
+			hash, hashErr := marketsnapshot.ComputeFeatureContentHash(feature)
+			if hashErr == nil && hash == feature.ContentHash {
+				for i := range st.Candidates {
+					c := &st.Candidates[i]
+					if c.ReferencePrice == nil && (c.FeatureSnapshotID == "" || c.FeatureSnapshotID == feature.ID) && (c.DataDate == "" || c.DataDate == feature.SnapshotDate) {
+						c.ReferencePrice = selection.ReferencePriceFromFeature(feature, c.Code)
+					}
+				}
+			}
+		}
+	}
 	return st, nil
 }
 

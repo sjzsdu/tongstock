@@ -21,7 +21,12 @@ func (v ValidationEvidence) RegistryEvidence() EvidenceInput {
 		}
 	}
 	sharpe, sortino := b.OosStats.SharpeRatio, b.OosStats.SortinoRatio
-	return EvidenceInput{ResultHash: b.ResultHash, ComputedHash: b.ComputeResultHash(), SnapshotID: b.SnapshotID, JobHash: b.JobHash, MethodHash: b.MethodHash, StockCode: b.StockCode, Confidence: string(b.Confidence), ConfidenceReason: b.ConfidenceReason, Passable: b.Passable, HasHardBlocker: hard, OOSTrades: b.OosStats.TotalTrades, OOSReturn: b.OosStats.TotalReturn, OOSWinRate: b.OosStats.WinRate, OOSMaxDrawdown: b.OosStats.MaxDrawdown, SharpeRatio: &sharpe, SortinoRatio: &sortino, UniverseSize: b.UniverseSize, ValidationStart: reservedWindowStart(b.Segments), ValidationEnd: reservedWindowEnd(b.Segments)}
+	var winRate *float64
+	if b.OosStats.TotalTrades > 0 {
+		value := b.OosStats.WinRate
+		winRate = &value
+	}
+	return EvidenceInput{ResultHash: b.ResultHash, ComputedHash: b.ComputeResultHash(), SnapshotID: b.SnapshotID, JobHash: b.JobHash, MethodHash: b.MethodHash, StockCode: b.StockCode, Confidence: string(b.Confidence), ConfidenceReason: b.ConfidenceReason, Passable: b.Passable, HasHardBlocker: hard, OOSTrades: b.OosStats.TotalTrades, OOSReturn: b.OosStats.TotalReturn, OOSWinRate: winRate, OOSMaxDrawdown: b.OosStats.MaxDrawdown, SharpeRatio: &sharpe, SortinoRatio: &sortino, UniverseSize: b.UniverseSize, ValidationStart: reservedWindowStart(b.Segments), ValidationEnd: reservedWindowEnd(b.Segments)}
 }
 
 // reservedWindowStart/End derive the out-of-sample validation window from the

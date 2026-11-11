@@ -1132,6 +1132,25 @@ CREATE TABLE signal_state_seed (
 ) WITHOUT ROWID;
 `,
 	},
+	{version: 27, name: "forward_candidate_observations", sql: `
+CREATE TABLE IF NOT EXISTS forward_observation (
+ id TEXT PRIMARY KEY, selection_run_id TEXT NOT NULL, stock_code TEXT NOT NULL,
+ method_version_id TEXT NOT NULL, created_at_ns INTEGER NOT NULL, contract_hash TEXT NOT NULL,
+ contract_json TEXT NOT NULL, UNIQUE(selection_run_id,stock_code,method_version_id)
+);
+CREATE INDEX IF NOT EXISTS idx_forward_observation_created ON forward_observation(created_at_ns DESC);
+CREATE TABLE IF NOT EXISTS forward_observation_evaluation (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, observation_id TEXT NOT NULL, data_hash TEXT NOT NULL,
+ evaluated_at_ns INTEGER NOT NULL, status TEXT NOT NULL, result_json TEXT NOT NULL,
+ UNIQUE(observation_id,data_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_forward_observation_eval ON forward_observation_evaluation(observation_id,id DESC);
+-- 合约与评估都禁止改写：目标一旦冻结就必须可复算。
+-- 刻意不拦 DELETE：损坏的历史记录需要一个可审计的人工修复路径，
+-- 评估本身是追加式（同 data_hash 不会重复写入），删行不会被系统自动回填。
+CREATE TRIGGER IF NOT EXISTS trg_forward_observation_immutable BEFORE UPDATE ON forward_observation BEGIN SELECT RAISE(ABORT,'observation contract is immutable'); END;
+CREATE TRIGGER IF NOT EXISTS trg_forward_observation_evaluation_immutable BEFORE UPDATE ON forward_observation_evaluation BEGIN SELECT RAISE(ABORT,'observation evaluations are append-only'); END;
+`},
 }
 
 // Migrate upgrades the SQLite database transactionally. Store constructors

@@ -23,6 +23,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
 import { titleForPath } from './lib/pageTitle';
 
+const Observations = lazy(lazyWithReload(() => import('./pages/Observations')));
 const Dashboard = lazy(lazyWithReload(() => import('./pages/Dashboard')));
 const StockDetail = lazy(lazyWithReload(() => import('./pages/stock/StockDetail')));
 const StockChoose = lazy(lazyWithReload(() => import('./pages/stock/StockChoose')));
@@ -86,6 +87,7 @@ function RouteFallback() {
 // 决策组：产品核心主流程，顶层平铺、零点击可见
 const decisionMenuItems: MenuProps['items'] = [
   { key: '/', icon: <DashboardOutlined />, label: <Link to="/">今日决策</Link> },
+  { key: '/observations', icon: <StockOutlined />, label: <Link to="/observations">走势验证</Link> },
   { key: '/portfolio', icon: <WalletOutlined />, label: <Link to="/portfolio">持仓卖出</Link> },
 ];
 
@@ -140,6 +142,7 @@ function getParentKey(pathname: string): string | undefined {
 
 // 计算选中的菜单 key
 function getSelectedKey(pathname: string): string {
+  if (pathname.startsWith('/observations')) return '/observations';
   if (pathname === '/') return '/';
   if (pathname.startsWith('/stock')) return '/stock/choose';
   if (pathname.startsWith('/index')) return '/stock/choose';
@@ -330,6 +333,7 @@ export default function App() {
         <ErrorBoundary>
           <Routes>
             <Route path="/" element={<Dashboard />} />
+            <Route path="/observations" element={<Observations />} />
             <Route path="/watchlist" element={<Watchlist />} />
             <Route path="/stock/choose" element={<StockChoose />} />
             <Route path="/stock/:code" element={<StockDetail />} />
@@ -378,6 +382,7 @@ function buildBreadcrumbs(pathname: string) {
     watchlist: '自选股',
     screen: '信号筛选',
     portfolio: '持仓卖出',
+    observations: '走势验证',
     blocks: '股票池',
     settings: '配置',
     paradigms: '范式库',

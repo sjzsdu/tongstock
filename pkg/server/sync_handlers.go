@@ -49,6 +49,9 @@ func (s *Server) handleSyncDaily(c *gin.Context) {
 	}
 
 	result := s.svc.SyncDailyKlines(codes, mode, req.Concurrency)
+	if result.Success > 0 {
+		s.refreshObservationsBackground("", codes)
+	}
 	c.JSON(http.StatusOK, result)
 }
 

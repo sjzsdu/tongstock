@@ -89,7 +89,16 @@ type ScoreExplanation struct {
 	BuyCapPerMethod     int                      `json:"buy_cap_per_method"`
 }
 
+// ReferencePrice is the immutable signal-date close, never an execution fill.
+type ReferencePrice struct {
+	Close             float64 `json:"close"`
+	Date              string  `json:"date"`
+	PriceAdjustment   string  `json:"price_adjustment"`
+	FeatureSnapshotID string  `json:"feature_snapshot_id"`
+}
+
 type Candidate struct {
+	ReferencePrice    *ReferencePrice   `json:"reference_price,omitempty"`
 	ScoreExplanation  *ScoreExplanation `json:"score_explanation,omitempty"`
 	Rank              int               `json:"rank"`
 	Code              string            `json:"code"`

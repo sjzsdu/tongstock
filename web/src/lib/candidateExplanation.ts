@@ -53,7 +53,9 @@ export function entryConditions(method?: MethodCard) {
 }
 
 export function methodPurpose(method?: MethodCard) {
-  if (method?.description) return method.description;
+  if (method?.description) return method.description
+    .replace(/[（(][^（）()]*胜率[^（）()]*[）)]/g, '')
+    .replace(/(?:历史|样本外)?胜率\s*\d+(?:\.\d+)?%/g, '历史胜率见结构化回测记录');
   if (!method?.rules?.entry_rule) return '按已登记的历史方法筛选；当前未保留完整规则。';
   const nodes = [...ruleNodes(method.rules.entry_rule).values()];
   const has = (name: string) => nodes.some((node) => node.type === 'indicator' && node.indicator === name);
@@ -121,12 +123,77 @@ export function indicatorHelp(method?: MethodCard) {
 export function retainedEvidenceExplanation(trigger: SelectionTrigger) {
   const ev = trigger.evidence;
   if (!ev) return '本次记录未保留证据输入，基础分和证据加减项无法确认。';
-  return `触发时证据等级 ${ev.confidence}，对应基础分 ${ev.confidence === 'strong' ? '0.7200' : '0.5500'}；样本外 ${ev.oos_trades} 笔${ev.oos_trades >= 100 ? '，满足≥100笔加0.0400' : '，未达到100笔、不加样本分'}；最大回撤 ${(ev.oos_max_drawdown * 100).toFixed(2)}%${ev.oos_max_drawdown < -.2 ? '，触发扣0.0800' : '，未触发回撤扣分'}。这些已知项不代表成交额和健康调整为零。`;
+  return `触发时证据等级 ${ev.confidence}，对应基础分 ${ev.confidence === 'strong' ? '0.7200' : '0.5500'}；样本外 ${ev.oos_trades} 笔${ev.oos_trades >= 100 ? '，满足≥100笔加0.0400' : '，未达到100笔、不加样本分'}；保存的回撤统计值 ${(ev.oos_max_drawdown * 100).toFixed(2)}%${ev.oos_max_drawdown < -.2 ? '，触发扣0.0800' : '，未触发回撤扣分'}。这些已知项不代表成交额和健康调整为零。`;
 }
 
 export function aggregateSummary(candidate: SelectionCandidate) {
+  if (candidate.triggers.some((trigger) => trigger.method_id === 'factor-combo')) return '截面因子排序分，仅观察；不使用普通方法聚合公式。';
   const scores = candidate.triggers.map((trigger) => trigger.score).sort((a,b) => b-a);
   const primary = candidate.score_explanation?.primary_score ?? scores[0] ?? 0;
   const bonuses = candidate.score_explanation?.extra_trigger_bonuses ?? scores.slice(1).map((score) => Math.min(.03, score*.04));
   return `最高方法分 ${primary.toFixed(4)}${bonuses.length ? ` + ${bonuses.length}份附加分（${bonuses.map((bonus) => bonus.toFixed(4)).join('、')}）` : ''} = ${aggregateCalculation(candidate).value.toFixed(4)}`;
+}
+
+/** Use final scores retained in this run, never current method health or evidence. */
+export function scoreContributions(candidate: SelectionCandidate) {
+  // contribution 必须按“原始触发顺序”对应 extra_trigger_bonuses；展示排序不能参与取值。
+  const rows = candidate.triggers.map((trigger, index) => ({
+    methodID: trigger.method_id,
+    methodName: trigger.method_name,
+    score: trigger.score,
+    primary: index === 0,
+    contribution: index === 0
+      ? (candidate.score_explanation?.primary_score ?? trigger.score)
+      : (candidate.score_explanation?.extra_trigger_bonuses[index - 1] ?? Math.min(.03, trigger.score * .04)),
+  }));
+  if (rows.some((row) => row.methodID === 'factor-combo')) return [];
+  const [primary, ...rest] = rows;
+  if (!primary) return rows;
+  return [primary, ...rest.sort((left, right) => right.score - left.score || left.methodID.localeCompare(right.methodID))];
+}
+
+export function tiedScoreGroups(candidate: SelectionCandidate) {
+  const groups = new Map<number, string[]>();
+  for (const trigger of candidate.triggers) {
+    const names = groups.get(trigger.score) || [];
+    names.push(trigger.method_name);
+    groups.set(trigger.score, names);
+  }
+  return [...groups].filter(([, names]) => names.length > 1).map(([score, names]) => ({ score, names }));
+}
+
+export function historicalPerformance(trigger?: SelectionTrigger, method?: MethodCard) {
+  const recorded = trigger?.evidence;
+  const sameEvidence = !!trigger?.method_version_id && trigger.method_version_id === method?.method_version_id
+    && !!recorded?.result_hash && recorded.result_hash === method?.evidence?.result_hash;
+  const fallback = sameEvidence ? method?.evidence : undefined;
+  const fromCard = recorded?.oos_win_rate == null && fallback?.oos_win_rate != null;
+  const winEvidence = fromCard ? fallback : recorded;
+  const rate = winEvidence?.oos_win_rate;
+  const winRate = rate != null && Number.isFinite(rate) && rate >= 0 && rate <= 1 && (winEvidence?.oos_trades ?? 0) > 0 ? rate : undefined;
+  const drawdown = recorded?.oos_max_drawdown;
+  return {
+    winRate,
+    trades: winEvidence?.oos_trades ?? recorded?.oos_trades,
+    drawdown: drawdown != null && Number.isFinite(drawdown) ? Math.abs(drawdown) : undefined,
+    start: recorded?.validation_start || fallback?.validation_start,
+    end: recorded?.validation_end || fallback?.validation_end,
+    source: fromCard ? '同版本、同证据回测补全' : recorded ? '触发时保存的回测' : '回测数据未记录',
+  };
+}
+
+export function referenceExitPrices(candidate: SelectionCandidate) {
+  const reference = candidate.reference_price;
+  if (!reference || !Number.isFinite(reference.close) || reference.close <= 0) return { reference: undefined, stopLoss: undefined, takeProfit: undefined };
+  const stop = candidate.exit.stop_loss_pct;
+  const take = candidate.exit.take_profit_pct;
+  return {
+    reference,
+    stopLoss: stop != null && Number.isFinite(stop) && stop > -1 && stop <= 0 ? reference.close * (1 + stop) : undefined,
+    takeProfit: take != null && Number.isFinite(take) && take >= 0 ? reference.close * (1 + take) : undefined,
+  };
+}
+
+export function performancePercent(value?: number) {
+  return value == null ? '未记录' : `${(value * 100).toFixed(2)}%`;
 }

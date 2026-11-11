@@ -745,6 +745,13 @@ export const api = {
 			body: JSON.stringify({ stockCodes }),
 		}),
 
+  observationCreate: (selectionRunID:string, code:string, methodID:string) =>
+    fetchJSON<ForwardObservation>('/api/forward/observations', { method:'POST', body:JSON.stringify({ selection_run_id:selectionRunID, code, method_id:methodID }) }),
+  observations: (limit=30, offset=0, status='') =>
+    fetchJSON<{items:ForwardObservation[];total:number;summary:Record<string,number>}>(`/api/forward/observations?${new URLSearchParams({limit:String(limit),offset:String(offset),status})}`),
+  observation: (id:string) => fetchJSON<ForwardObservation>(`/api/forward/observations/${encodeURIComponent(id)}`),
+  observationRefresh: (id?:string) => fetchJSON<{running:boolean;started:boolean}>('/api/forward/observations/refresh', {method:'POST',body:JSON.stringify({id})}),
+
 	// Forward Run APIs
 	forwardRuns: (limit?: number) =>
 		fetchJSON<{ runs: ForwardRun[]; total: number }>(
@@ -946,7 +953,8 @@ export interface SelectionTrigger { method_id:string;method_version_id?:string;m
 /** 逐方法买入名额归属见 selectionGrouping：kept/truncated 都是方法 ID 列表。 */
 export interface MethodScoreExplanation { method_id:string;evidence_base:number;sample_bonus:number;drawdown_penalty:number;missing_amount_penalty:number;before_health:number;health_score?:number;score:number }
 export interface CandidateScoreExplanation { methods:MethodScoreExplanation[];primary_score:number;extra_trigger_bonuses:number[];aggregate_cap:number;buy_threshold:number;exit_complete:boolean;buy_cap_per_method:number }
-export interface SelectionCandidate { score_explanation?:CandidateScoreExplanation; rank:number;code:string;action:'buy'|'watch'|'avoid'|'insufficient_data';score:number;data_date:string;buy_window:string;position_cap_pct:number;exit:{max_holding_days?:number;stop_loss_pct?:number;take_profit_pct?:number;complete:boolean};risks?:string[];explanation:string;triggers:SelectionTrigger[];kept_by_method_ids?:string[];truncated_by_method_ids?:string[];truncated_from_buy?:boolean }
+export interface CandidateReferencePrice { close:number;date:string;price_adjustment:string;feature_snapshot_id:string }
+export interface SelectionCandidate { reference_price?:CandidateReferencePrice; score_explanation?:CandidateScoreExplanation; rank:number;code:string;action:'buy'|'watch'|'avoid'|'insufficient_data';score:number;data_date:string;buy_window:string;position_cap_pct:number;exit:{max_holding_days?:number;stop_loss_pct?:number;take_profit_pct?:number;complete:boolean};risks?:string[];explanation:string;triggers:SelectionTrigger[];kept_by_method_ids?:string[];truncated_by_method_ids?:string[];truncated_from_buy?:boolean }
 /** buy_cap_per_method / buy_count_by_method / truncated_from_buy 为 per-method 口径字段，旧 run 不带。 */
 export interface SelectionRun { id:string;run_hash?:string;snapshot_id:string;feature_snapshot_id:string;snapshot_date:string;eligible_methods?:number;scanned_stocks?:number;candidate_count:number;buy_count:number;buy_cap_per_method?:number;buy_count_by_method?:Record<string,number>;truncated_from_buy?:number;action_counts?:Record<string,number>;candidates:SelectionCandidate[];exclusions:Array<{method_id?:string;code?:string;reason_code:string;detail:string}>;requested_method_ids?:string[];created_at?:string }
 export interface SelectionRunRequest { market_snapshot_id?:string;feature_snapshot_id?:string;method_ids:string[] }
@@ -1212,4 +1220,10 @@ export interface MethodSeedResult {
   registered: number;
   verified: number;
   finished_at: string;
+}
+
+export interface ObservationBar { date:string;open:number;high:number;low:number;close:number;volume:number }
+export interface ForwardObservation {
+ contract: { id:string;selection_run_id:string;code:string;name:string;method_id:string;method_version_id:string;method_name:string;signal_date:string;baseline:number;baseline_kind:string;snapshot_id:string;feature_snapshot_id:string;feature_hash:string;snapshot_adjustment:string;outcome:MethodOutcome;rules:unknown;evidence?:MethodEvidence;created_at:string;contract_hash:string };
+ evaluation?: {evaluation_version:string;status:string;reason:string;as_of:string;data_as_of?:string;progress:number;horizon:number;target?:number;hit_date?:string;deadline?:string;latest_close?:number;return_pct?:number;complete:boolean;missing_dates?:string[];data_hash:string;evaluated_at:string;bars?:ObservationBar[]};
 }

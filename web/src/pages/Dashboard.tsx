@@ -439,7 +439,7 @@ export default function Dashboard() {
               }
             >
               {hasCandidates ? (
-                <CandidateExplanation candidates={candidates} stockNames={stockNames} onStock={(code) => navigate(`/stock/${code}`)} />
+                <CandidateExplanation selectionRunID={selection.run_id} candidates={candidates} stockNames={stockNames} onStock={(code) => navigate(`/stock/${code}`)} />
               ) : (
                 <Text type="secondary">本次运行没有候选。上方「运行日志」列出了扫描与排除的真实明细。</Text>
               )}

@@ -125,6 +125,74 @@ export interface StateFilter {
   "transition"?: Record<string, unknown>;
 }
 
+export interface ForwardObservation {
+  "contract": ForwardObservationContract;
+  "evaluation"?: ForwardObservationEvaluation;
+}
+
+export interface ForwardObservationList {
+  "items": ForwardObservation[];
+  "total": number;
+  "summary": Record<string, unknown>;
+}
+
+export interface ForwardObservationCreate {
+  "selection_run_id": string;
+  "code": string;
+  "method_id"?: string;
+}
+
+export interface ForwardObservationRefresh {
+  "id"?: string;
+}
+
+export interface ForwardObservationRefreshResult {
+  "running": boolean;
+  "started": boolean;
+}
+
+export interface ForwardObservationContract {
+  "id": string;
+  "selection_run_id"?: string;
+  "code": string;
+  "name"?: string;
+  "method_id": string;
+  "method_version_id": string;
+  "method_name"?: string;
+  "signal_date": string;
+  "baseline": number;
+  "baseline_kind"?: string;
+  "snapshot_id"?: string;
+  "feature_snapshot_id"?: string;
+  "feature_hash"?: string;
+  "snapshot_adjustment"?: string;
+  "outcome": Record<string, unknown>;
+  "rules"?: Record<string, unknown>;
+  "evidence"?: Record<string, unknown>;
+  "created_at"?: string;
+  "contract_hash": string;
+}
+
+export interface ForwardObservationEvaluation {
+  "evaluation_version"?: string;
+  "status": string;
+  "reason"?: string;
+  "as_of": string;
+  "data_as_of"?: string;
+  "progress": number;
+  "horizon": number;
+  "target"?: number;
+  "hit_date"?: string;
+  "deadline"?: string;
+  "latest_close"?: number;
+  "return_pct"?: number;
+  "complete": boolean;
+  "missing_dates"?: string[];
+  "data_hash": string;
+  "evaluated_at": string;
+  "bars"?: Record<string, unknown>[];
+}
+
 export const operations = {
   postApiAgentChat: { method: "POST", path: "/api/agent/chat" },
   postApiAgentResearch: { method: "POST", path: "/api/agent/research" },
@@ -289,4 +357,8 @@ export const operations = {
   getApiStatesSeries: { method: "GET", path: "/api/states/series" },
   getApiStatesCompare: { method: "GET", path: "/api/states/compare" },
   getApiScreenOptions: { method: "GET", path: "/api/screen/options" },
+  getApiForwardObservations: { method: "GET", path: "/api/forward/observations" },
+  postApiForwardObservations: { method: "POST", path: "/api/forward/observations" },
+  postApiForwardObservationsRefresh: { method: "POST", path: "/api/forward/observations/refresh" },
+  getApiForwardObservationsId: { method: "GET", path: "/api/forward/observations/{id}" },
 } as const;

@@ -48,6 +48,7 @@ const ROUTE_PAGES: Array<[RegExp, string]> = [
   [/^\/stock\/choose(\/|$)/, '个股分析'],
   [/^\/watchlist(\/|$)/, '自选股'],
   [/^\/screen(\/|$)/, '信号筛选'],
+  [/^\/observations(\/|$)/, '走势验证'],
   [/^\/portfolio(\/|$)/, '持仓卖出'],
   [/^\/blocks(\/|$)/, '股票池'],
   [/^\/methods\/selection\//, '今日候选股票'],

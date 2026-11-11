@@ -33,7 +33,7 @@ type EvidenceSummary struct {
 	Passable            bool     `json:"passable"`
 	OOSTrades           int      `json:"oos_trades"`
 	OOSReturn           float64  `json:"oos_return"`
-	OOSWinRate          float64  `json:"oos_win_rate"`
+	OOSWinRate          *float64 `json:"oos_win_rate,omitempty"`
 	OutcomeHitRate      *float64 `json:"outcome_hit_rate,omitempty"`
 	OutcomeObservations int      `json:"outcome_observations,omitempty"`
 	OOSMaxDrawdown      float64  `json:"oos_max_drawdown"`
@@ -137,12 +137,14 @@ type EvidenceInput struct {
 	Passable                                                                         bool
 	HasHardBlocker                                                                   bool
 	OOSTrades                                                                        int
-	OOSReturn, OOSWinRate, OOSMaxDrawdown                                            float64
-	OutcomeHitRate                                                                   *float64
-	OutcomeObservations                                                              int
-	SharpeRatio, SortinoRatio                                                        *float64
-	UniverseSize                                                                     int
-	ValidationStart, ValidationEnd                                                   string
+	OOSReturn, OOSMaxDrawdown                                                        float64
+	// OOSWinRate preserves nil versus a real zero from the input evidence.
+	OOSWinRate                     *float64
+	OutcomeHitRate                 *float64
+	OutcomeObservations            int
+	SharpeRatio, SortinoRatio      *float64
+	UniverseSize                   int
+	ValidationStart, ValidationEnd string
 }
 
 type Query struct {

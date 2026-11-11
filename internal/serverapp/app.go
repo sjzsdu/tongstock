@@ -309,6 +309,13 @@ func NewApp(cfg *config.Config, opts Options) (_ *App, err error) {
 	}
 	// 手动「用选中方法筛选」：与每日自动选股共用同一引擎，仅限定方法集。
 	app.api.SetSelectionEngine(selectionEngine, marketSnapshots)
+	observationService, err := ledger.NewObservationService(app.storage, selectionRuns, methodRepo, marketSnapshots)
+	if err != nil {
+		return nil, fmt.Errorf("初始化候选走势验证失败: %w", err)
+	}
+	app.api.SetObservations(observationService)
+	app.api.StartObservationScheduler(app.runCtx)
+
 	automationRuns, err := automationrepo.New(app.storage)
 	if err != nil {
 		return nil, fmt.Errorf("初始化自动任务仓库失败: %w", err)
