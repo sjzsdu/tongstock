@@ -321,7 +321,6 @@ func (r *runner) noDeadProductionCallers() GateResult {
 	whitelist := map[string]string{
 		"internal/ai_critic":            "wired via HTTP handlers + experiment tooling",
 		"internal/archguard":            "command-only entry, wired in cmd/cli",
-		"internal/picoclaw":             "optional runtime wiring",
 		"internal/adapter/paradigmrepo": "injected at composition root in serverapp",
 		"pkg/tdx/adjust":                "used by cmd/* through tdx.Service, indirectly via adjust.{ApplyForward|Split}",
 		"internal/llm":                  "stage-1 core abstraction (WAN-64); business wiring lands in the WAN-63 agentservice migration",
