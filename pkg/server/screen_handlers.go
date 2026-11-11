@@ -33,6 +33,10 @@ func (s *Server) handleScreen(c *gin.Context) {
 	}
 	var filter statesnapshot.StateFilter
 	if raw := c.Query("state_filter"); raw != "" {
+		if strings.TrimSpace(raw) == "null" {
+			WriteError(c, 400, "validation_failed", "state_filter 必须是合法条件对象")
+			return
+		}
 		dec := json.NewDecoder(strings.NewReader(raw))
 		dec.DisallowUnknownFields()
 		err = dec.Decode(&filter)
@@ -62,7 +66,7 @@ func (s *Server) handleScreen(c *gin.Context) {
 	}
 	results := make([]gin.H, 0, len(out.Results))
 	for _, r := range out.Results {
-		results = append(results, gin.H{"code": r.Code, "name": r.Name, "date": r.Date, "states": r.States, "last": gin.H{"Close": r.Close, "PrevClose": r.PrevClose}, "signals": []any{}, "ma": gin.H{}, "macd": nil, "kdj": nil})
+		results = append(results, gin.H{"code": r.Code, "name": r.Name, "date": r.Date, "states": r.States, "last": gin.H{"Close": r.Close, "PrevClose": r.PrevClose}})
 	}
-	c.JSON(http.StatusOK, gin.H{"date": out.Date, "dimensions": signalstate.Metadata(), "results": results, "total": len(codes), "successCount": len(results), "failed": []any{}, "skipped": []any{}, "insufficientCount": out.InsufficientCount, "missingCount": out.MissingCount})
+	c.JSON(http.StatusOK, gin.H{"date": out.Date, "dimensions": signalstate.Metadata(), "results": results, "total": len(codes), "successCount": len(results), "insufficientCount": out.InsufficientCount, "missingCount": out.MissingCount})
 }

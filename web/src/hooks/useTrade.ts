@@ -59,7 +59,7 @@ export function useTrade(): UseTradeReturn {
     const close = result.last?.Close || 0;
     setTradingLoading(true);
     try {
-      const signalStr = (result.signals || []).map((s) => `${s.Indicator}${s.Type}`).join(',');
+      const signalStr = JSON.stringify({ date: result.date, states: result.states });
       await api.tradeCreate({
         code: result.code,
         name: result.name || '',

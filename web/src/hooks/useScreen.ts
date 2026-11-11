@@ -1,35 +1,36 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { getChangePct } from '../utils/screen';
 import { api } from '../api/client';
-import type { ScreenResult, ScreenCodeStatus, KlineBatchSyncResult } from '../types/api';
-import type { SourceTab, BlockInfo, SortKey } from '../types/screen';
-import { SCREEN_CACHE_KEY, CACHE_EXPIRY, ALL_BLOCK_FILES } from '../types/screen';
+import type { ScreenResult, KlineBatchSyncResult, DimensionMeta } from '../types/api';
+import type { SourceTab, BlockInfo, SortKey, StateFilter } from '../types/screen';
+import { ALL_BLOCK_FILES } from '../types/screen';
 
 interface UseScreenReturn {
   sourceTab: SourceTab;
   setSourceTab: React.Dispatch<React.SetStateAction<SourceTab>>;
   ktype: string;
-  setKtype: React.Dispatch<React.SetStateAction<string>>;
-  selectedSignals: string[];
-  setSelectedSignals: React.Dispatch<React.SetStateAction<string[]>>;
+  stateFilter: StateFilter;
+  setStateFilter: React.Dispatch<React.SetStateAction<StateFilter>>;
+  date: string;
+  setDate: React.Dispatch<React.SetStateAction<string>>;
+  dimensions: DimensionMeta[];
+  insufficientCount: number;
+  missingCount: number;
+  snapshotDate: string;
+  error: string;
+  conditionsChanged: boolean;
   results: ScreenResult[];
-  failedCodes: ScreenCodeStatus[];
-  skippedCodes: ScreenCodeStatus[];
-  cappedInfo: { maxCodes: number; reason: string } | null;
   hasScreenLoaded: boolean;
   total: number;
   loading: boolean;
-  /** 当前展示数据的时间（缓存命中时为缓存时间，否则为本次筛选时间） */
+  /** 本次筛选执行时间；快照交易日另行展示。 */
   screenedAt: number | null;
-  /** 是否来自缓存（未重新请求） */
-  fromCache: boolean;
-  /** 忽略缓存强制重新筛选 */
+  /** 用当前条件重新筛选上次完整股票池。 */
   forceRefresh: () => Promise<void>;
   sortKey: SortKey;
   sortAsc: boolean;
   filteredResults: ScreenResult[];
   sortedResults: ScreenResult[];
-  signalCounts: Record<string, number>;
   blockFile: string;
   setBlockFile: React.Dispatch<React.SetStateAction<string>>;
   blockData: BlockInfo[];
@@ -42,82 +43,42 @@ interface UseScreenReturn {
   filteredBlocks: BlockInfo[];
   syncResult: KlineBatchSyncResult | null;
   setSyncResult: React.Dispatch<React.SetStateAction<KlineBatchSyncResult | null>>;
-  doScreen: (resolvedCodes: string, retryCodes?: string) => Promise<void>;
-  retryFailed: () => Promise<void>;
+  doScreen: (resolvedCodes: string) => Promise<void>;
   handleSortChange: (key: SortKey) => void;
   handleSelectBlock: (block: BlockInfo) => void;
 }
 
-function getScreenCacheKey(ktypeVal: string, signalsVal: string[]): string {
-  return `${ktypeVal}_${signalsVal.sort().join('_')}`;
-}
-
-function saveScreenResult(
-  resultsData: ScreenResult[],
-  failedData: ScreenCodeStatus[],
-  skippedData: ScreenCodeStatus[],
-  totalData: number,
-  ktypeVal: string,
-  signalsVal: string[]
-): void {
-  try {
-    const cache = {
-      key: getScreenCacheKey(ktypeVal, signalsVal),
-      results: resultsData,
-      failed: failedData,
-      skipped: skippedData,
-      total: totalData,
-      timestamp: Date.now(),
-    };
-    localStorage.setItem(SCREEN_CACHE_KEY, JSON.stringify(cache));
-  } catch {
-    return;
-  }
-}
-
-function loadScreenResult(ktypeVal: string, signalsVal: string[]): {
-  results: ScreenResult[];
-  failed: ScreenCodeStatus[];
-  skipped: ScreenCodeStatus[];
-  total: number;
-  timestamp: number;
-} | null {
-  try {
-    const stored = localStorage.getItem(SCREEN_CACHE_KEY);
-    if (!stored) return null;
-    const cache = JSON.parse(stored);
-    const expectedKey = getScreenCacheKey(ktypeVal, signalsVal);
-    if (cache.key !== expectedKey) return null;
-    if (Date.now() - cache.timestamp > CACHE_EXPIRY * 2) return null;
-    return {
-      results: cache.results || [],
-      failed: cache.failed || [],
-      skipped: cache.skipped || [],
-      total: cache.total || 0,
-      timestamp: cache.timestamp || 0,
-    };
-  } catch {
-    return null;
-  }
-}
-
 export function useScreen(): UseScreenReturn {
-  const searchParams = new URLSearchParams(window.location.search);
-  const urlKtype = searchParams.get('ktype') || 'day';
-  const urlSignals = searchParams.get('signals')?.split(',').filter(Boolean) || [];
-
   const [sourceTab, setSourceTab] = useState<SourceTab>('watchlist');
-  const [ktype, setKtype] = useState(urlKtype);
-  const [selectedSignals, setSelectedSignals] = useState<string[]>(urlSignals);
+  const ktype = 'day';
+  const [stateFilter, setStateFilter] = useState<StateFilter>(() => {
+    try {
+      const parsed = JSON.parse(new URLSearchParams(window.location.search).get('state_filter') || '{"conditions":[]}');
+      if (!parsed || !Array.isArray(parsed.conditions) || parsed.conditions.some((c: unknown) => !c || typeof c !== 'object' || !('dim' in c) || !('state' in c))) return { conditions: [] };
+      if (parsed.transition && (!Array.isArray(parsed.transition.from) || typeof parsed.transition.dim !== 'string' || typeof parsed.transition.to !== 'string' || typeof parsed.transition.within_days !== 'number')) return { conditions: [] };
+      return parsed;
+    }
+    catch { return { conditions: [] }; }
+  });
+  const [date, setDate] = useState(new URLSearchParams(window.location.search).get('date') || '');
+  const [dimensions, setDimensions] = useState<DimensionMeta[]>([]);
+  const [insufficientCount, setInsufficientCount] = useState(0);
+  const [missingCount, setMissingCount] = useState(0);
+  const [snapshotDate, setSnapshotDate] = useState('');
+  const [error, setError] = useState('');
+  const [submittedQuery, setSubmittedQuery] = useState('');
+  const queryKey = JSON.stringify({ stateFilter, date, ktype });
+  const conditionsChanged = !!submittedQuery && submittedQuery !== queryKey;
+  const lastPool = useRef('');
+  const requestId = useRef(0);
+  useEffect(() => {
+    api.screenOptions().then((res) => setDimensions(res.dimensions)).catch((err: unknown) => setError(err instanceof Error ? err.message : '状态枚举加载失败'));
+  }, []);
   const [results, setResults] = useState<ScreenResult[]>([]);
-  const [failedCodes, setFailedCodes] = useState<ScreenCodeStatus[]>([]);
-  const [skippedCodes, setSkippedCodes] = useState<ScreenCodeStatus[]>([]);
-  const [cappedInfo, setCappedInfo] = useState<{ maxCodes: number; reason: string } | null>(null);
   const [hasScreenLoaded, setHasScreenLoaded] = useState(false);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [screenedAt, setScreenedAt] = useState<number | null>(null);
-  const [fromCache, setFromCache] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('code');
   const [sortAsc, setSortAsc] = useState(true);
 
@@ -132,12 +93,11 @@ export function useScreen(): UseScreenReturn {
   const updateUrlParams = useCallback(() => {
     const params = new URLSearchParams();
     params.set('ktype', ktype);
-    if (selectedSignals.length > 0) {
-      params.set('signals', selectedSignals.join(','));
-    }
+    params.set('state_filter', JSON.stringify(stateFilter));
+    if (date) params.set('date', date);
     const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname;
     window.history.replaceState({}, '', newUrl);
-  }, [ktype, selectedSignals]);
+  }, [ktype, stateFilter, date]);
 
   useEffect(() => {
     updateUrlParams();
@@ -194,63 +154,36 @@ export function useScreen(): UseScreenReturn {
     void loadBlockStocks(block);
   }, [loadBlockStocks, selectedBlock]);
 
-  const doScreen = useCallback(async (resolvedCodes: string, retryCodes?: string) => {
-    const codes = (retryCodes ?? resolvedCodes).trim();
+  const doScreen = useCallback(async (resolvedCodes: string) => {
+    const codes = resolvedCodes.trim();
     if (!codes) return;
-
-    if (!retryCodes) {
-      const cached = loadScreenResult(ktype, selectedSignals);
-      if (cached && cached.results.length > 0) {
-        setResults(cached.results);
-        setTotal(cached.total);
-        setFailedCodes(cached.failed);
-        setSkippedCodes(cached.skipped);
-        setScreenedAt(cached.timestamp);
-        setFromCache(true);
-        setHasScreenLoaded(true);
-        return;
-      }
-    }
-
+    lastPool.current = codes;
+    const id = ++requestId.current;
     setLoading(true);
+    setError('');
     try {
-      const response = await api.screen(codes, ktype, selectedSignals);
-      const valid = response.results.filter((item) => item.code);
-      setResults(valid);
+      const response = await api.screen(codes, ktype, stateFilter, date);
+      if (id !== requestId.current) return;
+      setSubmittedQuery(queryKey);
+      setResults(response.results.filter((item) => item.code));
       setTotal(response.total);
-      setFailedCodes(response.failed ?? []);
-      setSkippedCodes(response.skipped ?? []);
-      setCappedInfo(response.capped ? { maxCodes: response.maxCodes ?? 0, reason: response.reason ?? '' } : null);
+      setDimensions(response.dimensions);
+      setInsufficientCount(response.insufficientCount);
+      setMissingCount(response.missingCount);
+      setSnapshotDate(response.date);
       setScreenedAt(Date.now());
-      setFromCache(false);
-      setHasScreenLoaded(true);
-
-      if (!retryCodes) {
-        saveScreenResult(valid, response.failed ?? [], response.skipped ?? [], response.total, ktype, selectedSignals);
-      }
-    } catch (screenError: unknown) {
-      console.error('筛选失败:', screenError);
+    } catch (err: unknown) {
+      if (id !== requestId.current) return;
+      setError(err instanceof Error ? err.message : '筛选失败');
+      setResults([]);
     } finally {
-      setLoading(false);
+      if (id === requestId.current) { setLoading(false); setHasScreenLoaded(true); }
     }
-  }, [ktype, selectedSignals]);
+  }, [ktype, stateFilter, date, queryKey]);
 
-  // 忽略缓存强制刷新：缓存的盘中数据可能滞后，用户需要明确拿到最新行情。
-  // forceRefresh 取上次筛选的股票池，以 retryCodes 通道跳过缓存重筛。
-  // 无缓存时无可刷新对象，交给页面层的开始筛选按钮处理。
   const forceRefresh = useCallback(async () => {
-    const cached = loadScreenResult(ktype, selectedSignals);
-    if (cached && cached.results.length > 0) {
-      const codes = cached.results.map((item) => item.code).join(',');
-      await doScreen(codes, codes);
-    }
-  }, [doScreen, ktype, selectedSignals]);
-
-  const retryFailed = useCallback(async () => {
-    if (failedCodes.length === 0) return;
-    const codes = failedCodes.map((item) => item.code).join(',');
-    await doScreen(codes, codes);
-  }, [failedCodes, doScreen]);
+    await doScreen(lastPool.current);
+  }, [doScreen]);
 
   const handleSortChange = useCallback((key: SortKey) => {
     if (sortKey === key) {
@@ -261,10 +194,8 @@ export function useScreen(): UseScreenReturn {
     setSortAsc(true);
   }, [sortKey]);
 
-  const filteredResults = useMemo(() => {
-    if (selectedSignals.length === 0) return results;
-    return results.filter((result) => result.signals?.some((signal) => selectedSignals.includes(signal.Type)));
-  }, [results, selectedSignals]);
+  // The snapshot API is authoritative; do not reapply legacy event OR matching.
+  const filteredResults = results;
 
   const sortedResults = useMemo(() => {
     const list = [...filteredResults];
@@ -298,16 +229,6 @@ export function useScreen(): UseScreenReturn {
     return list;
   }, [filteredResults, sortAsc, sortKey]);
 
-  const signalCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const result of results) {
-      for (const signal of result.signals || []) {
-        counts[signal.Type] = (counts[signal.Type] || 0) + 1;
-      }
-    }
-    return counts;
-  }, [results]);
-
   const filteredBlocks = useMemo(() => {
     const sorted = [...blockData].sort((a, b) => b.count - a.count);
     if (!blockSearch) return sorted;
@@ -319,24 +240,17 @@ export function useScreen(): UseScreenReturn {
     sourceTab,
     setSourceTab,
     ktype,
-    setKtype,
-    selectedSignals,
-    setSelectedSignals,
+    stateFilter, setStateFilter, date, setDate, dimensions, insufficientCount, missingCount, snapshotDate, error, conditionsChanged,
     results,
-    failedCodes,
-    skippedCodes,
-    cappedInfo,
     hasScreenLoaded,
     total,
     loading,
     screenedAt,
-    fromCache,
     forceRefresh,
     sortKey,
     sortAsc,
     filteredResults,
     sortedResults,
-    signalCounts,
     blockFile,
     setBlockFile,
     blockData,
@@ -350,7 +264,6 @@ export function useScreen(): UseScreenReturn {
     syncResult,
     setSyncResult,
     doScreen,
-    retryFailed,
     handleSortChange,
     handleSelectBlock,
   };

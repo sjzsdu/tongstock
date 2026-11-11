@@ -1,11 +1,5 @@
 import type { ScreenResult } from '../types/api';
 import type { CodesCacheEntry } from '../types/screen';
-import { SIGNAL_OPTIONS } from '../types/screen';
-
-export function isBuySignal(type: string): boolean {
-  return SIGNAL_OPTIONS.find((signal) => signal.value === type)?.buy ?? false;
-}
-
 export function stockNamesFromCodesCache(
   codes: string[],
   codesCache: Record<string, CodesCacheEntry>,
@@ -38,7 +32,7 @@ export function formatPercent(value: number): string {
 
 /**
  * 涨跌幅：标准口径相对昨收（PrevClose），与行情软件一致。
- * 旧缓存/旧接口没有昨收时回退到日内口径（相对今开），至少不误导方向。
+ * 筛选使用指定交易日的快照与前一交易日的收盘价。
  */
 export function getChangePct(result: ScreenResult): number {
   const last = result.last;
@@ -47,29 +41,13 @@ export function getChangePct(result: ScreenResult): number {
   if (last.PrevClose && last.PrevClose > 0) {
     return ((close - last.PrevClose) / last.PrevClose) * 100;
   }
-  const open = last.Open || close;
-  return open > 0 ? ((close - open) / open) * 100 : 0;
+  return 0;
 }
 
 export function getPriceColor(value: number): string {
   if (value > 0) return 'var(--ant-color-error)';
   if (value < 0) return 'var(--ant-color-success)';
   return 'var(--ant-color-text-secondary)';
-}
-
-export function getMaTrend(result: ScreenResult): { label: string; color: string } {
-  const n = result.ma?.['5']?.length || 0;
-  const ma5 = result.ma?.['5']?.[n - 1] ?? 0;
-  const ma10 = result.ma?.['10']?.[n - 1] ?? 0;
-  const ma20 = result.ma?.['20']?.[n - 1] ?? 0;
-
-  if (ma5 > ma10 && ma10 > ma20) {
-    return { label: '↗ 多头', color: 'red' };
-  }
-  if (ma5 < ma10 && ma10 < ma20) {
-    return { label: '↘ 空头', color: 'green' };
-  }
-  return { label: '→ 震荡', color: 'default' };
 }
 
 export function exportCsv(filename: string, headers: string[], rows: string[][]): void {

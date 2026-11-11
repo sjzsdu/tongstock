@@ -120,6 +120,11 @@ export interface StockNewsResult {
   "weakCount"?: number;
 }
 
+export interface StateFilter {
+  "conditions"?: Record<string, unknown>[];
+  "transition"?: Record<string, unknown>;
+}
+
 export const operations = {
   postApiAgentChat: { method: "POST", path: "/api/agent/chat" },
   postApiAgentResearch: { method: "POST", path: "/api/agent/research" },
@@ -282,4 +287,5 @@ export const operations = {
   getApiMethodsIdPool: { method: "GET", path: "/api/methods/{id}/pool" },
   getApiStates: { method: "GET", path: "/api/states" },
   getApiStatesSeries: { method: "GET", path: "/api/states/series" },
+  getApiScreenOptions: { method: "GET", path: "/api/screen/options" },
 } as const;
