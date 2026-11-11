@@ -46,5 +46,7 @@ export interface StateFilter {
     from: Exclude<import('./api').StateValue, 'insufficient_data'>[];
     to: Exclude<import('./api').StateValue, 'insufficient_data'>;
     within_days: number;
+    /** natural=自然日（默认）；trading=交易日 */
+    within_unit?: 'natural' | 'trading';
   };
 }

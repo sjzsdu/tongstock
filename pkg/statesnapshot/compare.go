@@ -67,10 +67,15 @@ func (s Store) Compare(ctx context.Context, codes []string, from, to string) (Co
 	if err != nil {
 		return out, err
 	}
-	query := `SELECT s.code,s.trade_date,s.dim,s.state,s.insufficient,k.close,
+	// kline_latest 是「kline LEFT JOIN kline_revision + 相关子查询」的视图。
+	// 直接 JOIN 这个视图会让 SQLite 先把全表 kline 物化一遍，2 只股票 6 天也要 70s+。
+	// 这里只对已命中的状态行做 kline/revision 的点查，语义与 kline_latest 完全一致。
+	query := `SELECT s.code,s.trade_date,s.dim,s.state,s.insufficient,COALESCE(r.close,k.close),
 COALESCE((SELECT name FROM stockinfo WHERE code=s.code),'')
 FROM signal_state_daily s
-LEFT JOIN kline_latest k ON k.code=s.code AND k.ktype=s.ktype AND k.date=s.trade_date
+LEFT JOIN kline k ON k.code=s.code AND k.ktype=s.ktype AND k.date=s.trade_date
+LEFT JOIN kline_revision r ON r.code=s.code AND r.ktype=s.ktype AND r.date=s.trade_date
+	AND r.version=(SELECT MAX(x.version) FROM kline_revision x WHERE x.code=s.code AND x.ktype=s.ktype AND x.date=s.trade_date)
 WHERE s.ktype=? AND s.code IN (SELECT value FROM json_each(?)) AND s.trade_date>=? AND s.trade_date<=?
 ORDER BY s.code,s.trade_date,s.dim`
 	rows, err := s.DB.QueryContext(ctx, query, Day, string(pool), from, to)

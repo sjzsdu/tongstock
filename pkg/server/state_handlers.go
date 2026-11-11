@@ -31,6 +31,9 @@ const (
 // stateSeriesItem 是逐日的一条状态带：当天四维状态 + 当日收盘价。
 type stateSeriesItem struct {
 	Date string `json:"date"`
+	// Time 是该 bar 的完整时间（日线为 YYYY-MM-DD，60 分为 YYYY-MM-DD HH:MM:SS）。
+	// date 只到天的周期里一天有多根 bar，前端必须靠 time 才能逐根对齐，不能按 date 覆盖。
+	Time string `json:"time,omitempty"`
 	// Close 是当日未复权收盘价，供「状态 × 股价」对照视图使用。
 	Close float64 `json:"close"`
 	// States 是四维状态（键为 cross/osc/boll/ma，值为 buy/sell/neutral/insufficient_data）。
@@ -123,13 +126,24 @@ func (s *Server) handleStockStateSeries(c *gin.Context) {
 
 	def := param.ResolveStateDefinition(code)
 	vectors := signalstate.ComputeSeries(code, ktype, inputs, def)
+	dailyLike := ktype == protocol.TypeKlineDay || ktype == protocol.TypeKlineWeek || ktype == protocol.TypeKlineMonth
+	barTimeOf := func(t time.Time) string {
+		if dailyLike {
+			return t.Format("2006-01-02")
+		}
+		return t.Format("2006-01-02 15:04:05")
+	}
 
 	items := make([]stateSeriesItem, 0, len(vectors))
-	for _, v := range vectors {
+	for i, v := range vectors {
 		if !withinStateRange(v.Date.Format("2006-01-02"), from, to) {
 			continue
 		}
-		items = append(items, buildStateSeriesItem(v, includeReasons))
+		barTime := ""
+		if i < len(inputs) {
+			barTime = barTimeOf(inputs[i].Time)
+		}
+		items = append(items, buildStateSeriesItem(v, includeReasons, barTime))
 	}
 
 	response := gin.H{
@@ -152,7 +166,11 @@ func (s *Server) handleStockStateSeries(c *gin.Context) {
 	}
 	// latest 始终带判定依据：前端图例要看「最新一天为什么是这个态」。
 	if len(vectors) > 0 {
-		response["latest"] = buildStateSeriesItem(vectors[len(vectors)-1], true)
+		latestTime := ""
+		if len(inputs) > 0 {
+			latestTime = barTimeOf(inputs[len(inputs)-1].Time)
+		}
+		response["latest"] = buildStateSeriesItem(vectors[len(vectors)-1], true, latestTime)
 	}
 	if fetchCost > stateSeriesSlowFetch {
 		response["note"] = "本次取本地日线较慢（首次调用会拉全历史），已成功；后续调用走本地库会明显更快"
@@ -197,7 +215,8 @@ func writeStateSeriesError(c *gin.Context, err error, timeout time.Duration) {
 }
 
 // buildStateSeriesItem 把内核的状态向量转成接口 DTO；字段顺序固定按 Dims()。
-func buildStateSeriesItem(v signalstate.StateVector, includeReasons bool) stateSeriesItem {
+// barTime 是该向量对应 bar 的原始时间；日线通常等于 date，60 分带 HH:MM。
+func buildStateSeriesItem(v signalstate.StateVector, includeReasons bool, barTime string) stateSeriesItem {
 	states := make(map[string]string, len(signalstate.Dims()))
 	reasons := make(map[string]string, len(signalstate.Dims()))
 	insufficient := make([]string, 0, len(signalstate.Dims()))
@@ -215,9 +234,13 @@ func buildStateSeriesItem(v signalstate.StateVector, includeReasons bool) stateS
 		CalcHash:      v.CalcHash,
 		CalcVersion:   v.CalcVersion,
 		Date:          v.Date.Format("2006-01-02"),
+		Time:          barTime,
 		Close:         v.Close,
 		States:        states,
 		AdjustVersion: v.AdjustVersion,
+	}
+	if item.Time == "" {
+		item.Time = item.Date
 	}
 	if len(insufficient) > 0 {
 		item.Insufficient = insufficient

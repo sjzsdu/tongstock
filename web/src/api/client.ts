@@ -116,13 +116,26 @@ async function fetchMonitoringReport(path: string, init?: RequestInit): Promise<
   };
 }
 
-async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
+async function fetchJSON<T>(path: string, init?: RequestInit, timeoutMs?: number): Promise<T> {
   const headers = new Headers(init?.headers);
   headers.set('Content-Type', 'application/json');
-  const res = await fetchWithAccessToken(path, {
-    ...init,
-    headers,
-  });
+  const controller = timeoutMs && timeoutMs > 0 ? new AbortController() : undefined;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : undefined;
+  let res: Response;
+  try {
+    res = await fetchWithAccessToken(path, {
+      ...init,
+      headers,
+      signal: controller?.signal ?? init?.signal,
+    });
+  } catch (err) {
+    if (controller?.signal.aborted) {
+      throw new Error(`请求超时（${Math.round((timeoutMs ?? 0) / 1000)} 秒）；服务可能仍在计算，请稍后重试或缩小范围`);
+    }
+    throw err;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
   if (!res.ok) {
     const payload = await res.json().catch(() => null) as ErrorEnvelope | { error?: string } | null;
     if (payload && typeof payload.error === 'object') {
@@ -272,7 +285,7 @@ export const api = {
   screen: (codes: string, type = 'day', filter: import('../types/screen').StateFilter = { conditions: [] }, date = '') => {
     const p = new URLSearchParams({ codes, type, state_filter: JSON.stringify(filter) });
     if (date) p.set('date', date);
-    return fetchJSON<ScreenResponse>(`/api/screen?${p}`);
+    return fetchJSON<ScreenResponse>(`/api/screen?${p}`, undefined, 90_000);
   },
 
   signalAnalysis: (code: string, type = 'day') =>
@@ -295,7 +308,7 @@ export const api = {
 
   stateCompare: (codes: string[], from: string, to: string) => {
     const params = new URLSearchParams({ codes: codes.join(','), from, to });
-    return fetchJSON<import('../types/api').StateCompareResponse>(`/api/states/compare?${params}`);
+    return fetchJSON<import('../types/api').StateCompareResponse>(`/api/states/compare?${params}`, undefined, 60_000);
   },
 
   searchStocks: (query: string, limit = 10) =>

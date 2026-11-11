@@ -48,3 +48,4 @@ web/dist/
 
 # GitHub Pages 组装产物（site/dist + web/dist 合并，由 site/scripts/assemble-pages.mjs 生成）
 /pages-dist/
+docs/acceptance-4th-2026-11-11

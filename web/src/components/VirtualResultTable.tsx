@@ -1,6 +1,7 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Card, Space, Button, Tag, Typography } from 'antd';
 import { ShoppingCartOutlined, MinusCircleOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
 import type { RefObject } from 'react';
 import type { ScreenResult, DimensionMeta } from '../types/api';
 import type { TradeInfo, SortKey } from '../types/screen';
@@ -46,16 +47,29 @@ export function VirtualResultTable({
     overscan: 18,
   });
 
-  const compareResults = results.slice(0, 20);
-  const compareDates = compareResults.map((result) => result.date).filter(Boolean).sort();
-  const comparePath = compareResults.length > 0 && compareDates.length > 0
-    ? `/states/compare?codes=${encodeURIComponent(compareResults.map((result) => result.code).join(','))}&from=${encodeURIComponent(compareDates[0])}&to=${encodeURIComponent(compareDates[compareDates.length - 1])}`
+  const compareCodes = Array.from(new Set(results.map((result) => result.code)));
+  const compareDates = results.map((result) => result.date).filter(Boolean).sort();
+  const compareTo = compareDates[compareDates.length - 1];
+  // 对照页需要一段窗口才能算持续段；只传快照日会退化成 from=to，必然全是 1 个交易日 / 0.00%。
+  const compareFrom = compareTo ? dayjs(compareTo).subtract(30, 'day').format('YYYY-MM-DD') : '';
+  const comparePath = compareCodes.length > 0 && compareTo && compareFrom
+    ? `/states/compare?codes=${encodeURIComponent(compareCodes.slice(0, 100).join(','))}&from=${encodeURIComponent(compareFrom)}&to=${encodeURIComponent(compareTo)}`
     : '';
 
   return (
     <Card
       styles={{ body: { padding: 0, overflowX: 'auto' } }}
-      extra={<Space>{extra}{comparePath && <Button size="small" type="primary" onClick={() => navigate(comparePath)}>对照命中股票{results.length > 20 ? '（前20只）' : ''}</Button>}</Space>}
+      extra={
+        <Space>
+          {compareCodes.length > 100 && <Text type="warning">命中 {compareCodes.length} 只，单次对照上限 100 只</Text>}
+          {extra}
+          {comparePath && (
+            <Button size="small" type="primary" onClick={() => navigate(comparePath)}>
+              对照命中股票（{Math.min(compareCodes.length, 100)} 只）
+            </Button>
+          )}
+        </Space>
+      }
     >
       <div style={{ minWidth: 1120 }}>
       <div
@@ -109,7 +123,12 @@ export function VirtualResultTable({
               >
                 <Text code>{result.code}</Text>
                 <Text ellipsis style={{ padding: '0 12px' }}>{result.name || '-'}</Text>
-                <Text>{result.date}</Text>
+                <div>
+                  <Text>{result.date}</Text>
+                  {result.transition_date && (
+                    <div><Tag color="blue" style={{ fontSize: 9, lineHeight: '13px', marginTop: 2 }}>迁移 {result.transition_date.slice(5)}</Tag></div>
+                  )}
+                </div>
                 <Text style={{ textAlign: 'right', color: getPriceColor(changePct), fontVariantNumeric: 'tabular-nums' }}>{result.last?.Close == null ? '-' : close.toFixed(2)}</Text>
                 <Text style={{ textAlign: 'right', color: getPriceColor(changePct), fontVariantNumeric: 'tabular-nums' }}>{result.last?.PrevClose ? formatPercent(changePct) : '-'}</Text>
                 {dimensions.map((dim) => {

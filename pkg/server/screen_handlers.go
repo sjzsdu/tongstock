@@ -66,7 +66,7 @@ func (s *Server) handleScreen(c *gin.Context) {
 	}
 	results := make([]gin.H, 0, len(out.Results))
 	for _, r := range out.Results {
-		results = append(results, gin.H{"code": r.Code, "name": r.Name, "date": r.Date, "states": r.States, "last": gin.H{"Close": r.Close, "PrevClose": r.PrevClose}})
+		results = append(results, gin.H{"code": r.Code, "name": r.Name, "date": r.Date, "states": r.States, "last": gin.H{"Close": r.Close, "PrevClose": r.PrevClose}, "transition_date": r.TransitionDate})
 	}
 	c.JSON(http.StatusOK, gin.H{"date": out.Date, "dimensions": signalstate.Metadata(), "results": results, "total": len(codes), "successCount": len(results), "insufficientCount": out.InsufficientCount, "missingCount": out.MissingCount})
 }

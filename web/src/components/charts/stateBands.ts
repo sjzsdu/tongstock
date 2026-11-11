@@ -39,11 +39,24 @@ export function dateKeyOf(kline: KlineItem): string {
   return (kline.Time ?? '').slice(0, 10);
 }
 
-/** 状态序列按日期索引，供图上取色与 hover 读数共用。 */
-export function indexStateSeries(series: StateSeriesResponse | null | undefined): Map<string, StateSeriesItem> {
+/** 把 bar 时间归一成可比较的 key：日线 YYYY-MM-DD，分钟线 YYYY-MM-DD HH:MM。 */
+export function barTimeKey(value: string | undefined): string {
+  const normalized = (value ?? '').trim().replace('T', ' ');
+  return normalized.length > 10 ? normalized.slice(0, 16) : normalized.slice(0, 10);
+}
+
+/**
+ * 状态序列索引。
+ * 日线按 date 索引；60 分一天有多根 bar，必须按完整 time 索引，否则后写的会覆盖先写的。
+ */
+export function indexStateSeries(
+  series: StateSeriesResponse | null | undefined,
+  intraday = false,
+): Map<string, StateSeriesItem> {
   const map = new Map<string, StateSeriesItem>();
   for (const item of series?.items ?? []) {
-    map.set(item.date, item);
+    const key = intraday ? barTimeKey(item.time ?? item.date) : item.date.slice(0, 10);
+    map.set(key, item);
   }
   return map;
 }
@@ -65,8 +78,8 @@ function toTime(dateStr: string | undefined, intraday: boolean): Time | null {
  */
 export function addStateBands({ chart, klines, series }: LaneContext): void {
   if (klines.length === 0 || series.dimensions.length === 0) return;
-  const byDate = indexStateSeries(series);
   const intraday = new Set(klines.map((k) => dateKeyOf(k))).size < klines.length;
+  const byDate = indexStateSeries(series, intraday);
 
   series.dimensions.forEach((meta, laneIndex) => {
     const scaleId = `${LANE_SCALE_PREFIX}${meta.dim}`;
@@ -89,7 +102,8 @@ export function addStateBands({ chart, klines, series }: LaneContext): void {
     for (const kline of klines) {
       const time = toTime(kline.Time, intraday);
       if (!time) continue;
-      const item = byDate.get(dateKeyOf(kline));
+      const key = intraday ? barTimeKey(kline.Time) : dateKeyOf(kline);
+      const item = byDate.get(key);
       if (!item) continue;
       const stateMeta = colors.get(item.states[meta.dim as StateDim]);
       if (!stateMeta) continue;

@@ -86,7 +86,8 @@ export default function StockDetail() {
 
   const switchTab = (nextTab: Tab) => {
     setTab(nextTab);
-    navigate(`/stock/${code}/${nextTab}`, { replace: true });
+    // 保留 ?date=：信号卡/状态带要靠它定位到筛选结果对应的交易日，切 tab 不能丢掉。
+    navigate(`/stock/${code}/${nextTab}${focusDate ? `?date=${encodeURIComponent(focusDate)}` : ''}`, { replace: true });
   };
 
   useEffect(() => {
@@ -279,7 +280,7 @@ export default function StockDetail() {
 
         {showTabs && tab === 'signal' && (
           <Space direction="vertical" size={16} style={{ display: 'flex' }}>
-            <StateSnapshotCard series={stateSeries} hint={stateHint} onReload={reloadStateSeries} />
+            <StateSnapshotCard series={stateSeries} date={focusDate} hint={stateHint} onReload={reloadStateSeries} />
             <SignalTabContent
               chartLoading={chartLoading}
               analysis={analysis}

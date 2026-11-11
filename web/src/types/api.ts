@@ -240,6 +240,8 @@ export interface ScreenResult {
   date: string;
   states: Record<StateDim, StateValue>;
   last: { Close: number | null; PrevClose: number | null };
+  /** 命中迁移条件时窗口内最近一次迁移日（YYYY-MM-DD） */
+  transition_date?: string;
 }
 
 export interface ScreenResponse {
@@ -428,6 +430,8 @@ export interface DimensionMeta {
 /** 逐日状态带：当天四维状态 + 当日未复权收盘价。 */
 export interface StateSeriesItem {
   date: string;
+  /** bar 完整时间：日线为 YYYY-MM-DD，60 分为 YYYY-MM-DD HH:MM:SS */
+  time?: string;
   close: number;
   states: Record<StateDim, StateValue>;
   /** 只列出当天算不出来的维度 */

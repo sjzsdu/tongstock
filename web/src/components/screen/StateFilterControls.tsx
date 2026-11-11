@@ -57,9 +57,21 @@ export function StateFilterControls({ dimensions, value, onChange, date, onDateC
           <Select aria-label="迁移终态" style={{ minWidth: 180 }} value={transition.to} options={options(transitionDim)} onChange={(to) => updateTransition({ to, from: transition.from.filter((s) => s !== to) })} />
           <Typography.Text>近</Typography.Text>
           <InputNumber aria-label="迁移窗口天数" min={1} max={365} value={transition.within_days} onChange={(within_days) => updateTransition({ within_days: within_days ?? 5 })} />
-          <Typography.Text>自然日内（含所选日）</Typography.Text>
+          <Select
+            aria-label="迁移窗口单位"
+            style={{ width: 108 }}
+            value={transition.within_unit ?? 'natural'}
+            options={[{ value: 'natural', label: '自然日' }, { value: 'trading', label: '交易日' }]}
+            onChange={(within_unit) => updateTransition({ within_unit })}
+          />
+          <Typography.Text>内（含所选日）</Typography.Text>
         </>}
       </Flex>
+      {transition && (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          自然日按日历回数；交易日按快照库实际交易日回数（跨周末会自动延长到第 N 个交易日）。
+        </Typography.Text>
+      )}
     </Flex>
   );
 }

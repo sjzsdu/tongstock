@@ -219,7 +219,7 @@ export default function CandlestickChart({ code, ktype, klines, indicator, mainO
         const maColors: Record<string, string> = { '5': '#f59e0b', '10': '#3b82f6', '20': '#8b5cf6', '60': '#ec4899', '120': '#06b6d4' };
         for (const [period, values] of Object.entries(indicator.ma)) {
           const color = maColors[period];
-          if (!color) continue;
+          if (!color || !Array.isArray(values)) continue;
           const series = mainChart.addSeries(LineSeries, { color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
           const data = [];
           for (let j = 0; j < values.length && j < chartKlines.length; j++) {
@@ -235,7 +235,7 @@ export default function CandlestickChart({ code, ktype, klines, indicator, mainO
         const bollColors = { Upper: '#ef4444', Middle: '#f59e0b', Lower: '#22c55e' };
         for (const [key, color] of Object.entries(bollColors)) {
           const values = indicator.boll[key as keyof typeof indicator.boll] as number[];
-          if (!values) continue;
+          if (!Array.isArray(values)) continue;
           const series = mainChart.addSeries(LineSeries, { color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
           series.setData(safeData(values, chartKlines, intraday));
         }
@@ -252,7 +252,8 @@ export default function CandlestickChart({ code, ktype, klines, indicator, mainO
         const idx = chartKlines.findIndex(k => toTime(k.Time, intraday) === param.time);
         if (idx < 0) { setHover(null); setMousePos(null); setHoverDate(undefined); return; }
         const k = chartKlines[idx];
-        setHoverDate((k.Time ?? '').slice(0, 10));
+        // 日线用日期；60 分必须保留 bar 时间，否则一天 4 根会全部落到同一个 key。
+        setHoverDate(intraday ? k.Time : (k.Time ?? '').slice(0, 10));
         const prev = idx > 0 ? chartKlines[idx - 1].Close : k.Close;
         const pct = prev > 0 ? (k.Close - prev) / prev * 100 : 0;
         const ma: Record<string, number> = {};
@@ -271,9 +272,15 @@ export default function CandlestickChart({ code, ktype, klines, indicator, mainO
           time: formatKlineTime(k.Time, intraday),
           open: k.Open, high: k.High, low: k.Low, close: k.Close, volume: k.Volume, pct,
           ma,
-          macd: indicator?.macd ? { dif: indicator.macd.DIF[idx], dea: indicator.macd.DEA[idx], hist: indicator.macd.Hist[idx] } : undefined,
-          kdj: indicator?.kdj ? { k: indicator.kdj.K[idx], d: indicator.kdj.D[idx], j: indicator.kdj.J[idx] } : undefined,
-          boll: indicator?.boll ? { upper: indicator.boll.Upper[idx], middle: indicator.boll.Middle[idx], lower: indicator.boll.Lower[idx] } : undefined,
+          macd: indicator?.macd && Array.isArray(indicator.macd.DIF) && Array.isArray(indicator.macd.DEA) && Array.isArray(indicator.macd.Hist)
+            ? { dif: indicator.macd.DIF[idx], dea: indicator.macd.DEA[idx], hist: indicator.macd.Hist[idx] }
+            : undefined,
+          kdj: indicator?.kdj && Array.isArray(indicator.kdj.K) && Array.isArray(indicator.kdj.D) && Array.isArray(indicator.kdj.J)
+            ? { k: indicator.kdj.K[idx], d: indicator.kdj.D[idx], j: indicator.kdj.J[idx] }
+            : undefined,
+          boll: indicator?.boll && Array.isArray(indicator.boll.Upper) && Array.isArray(indicator.boll.Middle) && Array.isArray(indicator.boll.Lower)
+            ? { upper: indicator.boll.Upper[idx], middle: indicator.boll.Middle[idx], lower: indicator.boll.Lower[idx] }
+            : undefined,
           rsi: Object.keys(rsi).length > 0 ? rsi : undefined,
         });
       });
@@ -304,15 +311,17 @@ export default function CandlestickChart({ code, ktype, klines, indicator, mainO
     if (subPanel && subRef.current) {
       const subChart = makeChart(subRef.current, SUB_H);
       if (subChart) {
-        if (subPanel === 'MACD' && indicator?.macd) {
+        const macd = indicator?.macd;
+        const hasMacd = !!macd && Array.isArray(macd.DIF) && Array.isArray(macd.DEA) && Array.isArray(macd.Hist);
+        if (subPanel === 'MACD' && hasMacd) {
           subChart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
-            .setData(safeData(indicator.macd.DIF, chartKlines, intraday));
+            .setData(safeData(macd.DIF, chartKlines, intraday));
           subChart.addSeries(LineSeries, { color: '#3b82f6', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
-            .setData(safeData(indicator.macd.DEA, chartKlines, intraday));
+            .setData(safeData(macd.DEA, chartKlines, intraday));
           const histData: { time: Time; value: number; color: string }[] = [];
-          for (let i = 0; i < indicator.macd.Hist.length && i < chartKlines.length; i++) {
+          for (let i = 0; i < macd.Hist.length && i < chartKlines.length; i++) {
             const time = safeTime(chartKlines, i, intraday);
-            const value = toFiniteNumber(indicator.macd.Hist[i]);
+            const value = toFiniteNumber(macd.Hist[i]);
             if (time && value !== null) histData.push({ time, value, color: value >= 0 ? 'rgba(239,68,68,0.6)' : 'rgba(34,197,94,0.6)' });
           }
           subChart.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false }).setData(histData);
@@ -378,19 +387,28 @@ export default function CandlestickChart({ code, ktype, klines, indicator, mainO
   const last = chartKlines[readoutIndex];
   const previous = chartKlines[readoutIndex - 1];
   const intraday = isIntradayKline(chartKlines);
+  // 静态读数默认停在 focusDate 的第一根 bar（60 分即 10:30）；状态带必须用同一个 bar 的 time。
+  const focusStateKey = intraday && focusedIndex >= 0 ? chartKlines[focusedIndex].Time : focusDate;
   const defaultPct = last && previous?.Close ? ((last.Close - previous.Close) / previous.Close * 100) : 0;
   const h = hover;
+  // 悬停时顶部读数跟随当前 bar，避免浮层已是 11-11 14:00 而读数还停在 focusDate 的 10:30。
+  const readoutTime = h ? h.time : formatKlineTime(last?.Time, intraday);
+  const readoutOpen = h ? h.open : last?.Open;
+  const readoutHigh = h ? h.high : last?.High;
+  const readoutLow = h ? h.low : last?.Low;
+  const readoutClose = h ? h.close : last?.Close;
+  const readoutPct = h ? h.pct : defaultPct;
 
   return (
     <div className="relative">
       {/* The static readout uses the linked date, or the latest bar without a link. */}
       <div className="bg-slate-900 border border-slate-800 border-b-0 rounded-t-lg px-3 py-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs min-h-[28px]">
-        <span className="text-slate-400 font-medium">{formatKlineTime(last?.Time, intraday)}</span>
-        <span>开 <span className="text-white">{fmtN(last?.Open)}</span></span>
-        <span>高 <span className="text-red-400">{fmtN(last?.High)}</span></span>
-        <span>低 <span className="text-green-400">{fmtN(last?.Low)}</span></span>
-        <span>收 <span className={defaultPct >= 0 ? 'text-red-400' : 'text-green-400'}>{fmtN(last?.Close)}</span></span>
-        <span className={defaultPct >= 0 ? 'text-red-400' : 'text-green-400'}>{fmtPct(defaultPct)}</span>
+        <span className="text-slate-400 font-medium">{readoutTime}</span>
+        <span>开 <span className="text-white">{fmtN(readoutOpen)}</span></span>
+        <span>高 <span className="text-red-400">{fmtN(readoutHigh)}</span></span>
+        <span>低 <span className="text-green-400">{fmtN(readoutLow)}</span></span>
+        <span>收 <span className={readoutPct >= 0 ? 'text-red-400' : 'text-green-400'}>{fmtN(readoutClose)}</span></span>
+        <span className={readoutPct >= 0 ? 'text-red-400' : 'text-green-400'}>{fmtPct(readoutPct)}</span>
       </div>
 
       {/* Chart area */}
@@ -402,7 +420,7 @@ export default function CandlestickChart({ code, ktype, klines, indicator, mainO
           </div>
         )}
         {/* 状态带与观察标注是两个独立能力：有状态数据/提示才渲染，避免观察页出现"计算中"占位。 */}
-        {(stateSeries || stateHint) && <StateBandOverlay code={code} ktype={ktype} series={stateSeries ?? null} hoverDate={hoverDate ?? focusDate} hint={stateHint} />}
+        {(stateSeries || stateHint) && <StateBandOverlay code={code} ktype={ktype} intraday={intraday} series={stateSeries ?? null} hoverDate={hoverDate ?? focusStateKey} hint={stateHint} />}
       </div>
 
       {/* Floating tooltip */}

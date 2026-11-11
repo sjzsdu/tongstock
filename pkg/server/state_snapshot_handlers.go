@@ -52,8 +52,8 @@ func (s *Server) handleStatesCompare(c *gin.Context) {
 		WriteError(c, http.StatusBadRequest, "validation_failed", "需要 codes 及合法的 from/to 日期区间")
 		return
 	}
-	if len(codes) > 20 {
-		WriteError(c, http.StatusBadRequest, "validation_failed", "codes 最多支持 20 只股票")
+	if len(codes) > 100 {
+		WriteError(c, http.StatusBadRequest, "validation_failed", "codes 单次最多支持 100 只股票；请缩小筛选后分批对照")
 		return
 	}
 	if s.storage == nil {

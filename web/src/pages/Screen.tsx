@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import dayjs from 'dayjs';
 import {
   SearchOutlined,
   DownloadOutlined,
@@ -256,16 +257,22 @@ export default function Screen() {
   // Export screen results
   const exportScreenResults = () => {
     exportCsv(
-      `tongstock-screen-${new Date().toISOString().slice(0, 10)}.csv`,
-      ['代码', '名称', '日期', '收盘', '涨跌幅', ...dimensions.map((d) => d.label)],
+      `tongstock-screen-${dayjs().format('YYYY-MM-DD')}.csv`,
+      ['代码', '名称', '日期', '收盘', '涨跌幅', '迁移日期', ...dimensions.map((d) => d.label)],
       sortedResults.map((result) => {
         return [
           result.code,
           result.name || '',
           result.date,
-          String(result.last?.Close ?? ''),
+          result.last?.Close == null ? '' : result.last.Close.toFixed(2),
           result.last?.PrevClose ? formatPercent(getChangePct(result)) : '-',
-          ...dimensions.map((d) => d.states.find((s) => s.state === result.states[d.dim])?.label || ''),
+          result.transition_date || '',
+          ...dimensions.map((d) => {
+            const state = d.states.find((s) => s.state === result.states[d.dim]);
+            if (!state) return '';
+            // 状态标签本身是「金叉/超买/带内」等形态词；补上后端下发的方向，避免 CSV 里看不出买卖。
+            return state.direction_label ? `${state.label}（${state.direction_label}）` : state.label;
+          }),
         ];
       }),
     );
@@ -375,7 +382,16 @@ export default function Screen() {
         </Card>
 
         {conditionsChanged && <Alert type="info" showIcon title="条件已修改，请点击开始筛选；下方仍为上次执行结果。" />}
+        {loading && <Alert type="info" showIcon title="正在筛选…首次全市场快照可能需要 30–60 秒；结果返回前请勿重复点击。" />}
         {error && <Alert type="error" showIcon title="筛选失败" description={error} />}
+        {hasScreenLoaded && missingCount > 0 && (
+          <Alert
+            type="warning"
+            showIcon
+            title={`该快照日有 ${missingCount} 只股票缺少快照`}
+            description="命中结果只覆盖已有快照的股票，不代表股票池全量；请先确认该交易日快照已回填完整，或改用最近完整快照日。"
+          />
+        )}
 
         {hasScreenLoaded && (
           <Card size="small" style={{ background: 'linear-gradient(135deg, rgba(22,119,255,0.08), rgba(14,165,233,0.06))' }}>
