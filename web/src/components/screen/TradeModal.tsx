@@ -60,7 +60,7 @@ export function TradeModal({
             </Text>
           </Flex>
           <Flex justify="space-between" style={{ marginTop: 12 }}>
-            <Text type="secondary">快照收盘价（{currentTradeStock.date}）</Text>
+            <Text type="secondary">状态日收盘价（{currentTradeStock.date}）</Text>
             <Text strong style={{ fontVariantNumeric: 'tabular-nums' }}>
               {close.toFixed(2)}
             </Text>

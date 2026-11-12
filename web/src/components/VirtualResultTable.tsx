@@ -84,7 +84,7 @@ export function VirtualResultTable({
       >
         <div style={{ padding: '10px 0' }}><SortHeader sortKey="code" sortAsc={sortAsc} current={sortKey} onChange={onSortChange}>代码</SortHeader></div>
         <div style={{ padding: '10px 12px' }}><SortHeader sortKey="name" sortAsc={sortAsc} current={sortKey} onChange={onSortChange}>名称</SortHeader></div>
-        <div style={{ padding: '10px 0' }}>快照日期</div>
+        <div style={{ padding: '10px 0' }}>状态日期</div>
         <div style={{ padding: '10px 0' }}><SortHeader sortKey="close" sortAsc={sortAsc} current={sortKey} onChange={onSortChange} align="right">收盘</SortHeader></div>
         <div style={{ padding: '10px 0' }}><SortHeader sortKey="change" sortAsc={sortAsc} current={sortKey} onChange={onSortChange} align="right">涨跌幅</SortHeader></div>
         {dimensions.map((dim) => <div key={dim.dim} style={{ padding: '10px 8px' }}>{dim.label}</div>)}

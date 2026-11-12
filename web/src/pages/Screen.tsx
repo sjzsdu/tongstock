@@ -34,7 +34,7 @@ import { SourceSelectorModal } from '../components/screen/SourceSelectorModal';
 import { SignalHelpModal } from '../components/screen/SignalHelpModal';
 import { SyncResultModal } from '../components/screen/SyncResultModal';
 import { BlockStocksModal } from '../components/screen/BlockStocksModal';
-import { exportCsv, stockNamesFromCodesCache, formatPercent, getChangePct } from '../utils/screen';
+import { exportCsv, stockNamesFromCodesCache, formatPercent, formatStateDate, getChangePct } from '../utils/screen';
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -51,7 +51,7 @@ export default function Screen() {
     sourceTab,
     setSourceTab,
     ktype,
-    stateFilter, setStateFilter, date, setDate, dimensions, insufficientCount, missingCount, snapshotDate, error, conditionsChanged,
+    stateFilter, setStateFilter, date, setDate, dimensions, snapshotDate, error, conditionsChanged,
     hasScreenLoaded,
     total,
     loading,
@@ -322,6 +322,8 @@ export default function Screen() {
     messageApi.success(`已添加 ${stock.name}`);
   };
 
+  const stateDateLabel = snapshotDate ? formatStateDate(snapshotDate) : '';
+
   return (
     <>
       {contextHolder}
@@ -330,7 +332,7 @@ export default function Screen() {
           <div>
             <Title level={3} style={{ margin: 0 }}>信号筛选</Title>
             <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              按同一交易日的四维状态筛选股票，所有条件同时满足，点击结果查看对应日期的状态时序。
+              选一个交易日，用四个指标的状态同时筛股票；状态在收盘后算好，点击结果可以查看该股逐日状态变化。
             </Paragraph>
           </div>
         </Flex>
@@ -353,12 +355,19 @@ export default function Screen() {
 
         <Card title="筛选设置" size="small">
           <Flex wrap="wrap" gap={12} align="center">
-            <StateFilterControls dimensions={dimensions} value={stateFilter} onChange={setStateFilter} date={date} onDateChange={setDate} />
+            <StateFilterControls
+              dimensions={dimensions}
+              value={stateFilter}
+              onChange={setStateFilter}
+              date={date}
+              onDateChange={setDate}
+              onOpenHelp={() => setShowHelpModal(true)}
+            />
             <Tooltip title="查看三态与迁移条件说明">
               <Button icon={<InfoCircleOutlined />} onClick={() => setShowHelpModal(true)}>状态说明</Button>
             </Tooltip>
 
-            <Tooltip title="使用当前条件重新读取股票池快照">
+            <Tooltip title="用当前条件重新筛选">
               <Button
                 icon={<SyncOutlined />}
                 loading={loading}
@@ -382,14 +391,14 @@ export default function Screen() {
         </Card>
 
         {conditionsChanged && <Alert type="info" showIcon title="条件已修改，请点击开始筛选；下方仍为上次执行结果。" />}
-        {loading && <Alert type="info" showIcon title="正在筛选…首次全市场快照可能需要 30–60 秒；结果返回前请勿重复点击。" />}
-        {error && <Alert type="error" showIcon title="筛选失败" description={error} />}
-        {hasScreenLoaded && missingCount > 0 && (
+        {loading && <Alert type="info" showIcon title="正在筛选…首次筛选可能需要 30–60 秒；结果返回前请勿重复点击。" />}
+        {error && (
           <Alert
-            type="warning"
+            type="error"
             showIcon
-            title={`该快照日有 ${missingCount} 只股票缺少快照`}
-            description="命中结果只覆盖已有快照的股票，不代表股票池全量；请先确认该交易日快照已回填完整，或改用最近完整快照日。"
+            title="本次筛选没有完成，请稍后重试"
+            description={error}
+            action={<Button size="small" onClick={() => void forceRefresh()} disabled={!hasScreenLoaded}>重试</Button>}
           />
         )}
 
@@ -397,11 +406,11 @@ export default function Screen() {
           <Card size="small" style={{ background: 'linear-gradient(135deg, rgba(22,119,255,0.08), rgba(14,165,233,0.06))' }}>
             <Flex justify="space-between" align="center" wrap="wrap" gap={16}>
               <Space size={24} wrap>
-                <Text>扫描总数: <strong>{total}</strong></Text>
-                <Text>命中结果: <strong>{filteredResults.length}</strong></Text>
-                <Text>快照交易日: <strong>{snapshotDate || "无快照"}</strong></Text>
-                <Text>数据不足排除: <strong>{insufficientCount}</strong> 股日</Text>
-                <Text>缺少当日快照: <strong>{missingCount}</strong> 只</Text>
+                <Text>扫描 <strong>{total}</strong> 只</Text>
+                <Text>命中 <strong>{filteredResults.length}</strong> 只</Text>
+                <Text>状态日期 <strong>{stateDateLabel || '—'}</strong></Text>
+              </Space>
+              <Space size={16} wrap>
                 {screenedAt && (
                   <Tooltip title="本次筛选执行时间">
                     <Text type="secondary">

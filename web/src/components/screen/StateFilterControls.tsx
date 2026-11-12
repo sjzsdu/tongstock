@@ -1,4 +1,5 @@
-import { DatePicker, Flex, InputNumber, Select, Switch, Typography } from 'antd';
+import { Button, DatePicker, Flex, InputNumber, Popover, Select, Space, Switch, Typography } from 'antd';
+import { InfoCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { DimensionMeta } from '../../types/api';
 import type { StateFilter } from '../../types/screen';
@@ -9,9 +10,10 @@ type Props = {
   onChange: (value: StateFilter) => void;
   date: string;
   onDateChange: (date: string) => void;
+  onOpenHelp?: () => void;
 };
 
-export function StateFilterControls({ dimensions, value, onChange, date, onDateChange }: Props) {
+export function StateFilterControls({ dimensions, value, onChange, date, onDateChange, onOpenHelp }: Props) {
   const triStates = (dim: DimensionMeta) => dim.states.filter((s) => s.direction !== 'insufficient_data');
   const options = (dim: DimensionMeta) => triStates(dim).map((s) => ({ value: s.state, label: `${s.label}（${s.direction_label}）` }));
   const transition = value.transition;
@@ -19,11 +21,38 @@ export function StateFilterControls({ dimensions, value, onChange, date, onDateC
   const updateTransition = (next: Partial<NonNullable<StateFilter['transition']>>) => {
     if (transition) onChange({ ...value, transition: { ...transition, ...next } });
   };
+  // 周末与未来日在本地就挡掉，不发请求。
+  const disabledDate = (current: dayjs.Dayjs) =>
+    current.isAfter(dayjs(), 'day') || current.day() === 0 || current.day() === 6;
+  const definition = (
+    <Space orientation="vertical" size={4} style={{ maxWidth: 280 }}>
+      <Typography.Text strong>每日状态</Typography.Text>
+      <Typography.Text>
+        每个交易日收盘后，系统按当日行情给全市场每只股票算出四个指标的状态并存下来；筛选就是在这一天的状态表里找同时满足条件的股票。
+      </Typography.Text>
+      {onOpenHelp && (
+        <Button size="small" type="link" style={{ padding: 0 }} onClick={onOpenHelp}>
+          这些状态怎么来的？
+        </Button>
+      )}
+    </Space>
+  );
   return (
     <Flex vertical gap={12}>
       <Flex wrap gap={12} align="center">
-        <Typography.Text>快照日期（日线 / 未复权）</Typography.Text>
-        <DatePicker aria-label="快照日期" value={date && dayjs(date).isValid() ? dayjs(date) : null} onChange={(d) => onDateChange(d?.format('YYYY-MM-DD') || '')} placeholder="最新快照交易日" />
+        <Flex align="center" gap={4}>
+          <Typography.Text>状态日期（日线 · 未复权）</Typography.Text>
+          <Popover trigger="click" placement="bottom" content={definition}>
+            <Button type="text" size="small" icon={<InfoCircleOutlined />} aria-label="每日状态说明" />
+          </Popover>
+        </Flex>
+        <DatePicker
+          aria-label="状态日期"
+          value={date && dayjs(date).isValid() ? dayjs(date) : null}
+          onChange={(d) => onDateChange(d?.format('YYYY-MM-DD') || '')}
+          placeholder="最新状态日"
+          disabledDate={disabledDate}
+        />
         <Typography.Text type="secondary">全部条件同时满足（AND）；不限定与中性是不同条件。</Typography.Text>
       </Flex>
       <Flex wrap gap={12}>
@@ -69,7 +98,7 @@ export function StateFilterControls({ dimensions, value, onChange, date, onDateC
       </Flex>
       {transition && (
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          自然日按日历回数；交易日按快照库实际交易日回数（跨周末会自动延长到第 N 个交易日）。
+          自然日按日历回数；交易日按已有状态的交易日回数（跨周末会自动延长到第 N 个交易日）。
         </Typography.Text>
       )}
     </Flex>

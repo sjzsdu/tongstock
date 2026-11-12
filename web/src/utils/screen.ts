@@ -26,13 +26,18 @@ export function stockNamesFromCodesCache(
   return results;
 }
 
+/** 后端状态日可能是 YYYYMMDD，统一按 YYYY-MM-DD 展示。 */
+export function formatStateDate(value: string): string {
+  return /^\d{8}$/.test(value) ? `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}` : value;
+}
+
 export function formatPercent(value: number): string {
   return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
 }
 
 /**
  * 涨跌幅：标准口径相对昨收（PrevClose），与行情软件一致。
- * 筛选使用指定交易日的快照与前一交易日的收盘价。
+ * 筛选使用指定状态日的收盘价与该日之前的最近收盘价。
  */
 export function getChangePct(result: ScreenResult): number {
   const last = result.last;
