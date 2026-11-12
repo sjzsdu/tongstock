@@ -9,7 +9,14 @@ interface SignalHelpModalProps {
 
 export function SignalHelpModal({ visible, onCancel, dimensions }: SignalHelpModalProps) {
   return (
-    <Modal title="三态筛选说明" open={visible} onCancel={onCancel} footer={<Button onClick={onCancel}>关闭</Button>} width={680}>
+    <Modal
+      title="三态筛选说明"
+      open={visible}
+      onCancel={onCancel}
+      footer={<Button onClick={onCancel}>关闭</Button>}
+      width={680}
+      styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }}
+    >
       <Space orientation="vertical" size={16} style={{ width: '100%' }}>
         <Collapse
           size="small"

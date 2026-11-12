@@ -160,3 +160,68 @@ func TestScreenTransitionWindowAndInsufficientPredecessor(t *testing.T) {
 		t.Fatalf("lookahead: %+v %v", out, err)
 	}
 }
+
+func TestScreenCoverageReasons(t *testing.T) {
+	db, err := storage.New(storage.Config{DSN: ":memory:"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	put := func(code string, dims int, insufficient bool) {
+		t.Helper()
+		for i, d := range signalstate.Dims() {
+			if i >= dims {
+				continue
+			}
+			state := signalstate.StateNeutral
+			if insufficient {
+				state = signalstate.StateInsufficient
+			}
+			if _, err := db.DB().Exec(`INSERT INTO signal_state_daily VALUES(?,'20240103',9,?,?,?,'raw','test','hash')`, code, d, state, insufficient); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	put("a", 4, false) // 已参与筛选
+	put("b", 4, true)  // 有状态行但四维不完整
+	put("e", 3, false) // 缺一维
+	// c 当日有行情但状态未生成；d 当日无行情（停牌/未上市/已退市）。
+	for _, code := range []string{"a", "b", "c", "e"} {
+		if _, err := db.DB().Exec(`INSERT INTO kline(code,ktype,date,open,high,low,close,volume,amount) VALUES(?,9,'20240103',1,1,1,1,1,1)`, code); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pool := []string{"a", "b", "c", "d", "e", "a"}
+	out, err := (Store{DB: db.DB()}).Screen(context.Background(), pool, "20240103", StateFilter{Conditions: []Condition{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Coverage.Total != 5 || out.Coverage.Covered != 1 || !out.Coverage.TradeDateExists || out.Coverage.FirstDate != "20240103" || out.Coverage.LastDate != "20240103" {
+		t.Fatalf("coverage=%+v", out.Coverage)
+	}
+	reasons := map[string]string{}
+	for _, item := range out.Coverage.Skipped {
+		reasons[item.Code] = item.Reason
+	}
+	want := map[string]string{"b": SkipInsufficientHistory, "c": SkipNotComputed, "d": SkipNoQuote, "e": SkipInsufficientHistory}
+	if len(reasons) != len(want) {
+		t.Fatalf("skipped=%+v", out.Coverage.Skipped)
+	}
+	for code, reason := range want {
+		if reasons[code] != reason {
+			t.Fatalf("%s: got %q want %q (all=%+v)", code, reasons[code], reason, out.Coverage.Skipped)
+		}
+	}
+
+	// 该日整库没有状态（周末/未来日）：不逐只归类，覆盖为 0。
+	out, err = (Store{DB: db.DB()}).Screen(context.Background(), []string{"a", "b"}, "20240106", StateFilter{Conditions: []Condition{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Coverage.TradeDateExists || out.Coverage.Total != 2 || out.Coverage.Covered != 0 || len(out.Coverage.Skipped) != 0 || out.MissingCount != 2 {
+		t.Fatalf("weekend coverage=%+v missing=%d", out.Coverage, out.MissingCount)
+	}
+	if out.Coverage.FirstDate != "20240103" || out.Coverage.LastDate != "20240103" {
+		t.Fatalf("range=%+v", out.Coverage)
+	}
+}

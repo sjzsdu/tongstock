@@ -20,6 +20,8 @@ interface VirtualResultTableProps {
   onSortChange: (key: SortKey) => void;
   navigate: (path: string) => void;
   extra?: React.ReactNode;
+  /** 标题旁一行小字：本次结果基于哪个状态日、覆盖多少只 */
+  note?: React.ReactNode;
   trades: Record<string, TradeInfo>;
   tradingLoading: boolean;
   handleBuy: (result: ScreenResult) => void;
@@ -35,6 +37,7 @@ export function VirtualResultTable({
   onSortChange,
   navigate,
   extra,
+  note,
   trades,
   tradingLoading,
   handleBuy,
@@ -58,6 +61,7 @@ export function VirtualResultTable({
 
   return (
     <Card
+      title={note ? <Text type="secondary" style={{ fontSize: 12, fontWeight: 'normal' }}>{note}</Text> : undefined}
       styles={{ body: { padding: 0, overflowX: 'auto' } }}
       extra={
         <Space>

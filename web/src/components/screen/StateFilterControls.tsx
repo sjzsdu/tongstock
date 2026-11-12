@@ -10,10 +10,13 @@ type Props = {
   onChange: (value: StateFilter) => void;
   date: string;
   onDateChange: (date: string) => void;
+  /** 库里已有状态的最早/最晚状态日（YYYY-MM-DD）；未知时不限制范围。 */
+  availableFrom?: string;
+  availableTo?: string;
   onOpenHelp?: () => void;
 };
 
-export function StateFilterControls({ dimensions, value, onChange, date, onDateChange, onOpenHelp }: Props) {
+export function StateFilterControls({ dimensions, value, onChange, date, onDateChange, availableFrom, availableTo, onOpenHelp }: Props) {
   const triStates = (dim: DimensionMeta) => dim.states.filter((s) => s.direction !== 'insufficient_data');
   const options = (dim: DimensionMeta) => triStates(dim).map((s) => ({ value: s.state, label: `${s.label}（${s.direction_label}）` }));
   const transition = value.transition;
@@ -21,9 +24,14 @@ export function StateFilterControls({ dimensions, value, onChange, date, onDateC
   const updateTransition = (next: Partial<NonNullable<StateFilter['transition']>>) => {
     if (transition) onChange({ ...value, transition: { ...transition, ...next } });
   };
-  // 周末与未来日在本地就挡掉，不发请求。
-  const disabledDate = (current: dayjs.Dayjs) =>
-    current.isAfter(dayjs(), 'day') || current.day() === 0 || current.day() === 6;
+  // 周末与未来日在本地就挡掉，不发请求；已知可用范围时也不让选范围外的日期。
+  const disabledDate = (current: dayjs.Dayjs) => {
+    if (current.isAfter(dayjs(), 'day')) return true;
+    if (current.day() === 0 || current.day() === 6) return true;
+    if (availableFrom && current.isBefore(dayjs(availableFrom), 'day')) return true;
+    if (availableTo && current.isAfter(dayjs(availableTo), 'day')) return true;
+    return false;
+  };
   const definition = (
     <Space orientation="vertical" size={4} style={{ maxWidth: 280 }}>
       <Typography.Text strong>每日状态</Typography.Text>
