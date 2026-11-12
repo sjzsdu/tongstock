@@ -272,8 +272,8 @@ export interface ScreenResponse {
   successCount: number;
   insufficientCount: number;
   missingCount: number;
-  /** 新契约：覆盖情况；旧后端可能不返回 */
-  coverage?: ScreenCoverage;
+  /** 本次筛选对股票池的覆盖情况；handler 恒定下发 */
+  coverage: ScreenCoverage;
 }
 
 export interface SignalOutcome {

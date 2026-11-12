@@ -313,7 +313,7 @@ export default function Screen() {
       if (result.failed > 0) {
         messageApi.warning(`同步完成：成功 ${result.success} 只，失败 ${result.failed} 只`);
       } else {
-        messageApi.success(`同步完成：${result.success} 只自选股日K已更新`);
+        messageApi.success(`同步完成：${result.success} 只自选股的日线已更新`);
       }
     } catch (error) {
       messageApi.error(error instanceof Error ? error.message : '同步失败');
@@ -335,6 +335,9 @@ export default function Screen() {
   const insufficientHistoryCount = coverage ? countSkipped(coverage, 'insufficient_history') : 0;
   const notComputedCount = coverage ? countSkipped(coverage, 'not_computed') : 0;
   const skippedCount = coverage ? coverage.skipped.length : 0;
+  const coverageTotal = coverage ? coverage.total : 0;
+  const coverageCovered = coverage ? coverage.covered : 0;
+  const objectiveSkipCount = noQuoteCount + insufficientHistoryCount;
   const latestStateDate = coverage?.last_date ? formatStateDate(coverage.last_date) : '';
   const showSkippedNotice = hasScreenLoaded && !!coverage && coverage.trade_date_exists && skippedCount > 0 && gapAlertDismissedAt !== screenedAt;
   const describeMissingStateDate = () => {
@@ -453,7 +456,16 @@ export default function Screen() {
             type="warning"
             showIcon
             title={`${notComputedCount} 只股票的状态还没算好，本次结果不含它们`}
-            description={`这些股票 ${stateDateLabel} 的行情已经有了，但当日状态还没算出来。补齐后会自动重新筛选。`}
+            description={[
+              `这些股票 ${stateDateLabel} 的行情已经有了，但当日状态还没算出来，补齐后会自动重新筛选。`,
+              objectiveSkipCount > 0
+                ? `另有 ${objectiveSkipCount} 只同样未参与本次筛选（${[
+                    noQuoteCount > 0 ? `${noQuoteCount} 只当天无成交行情` : '',
+                    insufficientHistoryCount > 0 ? `${insufficientHistoryCount} 只历史数据不足` : '',
+                  ].filter(Boolean).join('、')}）。`
+                : '',
+              `本次 ${coverageTotal} 只中 ${coverageCovered} 只参与筛选。`,
+            ].join('')}
             action={
               <Space orientation="vertical" size={4} align="end">
                 <Button size="small" type="primary" loading={gapSyncing} onClick={() => void onSyncGap()}>
@@ -479,7 +491,7 @@ export default function Screen() {
             description={[
               noQuoteCount > 0 ? `${noQuoteCount} 只当天没有成交行情（停牌、未上市或已退市）` : '',
               insufficientHistoryCount > 0 ? `${insufficientHistoryCount} 只上市时间较短、历史数据不足以计算当日状态` : '',
-            ].filter(Boolean).join('；') + `。其余 ${coverage?.covered ?? 0} 只已全部参与筛选。`}
+            ].filter(Boolean).join('；') + `。本次 ${coverageTotal} 只中 ${coverageCovered} 只参与筛选，其余均为上述原因。`}
             action={<Button size="small" onClick={() => setShowSkippedModal(true)}>查看名单</Button>}
           />
         )}

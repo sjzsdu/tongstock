@@ -14,8 +14,6 @@ interface UseScreenReturn {
   date: string;
   setDate: React.Dispatch<React.SetStateAction<string>>;
   dimensions: DimensionMeta[];
-  insufficientCount: number;
-  missingCount: number;
   snapshotDate: string;
   coverage: ScreenCoverage | null;
   /** 场景 B：补齐当前筛选股票池的当日状态后自动重筛；返回同步结果，无池时返回 null */
@@ -66,8 +64,6 @@ export function useScreen(): UseScreenReturn {
   });
   const [date, setDate] = useState(new URLSearchParams(window.location.search).get('date') || '');
   const [dimensions, setDimensions] = useState<DimensionMeta[]>([]);
-  const [insufficientCount, setInsufficientCount] = useState(0);
-  const [missingCount, setMissingCount] = useState(0);
   const [snapshotDate, setSnapshotDate] = useState('');
   const [coverage, setCoverage] = useState<ScreenCoverage | null>(null);
   const [gapSyncing, setGapSyncing] = useState(false);
@@ -176,9 +172,7 @@ export function useScreen(): UseScreenReturn {
       setResults(response.results.filter((item) => item.code));
       setTotal(response.total);
       setDimensions(response.dimensions);
-      setInsufficientCount(response.insufficientCount);
-      setMissingCount(response.missingCount);
-      setCoverage(response.coverage ?? null);
+      setCoverage(response.coverage);
       setSnapshotDate(response.date);
       setScreenedAt(Date.now());
     } catch (err: unknown) {
@@ -264,7 +258,7 @@ export function useScreen(): UseScreenReturn {
     sourceTab,
     setSourceTab,
     ktype,
-    stateFilter, setStateFilter, date, setDate, dimensions, insufficientCount, missingCount, snapshotDate, coverage, syncPoolAndRescreen, gapSyncing, error, conditionsChanged,
+    stateFilter, setStateFilter, date, setDate, dimensions, snapshotDate, coverage, syncPoolAndRescreen, gapSyncing, error, conditionsChanged,
     results,
     hasScreenLoaded,
     total,
