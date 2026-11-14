@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { getChangePct } from '../utils/screen';
 import { api } from '../api/client';
-import type { ScreenResult, KlineBatchSyncResult, DimensionMeta } from '../types/api';
+import type { ScreenResult, KlineBatchSyncResult, DimensionMeta, ScreenCoverage } from '../types/api';
 import type { SourceTab, BlockInfo, SortKey, StateFilter } from '../types/screen';
 import { ALL_BLOCK_FILES } from '../types/screen';
 
@@ -14,9 +14,11 @@ interface UseScreenReturn {
   date: string;
   setDate: React.Dispatch<React.SetStateAction<string>>;
   dimensions: DimensionMeta[];
-  insufficientCount: number;
-  missingCount: number;
   snapshotDate: string;
+  coverage: ScreenCoverage | null;
+  /** 场景 B：补齐当前筛选股票池的当日状态后自动重筛；返回同步结果，无池时返回 null */
+  syncPoolAndRescreen: () => Promise<KlineBatchSyncResult | null>;
+  gapSyncing: boolean;
   error: string;
   conditionsChanged: boolean;
   results: ScreenResult[];
@@ -43,7 +45,7 @@ interface UseScreenReturn {
   filteredBlocks: BlockInfo[];
   syncResult: KlineBatchSyncResult | null;
   setSyncResult: React.Dispatch<React.SetStateAction<KlineBatchSyncResult | null>>;
-  doScreen: (resolvedCodes: string) => Promise<void>;
+  doScreen: (resolvedCodes: string, dateOverride?: string) => Promise<void>;
   handleSortChange: (key: SortKey) => void;
   handleSelectBlock: (block: BlockInfo) => void;
 }
@@ -62,9 +64,9 @@ export function useScreen(): UseScreenReturn {
   });
   const [date, setDate] = useState(new URLSearchParams(window.location.search).get('date') || '');
   const [dimensions, setDimensions] = useState<DimensionMeta[]>([]);
-  const [insufficientCount, setInsufficientCount] = useState(0);
-  const [missingCount, setMissingCount] = useState(0);
   const [snapshotDate, setSnapshotDate] = useState('');
+  const [coverage, setCoverage] = useState<ScreenCoverage | null>(null);
+  const [gapSyncing, setGapSyncing] = useState(false);
   const [error, setError] = useState('');
   const [submittedQuery, setSubmittedQuery] = useState('');
   const queryKey = JSON.stringify({ stateFilter, date, ktype });
@@ -154,35 +156,51 @@ export function useScreen(): UseScreenReturn {
     void loadBlockStocks(block);
   }, [loadBlockStocks, selectedBlock]);
 
-  const doScreen = useCallback(async (resolvedCodes: string) => {
+  const doScreen = useCallback(async (resolvedCodes: string, dateOverride?: string) => {
     const codes = resolvedCodes.trim();
     if (!codes) return;
+    const queryDate = dateOverride ?? date;
+    const submitted = JSON.stringify({ stateFilter, date: queryDate, ktype });
     lastPool.current = codes;
     const id = ++requestId.current;
     setLoading(true);
     setError('');
     try {
-      const response = await api.screen(codes, ktype, stateFilter, date);
+      const response = await api.screen(codes, ktype, stateFilter, queryDate);
       if (id !== requestId.current) return;
-      setSubmittedQuery(queryKey);
+      setSubmittedQuery(submitted);
       setResults(response.results.filter((item) => item.code));
       setTotal(response.total);
       setDimensions(response.dimensions);
-      setInsufficientCount(response.insufficientCount);
-      setMissingCount(response.missingCount);
+      setCoverage(response.coverage);
       setSnapshotDate(response.date);
       setScreenedAt(Date.now());
     } catch (err: unknown) {
       if (id !== requestId.current) return;
       setError(err instanceof Error ? err.message : '筛选失败');
       setResults([]);
+      setCoverage(null);
     } finally {
       if (id === requestId.current) { setLoading(false); setHasScreenLoaded(true); }
     }
-  }, [ktype, stateFilter, date, queryKey]);
+  }, [ktype, stateFilter, date]);
 
   const forceRefresh = useCallback(async () => {
     await doScreen(lastPool.current);
+  }, [doScreen]);
+
+  // 场景 B：补齐「当前筛选用的股票池」的当日状态（不是自选股），完成后自动重筛。
+  const syncPoolAndRescreen = useCallback(async () => {
+    const pool = lastPool.current.split(',').map((code) => code.trim()).filter(Boolean);
+    if (pool.length === 0) return null;
+    setGapSyncing(true);
+    try {
+      const result = await api.syncDaily(pool);
+      await doScreen(lastPool.current);
+      return result;
+    } finally {
+      setGapSyncing(false);
+    }
   }, [doScreen]);
 
   const handleSortChange = useCallback((key: SortKey) => {
@@ -240,7 +258,7 @@ export function useScreen(): UseScreenReturn {
     sourceTab,
     setSourceTab,
     ktype,
-    stateFilter, setStateFilter, date, setDate, dimensions, insufficientCount, missingCount, snapshotDate, error, conditionsChanged,
+    stateFilter, setStateFilter, date, setDate, dimensions, snapshotDate, coverage, syncPoolAndRescreen, gapSyncing, error, conditionsChanged,
     results,
     hasScreenLoaded,
     total,

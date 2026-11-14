@@ -244,6 +244,26 @@ export interface ScreenResult {
   transition_date?: string;
 }
 
+/** 未参与筛选的原因：当日无行情 / 历史数据不足 / 有行情但当日状态未生成 */
+export type ScreenSkipReason = 'no_quote' | 'insufficient_history' | 'not_computed';
+
+export interface ScreenSkippedStock {
+  code: string;
+  name: string;
+  reason: ScreenSkipReason;
+}
+
+export interface ScreenCoverage {
+  /** 库里已有状态的最早/最晚状态日（YYYYMMDD），无状态时为空串 */
+  first_date: string;
+  last_date: string;
+  covered: number;
+  total: number;
+  /** 所选日期在库里是否有任何状态行；false 表示非交易日、未来日或整体未生成 */
+  trade_date_exists: boolean;
+  skipped: ScreenSkippedStock[];
+}
+
 export interface ScreenResponse {
   results: ScreenResult[];
   date: string;
@@ -252,6 +272,8 @@ export interface ScreenResponse {
   successCount: number;
   insufficientCount: number;
   missingCount: number;
+  /** 本次筛选对股票池的覆盖情况；handler 恒定下发 */
+  coverage: ScreenCoverage;
 }
 
 export interface SignalOutcome {

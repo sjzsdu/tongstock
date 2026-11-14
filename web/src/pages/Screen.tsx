@@ -34,7 +34,9 @@ import { SourceSelectorModal } from '../components/screen/SourceSelectorModal';
 import { SignalHelpModal } from '../components/screen/SignalHelpModal';
 import { SyncResultModal } from '../components/screen/SyncResultModal';
 import { BlockStocksModal } from '../components/screen/BlockStocksModal';
-import { exportCsv, stockNamesFromCodesCache, formatPercent, getChangePct } from '../utils/screen';
+import { CoverageSummary, SkippedStocksModal } from '../components/screen/ScreenCoverage';
+import { countSkipped } from '../lib/screenCoverage';
+import { exportCsv, stockNamesFromCodesCache, formatPercent, formatStateDate, getChangePct } from '../utils/screen';
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -51,7 +53,7 @@ export default function Screen() {
     sourceTab,
     setSourceTab,
     ktype,
-    stateFilter, setStateFilter, date, setDate, dimensions, insufficientCount, missingCount, snapshotDate, error, conditionsChanged,
+    stateFilter, setStateFilter, date, setDate, dimensions, snapshotDate, coverage, syncPoolAndRescreen, gapSyncing, error, conditionsChanged,
     hasScreenLoaded,
     total,
     loading,
@@ -89,6 +91,9 @@ export default function Screen() {
   const [blockStocksWithNames, setBlockStocksWithNames] = useState<{ code: string; name: string }[]>([]);
   const [blockStocksLoadingNames, setBlockStocksLoadingNames] = useState(false);
   const [freshnessData, setFreshnessData] = useState<SyncFreshnessResult[]>([]);
+  const [showSkippedModal, setShowSkippedModal] = useState(false);
+  // 「先看当前结果」只收起本次执行的提示；重新筛选后（screenedAt 变化）会再次出现。
+  const [gapAlertDismissedAt, setGapAlertDismissedAt] = useState<number | null>(null);
 
   // Resolved codes
   const resolvedCodes = useCallback(() => {
@@ -308,7 +313,7 @@ export default function Screen() {
       if (result.failed > 0) {
         messageApi.warning(`同步完成：成功 ${result.success} 只，失败 ${result.failed} 只`);
       } else {
-        messageApi.success(`同步完成：${result.success} 只自选股日K已更新`);
+        messageApi.success(`同步完成：${result.success} 只自选股的日线已更新`);
       }
     } catch (error) {
       messageApi.error(error instanceof Error ? error.message : '同步失败');
@@ -322,6 +327,51 @@ export default function Screen() {
     messageApi.success(`已添加 ${stock.name}`);
   };
 
+  // Coverage：把「有几只没参与」拆成不可修复的客观原因和可补齐的待生成状态。
+  const stateDate = snapshotDate || date;
+  const stateDateLabel = stateDate ? formatStateDate(stateDate) : '';
+  const stateDateMissing = !!coverage && !coverage.trade_date_exists;
+  const noQuoteCount = coverage ? countSkipped(coverage, 'no_quote') : 0;
+  const insufficientHistoryCount = coverage ? countSkipped(coverage, 'insufficient_history') : 0;
+  const notComputedCount = coverage ? countSkipped(coverage, 'not_computed') : 0;
+  const skippedCount = coverage ? coverage.skipped.length : 0;
+  const coverageTotal = coverage ? coverage.total : 0;
+  const coverageCovered = coverage ? coverage.covered : 0;
+  const objectiveSkipCount = noQuoteCount + insufficientHistoryCount;
+  const latestStateDate = coverage?.last_date ? formatStateDate(coverage.last_date) : '';
+  const showSkippedNotice = hasScreenLoaded && !!coverage && coverage.trade_date_exists && skippedCount > 0 && gapAlertDismissedAt !== screenedAt;
+  const describeMissingStateDate = () => {
+    const picked = dayjs(stateDateLabel);
+    if (!stateDate || !picked.isValid()) return '还没有可用的状态数据，请稍后重试。';
+    if (picked.isAfter(dayjs(), 'day')) return `${stateDateLabel} 还没到，请选择今天或更早的交易日。`;
+    if (picked.day() === 0 || picked.day() === 6) return `${stateDateLabel} 不是交易日，请选择一个交易日。`;
+    const range = coverage?.first_date && coverage?.last_date
+      ? `当前可用范围是 ${formatStateDate(coverage.first_date)} ~ ${formatStateDate(coverage.last_date)}。`
+      : '';
+    return `${stateDateLabel} 的状态还没生成。${range}`;
+  };
+  const onUseLatestStateDate = () => {
+    if (!latestStateDate) return;
+    setDate(latestStateDate);
+    void doScreen(resolvedCodes(), latestStateDate);
+  };
+  const onSyncGap = async () => {
+    try {
+      const result = await syncPoolAndRescreen();
+      if (!result) {
+        messageApi.warning('当前没有可更新的股票池');
+        return;
+      }
+      if (result.failed > 0) {
+        messageApi.warning(`已更新 ${result.success} 只，${result.failed} 只失败；已按原条件重新筛选`);
+      } else {
+        messageApi.success(`已更新 ${result.success} 只股票的行情，已按原条件重新筛选`);
+      }
+    } catch (err) {
+      messageApi.error(err instanceof Error ? err.message : '更新数据失败');
+    }
+  };
+
   return (
     <>
       {contextHolder}
@@ -330,7 +380,7 @@ export default function Screen() {
           <div>
             <Title level={3} style={{ margin: 0 }}>信号筛选</Title>
             <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              按同一交易日的四维状态筛选股票，所有条件同时满足，点击结果查看对应日期的状态时序。
+              选一个交易日，用四个指标的状态同时筛股票；状态在收盘后算好，点击结果可以查看该股逐日状态变化。
             </Paragraph>
           </div>
         </Flex>
@@ -353,12 +403,21 @@ export default function Screen() {
 
         <Card title="筛选设置" size="small">
           <Flex wrap="wrap" gap={12} align="center">
-            <StateFilterControls dimensions={dimensions} value={stateFilter} onChange={setStateFilter} date={date} onDateChange={setDate} />
+            <StateFilterControls
+              dimensions={dimensions}
+              value={stateFilter}
+              onChange={setStateFilter}
+              date={date}
+              onDateChange={setDate}
+              availableFrom={coverage?.first_date ? formatStateDate(coverage.first_date) : undefined}
+              availableTo={coverage?.last_date ? formatStateDate(coverage.last_date) : undefined}
+              onOpenHelp={() => setShowHelpModal(true)}
+            />
             <Tooltip title="查看三态与迁移条件说明">
               <Button icon={<InfoCircleOutlined />} onClick={() => setShowHelpModal(true)}>状态说明</Button>
             </Tooltip>
 
-            <Tooltip title="使用当前条件重新读取股票池快照">
+            <Tooltip title="用当前条件重新筛选">
               <Button
                 icon={<SyncOutlined />}
                 loading={loading}
@@ -382,26 +441,71 @@ export default function Screen() {
         </Card>
 
         {conditionsChanged && <Alert type="info" showIcon title="条件已修改，请点击开始筛选；下方仍为上次执行结果。" />}
-        {loading && <Alert type="info" showIcon title="正在筛选…首次全市场快照可能需要 30–60 秒；结果返回前请勿重复点击。" />}
-        {error && <Alert type="error" showIcon title="筛选失败" description={error} />}
-        {hasScreenLoaded && missingCount > 0 && (
+        {loading && <Alert type="info" showIcon title="正在筛选…首次筛选可能需要 30–60 秒；结果返回前请勿重复点击。" />}
+        {error && (
+          <Alert
+            type="error"
+            showIcon
+            title="本次筛选没有完成，请稍后重试"
+            description={error}
+            action={<Button size="small" onClick={() => void forceRefresh()} disabled={!hasScreenLoaded}>重试</Button>}
+          />
+        )}
+        {showSkippedNotice && notComputedCount > 0 && (
           <Alert
             type="warning"
             showIcon
-            title={`该快照日有 ${missingCount} 只股票缺少快照`}
-            description="命中结果只覆盖已有快照的股票，不代表股票池全量；请先确认该交易日快照已回填完整，或改用最近完整快照日。"
+            title={`${notComputedCount} 只股票的状态还没算好，本次结果不含它们`}
+            description={[
+              `这些股票 ${stateDateLabel} 的行情已经有了，但当日状态还没算出来，补齐后会自动重新筛选。`,
+              objectiveSkipCount > 0
+                ? `另有 ${objectiveSkipCount} 只同样未参与本次筛选（${[
+                    noQuoteCount > 0 ? `${noQuoteCount} 只当天无成交行情` : '',
+                    insufficientHistoryCount > 0 ? `${insufficientHistoryCount} 只历史数据不足` : '',
+                  ].filter(Boolean).join('、')}）。`
+                : '',
+              `本次 ${coverageTotal} 只中 ${coverageCovered} 只参与筛选。`,
+            ].join('')}
+            action={
+              <Space orientation="vertical" size={4} align="end">
+                <Button size="small" type="primary" loading={gapSyncing} onClick={() => void onSyncGap()}>
+                  更新数据并重筛
+                </Button>
+                <Space size={4}>
+                  <Button size="small" type="link" style={{ padding: 0 }} onClick={() => setGapAlertDismissedAt(screenedAt)}>
+                    先看当前结果
+                  </Button>
+                  <Button size="small" type="link" style={{ padding: 0 }} onClick={() => setShowSkippedModal(true)}>
+                    查看名单
+                  </Button>
+                </Space>
+              </Space>
+            }
+          />
+        )}
+        {showSkippedNotice && notComputedCount === 0 && (
+          <Alert
+            type="info"
+            showIcon
+            title={`${stateDateLabel} 有 ${skippedCount} 只股票没有当日状态，已在筛选中跳过`}
+            description={[
+              noQuoteCount > 0 ? `${noQuoteCount} 只当天没有成交行情（停牌、未上市或已退市）` : '',
+              insufficientHistoryCount > 0 ? `${insufficientHistoryCount} 只上市时间较短、历史数据不足以计算当日状态` : '',
+            ].filter(Boolean).join('；') + `。本次 ${coverageTotal} 只中 ${coverageCovered} 只参与筛选，其余均为上述原因。`}
+            action={<Button size="small" onClick={() => setShowSkippedModal(true)}>查看名单</Button>}
           />
         )}
 
-        {hasScreenLoaded && (
+        {hasScreenLoaded && coverage && !stateDateMissing && (
           <Card size="small" style={{ background: 'linear-gradient(135deg, rgba(22,119,255,0.08), rgba(14,165,233,0.06))' }}>
             <Flex justify="space-between" align="center" wrap="wrap" gap={16}>
               <Space size={24} wrap>
-                <Text>扫描总数: <strong>{total}</strong></Text>
-                <Text>命中结果: <strong>{filteredResults.length}</strong></Text>
-                <Text>快照交易日: <strong>{snapshotDate || "无快照"}</strong></Text>
-                <Text>数据不足排除: <strong>{insufficientCount}</strong> 股日</Text>
-                <Text>缺少当日快照: <strong>{missingCount}</strong> 只</Text>
+                <Text>扫描 <strong>{total}</strong> 只</Text>
+                <Text>命中 <strong>{filteredResults.length}</strong> 只</Text>
+                <Text>状态日期 <strong>{stateDateLabel || '—'}</strong></Text>
+              </Space>
+              <Space size={16} wrap>
+                <CoverageSummary coverage={coverage} onShowSkipped={() => setShowSkippedModal(true)} />
                 {screenedAt && (
                   <Tooltip title="本次筛选执行时间">
                     <Text type="secondary">
@@ -460,6 +564,20 @@ export default function Screen() {
             tradingLoading={tradingLoading}
             handleBuy={onHandleBuy}
             handleSell={onHandleSell}
+            note={
+              coverage ? (
+                coverage.covered >= coverage.total ? (
+                  `基于 ${stateDateLabel} 的每日状态，股票池全部参与筛选`
+                ) : (
+                  <Space size={4}>
+                    <span>{`基于 ${stateDateLabel} 的每日状态，${coverage.covered}/${coverage.total} 只参与筛选 · ${coverage.total - coverage.covered} 只未参与筛选`}</span>
+                    <Button size="small" type="link" style={{ padding: 0, fontSize: 12 }} onClick={() => setShowSkippedModal(true)}>
+                      查看原因
+                    </Button>
+                  </Space>
+                )
+              ) : undefined
+            }
             extra={
               <Space wrap>
                 <Button icon={<DownloadOutlined />} onClick={exportScreenResults} size="small">
@@ -473,10 +591,28 @@ export default function Screen() {
           />
         ) : !loading ? (
           <Card>
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={hasScreenLoaded ? '当前筛选条件下没有命中结果' : '选择股票来源后点击“开始筛选”'}
-            />
+            {stateDateMissing ? (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={
+                  <Space orientation="vertical" size={4}>
+                    <Text strong>{stateDateLabel} 没有状态数据</Text>
+                    <Text type="secondary">{describeMissingStateDate()}</Text>
+                  </Space>
+                }
+              >
+                {latestStateDate && (
+                  <Button type="primary" onClick={onUseLatestStateDate}>
+                    用 {latestStateDate} 重新筛选
+                  </Button>
+                )}
+              </Empty>
+            ) : (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={hasScreenLoaded ? '当前筛选条件下没有命中结果' : '选择股票来源后点击“开始筛选”'}
+              />
+            )}
           </Card>
         ) : null}
       </Space>
@@ -541,6 +677,13 @@ export default function Screen() {
         onRemoveStock={removeCode}
         onAddAll={addAllBlockStocksToWatchlist}
         navigate={navigate}
+      />
+
+      <SkippedStocksModal
+        coverage={coverage}
+        date={stateDateLabel}
+        open={showSkippedModal}
+        onClose={() => setShowSkippedModal(false)}
       />
     </>
   );

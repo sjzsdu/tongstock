@@ -3242,7 +3242,7 @@
         "operationId": "getApiScreen",
         "responses": {
           "200": {
-            "description": "Snapshot matches, dimensions, date, total, successCount, insufficientCount and missingCount; results contain full four-dimensional state vectors."
+            "description": "Snapshot matches, dimensions, date, total, successCount, insufficientCount, missingCount and coverage; coverage reports the available state-date range (first_date/last_date), covered/total pool size, whether the requested date has any state rows (trade_date_exists), and skipped stocks with reason: no_quote, insufficient_history (a dimension missing or marked insufficient) or not_computed. Results contain full four-dimensional state vectors."
           },
           "400": {
             "$ref": "#/components/responses/Error"
@@ -3264,7 +3264,7 @@
           }
         },
         "summary": "AND screening of persisted daily signal states",
-        "description": "Replaces the removed signals OR parameter. No live signal detection or 500-code cap. Reads one shared date; omitted date uses the newest snapshot trade date. Reports insufficientCount (stock-days with incomplete/insufficient vectors) and missingCount (codes without that date). Results carry date, all four states, and local historical close/PrevClose; dimensions carries canonical labels, direction, direction_label, colors and descriptions.",
+        "description": "Replaces the removed signals OR parameter. No live signal detection or 500-code cap. Reads one shared date; omitted date uses the newest snapshot trade date. Reports insufficientCount (stock-days with incomplete/insufficient vectors) and missingCount (codes without that date) for compatibility, plus coverage: first_date/last_date of available state dates, covered/total, trade_date_exists (whether the requested date has any state rows at all), and skipped[{code,name,reason}] where reason is no_quote (no trade bar that day: suspended, not yet listed, delisted), insufficient_history (state rows present but the four dimensions are incomplete, or marked insufficient) or not_computed (trade bar exists but that day's state has not been generated). Results carry date, all four states, and local historical close/PrevClose; dimensions carries canonical labels, direction, direction_label, colors and descriptions.",
         "parameters": [
           {
             "in": "query",

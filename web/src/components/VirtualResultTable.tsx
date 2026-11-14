@@ -20,6 +20,8 @@ interface VirtualResultTableProps {
   onSortChange: (key: SortKey) => void;
   navigate: (path: string) => void;
   extra?: React.ReactNode;
+  /** 标题旁一行小字：本次结果基于哪个状态日、覆盖多少只 */
+  note?: React.ReactNode;
   trades: Record<string, TradeInfo>;
   tradingLoading: boolean;
   handleBuy: (result: ScreenResult) => void;
@@ -35,6 +37,7 @@ export function VirtualResultTable({
   onSortChange,
   navigate,
   extra,
+  note,
   trades,
   tradingLoading,
   handleBuy,
@@ -58,6 +61,7 @@ export function VirtualResultTable({
 
   return (
     <Card
+      title={note ? <Text type="secondary" style={{ fontSize: 12, fontWeight: 'normal' }}>{note}</Text> : undefined}
       styles={{ body: { padding: 0, overflowX: 'auto' } }}
       extra={
         <Space>
@@ -84,7 +88,7 @@ export function VirtualResultTable({
       >
         <div style={{ padding: '10px 0' }}><SortHeader sortKey="code" sortAsc={sortAsc} current={sortKey} onChange={onSortChange}>代码</SortHeader></div>
         <div style={{ padding: '10px 12px' }}><SortHeader sortKey="name" sortAsc={sortAsc} current={sortKey} onChange={onSortChange}>名称</SortHeader></div>
-        <div style={{ padding: '10px 0' }}>快照日期</div>
+        <div style={{ padding: '10px 0' }}>状态日期</div>
         <div style={{ padding: '10px 0' }}><SortHeader sortKey="close" sortAsc={sortAsc} current={sortKey} onChange={onSortChange} align="right">收盘</SortHeader></div>
         <div style={{ padding: '10px 0' }}><SortHeader sortKey="change" sortAsc={sortAsc} current={sortKey} onChange={onSortChange} align="right">涨跌幅</SortHeader></div>
         {dimensions.map((dim) => <div key={dim.dim} style={{ padding: '10px 8px' }}>{dim.label}</div>)}
